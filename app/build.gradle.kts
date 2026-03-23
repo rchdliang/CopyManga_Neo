@@ -54,8 +54,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.adaptive.navigation.suite)
-//    implementation(libs.material.icons.core)
-//    implementation(libs.material.icons.extended)
+
 
 
     // Hilt 依赖注入

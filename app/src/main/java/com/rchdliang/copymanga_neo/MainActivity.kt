@@ -7,8 +7,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.outlined.AccountBox
+import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
@@ -18,7 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
@@ -45,15 +50,16 @@ fun CopyManga_NeoApp() {
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach {
+                val selected = it == currentDestination
                 item(
                     icon = {
                         Icon(
-                            painterResource(it.icon),
+                            imageVector = if (selected) it.selectedIcon else it.unselectedIcon,
                             contentDescription = it.label
                         )
                     },
                     label = { Text(it.label) },
-                    selected = it == currentDestination,
+                    selected = selected,
                     onClick = { currentDestination = it }
                 )
             }
@@ -70,11 +76,12 @@ fun CopyManga_NeoApp() {
 
 enum class AppDestinations(
     val label: String,
-    val icon: Int,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
 ) {
-    HOME("首页", R.drawable.ic_home),
-    BOOKSHELF("书架", R.drawable.ic_favorite),
-    PROFILE("账号", R.drawable.ic_account_box),
+    HOME("首页", Icons.Filled.Home, Icons.Outlined.Home),
+    BOOKSHELF("书架", Icons.Filled.Favorite, Icons.Outlined.Favorite),
+    PROFILE("账号", Icons.Filled.AccountBox, Icons.Outlined.AccountBox),
 }
 
 @Composable
