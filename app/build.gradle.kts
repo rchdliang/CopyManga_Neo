@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.rchdliang.copymanga_neo"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -36,6 +36,7 @@ android {
         compose = true
         buildConfig = true
     }
+    compileSdkMinor = 0
 }
 
 hilt {

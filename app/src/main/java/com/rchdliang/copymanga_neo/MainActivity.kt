@@ -15,6 +15,7 @@ import androidx.compose.material.icons.outlined.AccountBox
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -38,6 +39,7 @@ import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+@ExperimentalMaterial3ExpressiveApi
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +71,7 @@ sealed class Screen(val route: String) {
     object Favorites : Screen("favorites")
 }
 
+@ExperimentalMaterial3ExpressiveApi
 @PreviewScreenSizes
 @Composable
 fun CopyManga_NeoApp() {
