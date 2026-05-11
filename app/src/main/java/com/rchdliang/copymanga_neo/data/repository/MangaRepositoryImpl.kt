@@ -19,12 +19,43 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun getHomeComics(page: Int, limit: Int): Result<List<ComicDto>> {
         return try {
             val response = apiService.getHomeComics(page, limit)
-            if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list ?: emptyList())
-            } else {
-                Result.failure(Exception(response.body()?.message ?: "获取漫画列表失败"))
+
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string()
+                android.util.Log.e("MangaRepository", "Error response: $errorBody")
+                return Result.failure(Exception("HTTP ${response.code()}: ${response.message()}"))
             }
+
+            val body = response.body()
+            android.util.Log.d("MangaRepository", "Response body is null: ${body == null}")
+
+            if (body == null) {
+                return Result.failure(Exception("Response body is null"))
+            }
+
+            android.util.Log.d("MangaRepository", "Response code field: ${body.code}")
+            android.util.Log.d("MangaRepository", "Response message field: ${body.message}")
+
+            val recComics = body.results.recComics
+            android.util.Log.d("MangaRepository", "recComics is null: ${recComics == null}")
+
+            if (recComics != null) {
+                android.util.Log.d("MangaRepository", "recComics.list size: ${recComics.list.size}")
+                val comics = recComics.list.map { item ->
+                    android.util.Log.d(
+                        "MangaRepository",
+                        "Comic item type: ${item.type}, name: ${item.comic.name}"
+                    )
+                    item.comic
+                }
+                android.util.Log.d("MangaRepository", "Successfully loaded ${comics.size} comics")
+                return Result.success(comics)
+            }
+
+            android.util.Log.w("MangaRepository", "No comics found in response")
+            Result.success(emptyList())
         } catch (e: Exception) {
+            android.util.Log.e("MangaRepository", "Exception loading comics: ${e.message}", e)
             Result.failure(e)
         }
     }

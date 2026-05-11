@@ -12,6 +12,8 @@
             <option value="$PROJECT_DIR$/app" />
           </set>
         </option>
+        <option name="resolveExternalAnnotations" value="true" />
+        <option name="myGradleHome" value="C:\Gradlew\gradle-8.12.1" />
       </GradleProjectSettings>
     </option>
     <option name="parallelModelFetch" value="true" />

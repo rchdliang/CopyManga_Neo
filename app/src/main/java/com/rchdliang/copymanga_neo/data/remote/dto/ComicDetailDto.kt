@@ -20,7 +20,7 @@ data class ComicDetailDto(
     @SerializedName("path_word") val pathWord: String,
     @SerializedName("cover") val cover: String?,
     @SerializedName("author") val author: List<AuthorDto>?,
-    @SerializedName("styles") val styles: List<StyleDto>?,
+//    @SerializedName("styles") val styles: List<StyleDto>?,
     @SerializedName("status") val status: ComicStatusDto?,
     @SerializedName("brief") val brief: String?,
     @SerializedName("description") val description: String?,

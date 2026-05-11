@@ -19,31 +19,40 @@ data class ComicListResult(
 )
 
 /**
- * 漫画简要信息
+ * 漫画简要信息（匹配实际 API 响应格式）
  */
 data class ComicDto(
-    @SerializedName("uuid") val uuid: String,
     @SerializedName("name") val name: String,
+    @SerializedName("females") val females: List<CharacterDto>?,
+    @SerializedName("males") val males: List<CharacterDto>?,
+    @SerializedName("theme") val theme: List<ThemeDto>?,
     @SerializedName("path_word") val pathWord: String,
-    @SerializedName("cover") val cover: String?,
     @SerializedName("author") val author: List<AuthorDto>?,
-    @SerializedName("styles") val styles: List<StyleDto>?,
-    @SerializedName("status") val status: Int?,
-    @SerializedName("datetime_updated") val datetimeUpdated: String?
+    @SerializedName("cover") val cover: String?,
+    @SerializedName("popular") val popular: Int?,
+    @SerializedName("author_alias") val authorAlias: String?
+)
+
+/**
+ * 角色信息（女性/男性角色）
+ */
+data class CharacterDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("path_word") val pathWord: String?
+)
+
+/**
+ * 主题/题材信息
+ */
+data class ThemeDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("path_word") val pathWord: String?
 )
 
 /**
  * 作者信息
  */
 data class AuthorDto(
-    @SerializedName("uuid") val uuid: String,
     @SerializedName("name") val name: String,
     @SerializedName("path_word") val pathWord: String?
-)
-
-/**
- * 风格/类型
- */
-data class StyleDto(
-    @SerializedName("name") val name: String
 )
