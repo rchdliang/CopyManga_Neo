@@ -12,7 +12,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AccountBox
-import androidx.compose.material.icons.outlined.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -240,6 +240,6 @@ enum class AppDestinations(
 ) {
     HOME("首页", Icons.Filled.Home, Icons.Outlined.Home),
     SEARCH("搜索", Icons.Filled.Search, Icons.Outlined.Search),
-    BOOKSHELF("书架", Icons.Filled.Favorite, Icons.Outlined.Favorite),
+    BOOKSHELF("书架", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder),
     PROFILE("账号", Icons.Filled.AccountBox, Icons.Outlined.AccountBox),
 }

@@ -15,7 +15,10 @@ import javax.inject.Inject
  * 首页 UI 状态
  */
 data class HomeUiState(
-    val comicList: List<ComicDto> = emptyList(),
+    val recComicList: List<ComicDto> = emptyList(),
+    val hotComics: List<ComicDto> = emptyList(),
+    val newComics: List<ComicDto> = emptyList(),
+    val finishComics: List<ComicDto> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val currentPage: Int = 1
@@ -44,9 +47,12 @@ class HomeViewModel @Inject constructor(
                 page = _uiState.value.currentPage,
                 limit = 20
             ).fold(
-                onSuccess = { comics ->
+                onSuccess = { homeComicsData ->
                     _uiState.value = _uiState.value.copy(
-                        comicList = comics,
+                        recComicList = homeComicsData.recComics,
+                        hotComics = homeComicsData.hotComics,
+                        newComics = homeComicsData.newComics,
+                        finishComics = homeComicsData.finishComics,
                         isLoading = false
                     )
                 },

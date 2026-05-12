@@ -1,20 +1,23 @@
 package com.rchdliang.copymanga_neo.ui.home
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -22,9 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -45,12 +47,12 @@ fun HomeScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when {
-            uiState.isLoading && uiState.comicList.isEmpty() -> {
+            uiState.isLoading && uiState.recComicList.isEmpty() -> {
 //                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 LoadingIndicator(modifier = Modifier.align(Alignment.Center))
             }
 
-            (uiState.error != null && uiState.comicList.isEmpty()) -> {
+            (uiState.error != null && uiState.recComicList.isEmpty()) -> {
                 Text(
                     text = "加载失败：${uiState.error}",
                     modifier = Modifier.align(Alignment.Center)
@@ -58,11 +60,74 @@ fun HomeScreen(
             }
 
             else -> {
-                ComicGrid(
-                    comics = uiState.comicList,
-                    onComicClick = onComicClick,
-                    modifier = Modifier.fillMaxSize()
-                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    // 推荐漫画
+                    if (uiState.recComicList.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "漫画推荐",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            )
+                            ComicGrid(
+                                comics = uiState.recComicList,
+                                onComicClick = onComicClick,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // 热门漫画
+                    if (uiState.hotComics.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "热门更新",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            )
+                            ComicGrid(
+                                comics = uiState.hotComics,
+                                onComicClick = onComicClick,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // 最新漫画
+                    if (uiState.newComics.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "最新上架",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            )
+                            ComicGrid(
+                                comics = uiState.newComics,
+                                onComicClick = onComicClick,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+
+                    // 完结漫画
+                    if (uiState.finishComics.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "完结漫画",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            )
+                            ComicGrid(
+                                comics = uiState.finishComics,
+                                onComicClick = onComicClick,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -74,11 +139,9 @@ private fun ComicGrid(
     onComicClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(160.dp),
-        contentPadding = PaddingValues(8.dp),
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
     ) {
         items(comics) { comic ->
@@ -96,35 +159,50 @@ private fun ComicCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(4.dp)
+    Card(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.size(width = 120.dp, height = 180.dp)
     ) {
-        AsyncImage(
-            model = comic.cover,
-            contentDescription = comic.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .width(160.dp)
-                .height(200.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = comic.name,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = FontWeight.Bold
-        )
-        comic.author?.firstOrNull()?.let { author ->
-            Text(
-                text = author.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Normal,
-                color = androidx.compose.ui.graphics.Color.Gray
+        Box(
+            contentAlignment = Alignment.BottomStart,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            AsyncImage(
+                model = comic.cover,
+                contentDescription = comic.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    Text(
+                        text = comic.name,
+                        minLines = 2,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    comic.author?.firstOrNull()?.let { author ->
+                        Text(
+                            text = author.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+
         }
+
     }
 }
 
@@ -165,11 +243,19 @@ private val sampleComics = listOf(
     )
 )
 
-@PreviewScreenSizes
+
+@Preview
 @Composable
-private fun ComicGridPreview() {
-    ComicGrid(
-        comics = sampleComics,
-        onComicClick = {}
-    )
+private fun HomeScreenPreview() {
+    Column {
+        Text(
+            text = "漫画推荐",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        ComicGrid(
+            comics = sampleComics,
+            onComicClick = {}
+        )
+    }
 }

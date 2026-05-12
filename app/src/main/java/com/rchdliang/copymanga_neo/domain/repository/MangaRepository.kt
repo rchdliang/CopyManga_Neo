@@ -3,15 +3,16 @@ package com.rchdliang.copymanga_neo.domain.repository
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 
 /**
  * 漫画数据仓库接口
  */
 interface MangaRepository {
     /**
-     * 获取首页漫画列表
+     * 获取首页漫画数据
      */
-    suspend fun getHomeComics(page: Int, limit: Int): Result<List<ComicDto>>
+    suspend fun getHomeComics(page: Int, limit: Int): Result<HomeComicsData>
     
     /**
      * 获取漫画详情

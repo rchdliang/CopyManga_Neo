@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,8 +16,8 @@ import javax.inject.Singleton
 class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService
 ) : MangaRepository {
-    
-    override suspend fun getHomeComics(page: Int, limit: Int): Result<List<ComicDto>> {
+
+    override suspend fun getHomeComics(page: Int, limit: Int): Result<HomeComicsData> {
         return try {
             val response = apiService.getHomeComics(page, limit)
 
@@ -33,27 +34,24 @@ class MangaRepositoryImpl @Inject constructor(
                 return Result.failure(Exception("Response body is null"))
             }
 
-            android.util.Log.d("MangaRepository", "Response code field: ${body.code}")
-            android.util.Log.d("MangaRepository", "Response message field: ${body.message}")
+            val recComics = body.results.recComics?.list?.map { it.comic } ?: emptyList()
+            val hotComics = body.results.hotComics?.map { it.comic } ?: emptyList()
+            val newComics = body.results.newComics?.map { it.comic } ?: emptyList()
+            val finishComics = body.results.finishComics?.list ?: emptyList()
 
-            val recComics = body.results.recComics
-            android.util.Log.d("MangaRepository", "recComics is null: ${recComics == null}")
+            android.util.Log.d(
+                "MangaRepository",
+                "Loaded ${recComics.size} recComics, ${hotComics.size} hotComics, ${newComics.size} newComics, ${finishComics.size} finishComics"
+            )
 
-            if (recComics != null) {
-                android.util.Log.d("MangaRepository", "recComics.list size: ${recComics.list.size}")
-                val comics = recComics.list.map { item ->
-                    android.util.Log.d(
-                        "MangaRepository",
-                        "Comic item type: ${item.type}, name: ${item.comic.name}"
-                    )
-                    item.comic
-                }
-                android.util.Log.d("MangaRepository", "Successfully loaded ${comics.size} comics")
-                return Result.success(comics)
-            }
-
-            android.util.Log.w("MangaRepository", "No comics found in response")
-            Result.success(emptyList())
+            Result.success(
+                HomeComicsData(
+                    recComics = recComics,
+                    hotComics = hotComics,
+                    newComics = newComics,
+                    finishComics = finishComics
+                )
+            )
         } catch (e: Exception) {
             android.util.Log.e("MangaRepository", "Exception loading comics: ${e.message}", e)
             Result.failure(e)
