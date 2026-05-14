@@ -48,7 +48,6 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         when {
             uiState.isLoading && uiState.recComicList.isEmpty() -> {
-//                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 LoadingIndicator(modifier = Modifier.align(Alignment.Center))
             }
 

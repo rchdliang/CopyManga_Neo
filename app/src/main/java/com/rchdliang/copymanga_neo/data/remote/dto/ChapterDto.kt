@@ -26,3 +26,8 @@ data class ChapterDto(
     @SerializedName("size") val size: Int?,
     @SerializedName("datetime_created") val datetimeCreated: String?
 )
+
+data class LastChapterDto(
+    @SerializedName("uuid") val uuid: String,
+    @SerializedName("name") val name: String,
+)
