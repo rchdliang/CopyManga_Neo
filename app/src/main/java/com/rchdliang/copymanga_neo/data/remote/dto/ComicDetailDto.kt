@@ -26,7 +26,7 @@ data class ComicDetailDto(
     @SerializedName("uuid") val uuid: String,
     @SerializedName("b_404") val b404: Boolean,
     @SerializedName("b_hidden") val bHidden: Boolean,
-    @SerializedName("ban") val ban: Boolean,
+    @SerializedName("ban") val ban: Int,
     @SerializedName("name") val name: String,
     @SerializedName("alias") val comicAlias: String,
     @SerializedName("path_word") val pathWord: String,

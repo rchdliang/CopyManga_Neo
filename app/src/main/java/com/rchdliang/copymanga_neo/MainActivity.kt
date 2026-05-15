@@ -4,8 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Favorite
@@ -17,12 +15,12 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.navigation.NavType
@@ -45,6 +43,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 禁用导航栏对比度强制，防止在小窗（freeform）模式下系统给手势提示线区域加半透明遮罩
+        // 但是实际上并没有用
+        window.isNavigationBarContrastEnforced = false
         setContent {
             CopyManga_NeoTheme {
                 CopyManga_NeoApp()
@@ -88,7 +89,7 @@ fun CopyManga_NeoApp() {
         currentRoute?.startsWith(Screen.Reader.route) == true -> AppDestinations.HOME
         else -> AppDestinations.HOME
     }
-    
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             AppDestinations.entries.forEach { destination ->
@@ -150,84 +151,89 @@ fun CopyManga_NeoApp() {
                     }
                 )
             }
-        }
+        },
+//        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+//        contentColor = MaterialTheme.colorScheme.surface
+        navigationSuiteColors = NavigationSuiteDefaults.colors(
+            shortNavigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationRailContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationDrawerContainerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
     ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = Screen.Home.route,
-                modifier = Modifier.padding(innerPadding)
-            ) {
-                composable(Screen.Home.route) {
-                    HomeScreen(
-                        onComicClick = { pathWord ->
-                            navController.navigate(Screen.Detail.createRoute(pathWord))
-                        }
-                    )
-                }
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Home.route,
+        ) {
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    onComicClick = { pathWord ->
+                        navController.navigate(Screen.Detail.createRoute(pathWord))
+                    }
+                )
+            }
 
-                composable(
-                    route = Screen.Detail.route,
-                    arguments = listOf(
-                        navArgument("pathWord") { type = NavType.StringType }
-                    )
-                ) { backStackEntry ->
-                    val pathWord =
-                        backStackEntry.arguments?.getString("pathWord") ?: return@composable
-                    DetailScreen(
-                        pathWord = pathWord,
-                        onChapterClick = { chapterPathWord, comicPathWord, chapterName ->
-                            navController.navigate(
-                                Screen.Reader.createRoute(
-                                    comicPathWord,
-                                    chapterPathWord,
-                                    chapterName
-                                )
+            composable(
+                route = Screen.Detail.route,
+                arguments = listOf(
+                    navArgument("pathWord") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val pathWord =
+                    backStackEntry.arguments?.getString("pathWord") ?: return@composable
+                DetailScreen(
+                    pathWord = pathWord,
+                    onChapterClick = { chapterPathWord, comicPathWord, chapterName ->
+                        navController.navigate(
+                            Screen.Reader.createRoute(
+                                comicPathWord,
+                                chapterPathWord,
+                                chapterName
                             )
-                        },
-                        onNavigateBack = {
-                            navController.popBackStack()
-                        }
-                    )
-                }
+                        )
+                    },
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
 
-                composable(
-                    route = Screen.Reader.route,
-                    arguments = listOf(
-                        navArgument("comicPathWord") { type = NavType.StringType },
-                        navArgument("chapterPathWord") { type = NavType.StringType },
-                        navArgument("chapterName") { type = NavType.StringType }
-                    )
-                ) { backStackEntry ->
-                    val comicPathWord = backStackEntry.arguments?.getString("comicPathWord") ?: ""
-                    val chapterPathWord =
-                        backStackEntry.arguments?.getString("chapterPathWord") ?: ""
-                    val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
-                    ReaderScreen(
-                        chapterPathWord = chapterPathWord,
-                        comicPathWord = comicPathWord,
-                        chapterName = chapterName,
-                        onNavigateBack = {
-                            navController.popBackStack()
-                        }
-                    )
-                }
+            composable(
+                route = Screen.Reader.route,
+                arguments = listOf(
+                    navArgument("comicPathWord") { type = NavType.StringType },
+                    navArgument("chapterPathWord") { type = NavType.StringType },
+                    navArgument("chapterName") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val comicPathWord = backStackEntry.arguments?.getString("comicPathWord") ?: ""
+                val chapterPathWord =
+                    backStackEntry.arguments?.getString("chapterPathWord") ?: ""
+                val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
+                ReaderScreen(
+                    chapterPathWord = chapterPathWord,
+                    comicPathWord = comicPathWord,
+                    chapterName = chapterName,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
 
-                composable(Screen.Search.route) {
-                    SearchScreen(
-                        onComicClick = { pathWord ->
-                            navController.navigate(Screen.Detail.createRoute(pathWord))
-                        }
-                    )
-                }
+            composable(Screen.Search.route) {
+                SearchScreen(
+                    onComicClick = { pathWord ->
+                        navController.navigate(Screen.Detail.createRoute(pathWord))
+                    }
+                )
+            }
 
-                composable(Screen.Favorites.route) {
-                    FavoritesScreen(
-                        onComicClick = { pathWord ->
-                            navController.navigate(Screen.Detail.createRoute(pathWord))
-                        }
-                    )
-                }
+            composable(Screen.Favorites.route) {
+                FavoritesScreen(
+                    onComicClick = { pathWord ->
+                        navController.navigate(Screen.Detail.createRoute(pathWord))
+                    }
+                )
             }
         }
     }

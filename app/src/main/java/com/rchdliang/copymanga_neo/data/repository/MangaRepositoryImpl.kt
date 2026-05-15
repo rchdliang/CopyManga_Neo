@@ -2,7 +2,7 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
@@ -57,18 +57,26 @@ class MangaRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
-    
-    override suspend fun getComicDetail(pathWord: String): Result<ComicDetailDto> {
+
+    override suspend fun getComicDetail(pathWord: String): Result<ComicDetailResult> {
         return try {
             val response = apiService.getComicDetail(pathWord)
-            if (response.isSuccessful && response.body()?.code == 200) {
-                response.body()?.results?.let {
+            val body = response.body()
+            if (response.isSuccessful && body?.code == 200) {
+                body.results.let {
                     Result.success(it)
-                } ?: Result.failure(Exception("漫画详情为空"))
+                }
             } else {
-                Result.failure(Exception(response.body()?.message ?: "获取漫画详情失败"))
+                val errorCode = body?.code ?: response.code()
+                val errorMessage = body?.message ?: response.message()
+                android.util.Log.e(
+                    "MangaRepository",
+                    "获取详情失败: Code=$errorCode, Message=$errorMessage"
+                )
+                Result.failure(Exception(errorMessage))
             }
         } catch (e: Exception) {
+            android.util.Log.e("MangaRepository", "获取详情异常: ${e.message}", e)
             Result.failure(e)
         }
     }

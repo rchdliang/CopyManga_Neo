@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.CopyManga_Neo" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.CopyManga_Neo" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- 导航栏透明，确保手势提示线背景在小窗模式下也是透明的 -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
 </resources>

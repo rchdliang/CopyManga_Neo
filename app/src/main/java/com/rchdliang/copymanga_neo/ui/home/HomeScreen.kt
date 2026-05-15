@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -45,7 +46,11 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
         when {
             uiState.isLoading && uiState.recComicList.isEmpty() -> {
                 LoadingIndicator(modifier = Modifier.align(Alignment.Center))
@@ -61,14 +66,14 @@ fun HomeScreen(
             else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+//                    contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     // 推荐漫画
                     if (uiState.recComicList.isNotEmpty()) {
                         item {
                             Text(
                                 text = "漫画推荐",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                             ComicGrid(
@@ -84,7 +89,7 @@ fun HomeScreen(
                         item {
                             Text(
                                 text = "热门更新",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                             ComicGrid(
@@ -100,7 +105,7 @@ fun HomeScreen(
                         item {
                             Text(
                                 text = "最新上架",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                             ComicGrid(
@@ -116,7 +121,7 @@ fun HomeScreen(
                         item {
                             Text(
                                 text = "完结漫画",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                             ComicGrid(

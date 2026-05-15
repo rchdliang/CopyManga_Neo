@@ -2,42 +2,56 @@ package com.rchdliang.copymanga_neo.di
 
 import okhttp3.Interceptor
 import okhttp3.Response
-import java.util.UUID
 
 /**
  * 请求头拦截器
- * 模拟真实 iOS 浏览器请求，避免被网站反盗版机制封禁
+ * 模拟已知可用的第三方客户端 Header，绕过反盗版 Code 210 限制
  */
 class HeadersInterceptor : Interceptor {
 
-    // 模拟 iOS Safari/Edge 浏览器 User-Agent
-    private val userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) " +
-            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 " +
-            "Safari/604.1 Edg/146.0.0.0"
-
-    // 生成随机设备 ID，用于标识唯一设备
-    private val deviceId = UUID.randomUUID().toString()
+    // 抓包自正常运行的第三方客户端的 User-Agent
+    private val userAgent =
+        "Mozilla/5.0 (Linux; Android 16; 24018RPACC Build/BP2A.250605.031.A3; wv) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.137 Safari/537.36"
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
 
-        // 只对 www 域名添加 Referer 和 Origin（API 域名不需要）
-        val isWwwDomain = original.url.host.contains("www.2026copy.com")
-
         val requestBuilder = original.newBuilder()
-            // 基础请求头
+            // 基础标识
             .header("User-Agent", userAgent)
-            .header("Accept", "application/json, text/plain, */*")
-            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-//            .header("Accept-Encoding", "gzip, deflate, br, zstd")
-            .header("X-Device-ID", deviceId)
-            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
 
-        // 仅对 www 域名添加 Referer 和 Origin
-        if (isWwwDomain) {
-            requestBuilder
-                .header("Origin", "https://www.2026copy.com")
-                .header("Referer", "https://www.2026copy.com/h5")
+            // 业务关键 Header
+            .header("version", "2026.04.30")
+            .header("platform", "1")
+            .header("region", "1")
+            .header("webp", "1")
+            // 注意：第三方客户端请求中包含此 Header，可能是校验点
+            .header("Content-Encoding", "gzip, compress, br")
+
+            // 客户端环境模拟 (WebView)
+            .header("sec-ch-ua-platform", "\"Android\"")
+            .header(
+                "sec-ch-ua",
+                "\"Android WebView\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\""
+            )
+            .header("sec-ch-ua-mobile", "?0")
+            .header("X-Requested-With", "com.copymanga.app")
+
+            // 跨域相关
+            .header("Origin", "https://2026copy.com")
+            .header("Sec-Fetch-Site", "cross-site")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Dest", "empty")
+
+        // 注意：Referer 也可以根据需要添加，通常指向详情页或首页
+        if (original.url.encodedPath.contains("comic2")) {
+            val pathWord = original.url.pathSegments.lastOrNull() ?: ""
+            requestBuilder.header("Referer", "https://www.copy20.com/comic/$pathWord")
+        } else {
+            requestBuilder.header("Referer", "https://www.copy20.com/")
         }
 
         return chain.proceed(requestBuilder.build())

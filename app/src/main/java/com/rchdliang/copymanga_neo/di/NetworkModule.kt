@@ -24,10 +24,10 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // 主域名（用于网页请求）
-    private const val WWW_BASE_URL = "https://www.2026copy.com/"
+    // 主域名（用于网页请求和 Origin）
+    private const val WWW_BASE_URL = "https://www.copy20.com/"
 
-    // API 域名（从系统 API 获取，此处为默认值）
+    // API 域名
     private const val API_BASE_URL = "https://api.2026copy.com/"
     
     private const val TIMEOUT_SECONDS = 30L
@@ -35,6 +35,19 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
+        // 配置日志拦截器，使用自定义 Logger 确保在 Logcat 中清晰显示
+        val loggingInterceptor = HttpLoggingInterceptor { message ->
+            // 使用 "OkHttp" 作为标签，方便在 Logcat 中过滤
+            // 如果日志过长，Log.d 可能会截断，但通常 BODY 级别是必需的
+            android.util.Log.d("OkHttp", message)
+        }.apply {
+            level = if (com.rchdliang.copymanga_neo.BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
+        }
+
         return OkHttpClient.Builder()
             // 1. 添加请求头拦截器（模拟真实浏览器）
             .addInterceptor(HeadersInterceptor())
@@ -42,17 +55,8 @@ object NetworkModule {
             // 2. 添加 Cookie 管理（匿名模式）
             .cookieJar(AnonymousCookieJar())
 
-            // 3. 添加日志拦截器（仅 DEBUG 模式）
-            .addInterceptor { chain ->
-                val logging = HttpLoggingInterceptor().apply {
-                    level = if (com.rchdliang.copymanga_neo.BuildConfig.DEBUG) {
-                        HttpLoggingInterceptor.Level.BODY
-                    } else {
-                        HttpLoggingInterceptor.Level.NONE
-                    }
-                }
-                logging.intercept(chain)
-            }
+            // 3. 添加日志拦截器
+            .addInterceptor(loggingInterceptor)
 
             // 4. 连接池配置
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))

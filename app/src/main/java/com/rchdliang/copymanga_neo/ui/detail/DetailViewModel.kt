@@ -40,7 +40,7 @@ class DetailViewModel @Inject constructor(
             mangaRepository.getComicDetail(pathWord).fold(
                 onSuccess = { detail ->
                     _uiState.value = _uiState.value.copy(
-                        comicDetail = detail,
+                        comicDetail = detail.comicDetail,
                         isLoading = false
                     )
                     loadChapters(pathWord)

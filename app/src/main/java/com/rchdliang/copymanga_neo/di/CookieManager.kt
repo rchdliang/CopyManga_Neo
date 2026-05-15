@@ -14,23 +14,22 @@ class AnonymousCookieJar : CookieJar {
     // Cookie 存储，按域名分组
     private val cookieStore = ConcurrentHashMap<String, List<Cookie>>()
 
-    // 需要持久化的 Cookie 名称
-    private val essentialCookies = setOf("csrftoken", "webp")
-    private val analyticsCookies = setOf("_ga", "_gid", "_ga_SS4LL7K6CL")
-
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        // 只保存必要的 Cookie
-        val filtered = cookies.filter {
-            it.name in essentialCookies || it.name in analyticsCookies
-        }
-
-        if (filtered.isNotEmpty()) {
-            cookieStore[url.host] = filtered
+        // 保存所有返回的 Cookie，帮助排查反盗版校验问题
+        cookieStore[url.host] = cookies
+        cookies.forEach {
+            android.util.Log.v("CookieJar", "Save from ${url.host}: ${it.name}=${it.value}")
         }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        // 返回该域名下存储的 Cookie
-        return cookieStore[url.host] ?: emptyList()
+        val cookies = cookieStore[url.host] ?: emptyList()
+        if (cookies.isNotEmpty()) {
+            android.util.Log.v(
+                "CookieJar",
+                "Load for ${url.host}: ${cookies.joinToString("; ") { "${it.name}=${it.value}" }}"
+            )
+        }
+        return cookies
     }
 }

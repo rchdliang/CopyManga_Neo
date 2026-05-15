@@ -37,23 +37,21 @@ interface MangaApiService {
     /**
      * 获取漫画详情
      * @param pathWord 漫画路径标识
-     * @param timestamp 时间戳，防止缓存
      */
-    @GET("api/v3/comic/{pathWord}")
+    @GET("api/v3/comic2/{pathWord}?platform=1&_update=true")
     suspend fun getComicDetail(
         @Path("pathWord") pathWord: String,
-        @Query("_t") timestamp: Long = System.currentTimeMillis()
+//        @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<ComicDetailResponse>
     
     /**
      * 获取漫画章节列表
      * @param pathWord 漫画路径标识
-     * @param timestamp 时间戳，防止缓存
      */
     @GET("api/v3/comic/{pathWord}/group/default/chapters")
     suspend fun getChapters(
         @Path("pathWord") pathWord: String,
-        @Query("_t") timestamp: Long = System.currentTimeMillis()
+//        @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<ChapterListResponse>
     
     /**

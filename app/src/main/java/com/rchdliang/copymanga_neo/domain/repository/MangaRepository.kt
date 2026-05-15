@@ -1,7 +1,7 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 
@@ -17,7 +17,7 @@ interface MangaRepository {
     /**
      * 获取漫画详情
      */
-    suspend fun getComicDetail(pathWord: String): Result<ComicDetailDto>
+    suspend fun getComicDetail(pathWord: String): Result<ComicDetailResult>
     
     /**
      * 获取章节列表
