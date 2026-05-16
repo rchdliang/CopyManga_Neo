@@ -1,7 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
@@ -80,12 +80,16 @@ class MangaRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
-    
-    override suspend fun getChapters(pathWord: String): Result<List<ChapterDto>> {
+
+    override suspend fun getChapters(
+        pathWord: String,
+        offset: Int,
+        limit: Int
+    ): Result<ChapterListResult> {
         return try {
-            val response = apiService.getChapters(pathWord)
+            val response = apiService.getChapters(pathWord, limit = limit, offset = offset)
             if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list ?: emptyList())
+                Result.success(response.body()?.results ?: ChapterListResult(emptyList(), 0, 20, 0))
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取章节列表失败"))
             }

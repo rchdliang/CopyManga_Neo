@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.remote.api
 
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.FavoriteResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
 import retrofit2.Response
@@ -44,6 +45,8 @@ interface MangaApiService {
     @GET("api/v3/comic/{pathWord}/group/default/chapters")
     suspend fun getChapters(
         @Path("pathWord") pathWord: String,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
 //        @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<ChapterListResponse>
     
@@ -59,4 +62,9 @@ interface MangaApiService {
         @Query("page") page: Int = 1,
         @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<SearchResponse>
+
+    @GET("api/v3/member/collect/comics?free_type=1&limit=21&offset=0&_update=true&ordering=-datetime_modifier")
+    suspend fun getFavoriteComics(
+
+    ): Response<FavoriteResponse>//authorization: Token d01f487...
 }

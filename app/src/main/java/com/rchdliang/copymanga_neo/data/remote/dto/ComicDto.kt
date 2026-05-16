@@ -19,7 +19,7 @@ data class ComicListResult(
 )
 
 /**
- * 漫画简要信息（匹配实际 API 响应格式）
+ * 漫画简要信息
  */
 data class ComicDto(
     @SerializedName("name") val name: String,
@@ -33,9 +33,7 @@ data class ComicDto(
     @SerializedName("author_alias") val authorAlias: String?
 )
 
-/**
- * 角色信息（女性/男性角色）
- */
+
 data class CharacterDto(
     @SerializedName("name") val name: String,
     @SerializedName("path_word") val pathWord: String?

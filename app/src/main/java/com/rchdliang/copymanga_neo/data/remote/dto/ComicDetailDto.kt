@@ -51,6 +51,10 @@ data class ComicDetailDto(
     @SerializedName("channel") val channel: Int?,//Unknown Type
 )
 
+data class LastChapterDto(
+    @SerializedName("uuid") val lastChapterId: String,
+    @SerializedName("name") val lastChapterName: String,
+)
 data class DisplayAndValue(
     @SerializedName("display") val display: String,
     @SerializedName("value") val value: Int
