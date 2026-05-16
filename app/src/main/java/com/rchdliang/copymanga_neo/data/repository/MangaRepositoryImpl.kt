@@ -17,9 +17,9 @@ class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService
 ) : MangaRepository {
 
-    override suspend fun getHomeComics(page: Int, limit: Int): Result<HomeComicsData> {
+    override suspend fun getHomeComics(): Result<HomeComicsData> {
         return try {
-            val response = apiService.getHomeComics(page, limit)
+            val response = apiService.getHomeComics()
 
             if (!response.isSuccessful) {
                 val errorBody = response.errorBody()?.string()

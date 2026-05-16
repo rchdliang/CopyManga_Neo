@@ -12,7 +12,7 @@ interface MangaRepository {
     /**
      * 获取首页漫画数据
      */
-    suspend fun getHomeComics(page: Int, limit: Int): Result<HomeComicsData>
+    suspend fun getHomeComics(): Result<HomeComicsData>
     
     /**
      * 获取漫画详情

@@ -17,23 +17,16 @@ interface MangaApiService {
     
     /**
      * 获取首页推荐漫画列表
-     * @param page 页码
-     * @param limit 每页数量
+    //     * @param page 页码
+    //     * @param limit 每页数量
      * @param timestamp 时间戳，防止缓存
      */
     @GET("api/v3/h5/homeIndex")
     suspend fun getHomeComics(
-        @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 20,
+//        @Query("page") page: Int = 1,
+//        @Query("limit") limit: Int = 20,
         @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<HomeIndexResponse>
-
-    @GET("api/v3/h5/homeIndex")
-    suspend fun getHomeComicsRaw(
-        @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 20,
-        @Query("_t") timestamp: Long = System.currentTimeMillis()
-    ): Response<okhttp3.ResponseBody>
     /**
      * 获取漫画详情
      * @param pathWord 漫画路径标识

@@ -42,11 +42,7 @@ class HomeViewModel @Inject constructor(
     fun loadComics() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-
-            mangaRepository.getHomeComics(
-                page = _uiState.value.currentPage,
-                limit = 20
-            ).fold(
+            mangaRepository.getHomeComics().fold(
                 onSuccess = { homeComicsData ->
                     _uiState.value = _uiState.value.copy(
                         recComicList = homeComicsData.recComics,
@@ -70,17 +66,17 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
-
-    fun refresh() {
-        _uiState.value = _uiState.value.copy(currentPage = 1)
-        loadComics()
-    }
-
-    fun loadMore() {
-        if (_uiState.value.isLoading) return
-        _uiState.value = _uiState.value.copy(
-            currentPage = _uiState.value.currentPage + 1
-        )
-        loadComics()
-    }
+//
+//    fun refresh() {
+//        _uiState.value = _uiState.value.copy(currentPage = 1)
+//        loadComics()
+//    }
+//
+//    fun loadMore() {
+//        if (_uiState.value.isLoading) return
+//        _uiState.value = _uiState.value.copy(
+//            currentPage = _uiState.value.currentPage + 1
+//        )
+//        loadComics()
+//    }
 }
