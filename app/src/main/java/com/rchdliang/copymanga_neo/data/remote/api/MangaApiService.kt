@@ -68,10 +68,11 @@ interface MangaApiService {
         @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<SearchResponse>
 
-    @GET("api/v3/member/collect/comics?free_type=1&limit=21&offset=0&_update=true&ordering=-datetime_modifier")
+    @GET("api/v3/member/collect/comics?free_type=1&_update=true&ordering=-datetime_modifier")
     suspend fun getFavoriteComics(
-
-    ): Response<FavoriteResponse>//authorization: Token d01f487...
+        @Query("limit") limit: Int = 21,
+        @Query("offset") offset: Int = 0
+    ): Response<FavoriteResponse>//必要的请求头 authorization: Token d01f487...
 
     /**
      * 获取用户信息

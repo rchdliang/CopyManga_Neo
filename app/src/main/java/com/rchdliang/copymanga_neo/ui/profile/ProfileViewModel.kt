@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 /**
@@ -70,7 +73,7 @@ class ProfileViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         nickname = info.nickname,
                         dayDownloads = info.dayDownloads,
-                        dayDownloadsRefresh = info.dayDownloadsRefresh,
+                        dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
                         ticket = info.ticket,
                         rewardTicket = info.rewardTicket
                     )
@@ -82,6 +85,19 @@ class ProfileViewModel @Inject constructor(
                     )
                 }
             )
+        }
+    }
+
+    private fun formatRefreshTime(isoString: String?): String? {
+        if (isoString == null) return null
+        return try {
+            val zonedDateTime = ZonedDateTime.parse(isoString)
+            val localDateTime = zonedDateTime.withZoneSameInstant(ZoneId.systemDefault())
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            localDateTime.format(formatter)
+        } catch (e: Exception) {
+            android.util.Log.e("ProfileViewModel", "Format refresh time failed: ${e.message}")
+            isoString
         }
     }
 

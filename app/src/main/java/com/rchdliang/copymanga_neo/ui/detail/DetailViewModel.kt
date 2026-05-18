@@ -94,7 +94,7 @@ class DetailViewModel @Inject constructor(
 
             val allChapters = mutableListOf<ChapterDto>()
             var offset = 0
-            val limit = 20
+            val limit = 100
             var total = 0
 
             do {

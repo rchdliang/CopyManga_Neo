@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.domain.repository
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 
 /**
@@ -35,4 +36,9 @@ interface MangaRepository {
      * 搜索漫画
      */
     suspend fun searchComics(query: String, page: Int): Result<List<ComicDto>>
+
+    /**
+     * 获取书架漫画
+     */
+    suspend fun getFavoriteComics(offset: Int = 0, limit: Int = 21): Result<List<FavoritesDto>>
 }
