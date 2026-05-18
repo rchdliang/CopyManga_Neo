@@ -4,9 +4,14 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoriteResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.LoginResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
 import retrofit2.Response
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -45,7 +50,7 @@ interface MangaApiService {
     @GET("api/v3/comic/{pathWord}/group/default/chapters")
     suspend fun getChapters(
         @Path("pathWord") pathWord: String,
-        @Query("limit") limit: Int = 20,
+        @Query("limit") limit: Int = 100,
         @Query("offset") offset: Int = 0,
 //        @Query("_t") timestamp: Long = System.currentTimeMillis()
     ): Response<ChapterListResponse>
@@ -67,4 +72,30 @@ interface MangaApiService {
     suspend fun getFavoriteComics(
 
     ): Response<FavoriteResponse>//authorization: Token d01f487...
+
+    /**
+     * 获取用户信息
+     */
+    @GET("api/v3/member/info?_update=true")
+    suspend fun getMemberInfo(): Response<MemberInfoResponse>
+
+    /**
+     * 登录
+     * @param username 账号
+     * @param password Base64编码的(原始密码-盐)
+     * @param salt 随机4位盐
+     * @param source 固定值 freeSite
+     * @param version 固定值 2026.04.30
+     * @param platform 固定值 1
+     */
+    @FormUrlEncoded
+    @POST("api/v3/login")
+    suspend fun login(
+        @Field("username") username: String,
+        @Field("password") password: String,
+        @Field("salt") salt: String,
+        @Field("source") source: String = "freeSite",
+        @Field("version") version: String = "2026.04.30",
+        @Field("platform") platform: String = "1"
+    ): Response<LoginResponse>
 }

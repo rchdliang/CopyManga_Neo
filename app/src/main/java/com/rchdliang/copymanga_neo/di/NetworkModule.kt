@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.di
 
 import com.google.gson.GsonBuilder
 import com.google.gson.Strictness
+import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.api.SystemApiService
 import dagger.Module
@@ -34,7 +35,10 @@ object NetworkModule {
     
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(
+        authInterceptor: AuthInterceptor,
+        cookieJar: PersistentCookieJar
+    ): OkHttpClient {
         // 配置日志拦截器，使用自定义 Logger 确保在 Logcat 中清晰显示
         val loggingInterceptor = HttpLoggingInterceptor { message ->
             // 使用 "OkHttp" 作为标签，方便在 Logcat 中过滤
@@ -52,24 +56,36 @@ object NetworkModule {
             // 1. 添加请求头拦截器（模拟真实浏览器）
             .addInterceptor(HeadersInterceptor())
 
-            // 2. 添加 Cookie 管理（匿名模式）
-            .cookieJar(AnonymousCookieJar())
+            // 2. 添加认证拦截器（已登录时自动附加 Token header）
+            .addInterceptor(authInterceptor)
 
-            // 3. 添加日志拦截器
+            // 3. 添加 Cookie 管理（持久化存储）
+            .cookieJar(cookieJar)
+
+            // 4. 添加日志拦截器
             .addInterceptor(loggingInterceptor)
 
-            // 4. 连接池配置
+            // 5. 连接池配置
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
 
-            // 5. 重试机制
+            // 6. 重试机制
             .retryOnConnectionFailure(true)
 
-            // 6. 超时配置
+            // 7. 超时配置
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
             .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideAuthInterceptor(
+        authDataStore: AuthDataStore,
+        cookieJar: PersistentCookieJar
+    ): AuthInterceptor {
+        return AuthInterceptor(authDataStore, cookieJar)
     }
 
     /**
@@ -92,7 +108,7 @@ object NetworkModule {
     }
 
     /**
-     * 提供 MangaApiService（使用 API 域名）
+     * 提供 MangaApiService（使用 API 埃名）
      */
     @Provides
     @Singleton

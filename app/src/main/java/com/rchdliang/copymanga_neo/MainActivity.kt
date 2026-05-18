@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -35,6 +36,7 @@ import androidx.navigation.navArgument
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
+import com.rchdliang.copymanga_neo.ui.profile.ProfileScreen
 import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
 import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
@@ -78,12 +80,15 @@ sealed class Screen(val route: String) {
 
     object Search : Screen("search")
     object Favorites : Screen("favorites")
+    object Profile : Screen("profile")
 }
 
 @ExperimentalMaterial3ExpressiveApi
 @PreviewScreenSizes
 @Composable
-fun CopyManga_NeoApp() {
+fun CopyManga_NeoApp(
+    mainViewModel: MainViewModel = hiltViewModel()
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -93,6 +98,7 @@ fun CopyManga_NeoApp() {
         currentRoute == Screen.Home.route -> AppDestinations.HOME
         currentRoute == Screen.Search.route -> AppDestinations.SEARCH
         currentRoute == Screen.Favorites.route -> AppDestinations.BOOKSHELF
+        currentRoute == Screen.Profile.route -> AppDestinations.PROFILE
         currentRoute?.startsWith(Screen.Detail.route) == true -> AppDestinations.HOME
         currentRoute?.startsWith(Screen.Reader.route) == true -> AppDestinations.HOME
         else -> AppDestinations.HOME
@@ -153,7 +159,15 @@ fun CopyManga_NeoApp() {
                             }
 
                             AppDestinations.PROFILE -> {
-                                // 账号页面暂未实现，显示提示
+                                if (currentRoute != Screen.Profile.route) {
+                                    navController.navigate(Screen.Profile.route) {
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
                             }
                         }
                     }
@@ -242,6 +256,10 @@ fun CopyManga_NeoApp() {
                         navController.navigate(Screen.Detail.createRoute(pathWord))
                     }
                 )
+            }
+
+            composable(Screen.Profile.route) {
+                ProfileScreen()
             }
         }
     }
