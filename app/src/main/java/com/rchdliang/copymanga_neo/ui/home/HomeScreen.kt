@@ -1,6 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.home
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,8 +14,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
@@ -26,18 +23,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import coil.compose.AsyncImagePainter
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
  * 首页屏幕
@@ -69,21 +68,24 @@ fun HomeScreen(
             }
 
             else -> {
+                val onComicClickRemembered = remember(onComicClick) { onComicClick }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
 //                    contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     // 推荐漫画
                     if (uiState.recComicList.isNotEmpty()) {
-                        item {
+                        item(key = "rec_title", contentType = "section_title") {
                             Text(
                                 text = "漫画推荐",
                                 style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
+                        }
+                        item(key = "rec_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.recComicList,
-                                onComicClick = onComicClick,
+                                onComicClick = onComicClickRemembered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -91,15 +93,17 @@ fun HomeScreen(
 
                     // 热门漫画
                     if (uiState.hotComics.isNotEmpty()) {
-                        item {
+                        item(key = "hot_title", contentType = "section_title") {
                             Text(
                                 text = "热门更新",
                                 style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
+                        }
+                        item(key = "hot_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.hotComics,
-                                onComicClick = onComicClick,
+                                onComicClick = onComicClickRemembered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -107,15 +111,17 @@ fun HomeScreen(
 
                     // 最新漫画
                     if (uiState.newComics.isNotEmpty()) {
-                        item {
+                        item(key = "new_title", contentType = "section_title") {
                             Text(
                                 text = "最新上架",
                                 style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
+                        }
+                        item(key = "new_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.newComics,
-                                onComicClick = onComicClick,
+                                onComicClick = onComicClickRemembered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -123,15 +129,17 @@ fun HomeScreen(
 
                     // 完结漫画
                     if (uiState.finishComics.isNotEmpty()) {
-                        item {
+                        item(key = "finish_title", contentType = "section_title") {
                             Text(
                                 text = "完结漫画",
                                 style = MaterialTheme.typography.headlineMedium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
+                        }
+                        item(key = "finish_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.finishComics,
-                                onComicClick = onComicClick,
+                                onComicClick = onComicClickRemembered,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -153,7 +161,11 @@ private fun ComicGrid(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
     ) {
-        items(comics) { comic ->
+        items(
+            items = comics,
+            key = { it.pathWord },
+            contentType = { "comic_card" }
+        ) { comic ->
             ComicCard(
                 comic = comic,
                 onClick = { onComicClick(comic.pathWord) }
@@ -172,13 +184,13 @@ private fun ComicCard(
     Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        modifier = Modifier.size(width = 120.dp, height = 180.dp)
+        modifier = modifier.size(width = 120.dp, height = 180.dp)
     ) {
         Box(
             contentAlignment = Alignment.BottomStart,
             modifier = Modifier.fillMaxSize()
         ) {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = ImageRequest
                     .Builder(LocalContext.current)
                     .crossfade(true)
@@ -187,50 +199,8 @@ private fun ComicCard(
                 contentDescription = comic.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
-            ) {
-                when (painter.state) {
-                    is AsyncImagePainter.State.Loading -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            LoadingIndicator(
-                                modifier = Modifier.size(32.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+            )
 
-                    is AsyncImagePainter.State.Error -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Image(
-                                imageVector = Icons.Default.BrokenImage,
-                                contentDescription = "加载失败",
-                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
-
-                    is AsyncImagePainter.State.Success -> {
-                        Image(
-                            painter = painter,
-                            contentDescription = comic.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    else -> Unit
-                }
-            }
             Surface(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
                 modifier = Modifier.fillMaxWidth()
@@ -260,5 +230,28 @@ private fun ComicCard(
 
         }
 
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ComicCardPreview() {
+    CopyManga_NeoTheme {
+        Box(modifier = Modifier.padding(16.dp)) {
+            ComicCard(
+                comic = ComicDto(
+                    name = "示例漫画名称",
+                    pathWord = "test-comic",
+                    cover = "https://example.com/cover.jpg",
+                    author = listOf(AuthorDto("作者名称", "author-path")),
+                    females = emptyList(),
+                    males = emptyList(),
+                    theme = emptyList(),
+                    popular = 1000,
+                    authorAlias = "作者别名"
+                ),
+                onClick = {}
+            )
+        }
     }
 }

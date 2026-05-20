@@ -9,3 +9,7 @@
 .cxx
 local.properties
 .artifacts
+keystore.properties
+*.jks
+*.keystore
+/app/release
