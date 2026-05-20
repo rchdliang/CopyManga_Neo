@@ -121,7 +121,6 @@ class DetailViewModel @Inject constructor(
                     }
                 )
             } while (offset < total)
-
             _uiState.update { it.copy(isLoadingChapters = false) }
         }
     }
