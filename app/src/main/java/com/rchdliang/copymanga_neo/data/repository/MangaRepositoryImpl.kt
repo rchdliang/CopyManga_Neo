@@ -1,10 +1,13 @@
 package com.rchdliang.copymanga_neo.data.repository
 
+import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
+import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import javax.inject.Inject
@@ -63,6 +66,19 @@ class MangaRepositoryImpl @Inject constructor(
         return try {
             val response = apiService.getComicDetail(pathWord)
             val body = response.body()
+
+            val code = body?.code ?: response.code()
+            if (code == 210) {
+                val errorMsg = body?.message ?: response.errorBody()?.string()?.let {
+                    try {
+                        JsonParser.parseString(it).asJsonObject.get("message")?.asString
+                    } catch (e: Exception) {
+                        null
+                    }
+                } ?: "未知风控原因"
+                return Result.failure(Exception("code 210: $errorMsg"))
+            }
+
             if (response.isSuccessful && body?.code == 200) {
                 body.results.let {
                     Result.success(it)
@@ -93,6 +109,42 @@ class MangaRepositoryImpl @Inject constructor(
                 Result.success(response.body()?.results ?: ChapterListResult(emptyList(), 0, 20, 0))
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取章节列表失败"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getChapterContent(
+        comicPathWord: String,
+        chapterUuid: String
+    ): Result<ChapterContent> {
+        return try {
+            val response = apiService.getChapterHtml(comicPathWord, chapterUuid)
+            val code = response.code()
+            if (code == 210) {
+                val bodyString = response.errorBody()?.string() ?: ""
+                val message = try {
+                    val json = JsonParser.parseString(bodyString).asJsonObject
+                    json.get("message")?.asString ?: "未知风控原因"
+                } catch (e: Exception) {
+                    bodyString.take(100)
+                }
+                return Result.failure(Exception("code 210: $message"))
+            }
+
+            if (response.isSuccessful) {
+                val html = response.body()?.string() ?: ""
+                val result = ChapterDecryptor.decryptChapterImages(html)
+                result.onFailure {
+                    android.util.Log.e(
+                        "MangaRepository",
+                        "解析章节内容失败(${it.message})，HTML 前 500 字符: ${html.take(500)}"
+                    )
+                }
+                result
+            } else {
+                Result.failure(Exception("获取章节页面失败: ${response.code()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

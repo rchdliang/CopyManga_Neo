@@ -81,6 +81,17 @@ interface MangaApiService {
     suspend fun getMemberInfo(): Response<MemberInfoResponse>
 
     /**
+     * 获取章节内容 HTML
+     * @param comicPathWord 漫画路径标识
+     * @param chapterUuid 章节 UUID
+     */
+    @GET("https://www.2026copy.com/comic/{comicPathWord}/chapter/{chapterUuid}")
+    suspend fun getChapterHtml(
+        @Path("comicPathWord") comicPathWord: String,
+        @Path("chapterUuid") chapterUuid: String
+    ): Response<okhttp3.ResponseBody>
+
+    /**
      * 登录
      * @param username 账号
      * @param password Base64编码的(原始密码-盐)

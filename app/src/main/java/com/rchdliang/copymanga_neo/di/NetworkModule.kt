@@ -26,7 +26,7 @@ import javax.inject.Singleton
 object NetworkModule {
 
     // 主域名（用于网页请求和 Origin）
-    private const val WWW_BASE_URL = "https://www.copy20.com/"
+    private const val WWW_BASE_URL = "https://www.2026copy.com/"
 
     // API 域名
     private const val API_BASE_URL = "https://api.2026copy.com/"

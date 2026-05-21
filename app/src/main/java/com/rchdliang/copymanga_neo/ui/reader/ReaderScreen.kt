@@ -1,128 +1,226 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
-import androidx.compose.foundation.layout.Arrangement
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 
 /**
  * 阅读器屏幕
- * 显示章节图片列表
+ * 显示章节图片列表，支持左右翻页和跨章节跳转
  */
 @Composable
 fun ReaderScreen(
     chapterPathWord: String,
     comicPathWord: String,
     chapterName: String,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    viewModel: ReaderViewModel = hiltViewModel()
 ) {
-    // TODO: 实现 ViewModel 加载章节图片
-    // 基础版本：显示占位内容
-    var isLoading by remember { mutableStateOf(true) }
-    var images by remember { mutableStateOf(emptyList<String>()) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // 沉浸式全屏逻辑可以在 Activity 中处理，或者在这里简单控制 UI 显示
+    var showOverlay by remember { mutableStateOf(true) }
 
     LaunchedEffect(chapterPathWord) {
-        // TODO: 从 ViewModel 加载图片
-        // 模拟加载
-        isLoading = false
-        images = emptyList()
+        viewModel.loadChapter(comicPathWord, chapterPathWord)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        when {
-            isLoading -> {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-
-            errorMessage != null -> {
-                Text(
-                    text = "加载失败：$errorMessage",
-                    modifier = Modifier.align(Alignment.Center)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable { showOverlay = !showOverlay }
+    ) {
+        when (val state = uiState) {
+            is ReaderUiState.Loading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.White
                 )
             }
 
-            images.isEmpty() -> {
-                // 基础版本：显示提示信息
-                Column(
+            is ReaderUiState.Error -> {
+                Text(
+                    text = "加载失败：${state.message}",
+                    color = Color.White,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .padding(16.dp),
+                        .padding(16.dp)
+                )
+            }
+
+            is ReaderUiState.RiskControl -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    Icon(
+                        imageVector = Icons.Default.Block,
+                        contentDescription = "风控",
+                        tint = Color.White,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "章节：$chapterName",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        text = "触发风控",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "图片加载功能待实现",
-                        fontSize = 14.sp
+                        text = state.reason,
+                        color = Color.LightGray,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
                     )
                 }
             }
 
-            else -> {
-                // 显示图片列表
-                ImageList(
-                    images = images,
-                    chapterName = chapterName
-                )
+            is ReaderUiState.Success -> {
+                val images = state.content.imageUrls
+                val pagerState = rememberPagerState(pageCount = { images.size })
+
+                // 边界滑动跳转逻辑
+                var lastOverscrollTime by remember { mutableLongStateOf(0L) }
+
+                LaunchedEffect(pagerState) {
+                    snapshotFlow { pagerState.currentPageOffsetFraction }
+                        .collect { offset ->
+                            val currentTime = System.currentTimeMillis()
+                            // 检测右侧越界（去下一章）
+                            if (pagerState.currentPage == images.size - 1 && offset > 0.1f) {
+                                if (state.content.nextUuid == null) {
+                                    if (currentTime - lastOverscrollTime > 2000) {
+                                        Toast.makeText(
+                                            context,
+                                            "已经是最后一章了",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        lastOverscrollTime = currentTime
+                                    }
+                                } else {
+                                    if (currentTime - lastOverscrollTime < 1000 && lastOverscrollTime != 0L) {
+                                        viewModel.loadNextChapter()
+                                        lastOverscrollTime = 0L
+                                    } else if (currentTime - lastOverscrollTime > 2000) {
+                                        Toast.makeText(
+                                            context,
+                                            "本章已完，再次滑动进入下一章",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        lastOverscrollTime = currentTime
+                                    }
+                                }
+                            }
+                            // 检测左侧越界（去上一章）
+                            else if (pagerState.currentPage == 0 && offset < -0.1f) {
+                                if (state.content.prevUuid == null) {
+                                    if (currentTime - lastOverscrollTime > 2000) {
+                                        Toast.makeText(
+                                            context,
+                                            "已经是第一章了",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        lastOverscrollTime = currentTime
+                                    }
+                                } else {
+                                    if (currentTime - lastOverscrollTime < 1000 && lastOverscrollTime != 0L) {
+                                        viewModel.loadPrevChapter()
+                                        lastOverscrollTime = 0L
+                                    } else if (currentTime - lastOverscrollTime > 2000) {
+                                        Toast.makeText(
+                                            context,
+                                            "再次滑动返回上一章",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        lastOverscrollTime = currentTime
+                                    }
+                                }
+                            }
+                        }
+                }
+
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = 1
+                ) { page ->
+                    AsyncImage(
+                        model = images[page],
+                        contentDescription = "第 ${page + 1} 页",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                // 顶部 Overlay
+                if (showOverlay) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .statusBarsPadding()
+                            .padding(16.dp)
+                            .align(Alignment.TopCenter)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = chapterName,
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "${pagerState.currentPage + 1} / ${images.size}",
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
             }
-        }
-    }
-}
-
-@Composable
-private fun ImageList(
-    images: List<String>,
-    chapterName: String,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Text(
-                text = chapterName,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-            )
-        }
-
-        items(images) { imageUrl ->
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = "章节图片",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

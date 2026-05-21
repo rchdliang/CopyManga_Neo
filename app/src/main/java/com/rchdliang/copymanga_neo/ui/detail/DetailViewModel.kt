@@ -22,7 +22,8 @@ data class DetailUiState(
     val isLoading: Boolean = false,
     val isLoadingChapters: Boolean = false,
     val chapterTotal: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val riskControlReason: String? = null
 )
 
 /**
@@ -53,6 +54,7 @@ class DetailViewModel @Inject constructor(
                 it.copy(
                     isLoading = true,
                     error = null,
+                    riskControlReason = null,
                     chapters = emptyList(),
                     chapterTotal = 0
                 )
@@ -62,18 +64,28 @@ class DetailViewModel @Inject constructor(
                 onSuccess = { detail ->
                     _uiState.update {
                         it.copy(
-                        comicDetail = detail.comicDetail,
-                        isLoading = false
+                            comicDetail = detail.comicDetail,
+                            isLoading = false
                         )
                     }
                     loadAllChapters(pathWord)
                 },
                 onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                        isLoading = false,
-                        error = error.message
-                        )
+                    val message = error.message ?: "未知错误"
+                    if (message.startsWith("code 210:")) {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                riskControlReason = message
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                error = message
+                            )
+                        }
                     }
                 }
             )

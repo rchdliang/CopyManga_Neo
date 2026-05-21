@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 
 /**
@@ -31,7 +32,15 @@ interface MangaRepository {
         offset: Int = 0,
         limit: Int = 20
     ): Result<ChapterListResult>
-    
+
+    /**
+     * 获取章节具体内容（图片列表）
+     */
+    suspend fun getChapterContent(
+        comicPathWord: String,
+        chapterUuid: String
+    ): Result<ChapterContent>
+
     /**
      * 搜索漫画
      */
