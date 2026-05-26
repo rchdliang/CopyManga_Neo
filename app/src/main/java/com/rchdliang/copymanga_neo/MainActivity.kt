@@ -5,6 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Favorite
@@ -22,6 +26,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaul
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,6 +73,7 @@ class MainActivity : ComponentActivity() {
  * 导航路由定义
  */
 sealed class Screen(val route: String) {
+    object Main : Screen("main")
     object Home : Screen("home")
     object Detail : Screen("detail/{pathWord}") {
         fun createRoute(pathWord: String) = "detail/$pathWord"
@@ -90,136 +96,50 @@ fun CopyManga_NeoApp(
     mainViewModel: MainViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-
-    // 根据当前路由确定底部导航选中项
-    val currentDestination = when {
-        currentRoute == Screen.Home.route -> AppDestinations.HOME
-        currentRoute == Screen.Search.route -> AppDestinations.SEARCH
-        currentRoute == Screen.Favorites.route -> AppDestinations.BOOKSHELF
-        currentRoute == Screen.Profile.route -> AppDestinations.PROFILE
-        currentRoute?.startsWith(Screen.Detail.route) == true -> AppDestinations.HOME
-        currentRoute?.startsWith(Screen.Reader.route) == true -> AppDestinations.HOME
-        else -> AppDestinations.HOME
-    }
-
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            AppDestinations.entries.forEach { destination ->
-                item(
-                    icon = {
-                        Icon(
-                            imageVector = if (currentDestination == destination) {
-                                destination.selectedIcon
-                            } else {
-                                destination.unselectedIcon
-                            },
-                            contentDescription = destination.label
-                        )
-                    },
-                    label = { Text(destination.label) },
-                    selected = currentDestination == destination,
-                    onClick = {
-                        when (destination) {
-                            AppDestinations.HOME -> {
-                                if (currentRoute != Screen.Home.route) {
-                                    navController.navigate(Screen.Home.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            }
-
-                            AppDestinations.SEARCH -> {
-                                if (currentRoute != Screen.Search.route) {
-                                    navController.navigate(Screen.Search.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            }
-
-                            AppDestinations.BOOKSHELF -> {
-                                if (currentRoute != Screen.Favorites.route) {
-                                    navController.navigate(Screen.Favorites.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            }
-
-                            AppDestinations.PROFILE -> {
-                                if (currentRoute != Screen.Profile.route) {
-                                    navController.navigate(Screen.Profile.route) {
-                                        popUpTo(navController.graph.startDestinationId) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                )
-            }
-        },
-//        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-//        contentColor = MaterialTheme.colorScheme.surface
-        navigationSuiteColors = NavigationSuiteDefaults.colors(
-            shortNavigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationRailContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationDrawerContainerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
     ) {
         NavHost(
             navController = navController,
-            startDestination = Screen.Home.route,
+            startDestination = Screen.Main.route,
         ) {
-            composable(Screen.Home.route) {
-                HomeScreen(
-                    onComicClick = { pathWord ->
-                        navController.navigate(Screen.Detail.createRoute(pathWord))
-                    }
-                )
+            // 主界面（包含底部导航栏）
+            composable(Screen.Main.route) {
+                Box(modifier = Modifier.statusBarsPadding()) {
+                    MainScreen(
+                        onNavigateToDetail = { pathWord ->
+                            navController.navigate(Screen.Detail.createRoute(pathWord))
+                        }
+                    )
+                }
             }
 
+            // 详情页（脱离底部导航栏）
             composable(
                 route = Screen.Detail.route,
-                arguments = listOf(
-                    navArgument("pathWord") { type = NavType.StringType }
-                )
+                arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
             ) { backStackEntry ->
-                val pathWord =
-                    backStackEntry.arguments?.getString("pathWord") ?: return@composable
-                DetailScreen(
-                    pathWord = pathWord,
-                    onChapterClick = { chapterPathWord, comicPathWord, chapterName ->
-                        navController.navigate(
-                            Screen.Reader.createRoute(
-                                comicPathWord,
-                                chapterPathWord,
-                                chapterName
+                val pathWord = backStackEntry.arguments?.getString("pathWord") ?: return@composable
+                Box(modifier = Modifier.statusBarsPadding()) {
+                    DetailScreen(
+                        pathWord = pathWord,
+                        onChapterClick = { chapterPathWord, comicPathWord, chapterName ->
+                            navController.navigate(
+                                Screen.Reader.createRoute(
+                                    comicPathWord,
+                                    chapterPathWord,
+                                    chapterName
+                                )
                             )
-                        )
-                    },
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    }
-                )
+                        },
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
             }
 
+            // 阅读器（全屏，无状态栏Padding，由 ReaderScreen 自己控制系统UI）
             composable(
                 route = Screen.Reader.route,
                 arguments = listOf(
@@ -229,42 +149,98 @@ fun CopyManga_NeoApp(
                 )
             ) { backStackEntry ->
                 val comicPathWord = backStackEntry.arguments?.getString("comicPathWord") ?: ""
-                val chapterPathWord =
-                    backStackEntry.arguments?.getString("chapterPathWord") ?: ""
+                val chapterPathWord = backStackEntry.arguments?.getString("chapterPathWord") ?: ""
                 val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
                 ReaderScreen(
                     chapterPathWord = chapterPathWord,
                     comicPathWord = comicPathWord,
                     chapterName = chapterName,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    }
+                    onNavigateBack = { navController.popBackStack() }
                 )
-            }
-
-            composable(Screen.Search.route) {
-                SearchScreen(
-                    onComicClick = { pathWord ->
-                        navController.navigate(Screen.Detail.createRoute(pathWord))
-                    }
-                )
-            }
-
-            composable(Screen.Favorites.route) {
-                FavoritesScreen(
-                    onComicClick = { pathWord ->
-                        navController.navigate(Screen.Detail.createRoute(pathWord))
-                    }
-                )
-            }
-
-            composable(Screen.Profile.route) {
-                ProfileScreen()
             }
         }
     }
 }
 
+@ExperimentalMaterial3ExpressiveApi
+@Composable
+fun MainScreen(
+    onNavigateToDetail: (String) -> Unit
+) {
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    val currentDestination = when (currentRoute) {
+        Screen.Home.route -> AppDestinations.HOME
+        Screen.Search.route -> AppDestinations.SEARCH
+        Screen.Favorites.route -> AppDestinations.BOOKSHELF
+        Screen.Profile.route -> AppDestinations.PROFILE
+        else -> AppDestinations.HOME
+    }
+
+    NavigationSuiteScaffold(
+        navigationSuiteItems = {
+            AppDestinations.entries.forEach { destination ->
+                item(
+                    icon = {
+                        Icon(
+                            imageVector = if (currentDestination == destination) destination.selectedIcon else destination.unselectedIcon,
+                            contentDescription = destination.label
+                        )
+                    },
+                    label = { Text(destination.label) },
+                    selected = currentDestination == destination,
+                    onClick = {
+                        val targetRoute = when (destination) {
+                            AppDestinations.HOME -> Screen.Home.route
+                            AppDestinations.SEARCH -> Screen.Search.route
+                            AppDestinations.BOOKSHELF -> Screen.Favorites.route
+                            AppDestinations.PROFILE -> Screen.Profile.route
+                        }
+                        if (currentRoute != targetRoute) {
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    }
+                )
+            }
+        },
+        navigationSuiteColors = NavigationSuiteDefaults.colors(
+            shortNavigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationRailContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            navigationDrawerContainerColor = MaterialTheme.colorScheme.surfaceContainer
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Home.route
+            ) {
+                composable(Screen.Home.route) {
+                    HomeScreen(onComicClick = onNavigateToDetail)
+                }
+                composable(Screen.Search.route) {
+                    SearchScreen(onComicClick = onNavigateToDetail)
+                }
+                composable(Screen.Favorites.route) {
+                    FavoritesScreen(onComicClick = onNavigateToDetail)
+                }
+                composable(Screen.Profile.route) {
+                    ProfileScreen()
+                }
+            }
+        }
+    }
+}
 enum class AppDestinations(
     val label: String,
     val selectedIcon: ImageVector,

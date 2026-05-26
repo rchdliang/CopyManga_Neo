@@ -10,16 +10,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,22 +51,29 @@ fun HomeScreen(
     onComicClick: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pullToRefreshState = rememberPullToRefreshState()
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
+    PullToRefreshBox(
+        isRefreshing = uiState.isLoading,
+        onRefresh = { viewModel.loadComics() },
+        state = pullToRefreshState,
+        indicator = {
+            PullToRefreshDefaults.LoadingIndicator(
+                state = pullToRefreshState,
+                isRefreshing = uiState.isLoading,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        },
     ) {
         when {
-            uiState.isLoading && uiState.recComicList.isEmpty() -> {
-                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-
             (uiState.error != null && uiState.recComicList.isEmpty()) -> {
                 Text(
                     text = "加载失败：${uiState.error}",
                     modifier = Modifier.align(Alignment.Center)
                 )
+                TextButton(
+                    onClick = { viewModel.loadComics() }
+                ) { Text("重试") }
             }
 
             else -> {

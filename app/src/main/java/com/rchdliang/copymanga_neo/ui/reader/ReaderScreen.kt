@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -34,9 +36,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -55,8 +61,24 @@ fun ReaderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val view = LocalView.current
 
-    // 沉浸式全屏逻辑可以在 Activity 中处理，或者在这里简单控制 UI 显示
+    // 隐藏状态栏逻辑：进入阅读器时隐藏，退出时恢复
+    DisposableEffect(Unit) {
+        val window = (context as Activity).window
+        val insetsController = WindowCompat.getInsetsController(window, view)
+        // 隐藏状态栏
+        insetsController.hide(WindowInsetsCompat.Type.statusBars())
+        // 设置行为：滑动边缘临时显示状态栏，过一会儿自动隐藏
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        onDispose {
+            // 退出阅读器时恢复状态栏
+            insetsController.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
     var showOverlay by remember { mutableStateOf(true) }
 
     LaunchedEffect(chapterPathWord) {
@@ -76,7 +98,6 @@ fun ReaderScreen(
                     color = Color.White
                 )
             }
-
             is ReaderUiState.Error -> {
                 Text(
                     text = "加载失败：${state.message}",
@@ -86,7 +107,6 @@ fun ReaderScreen(
                         .padding(16.dp)
                 )
             }
-
             is ReaderUiState.RiskControl -> {
                 Column(
                     modifier = Modifier.align(Alignment.Center),
@@ -114,14 +134,12 @@ fun ReaderScreen(
                     )
                 }
             }
-
             is ReaderUiState.Success -> {
                 val images = state.content.imageUrls
                 val pagerState = rememberPagerState(pageCount = { images.size })
 
                 // 边界滑动跳转逻辑
                 var lastOverscrollTime by remember { mutableLongStateOf(0L) }
-
                 LaunchedEffect(pagerState) {
                     snapshotFlow { pagerState.currentPageOffsetFraction }
                         .collect { offset ->
@@ -182,7 +200,8 @@ fun ReaderScreen(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
-                    beyondViewportPageCount = 1
+                    beyondViewportPageCount = 2,
+//                    overscrollEffect =
                 ) { page ->
                     AsyncImage(
                         model = images[page],
@@ -198,7 +217,7 @@ fun ReaderScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.Black.copy(alpha = 0.6f))
-                            .statusBarsPadding()
+                            .statusBarsPadding() // 状态栏隐藏时，此 padding 自动为 0；滑出状态栏时，自动留出空间
                             .padding(16.dp)
                             .align(Alignment.TopCenter)
                     ) {
@@ -213,7 +232,7 @@ fun ReaderScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${pagerState.currentPage + 1} / ${images.size}",
+                                text = "${pagerState.currentPage + 1} /${images.size}",
                                 color = Color.White,
                                 fontSize = 14.sp
                             )

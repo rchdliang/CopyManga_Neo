@@ -80,7 +80,7 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-release-apk
+          name: CopyManga_Neo-${{ github.ref_name }}-android-release-apk
           path: |
             **/build/outputs/apk/**/release/*.apk
           if-no-files-found: error
