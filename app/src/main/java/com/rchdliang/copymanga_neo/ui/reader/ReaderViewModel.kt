@@ -44,11 +44,15 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun loadPrevChapter() {
+        android.util.Log.i("ReaderViewModel", "entering -> loadPrevChapter()")
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
+            android.util.Log.i("ReaderViewModel", "ReaderUiState: Success")
             val prevUuid = currentState.content.prevUuid
+            android.util.Log.i("ReaderViewModel", currentState.content.toString())
             if (prevUuid != null) {
                 loadChapter(currentComicPathWord, prevUuid)
+                android.util.Log.i("ReaderViewModel", "Loading Prev Chapter")
             }
         }
     }
@@ -59,6 +63,7 @@ class ReaderViewModel @Inject constructor(
             val nextUuid = currentState.content.nextUuid
             if (nextUuid != null) {
                 loadChapter(currentComicPathWord, nextUuid)
+                android.util.Log.i("ReaderViewModel", "Loading Next Chapter")
             }
         }
     }

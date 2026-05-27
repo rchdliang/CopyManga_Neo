@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.data.remote.util
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import java.util.regex.Pattern
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
@@ -17,9 +16,10 @@ object ChapterDecryptor {
     private val gson = Gson()
 
     /**
-     * 从 HTML 源码中提取 cct 和 contentKey 并解密得到图片列表，同时提取上下章节 UUID
+     * 从 HTML 源码中提取 cct 和 contentKey 并解密得到图片列表
+     * 上下章节 UUID 由上层（Repository）从章节列表 API 获取
      */
-    fun decryptChapterImages(html: String): Result<ChapterContent> {
+    fun decryptChapterImages(html: String): Result<List<String>> {
         try {
             val cct = extractVariable(html, "cct")
             val contentKey = extractVariable(html, "contentKey")
@@ -49,10 +49,7 @@ object ChapterDecryptor {
                 return Result.failure(Exception(msg))
             }
 
-            val prevUuid = extractChapterUuid(html, "上一章")
-            val nextUuid = extractChapterUuid(html, "下一章")
-
-            return Result.success(ChapterContent(imageUrls, prevUuid, nextUuid))
+            return Result.success(imageUrls)
         } catch (e: Exception) {
             logError("Error decrypting chapter images", e)
             return Result.failure(e)
@@ -81,15 +78,6 @@ object ChapterDecryptor {
         return if (matcher.find()) matcher.group(1) else null
     }
 
-    /**
-     * 提取上下章节 UUID
-     */
-    private fun extractChapterUuid(html: String, text: String): String? {
-        val pattern =
-            Pattern.compile("<a[^>]+href=\"[^\"]*/chapter/([a-f0-9-]+)\"[^>]*>\\s*$text\\s*</a>")
-        val matcher = pattern.matcher(html)
-        return if (matcher.find()) matcher.group(1) else null
-    }
 
     /**
      * AES/CBC/PKCS7 解密逻辑

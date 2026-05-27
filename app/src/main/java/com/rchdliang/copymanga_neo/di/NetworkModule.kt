@@ -30,8 +30,8 @@ object NetworkModule {
 
     // API 域名
     private const val API_BASE_URL = "https://api.2026copy.com/"
-    
-    private const val TIMEOUT_SECONDS = 30L
+
+    private const val TIMEOUT_SECONDS = 10L
     
     @Provides
     @Singleton
@@ -45,11 +45,12 @@ object NetworkModule {
             // 如果日志过长，Log.d 可能会截断，但通常 BODY 级别是必需的
             android.util.Log.d("OkHttp", message)
         }.apply {
-            level = if (com.rchdliang.copymanga_neo.BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
+            HttpLoggingInterceptor.Level.NONE
+//            level = if (com.rchdliang.copymanga_neo.BuildConfig.DEBUG) {
+//                HttpLoggingInterceptor.Level.BODY
+//            } else {
+//                HttpLoggingInterceptor.Level.NONE
+//            }
         }
 
         return OkHttpClient.Builder()

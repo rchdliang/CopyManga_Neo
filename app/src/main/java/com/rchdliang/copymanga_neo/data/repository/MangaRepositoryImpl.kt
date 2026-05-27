@@ -106,6 +106,7 @@ class MangaRepositoryImpl @Inject constructor(
         return try {
             val response = apiService.getChapters(pathWord, limit = limit, offset = offset)
             if (response.isSuccessful && response.body()?.code == 200) {
+//                android.util.Log.i("MangaRepositoryImpl", "Chapter[0]=" + response.body()!!.results.component1()[0].toString())
                 Result.success(response.body()?.results ?: ChapterListResult(emptyList(), 0, 20, 0))
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取章节列表失败"))
@@ -120,6 +121,25 @@ class MangaRepositoryImpl @Inject constructor(
         chapterUuid: String
     ): Result<ChapterContent> {
         return try {
+            // 先从章节列表 API 获取上下章 UUID（结构化数据，比 HTML 解析可靠）
+            var prevUuid: String? = null
+            var nextUuid: String? = null
+            try {
+                val chaptersResult = getChapters(comicPathWord, limit = 500)
+                chaptersResult.onSuccess { chapterList ->
+                    val currentChapter = chapterList.list.find { it.uuid == chapterUuid }
+                    if (currentChapter != null) {
+                        prevUuid = currentChapter.prevChapter
+                        nextUuid = currentChapter.nextChapter
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    "MangaRepository",
+                    "获取章节列表失败，上下章跳转将不可用: ${e.message}"
+                )
+            }
+
             val response = apiService.getChapterHtml(comicPathWord, chapterUuid)
             val code = response.code()
             if (code == 210) {
@@ -136,13 +156,20 @@ class MangaRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 val html = response.body()?.string() ?: ""
                 val result = ChapterDecryptor.decryptChapterImages(html)
-                result.onFailure {
-                    android.util.Log.e(
-                        "MangaRepository",
-                        "解析章节内容失败(${it.message})，HTML 前 500 字符: ${html.take(500)}"
-                    )
-                }
                 result
+                    .onSuccess { imageUrls ->
+                        android.util.Log.i(
+                            "MangaRepository",
+                            "章节内容解析成功: ${imageUrls.size} 张图片, prev=$prevUuid, next=$nextUuid"
+                        )
+                    }
+                    .onFailure {
+                        android.util.Log.e(
+                            "MangaRepository",
+                            "解析章节内容失败(${it.message})，HTML 前 500 字符: ${html.take(500)}"
+                        )
+                    }
+                result.map { imageUrls -> ChapterContent(imageUrls, prevUuid, nextUuid) }
             } else {
                 Result.failure(Exception("获取章节页面失败: ${response.code()}"))
             }
