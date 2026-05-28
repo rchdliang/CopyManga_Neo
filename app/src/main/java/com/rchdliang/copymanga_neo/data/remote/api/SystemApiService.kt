@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.data.remote.api
 import com.google.gson.annotations.SerializedName
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.HeaderMap
 import retrofit2.http.Query
 
 /**
@@ -11,13 +12,22 @@ import retrofit2.http.Query
  */
 interface SystemApiService {
 
+    companion object {
+        /**
+         * 标记该请求不需要 Authorization。
+         */
+        @JvmStatic
+        fun noAuthHeaders(): Map<String, String> = mapOf("X-No-Auth" to "1")
+    }
+
     /**
      * 获取系统网络配置
      * @param platform 平台标识 (1=Web/H5)
      */
     @GET("api/v3/system/network21")
     suspend fun getNetworkConfig(
-        @Query("platform") platform: Int = 1
+        @Query("platform") platform: Int = 1,
+        @HeaderMap headers: Map<String, String> = noAuthHeaders()
     ): Response<NetworkConfigResponse>
 }
 
@@ -27,11 +37,18 @@ interface SystemApiService {
  */
 interface WwwApiService {
 
+    companion object {
+        @JvmStatic
+        fun noAuthHeaders(): Map<String, String> = mapOf("X-No-Auth" to "1")
+    }
+
     /**
      * 获取 H5 页面（用于建立 cookies）
      */
     @GET("h5")
-    suspend fun getH5Page(): Response<okhttp3.ResponseBody>
+    suspend fun getH5Page(
+        @HeaderMap headers: Map<String, String> = noAuthHeaders()
+    ): Response<okhttp3.ResponseBody>
 }
 
 /**

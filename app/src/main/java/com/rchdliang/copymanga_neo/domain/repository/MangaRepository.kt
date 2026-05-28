@@ -24,21 +24,25 @@ interface MangaRepository {
     /**
      * 获取章节列表（单页）
      * @param pathWord 漫画路径标识
+     * @param group 分组（不同汉化组）
      * @param offset 偏移量
      * @param limit 每页数量
      */
     suspend fun getChapters(
         pathWord: String,
+        group: String = "default",
         offset: Int = 0,
         limit: Int = 20
     ): Result<ChapterListResult>
 
     /**
      * 获取章节具体内容（图片列表）
+     * @param group 汉化组 pathWord，用于查找前/后章 UUID
      */
     suspend fun getChapterContent(
         comicPathWord: String,
-        chapterUuid: String
+        chapterUuid: String,
+        group: String = "default"
     ): Result<ChapterContent>
 
     /**

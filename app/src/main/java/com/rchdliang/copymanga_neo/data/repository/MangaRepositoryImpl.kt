@@ -100,11 +100,12 @@ class MangaRepositoryImpl @Inject constructor(
 
     override suspend fun getChapters(
         pathWord: String,
+        group: String,
         offset: Int,
         limit: Int
     ): Result<ChapterListResult> {
         return try {
-            val response = apiService.getChapters(pathWord, limit = limit, offset = offset)
+            val response = apiService.getChapters(pathWord, group, limit = limit, offset = offset)
             if (response.isSuccessful && response.body()?.code == 200) {
 //                android.util.Log.i("MangaRepositoryImpl", "Chapter[0]=" + response.body()!!.results.component1()[0].toString())
                 Result.success(response.body()?.results ?: ChapterListResult(emptyList(), 0, 20, 0))
@@ -118,14 +119,15 @@ class MangaRepositoryImpl @Inject constructor(
 
     override suspend fun getChapterContent(
         comicPathWord: String,
-        chapterUuid: String
+        chapterUuid: String,
+        group: String
     ): Result<ChapterContent> {
         return try {
             // 先从章节列表 API 获取上下章 UUID（结构化数据，比 HTML 解析可靠）
             var prevUuid: String? = null
             var nextUuid: String? = null
             try {
-                val chaptersResult = getChapters(comicPathWord, limit = 500)
+                val chaptersResult = getChapters(comicPathWord, group = group, limit = 500)
                 chaptersResult.onSuccess { chapterList ->
                     val currentChapter = chapterList.list.find { it.uuid == chapterUuid }
                     if (currentChapter != null) {

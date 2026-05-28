@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
 
 /**
  * 漫画详情屏幕
@@ -58,7 +62,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 fun DetailScreen(
     pathWord: String,
     viewModel: DetailViewModel = hiltViewModel(),
-    onChapterClick: (String, String, String) -> Unit,
+    onChapterClick: (String, String, String, String) -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -117,7 +121,10 @@ fun DetailScreen(
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
                     chapters = uiState.chapters,
+                    groups = uiState.groups,
+                    selectedGroup = uiState.selectedGroup,
                     onChapterClick = onChapterClick,
+                    onGroupSelect = { viewModel.selectGroup(it) },
                     onNavigateBack = onNavigateBack,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -131,7 +138,10 @@ fun DetailScreen(
 private fun DetailContent(
     comicDetail: ComicDetailDto,
     chapters: List<ChapterDto>,
-    onChapterClick: (String, String, String) -> Unit,
+    groups: List<GroupsDto>,
+    selectedGroup: String,
+    onChapterClick: (String, String, String, String) -> Unit,
+    onGroupSelect: (String) -> Unit,
     onNavigateBack: () -> Unit = {},
     modifier: Modifier
 ) {
@@ -257,13 +267,55 @@ private fun DetailContent(
             }
         }
 
+        // 汉化组选择器（仅有多组时显示）
+        if (groups.size > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                groups.forEach { group ->
+                    FilterChip(
+                        selected = selectedGroup == group.pathWord,
+                        onClick = { onGroupSelect(group.pathWord) },
+                        label = {
+                            Text(
+                                text = group.name,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
+            }
+        }
+
         // 章节列表标题
-        Text(
-            text = "章节列表",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "章节列表",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (groups.isNotEmpty()) {
+                val currentGroup = groups.find { it.pathWord == selectedGroup }
+                if (currentGroup != null) {
+                    Text(
+                        text = "${currentGroup.name}（共${currentGroup.total}话）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
 
         // 下半部分：章节网格
         LazyVerticalGrid(
@@ -276,7 +328,14 @@ private fun DetailContent(
             items(chapters) { chapter ->
                 ChapterItem(
                     chapter = chapter,
-                    onClick = { onChapterClick(chapter.uuid, comicDetail.pathWord, chapter.name) }
+                    onClick = {
+                        onChapterClick(
+                            chapter.uuid,
+                            comicDetail.pathWord,
+                            chapter.name,
+                            chapter.groupPathWord ?: "default"
+                        )
+                    }
                 )
             }
         }

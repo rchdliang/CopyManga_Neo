@@ -79,9 +79,15 @@ sealed class Screen(val route: String) {
         fun createRoute(pathWord: String) = "detail/$pathWord"
     }
 
-    object Reader : Screen("reader/{comicPathWord}/{chapterPathWord}/{chapterName}") {
-        fun createRoute(comicPathWord: String, chapterPathWord: String, chapterName: String) =
-            "reader/$comicPathWord/$chapterPathWord/${chapterName.replace("/", "_")}"
+    object Reader :
+        Screen("reader/{comicPathWord}/{chapterPathWord}/{chapterName}/{groupPathWord}") {
+        fun createRoute(
+            comicPathWord: String,
+            chapterPathWord: String,
+            chapterName: String,
+            groupPathWord: String = "default"
+        ) =
+            "reader/$comicPathWord/$chapterPathWord/${chapterName.replace("/", "_")}/$groupPathWord"
     }
 
     object Search : Screen("search")
@@ -125,12 +131,13 @@ fun CopyManga_NeoApp(
                 Box(modifier = Modifier.statusBarsPadding()) {
                     DetailScreen(
                         pathWord = pathWord,
-                        onChapterClick = { chapterPathWord, comicPathWord, chapterName ->
+                        onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
                             navController.navigate(
                                 Screen.Reader.createRoute(
                                     comicPathWord,
                                     chapterPathWord,
-                                    chapterName
+                                    chapterName,
+                                    groupPathWord
                                 )
                             )
                         },
@@ -145,16 +152,22 @@ fun CopyManga_NeoApp(
                 arguments = listOf(
                     navArgument("comicPathWord") { type = NavType.StringType },
                     navArgument("chapterPathWord") { type = NavType.StringType },
-                    navArgument("chapterName") { type = NavType.StringType }
+                    navArgument("chapterName") { type = NavType.StringType },
+                    navArgument("groupPathWord") {
+                        type = NavType.StringType; defaultValue = "default"
+                    }
                 )
             ) { backStackEntry ->
                 val comicPathWord = backStackEntry.arguments?.getString("comicPathWord") ?: ""
                 val chapterPathWord = backStackEntry.arguments?.getString("chapterPathWord") ?: ""
                 val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
+                val groupPathWord =
+                    backStackEntry.arguments?.getString("groupPathWord") ?: "default"
                 ReaderScreen(
                     chapterPathWord = chapterPathWord,
                     comicPathWord = comicPathWord,
                     chapterName = chapterName,
+                    groupPathWord = groupPathWord,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

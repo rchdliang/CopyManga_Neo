@@ -11,6 +11,8 @@ import retrofit2.Response
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.Header
+import retrofit2.http.HeaderMap
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -18,21 +20,49 @@ import retrofit2.http.Query
 /**
  * CopyManga API服务接口
  * 基于copymanga网站API结构定义
+ *
+ * 业务头（Accept / version / region / platform / webp 等）通过 @HeaderMap 管理，
+ * 调用方无需传入即可获得默认值，也可按需覆盖。
+ *
+ * Authorization 由 AuthInterceptor 自动追加（已登录时）；
+ * 需要跳过认证的接口在 @HeaderMap 中携带 "X-No-Auth" = "1" 即可。
  */
 interface MangaApiService {
-    
+
+    companion object {
+        /**
+         * 构建默认的 API 业务请求头。
+         * 返回值可直接用于 @HeaderMap 参数。
+         */
+        @JvmStatic
+        fun apiHeaders(
+            accept: String = "application/json",
+            acceptLanguage: String = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+            version: String = "2026.04.30",
+            platform: String = "1",
+            region: String = "1",
+            webp: String = "1"
+        ): Map<String, String> = mapOf(
+            "Accept" to accept,
+            "Accept-Language" to acceptLanguage,
+            "version" to version,
+            "platform" to platform,
+            "region" to region,
+            "webp" to webp
+        )
+    }
+
     /**
      * 获取首页推荐漫画列表
-    //     * @param page 页码
-    //     * @param limit 每页数量
      * @param timestamp 时间戳，防止缓存
      */
     @GET("api/v3/h5/homeIndex")
     suspend fun getHomeComics(
-//        @Query("page") page: Int = 1,
-//        @Query("limit") limit: Int = 20,
-        @Query("_t") timestamp: Long = System.currentTimeMillis()
+        @Query("_t") timestamp: Long = System.currentTimeMillis(),
+        @HeaderMap headers: Map<String, String> = apiHeaders(),
+        @Header("X-No-Auth") value: Int = 1,
     ): Response<HomeIndexResponse>
+
     /**
      * 获取漫画详情
      * @param pathWord 漫画路径标识
@@ -40,21 +70,22 @@ interface MangaApiService {
     @GET("api/v3/comic2/{pathWord}?platform=1&_update=true")
     suspend fun getComicDetail(
         @Path("pathWord") pathWord: String,
-//        @Query("_t") timestamp: Long = System.currentTimeMillis()
+        @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<ComicDetailResponse>
-    
+
     /**
      * 获取漫画章节列表
      * @param pathWord 漫画路径标识
      */
-    @GET("api/v3/comic/{pathWord}/group/default/chapters")
+    @GET("api/v3/comic/{pathWord}/group/{group}/chapters")
     suspend fun getChapters(
         @Path("pathWord") pathWord: String,
+        @Path("group") group: String,
         @Query("limit") limit: Int = 100,
         @Query("offset") offset: Int = 0,
-//        @Query("_t") timestamp: Long = System.currentTimeMillis()
+        @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<ChapterListResponse>
-    
+
     /**
      * 搜索漫画
      * @param query 搜索关键词
@@ -65,20 +96,27 @@ interface MangaApiService {
     suspend fun searchComics(
         @Query("q") query: String,
         @Query("page") page: Int = 1,
-        @Query("_t") timestamp: Long = System.currentTimeMillis()
+        @Query("_t") timestamp: Long = System.currentTimeMillis(),
+        @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<SearchResponse>
 
+    /**
+     * 获取收藏漫画列表（需要登录）
+     */
     @GET("api/v3/member/collect/comics?free_type=1&_update=true&ordering=-datetime_modifier")
     suspend fun getFavoriteComics(
         @Query("limit") limit: Int = 21,
-        @Query("offset") offset: Int = 0
-    ): Response<FavoriteResponse>//必要的请求头 authorization: Token d01f487...
+        @Query("offset") offset: Int = 0,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<FavoriteResponse>
 
     /**
-     * 获取用户信息
+     * 获取用户信息（需要登录）
      */
     @GET("api/v3/member/info?_update=true")
-    suspend fun getMemberInfo(): Response<MemberInfoResponse>
+    suspend fun getMemberInfo(
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<MemberInfoResponse>
 
     /**
      * 获取章节内容 HTML
@@ -88,11 +126,12 @@ interface MangaApiService {
     @GET("https://www.2026copy.com/comic/{comicPathWord}/chapter/{chapterUuid}")
     suspend fun getChapterHtml(
         @Path("comicPathWord") comicPathWord: String,
-        @Path("chapterUuid") chapterUuid: String
+        @Path("chapterUuid") chapterUuid: String,
+        @Header("X-No-Auth") value: Int = 1,
     ): Response<okhttp3.ResponseBody>
 
     /**
-     * 登录
+     * 登录（不需要认证）
      * @param username 账号
      * @param password Base64编码的(原始密码-盐)
      * @param salt 随机4位盐
@@ -108,6 +147,7 @@ interface MangaApiService {
         @Field("salt") salt: String,
         @Field("source") source: String = "freeSite",
         @Field("version") version: String = "2026.04.30",
-        @Field("platform") platform: String = "1"
+        @Field("platform") platform: String = "1",
+        @Header("X-No-Auth") value: Int = 1,
     ): Response<LoginResponse>
 }

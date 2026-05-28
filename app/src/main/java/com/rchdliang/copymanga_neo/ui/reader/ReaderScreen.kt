@@ -66,6 +66,7 @@ fun ReaderScreen(
     chapterPathWord: String,
     comicPathWord: String,
     chapterName: String,
+    groupPathWord: String = "default",
     onNavigateBack: () -> Unit,
     viewModel: ReaderViewModel = hiltViewModel()
 ) {
@@ -92,7 +93,7 @@ fun ReaderScreen(
     var showOverlay by remember { mutableStateOf(true) }
 
     LaunchedEffect(chapterPathWord) {
-        viewModel.loadChapter(comicPathWord, chapterPathWord)
+        viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
     }
 
     Box(

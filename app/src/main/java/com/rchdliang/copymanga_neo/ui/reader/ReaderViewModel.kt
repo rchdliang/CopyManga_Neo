@@ -21,14 +21,16 @@ class ReaderViewModel @Inject constructor(
 
     private var currentComicPathWord: String = ""
     private var currentChapterUuid: String = ""
+    private var currentGroup: String = "default"
 
-    fun loadChapter(comicPathWord: String, chapterUuid: String) {
+    fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
         currentComicPathWord = comicPathWord
         currentChapterUuid = chapterUuid
+        currentGroup = group
 
         viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
-            repository.getChapterContent(comicPathWord, chapterUuid)
+            repository.getChapterContent(comicPathWord, chapterUuid, group)
                 .onSuccess { content ->
                     _uiState.value = ReaderUiState.Success(content)
                 }
@@ -51,7 +53,7 @@ class ReaderViewModel @Inject constructor(
             val prevUuid = currentState.content.prevUuid
             android.util.Log.i("ReaderViewModel", currentState.content.toString())
             if (prevUuid != null) {
-                loadChapter(currentComicPathWord, prevUuid)
+                loadChapter(currentComicPathWord, prevUuid, currentGroup)
                 android.util.Log.i("ReaderViewModel", "Loading Prev Chapter")
             }
         }
@@ -62,7 +64,7 @@ class ReaderViewModel @Inject constructor(
         if (currentState is ReaderUiState.Success) {
             val nextUuid = currentState.content.nextUuid
             if (nextUuid != null) {
-                loadChapter(currentComicPathWord, nextUuid)
+                loadChapter(currentComicPathWord, nextUuid, currentGroup)
                 android.util.Log.i("ReaderViewModel", "Loading Next Chapter")
             }
         }

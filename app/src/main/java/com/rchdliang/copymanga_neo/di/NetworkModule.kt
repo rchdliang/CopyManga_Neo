@@ -11,7 +11,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
@@ -39,19 +38,6 @@ object NetworkModule {
         authInterceptor: AuthInterceptor,
         cookieJar: PersistentCookieJar
     ): OkHttpClient {
-        // 配置日志拦截器，使用自定义 Logger 确保在 Logcat 中清晰显示
-        val loggingInterceptor = HttpLoggingInterceptor { message ->
-            // 使用 "OkHttp" 作为标签，方便在 Logcat 中过滤
-            // 如果日志过长，Log.d 可能会截断，但通常 BODY 级别是必需的
-            android.util.Log.d("OkHttp", message)
-        }.apply {
-            HttpLoggingInterceptor.Level.NONE
-//            level = if (com.rchdliang.copymanga_neo.BuildConfig.DEBUG) {
-//                HttpLoggingInterceptor.Level.BODY
-//            } else {
-//                HttpLoggingInterceptor.Level.NONE
-//            }
-        }
 
         return OkHttpClient.Builder()
             // 1. 添加请求头拦截器（模拟真实浏览器）
@@ -63,8 +49,8 @@ object NetworkModule {
             // 3. 添加 Cookie 管理（持久化存储）
             .cookieJar(cookieJar)
 
-            // 4. 添加日志拦截器
-            .addInterceptor(loggingInterceptor)
+            // 4. 添加请求日志拦截器（记录 URL / 请求头 / 状态码 / 耗时）
+            .addInterceptor(RequestLoggingInterceptor())
 
             // 5. 连接池配置
             .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))

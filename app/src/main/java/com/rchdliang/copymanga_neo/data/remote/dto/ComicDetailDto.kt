@@ -17,7 +17,9 @@ data class ComicDetailResult(
     @SerializedName("is_login") val isLogin: Boolean,
     @SerializedName("is_mobile_bind") val isMobileBind: Boolean,
     @SerializedName("is_vip") val isVip: Boolean,
-    @SerializedName("comic") val comicDetail: ComicDetailDto
+    @SerializedName("comic") val comicDetail: ComicDetailDto,
+    @SerializedName("popular") val popular: Int,
+    @SerializedName("groups") val groups: Map<String, GroupsDto>,
 )
 /**
  * 漫画详情
@@ -58,4 +60,10 @@ data class LastChapterDto(
 data class DisplayAndValue(
     @SerializedName("display") val display: String,
     @SerializedName("value") val value: Int
+)
+
+data class GroupsDto(
+    @SerializedName("path_word") val pathWord: String,
+    @SerializedName("count") val total: Int,
+    @SerializedName("name") val name: String,
 )

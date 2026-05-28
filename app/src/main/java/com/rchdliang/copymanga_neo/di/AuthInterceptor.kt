@@ -7,7 +7,8 @@ import okhttp3.Response
 
 /**
  * 认证拦截器
- * 1. 已登录状态下自动为请求添加 authorization: Token xxx header
+ * 1. 已登录状态下自动为请求添加 Authorization: Token xxx header
+ *    若请求携带 X-No-Auth 标记头，则跳过追加。
  * 2. 响应返回 401 时自动清除本地登录状态和 Cookie
  */
 class AuthInterceptor(
@@ -19,12 +20,26 @@ class AuthInterceptor(
         val token = authDataStore.getTokenSync()
         val originalRequest = chain.request()
 
-        val request = if (token != null) {
-            originalRequest.newBuilder()
-                .header("Authorization", "Token $token")
-                .build()
-        } else {
-            originalRequest
+        // 如果请求携带 X-No-Auth 标记，跳过 Authorization 追加，
+        // 并从最终发出的请求中移除该标记头。
+        val skipAuth = originalRequest.header("X-No-Auth") != null
+
+        val request = when {
+            token != null && !skipAuth -> {
+                originalRequest.newBuilder()
+                    .header("Authorization", "Token $token")
+                    .build()
+            }
+
+            skipAuth -> {
+                originalRequest.newBuilder()
+                    .removeHeader("X-No-Auth")
+                    .build()
+            }
+
+            else -> {
+                originalRequest
+            }
         }
 
         val response = chain.proceed(request)

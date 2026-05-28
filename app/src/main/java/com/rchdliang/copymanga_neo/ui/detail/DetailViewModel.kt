@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,11 @@ data class DetailUiState(
     val isLoadingChapters: Boolean = false,
     val chapterTotal: Int = 0,
     val error: String? = null,
-    val riskControlReason: String? = null
+    val riskControlReason: String? = null,
+    /** 所有汉化组分组 */
+    val groups: List<GroupsDto> = emptyList(),
+    /** 当前选中的分组 pathWord */
+    val selectedGroup: String = ""
 )
 
 /**
@@ -56,19 +61,31 @@ class DetailViewModel @Inject constructor(
                     error = null,
                     riskControlReason = null,
                     chapters = emptyList(),
-                    chapterTotal = 0
+                    chapterTotal = 0,
+                    groups = emptyList(),
+                    selectedGroup = ""
                 )
             }
 
             mangaRepository.getComicDetail(pathWord).fold(
                 onSuccess = { detail ->
+                    // 确定要使用的分组：优先默认组，否则取第一个
+                    // API 返回的是 Map<String, GroupsDto>，转为 List 供 UI 使用
+                    val groupsMap = detail.groups
+                    val defaultGroup = groupsMap["default"]
+                    val selectedGroup =
+                        defaultGroup?.pathWord ?: groupsMap.values.firstOrNull()?.pathWord
+                        ?: "default"
+
                     _uiState.update {
                         it.copy(
                             comicDetail = detail.comicDetail,
+                            groups = groupsMap.values.toList(),
+                            selectedGroup = selectedGroup,
                             isLoading = false
                         )
                     }
-                    loadAllChapters(pathWord)
+                    loadAllChapters(pathWord, selectedGroup)
                 },
                 onFailure = { error ->
                     val message = error.message ?: "未知错误"
@@ -93,6 +110,25 @@ class DetailViewModel @Inject constructor(
     }
 
     /**
+     * 切换汉化组分组并重新加载章节
+     */
+    fun selectGroup(groupPathWord: String) {
+        val pathWord = currentPathWord ?: return
+
+        // 如果已经是同一分组，跳过
+        if (_uiState.value.selectedGroup == groupPathWord) return
+
+        _uiState.update {
+            it.copy(
+                selectedGroup = groupPathWord,
+                chapters = emptyList(),
+                chapterTotal = 0
+            )
+        }
+        loadAllChapters(pathWord, groupPathWord)
+    }
+
+    /**
      * 强制刷新数据（忽略缓存，重新加载）
      */
     fun refresh(pathWord: String) {
@@ -100,7 +136,7 @@ class DetailViewModel @Inject constructor(
         loadDetail(pathWord)
     }
 
-    private fun loadAllChapters(pathWord: String) {
+    private fun loadAllChapters(pathWord: String, group: String = "default") {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingChapters = true) }
 
@@ -110,7 +146,8 @@ class DetailViewModel @Inject constructor(
             var total = 0
 
             do {
-                mangaRepository.getChapters(pathWord, offset = offset, limit = limit).fold(
+                mangaRepository.getChapters(pathWord, group = group, offset = offset, limit = limit)
+                    .fold(
                     onSuccess = { result ->
                         total = result.total
                         allChapters.addAll(result.list)

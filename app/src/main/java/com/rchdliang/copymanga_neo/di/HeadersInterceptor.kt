@@ -5,7 +5,8 @@ import okhttp3.Response
 
 /**
  * 请求头拦截器
- * 保留 CopyManga API 校验所需的业务头，移除浏览器伪装头
+ * 仅负责通用头和风控相关的浏览器模拟，业务头（version / region / platform / webp）
+ * 交由 Retrofit 的 @Header / @HeaderMap 注解管理。
  */
 class HeadersInterceptor : Interceptor {
 
@@ -36,15 +37,9 @@ class HeadersInterceptor : Interceptor {
 
         when {
             isApi -> {
-                // API 请求：模拟官方 APP
+                // API 请求：仅自动设置 User-Agent，
+                // 其余头（Accept / version / region / platform / webp）由 @HeaderMap 管理
                 requestBuilder.header("User-Agent", userAgent)
-                requestBuilder.header("Accept", "application/json")
-                requestBuilder.header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-                requestBuilder.header("X-Requested-With", "com.copymanga.app")
-                requestBuilder.header("version", "2026.04.30")
-                requestBuilder.header("platform", "1")
-                requestBuilder.header("webp", "1")
-                requestBuilder.header("region", "1")
             }
 
             isChapterHtml -> {
@@ -73,13 +68,6 @@ class HeadersInterceptor : Interceptor {
                 requestBuilder.header("Sec-Fetch-Mode", "navigate")
                 requestBuilder.header("Sec-Fetch-User", "?1")
                 requestBuilder.header("Sec-Fetch-Dest", "document")
-
-                // 移除可能干扰的 API 专用头
-                requestBuilder.removeHeader("webp")
-                requestBuilder.removeHeader("region")
-                requestBuilder.removeHeader("version")
-                requestBuilder.removeHeader("platform")
-                requestBuilder.removeHeader("X-Requested-With")
             }
 
             else -> {
@@ -89,15 +77,11 @@ class HeadersInterceptor : Interceptor {
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36 Edg/86.0.622.38"
                 )
                 requestBuilder.header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-
-                requestBuilder.removeHeader("version")
-                requestBuilder.removeHeader("platform")
-                requestBuilder.removeHeader("X-Requested-With")
             }
         }
 
-        // Cookie 处理：确保 webp=1 存在于所有相关域名的 Cookie 中
-        if (url.contains("2026copy.com")) {
+        // Cookie 处理：非 API 域名（www 等）的 Cookie 中确保 webp=1
+        if (!isApi && url.contains("2026copy.com")) {
             val existingCookie = original.header("Cookie") ?: ""
             val newCookie = when {
                 existingCookie.isBlank() -> "webp=1"
