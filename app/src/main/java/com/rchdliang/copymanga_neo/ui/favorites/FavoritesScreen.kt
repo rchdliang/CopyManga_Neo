@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -57,6 +56,7 @@ fun FavoritesScreen(
     PullToRefreshBox(
         isRefreshing = uiState.isLoading,
         onRefresh = { viewModel.loadFavorites() },
+        modifier = Modifier.fillMaxSize(),
         state = pullToRefreshState,
         indicator = {
             PullToRefreshDefaults.LoadingIndicator(
@@ -68,13 +68,17 @@ fun FavoritesScreen(
     ) {
         when {
             uiState.error != null && uiState.favorites.isEmpty() -> {
-                Text(
-                    text = uiState.error!!,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-                TextButton(
-                    onClick = { viewModel.loadFavorites() }
-                ) { Text("重试") }
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.Center)
+                        .padding(16.dp)
+                ) {
+                    Text(uiState.error!!)
+                    TextButton(
+                        onClick = { viewModel.loadFavorites() }
+                    ) { Text("重试") }
+                }
             }
 
             uiState.favorites.isEmpty() -> {
@@ -187,7 +191,7 @@ private fun FavoriteCard(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(Modifier.height(4.dp))
+//                    Spacer(Modifier.height(4.dp))
                     comic.author?.firstOrNull()?.let { author ->
                         Text(
                             text = author.name,
@@ -197,14 +201,36 @@ private fun FavoriteCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (comic.browse.chapterName.isNotEmpty()) {
-                        Text(
-                            text = "上次读到: ${comic.browse.chapterName}",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    when {
+                        comic.browse.chapterUuid.isNullOrEmpty() -> {
+                            Text(
+                                text = "还未读过",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        comic.browse.chapterUuid == comic.lastChapterId -> {
+                            Text(
+                                text = "上次读到：${comic.browse.chapterName}",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        else -> {
+                            Text(
+                                text = "有新内容：${comic.lastChapterName}",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }

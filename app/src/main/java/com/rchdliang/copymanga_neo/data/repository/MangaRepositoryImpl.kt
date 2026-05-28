@@ -6,6 +6,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
@@ -117,13 +118,36 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun trialChapterContent(
+        comicPathWord: String,
+        chapterUuid: String
+    ): Result<TrialContentResult> {
+        return try {
+            val response = apiService.getTrialContent(comicPathWord, chapterUuid)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                Result.success(response.body()!!.results)
+            } else {
+                android.util.Log.w(
+                    "MangaRepository",
+                    "试看请求失败: code=${response.code()}, msg=${response.body()?.message}"
+                )
+                Result.failure(
+                    Exception(response.body()?.message ?: "试看请求失败")
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MangaRepository", "试看请求异常: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
     override suspend fun getChapterContent(
         comicPathWord: String,
         chapterUuid: String,
         group: String
     ): Result<ChapterContent> {
         return try {
-            // 先从章节列表 API 获取上下章 UUID（结构化数据，比 HTML 解析可靠）
+            // 先从章节列表 API 获取上下章 UUID
             var prevUuid: String? = null
             var nextUuid: String? = null
             try {

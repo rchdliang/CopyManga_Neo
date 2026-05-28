@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 
@@ -36,8 +37,16 @@ interface MangaRepository {
     ): Result<ChapterListResult>
 
     /**
+     * 获取漫画前五页（用于记录阅读进度）
+     *
+     */
+    suspend fun trialChapterContent(
+        comicPathWord: String,
+        chapterUuid: String,
+    ): Result<TrialContentResult>
+    /**
      * 获取章节具体内容（图片列表）
-     * @param group 汉化组 pathWord，用于查找前/后章 UUID
+     * @param group 汉化组 pathWord
      */
     suspend fun getChapterContent(
         comicPathWord: String,

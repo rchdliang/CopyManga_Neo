@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.LoginResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResponse
 import retrofit2.Response
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -118,6 +119,15 @@ interface MangaApiService {
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<MemberInfoResponse>
 
+    /**
+     * 试看前5页（用于向云端汇报阅读进度，需认证）
+     */
+    @GET("api/v3/comic/{comicPathWord}/chapter2/{chapterUuid}?platform=1&_update=true")
+    suspend fun getTrialContent(
+        @Path("comicPathWord") comicPathWord: String,
+        @Path("chapterUuid") chapterUuid: String,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<TrialContentResponse>
     /**
      * 获取章节内容 HTML
      * @param comicPathWord 漫画路径标识

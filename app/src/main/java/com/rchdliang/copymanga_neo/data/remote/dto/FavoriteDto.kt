@@ -47,8 +47,8 @@ data class FavComicDto(
 )
 
 data class BrowseDto(
-    @SerializedName("comic_uuid") val comicUuid: String,
-    @SerializedName("path_word") val pathWord: String,
-    @SerializedName("chapter_uuid") val chapterUuid: String,
-    @SerializedName("chapter_name") val chapterName: String,
+    @SerializedName("comic_uuid") val comicUuid: String?,
+    @SerializedName("path_word") val pathWord: String?,
+    @SerializedName("chapter_uuid") val chapterUuid: String?,
+    @SerializedName("chapter_name") val chapterName: String?,
 )

@@ -29,6 +29,13 @@ class ReaderViewModel @Inject constructor(
         currentGroup = group
 
         viewModelScope.launch {
+            // 先发送试看请求，让云端记录阅读进度（失败不阻塞内容加载）
+            try {
+                repository.trialChapterContent(comicPathWord, chapterUuid)
+            } catch (_: Exception) {
+                // 忽略错误
+            }
+
             _uiState.value = ReaderUiState.Loading
             repository.getChapterContent(comicPathWord, chapterUuid, group)
                 .onSuccess { content ->
