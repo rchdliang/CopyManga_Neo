@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.remote.dto
 
+import androidx.compose.runtime.Immutable
 import com.google.gson.annotations.SerializedName
 
 /**
@@ -24,6 +25,7 @@ data class ComicDetailResult(
 /**
  * 漫画详情
  */
+@Immutable
 data class ComicDetailDto(
     @SerializedName("uuid") val uuid: String,
     @SerializedName("b_404") val b404: Boolean,
@@ -53,15 +55,18 @@ data class ComicDetailDto(
     @SerializedName("channel") val channel: Int?,//Unknown Type
 )
 
+@Immutable
 data class LastChapterDto(
     @SerializedName("uuid") val lastChapterId: String,
     @SerializedName("name") val lastChapterName: String,
 )
+
 data class DisplayAndValue(
     @SerializedName("display") val display: String,
     @SerializedName("value") val value: Int
 )
 
+@Immutable
 data class GroupsDto(
     @SerializedName("path_word") val pathWord: String,
     @SerializedName("count") val total: Int,

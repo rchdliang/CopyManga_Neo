@@ -24,4 +24,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "CopyManga_Neo"
 include(":app")
- 

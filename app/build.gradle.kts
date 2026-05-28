@@ -73,6 +73,7 @@ hilt {
 }
 
 dependencies {
+    implementation(libs.androidx.compose.runtime)
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -91,6 +92,7 @@ dependencies {
     // Hilt 依赖注入
     implementation(libs.hilt.android)
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.kotlinx.collections.immutable)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     

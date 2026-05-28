@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.remote.dto
 
+import androidx.compose.runtime.Immutable
 import com.google.gson.annotations.SerializedName
 
 /**
@@ -21,6 +22,7 @@ data class ChapterListResult(
 /**
  * 章节信息
  */
+@Immutable
 data class ChapterDto(
     @SerializedName("index") val index: Int,
     @SerializedName("uuid") val uuid: String,

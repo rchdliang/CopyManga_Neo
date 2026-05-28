@@ -7,6 +7,9 @@ import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,14 +22,14 @@ import javax.inject.Inject
  */
 data class DetailUiState(
     val comicDetail: ComicDetailDto? = null,
-    val chapters: List<ChapterDto> = emptyList(),
+    val chapters: ImmutableList<ChapterDto> = persistentListOf(),
     val isLoading: Boolean = false,
     val isLoadingChapters: Boolean = false,
     val chapterTotal: Int = 0,
     val error: String? = null,
     val riskControlReason: String? = null,
     /** 所有汉化组分组 */
-    val groups: List<GroupsDto> = emptyList(),
+    val groups: ImmutableList<GroupsDto> = persistentListOf(),
     /** 当前选中的分组 pathWord */
     val selectedGroup: String = ""
 )
@@ -60,9 +63,9 @@ class DetailViewModel @Inject constructor(
                     isLoading = true,
                     error = null,
                     riskControlReason = null,
-                    chapters = emptyList(),
+                    chapters = persistentListOf(),
                     chapterTotal = 0,
-                    groups = emptyList(),
+                    groups = persistentListOf(),
                     selectedGroup = ""
                 )
             }
@@ -80,7 +83,7 @@ class DetailViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             comicDetail = detail.comicDetail,
-                            groups = groupsMap.values.toList(),
+                            groups = groupsMap.values.toImmutableList(),
                             selectedGroup = selectedGroup,
                             isLoading = false
                         )
@@ -121,7 +124,7 @@ class DetailViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 selectedGroup = groupPathWord,
-                chapters = emptyList(),
+                chapters = persistentListOf(),
                 chapterTotal = 0
             )
         }
@@ -145,32 +148,36 @@ class DetailViewModel @Inject constructor(
             val limit = 100
             var total = 0
 
+            // 先收集所有章节，最后只 emit 一次
             do {
                 mangaRepository.getChapters(pathWord, group = group, offset = offset, limit = limit)
                     .fold(
-                    onSuccess = { result ->
-                        total = result.total
-                        allChapters.addAll(result.list)
-                        _uiState.update {
-                            it.copy(
-                                chapters = allChapters.toList(),
-                                chapterTotal = total
-                            )
+                        onSuccess = { result ->
+                            total = result.total
+                            allChapters.addAll(result.list)
+                            offset += result.list.size
+                            // 只更新 total 让 UI 显示"共 X 话"，不复制 chapters
+                            _uiState.update { it.copy(chapterTotal = total) }
+                        },
+                        onFailure = { error ->
+                            _uiState.update {
+                                it.copy(
+                                    error = error.message,
+                                    isLoadingChapters = false
+                                )
+                            }
+                            return@launch
                         }
-                        offset += result.list.size
-                    },
-                    onFailure = { error ->
-                        _uiState.update {
-                            it.copy(
-                                error = error.message,
-                                isLoadingChapters = false
-                            )
-                        }
-                        return@launch
-                    }
-                )
+                    )
             } while (offset < total)
-            _uiState.update { it.copy(isLoadingChapters = false) }
+
+            // 全部收集完成后，只创建一份 List
+            _uiState.update {
+                it.copy(
+                    chapters = allChapters.toImmutableList(),
+                    isLoadingChapters = false
+                )
+            }
         }
     }
 }

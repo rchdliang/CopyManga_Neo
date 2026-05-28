@@ -2,7 +2,9 @@ package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +22,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -33,16 +35,19 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +58,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
+import kotlinx.collections.immutable.ImmutableList
 
 /**
  * 漫画详情屏幕
@@ -118,13 +124,15 @@ fun DetailScreen(
             }
 
             uiState.comicDetail != null -> {
+                val stableOnGroupSelect =
+                    remember { { group: String -> viewModel.selectGroup(group) } }
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
                     chapters = uiState.chapters,
                     groups = uiState.groups,
                     selectedGroup = uiState.selectedGroup,
                     onChapterClick = onChapterClick,
-                    onGroupSelect = { viewModel.selectGroup(it) },
+                    onGroupSelect = stableOnGroupSelect,
                     onNavigateBack = onNavigateBack,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -137,14 +145,17 @@ fun DetailScreen(
 @Composable
 private fun DetailContent(
     comicDetail: ComicDetailDto,
-    chapters: List<ChapterDto>,
-    groups: List<GroupsDto>,
+    chapters: ImmutableList<ChapterDto>,
+    groups: ImmutableList<GroupsDto>,
     selectedGroup: String,
     onChapterClick: (String, String, String, String) -> Unit,
     onGroupSelect: (String) -> Unit,
     onNavigateBack: () -> Unit = {},
     modifier: Modifier
 ) {
+    val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
+    val currentOnChapterClick by rememberUpdatedState(onChapterClick)
+
     Column(
         modifier = modifier
     ) {
@@ -277,17 +288,19 @@ private fun DetailContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 groups.forEach { group ->
-                    FilterChip(
-                        selected = selectedGroup == group.pathWord,
-                        onClick = { onGroupSelect(group.pathWord) },
-                        label = {
-                            Text(
-                                text = group.name,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        },
-                        shape = RoundedCornerShape(20.dp)
-                    )
+                    key(group.pathWord) {
+                        FilterChip(
+                            selected = selectedGroup == group.pathWord,
+                            onClick = { onGroupSelect(group.pathWord) },
+                            label = {
+                                Text(
+                                    text = group.name,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            },
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -306,7 +319,8 @@ private fun DetailContent(
                 color = MaterialTheme.colorScheme.onSurface
             )
             if (groups.isNotEmpty()) {
-                val currentGroup = groups.find { it.pathWord == selectedGroup }
+                val currentGroup =
+                    remember(groups, selectedGroup) { groups.find { it.pathWord == selectedGroup } }
                 if (currentGroup != null) {
                     Text(
                         text = "${currentGroup.name}（共${currentGroup.total}话）",
@@ -319,23 +333,22 @@ private fun DetailContent(
 
         // 下半部分：章节网格
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 96.dp),
+            columns = GridCells.Adaptive(minSize = 140.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(chapters) { chapter ->
+            items(
+                count = chapters.size,
+                key = { chapters[it].uuid },
+                contentType = { "chapter" }
+            ) { index ->
+                val chapter = chapters[index]
                 ChapterItem(
                     chapter = chapter,
-                    onClick = {
-                        onChapterClick(
-                            chapter.uuid,
-                            comicDetail.pathWord,
-                            chapter.name,
-                            chapter.groupPathWord ?: "default"
-                        )
-                    }
+                    currentPathWord,
+                    currentOnChapterClick
                 )
             }
         }
@@ -345,24 +358,37 @@ private fun DetailContent(
 @Composable
 private fun ChapterItem(
     chapter: ChapterDto,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    currentPathWord: String,
+    onChapterClick: (String, String, String, String) -> Unit,
 ) {
-    OutlinedButton(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.extraLarge,
-//        colors = ButtonDefaults.buttonColors(
-//            containerColor = ,
-//            disabledContainerColor = ,
-//            contentColor = ,
-//            disabledContentColor = ,
-//        )
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minHeight = 40.dp)
+            .graphicsLayer(
+                shape = MaterialTheme.shapes.extraLarge,
+                clip = true
+            )
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    onChapterClick(
+                        chapter.uuid,
+                        currentPathWord,
+                        chapter.name,
+                        chapter.groupPathWord ?: "default"
+                    )
+                }
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Text(
             text = chapter.name,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }
