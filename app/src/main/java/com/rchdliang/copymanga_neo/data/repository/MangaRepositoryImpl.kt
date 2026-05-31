@@ -226,10 +226,24 @@ class MangaRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body()?.code == 200) {
                 Result.success(response.body()?.results?.list ?: emptyList())
             } else {
-                Result.failure(Exception(response.body()?.message ?: "获取书架失败"))
+                val message = when (val code = response.code()) {
+                    401 -> "401 未登录，请先登录账号"
+                    210 -> "210 触发风控，请稍后再试"
+                    502 -> "502 服务器错误，请稍后重试"
+                    503 -> "503 服务不可用，请稍后重试"
+                    504 -> "504 服务器响应超时"
+                    else -> response.body()?.message ?: "获取书架失败 (HTTP $code)"
+                }
+                Result.failure(Exception(message))
             }
+        } catch (e: java.net.SocketTimeoutException) {
+            Result.failure(Exception("请求超时，请检查网络后重试"))
+        } catch (e: java.net.UnknownHostException) {
+            Result.failure(Exception("无法连接服务器，请检查网络"))
+        } catch (e: javax.net.ssl.SSLException) {
+            Result.failure(Exception("网络连接异常 (SSL)，请检查网络"))
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("获取书架失败：${e.message}"))
         }
     }
 }

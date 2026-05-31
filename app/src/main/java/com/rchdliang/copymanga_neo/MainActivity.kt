@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -114,7 +115,9 @@ fun CopyManga_NeoApp(
             // 主界面（包含底部导航栏）
             composable(Screen.Main.route) {
                 Box(modifier = Modifier.statusBarsPadding()) {
+                    val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
                     MainScreen(
+                        isLoggedIn = isLoggedIn,
                         onNavigateToDetail = { pathWord ->
                             navController.navigate(Screen.Detail.createRoute(pathWord))
                         }
@@ -178,6 +181,7 @@ fun CopyManga_NeoApp(
 @ExperimentalMaterial3ExpressiveApi
 @Composable
 fun MainScreen(
+    isLoggedIn: Boolean,
     onNavigateToDetail: (String) -> Unit
 ) {
     val navController = rememberNavController()
@@ -208,7 +212,10 @@ fun MainScreen(
                         val targetRoute = when (destination) {
                             AppDestinations.HOME -> Screen.Home.route
                             AppDestinations.SEARCH -> Screen.Search.route
-                            AppDestinations.BOOKSHELF -> Screen.Favorites.route
+                            AppDestinations.BOOKSHELF -> {
+                                if (!isLoggedIn) Screen.Profile.route
+                                else Screen.Favorites.route
+                            }
                             AppDestinations.PROFILE -> Screen.Profile.route
                         }
                         if (currentRoute != targetRoute) {
@@ -245,7 +252,16 @@ fun MainScreen(
                     SearchScreen(onComicClick = onNavigateToDetail)
                 }
                 composable(Screen.Favorites.route) {
-                    FavoritesScreen(onComicClick = onNavigateToDetail)
+                    FavoritesScreen(
+                        onComicClick = onNavigateToDetail,
+                        onNavigateToProfile = {
+                            navController.navigate(Screen.Profile.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
                 }
                 composable(Screen.Profile.route) {
                     ProfileScreen()

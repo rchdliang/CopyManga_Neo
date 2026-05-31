@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -56,7 +58,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -146,13 +147,17 @@ fun DetailScreen(
             uiState.comicDetail != null -> {
                 val stableOnGroupSelect =
                     remember { { group: String -> viewModel.selectGroup(group) } }
+                val stableOnToggleSortOrder =
+                    remember { { viewModel.toggleSortOrder() } }
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
                     chapters = uiState.chapters,
                     groups = uiState.groups,
                     selectedGroup = uiState.selectedGroup,
+                    sortAscending = uiState.sortAscending,
                     onChapterClick = onChapterClick,
                     onGroupSelect = stableOnGroupSelect,
+                    onToggleSortOrder = stableOnToggleSortOrder,
                     onNavigateBack = onNavigateBack,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -168,8 +173,10 @@ private fun DetailContent(
     chapters: ImmutableList<ChapterDto>,
     groups: ImmutableList<GroupsDto>,
     selectedGroup: String,
+    sortAscending: Boolean,
     onChapterClick: (String, String, String, String) -> Unit,
     onGroupSelect: (String) -> Unit,
+    onToggleSortOrder: () -> Unit,
     onNavigateBack: () -> Unit = {},
     modifier: Modifier
 ) {
@@ -263,7 +270,7 @@ private fun DetailContent(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Person,
-                        contentDescription = "Author",
+                        contentDescription = "作者",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     comicDetail.author?.let { authors ->
@@ -386,46 +393,72 @@ private fun DetailContent(
                 val currentGroup =
                     remember(groups, selectedGroup) { groups.find { it.pathWord == selectedGroup } }
                 if (currentGroup != null) {
-                    Button(
-                        onClick = {},
-                        modifier = Modifier.defaultMinSize(
-                            minWidth = 0.dp,
-                            minHeight = 0.dp
-                        ),
-                        shape = MaterialTheme.shapes.extraSmall,
-                        colors = ButtonDefaults.buttonColors(Color.Transparent),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "共${currentGroup.total}话",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Icon(
-                            imageVector = Icons.Default.UnfoldMore,
-                            contentDescription = "排序菜单",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    var sortMenuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        Button(
+                            onClick = { sortMenuExpanded = true },
+                            modifier = Modifier.defaultMinSize(
+                                minWidth = 0.dp,
+                                minHeight = 0.dp
+                            ),
+                            shape = MaterialTheme.shapes.extraSmall,
+                            colors = ButtonDefaults.buttonColors(Color.Transparent),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "共${currentGroup.total}话",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(
+                                imageVector = Icons.Default.UnfoldMore,
+                                contentDescription = "排序菜单",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuExpanded,
+                            onDismissRequest = { sortMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("正序") },
+                                onClick = {
+                                    if (!sortAscending) onToggleSortOrder()
+                                    sortMenuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("倒序") },
+                                onClick = {
+                                    if (sortAscending) onToggleSortOrder()
+                                    sortMenuExpanded = false
+                                }
+                            )
+                        }
                     }
-
                 }
             }
+        }
+
+        val displayedChapters = remember(chapters, sortAscending) {
+            if (sortAscending) chapters else chapters.reversed()
         }
 
         // 下半部分：章节网格
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 85.dp),
+//            columns = GridCells.FixedSize(size = 85.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
         ) {
             items(
-                count = chapters.size,
-                key = { chapters[it].uuid },
+                count = displayedChapters.size,
+                key = { displayedChapters[it].uuid },
                 contentType = { "chapter" }
             ) { index ->
-                val chapter = chapters[index]
+                val chapter = displayedChapters[index]
                 ChapterItem(
                     chapter = chapter,
                     currentPathWord,
@@ -445,11 +478,8 @@ private fun ChapterItem(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .defaultMinSize(minHeight = 40.dp)
-            .graphicsLayer(
-                shape = MaterialTheme.shapes.small,
-                clip = true
-            )
+            .height(40.dp)
+            .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -721,14 +751,17 @@ private fun DetailContentPreview() {
         }
 
         var selectedGroup by remember { mutableStateOf("group-alpha") }
+        var sortAscending by remember { mutableStateOf(true) }
 
         DetailContent(
             comicDetail = mockDetail,
             chapters = mockChapters,
             groups = mockGroups,
             selectedGroup = selectedGroup,
+            sortAscending = sortAscending,
             onChapterClick = { _, _, _, _ -> },
             onGroupSelect = { selectedGroup = it },
+            onToggleSortOrder = { sortAscending = !sortAscending },
             onNavigateBack = {},
             modifier = Modifier.fillMaxSize()
         )

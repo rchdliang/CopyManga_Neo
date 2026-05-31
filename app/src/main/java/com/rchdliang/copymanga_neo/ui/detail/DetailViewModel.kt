@@ -31,7 +31,9 @@ data class DetailUiState(
     /** 所有汉化组分组 */
     val groups: ImmutableList<GroupsDto> = persistentListOf(),
     /** 当前选中的分组 pathWord */
-    val selectedGroup: String = ""
+    val selectedGroup: String = "",
+    /** 章节是否正序排列 */
+    val sortAscending: Boolean = true
 )
 
 /**
@@ -129,6 +131,10 @@ class DetailViewModel @Inject constructor(
             )
         }
         loadAllChapters(pathWord, groupPathWord)
+    }
+
+    fun toggleSortOrder() {
+        _uiState.update { it.copy(sortAscending = !it.sortAscending) }
     }
 
     /**
