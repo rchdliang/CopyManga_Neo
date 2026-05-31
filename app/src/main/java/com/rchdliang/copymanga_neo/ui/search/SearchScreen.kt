@@ -27,9 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
  * 搜索屏幕
@@ -154,3 +157,53 @@ private fun SearchComicCard(
         )
     }
 }
+
+// region Previews
+
+@Preview(showBackground = true, showSystemUi = true, name = "搜索 - 完整界面")
+@Composable
+private fun SearchScreenPreview() {
+    CopyManga_NeoTheme {
+        SearchScreen(
+            onComicClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "搜索 - 搜索结果网格")
+@Composable
+private fun SearchResultsGridPreview() {
+    CopyManga_NeoTheme {
+        val mockComics = remember {
+            (1..8).map { index ->
+                ComicDto(
+                    name = when (index) {
+                        1 -> "冒险者的旅途"
+                        2 -> "都市灵异事件簿"
+                        3 -> "剑与魔法的学院"
+                        4 -> "星际迷航记"
+                        5 -> "美食大冒险"
+                        6 -> "异世界悠闲生活"
+                        7 -> "暗影猎手"
+                        else -> "机械纪元"
+                    },
+                    pathWord = "search-comic-$index",
+                    cover = "https://example.com/cover$index.jpg",
+                    author = listOf(AuthorDto("作者$index", "author-$index")),
+                    females = emptyList(),
+                    males = emptyList(),
+                    theme = emptyList(),
+                    popular = 1000 * index,
+                    authorAlias = null
+                )
+            }
+        }
+
+        SearchResultsGrid(
+            comics = mockComics,
+            onComicClick = {}
+        )
+    }
+}
+
+// endregion

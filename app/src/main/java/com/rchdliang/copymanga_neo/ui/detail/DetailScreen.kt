@@ -23,42 +23,62 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BrokenImage
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
+import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.DisplayAndValue
 import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
+import com.rchdliang.copymanga_neo.data.remote.dto.LastChapterDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ThemeDto
+import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 
 /**
  * 漫画详情屏幕
@@ -141,7 +161,7 @@ fun DetailScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailContent(
     comicDetail: ComicDetailDto,
@@ -174,7 +194,7 @@ private fun DetailContent(
                 modifier = Modifier
                     .width(160.dp)
                     .aspectRatio(3f / 4f)
-                    .clip(MaterialTheme.shapes.extraExtraLarge)
+                    .clip(MaterialTheme.shapes.medium)
             ) {
                 when (painter.state) {
                     is AsyncImagePainter.State.Loading -> {
@@ -225,12 +245,12 @@ private fun DetailContent(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 漫画名
                 Text(
                     text = comicDetail.name,
-                    style = MaterialTheme.typography.headlineMediumEmphasized,
+                    style = MaterialTheme.typography.headlineSmallEmphasized,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis
@@ -238,7 +258,7 @@ private fun DetailContent(
 
                 // 作者名
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -249,35 +269,78 @@ private fun DetailContent(
                     comicDetail.author?.let { authors ->
                         Text(
                             text = authors.joinToString { author -> author.name },
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
+//                Row(
+//                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+//                    verticalAlignment = Alignment.CenterVertically,
+//                ) {
+//                    Icon(
+//                        imageVector = Icons.Filled.Description,
+//                        contentDescription = "Description",
+//                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+//                    )
+//                    comicDetail.brief?.let { desc ->
+//                        Text(
+//                            text = desc,
+//                            style = MaterialTheme.typography.bodyMedium,
+//                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+//                            maxLines = 10,
+//                            overflow = TextOverflow.Ellipsis
+//                        )
+//                    }
+//                }
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Description,
-                        contentDescription = "Description",
+                        imageVector = Icons.Filled.Pending,
+                        contentDescription = "状态",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    comicDetail.brief?.let { desc ->
-                        Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 10,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Text(
+                        text = if (comicDetail.status.value == 1) "已完结" else "连载中",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Update,
+                        contentDescription = "最后更新",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = comicDetail.lastUpdate ?: "--",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LocalFireDepartment,
+                        contentDescription = "热度",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = comicDetail.popular?.toCompactLocale() ?: "--",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
-
         // 汉化组选择器（仅有多组时显示）
         if (groups.size > 1) {
             Row(
@@ -285,21 +348,22 @@ private fun DetailContent(
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
             ) {
-                groups.forEach { group ->
+                groups.forEachIndexed { index, group ->
                     key(group.pathWord) {
-                        FilterChip(
-                            selected = selectedGroup == group.pathWord,
-                            onClick = { onGroupSelect(group.pathWord) },
-                            label = {
-                                Text(
-                                    text = group.name,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
+                        ToggleButton(
+                            checked = selectedGroup == group.pathWord,
+                            onCheckedChange = { if (it) onGroupSelect(group.pathWord) },
+                            shapes = when (index) {
+                                0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                                groups.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                                else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                             },
-                            shape = RoundedCornerShape(20.dp)
-                        )
+                            modifier = Modifier.semantics { role = Role.RadioButton }
+                        ) {
+                            Text(text = group.name, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
@@ -322,19 +386,36 @@ private fun DetailContent(
                 val currentGroup =
                     remember(groups, selectedGroup) { groups.find { it.pathWord == selectedGroup } }
                 if (currentGroup != null) {
-                    Text(
-                        text = "${currentGroup.name}（共${currentGroup.total}话）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Button(
+                        onClick = {},
+                        modifier = Modifier.defaultMinSize(
+                            minWidth = 0.dp,
+                            minHeight = 0.dp
+                        ),
+                        shape = MaterialTheme.shapes.extraSmall,
+                        colors = ButtonDefaults.buttonColors(Color.Transparent),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "共${currentGroup.total}话",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Icon(
+                            imageVector = Icons.Default.UnfoldMore,
+                            contentDescription = "排序菜单",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                 }
             }
         }
 
         // 下半部分：章节网格
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 140.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            columns = GridCells.Adaptive(minSize = 85.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.weight(1f)
@@ -366,7 +447,7 @@ private fun ChapterItem(
         modifier = Modifier
             .defaultMinSize(minHeight = 40.dp)
             .graphicsLayer(
-                shape = MaterialTheme.shapes.extraLarge,
+                shape = MaterialTheme.shapes.small,
                 clip = true
             )
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -382,14 +463,276 @@ private fun ChapterItem(
                     )
                 }
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
         Text(
             text = chapter.name,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }
 }
+
+// region Previews
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Preview(showBackground = true, showSystemUi = true, name = "详情页 - 完整内容")
+@Composable
+private fun DetailContentPreview() {
+    CopyManga_NeoTheme {
+        val mockDetail = remember {
+            ComicDetailDto(
+                uuid = "preview-uuid",
+                b404 = false,
+                bHidden = false,
+                ban = 0,
+                name = "示例漫画：冒险者的奇幻旅途",
+                comicAlias = "Adventure Journey",
+                pathWord = "preview-comic",
+                closeComment = false,
+                closeRoast = false,
+                freeType = DisplayAndValue("免费", 0),
+                restrict = DisplayAndValue("一般向", 0),
+                reclass = DisplayAndValue("热血", 1),
+                females = listOf("女主A", "女主B"),
+                males = listOf("男主C"),
+                clubs = listOf("汉化社"),
+                region = DisplayAndValue("日本", 1),
+                status = DisplayAndValue("连载中", 0),
+                author = listOf(
+                    AuthorDto("山田太郎", "yamada-taro"),
+                    AuthorDto("作画助手", "sakuga")
+                ),
+                theme = listOf(
+                    ThemeDto("冒险", "adventure"),
+                    ThemeDto("奇幻", "fantasy"),
+                    ThemeDto("热血", "hot-blood")
+                ),
+                parodies = null,
+                brief = "这是一个关于少年冒险者在大陆上探索未知世界的故事。他遇到了许多伙伴，经历了无数冒险，与命运抗争，最终成长为一代传奇冒险者。这个世界充满了神秘的魔法与古老的遗迹。",
+                lastUpdate = "2025-03-15",
+                cover = "https://example.com/cover_detail.jpg",
+                lastChapter = LastChapterDto("last-ch-id", "第 128 话"),
+                popular = 10000,
+                channel = null
+            )
+        }
+
+        val mockChapters = remember {
+            persistentListOf(
+                ChapterDto(
+                    1,
+                    "ch-uuid-1",
+                    25,
+                    1,
+                    1024,
+                    "第 128 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-03-15",
+                    "prev-ch-127",
+                    "next-ch-129"
+                ),
+                ChapterDto(
+                    2,
+                    "ch-uuid-2",
+                    25,
+                    2,
+                    2048,
+                    "第 127 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-03-08",
+                    "prev-ch-126",
+                    "ch-uuid-1"
+                ),
+                ChapterDto(
+                    3,
+                    "ch-uuid-3",
+                    25,
+                    3,
+                    1536,
+                    "第 126 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-03-01",
+                    "prev-ch-125",
+                    "ch-uuid-2"
+                ),
+                ChapterDto(
+                    4,
+                    "ch-uuid-4",
+                    25,
+                    4,
+                    2048,
+                    "第 125 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-02-22",
+                    "prev-ch-124",
+                    "ch-uuid-3"
+                ),
+                ChapterDto(
+                    5,
+                    "ch-uuid-5",
+                    25,
+                    5,
+                    1024,
+                    "第 124 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-02-15",
+                    "prev-ch-123",
+                    "ch-uuid-4"
+                ),
+                ChapterDto(
+                    6,
+                    "ch-uuid-6",
+                    25,
+                    6,
+                    2048,
+                    "第 123 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-02-08",
+                    "prev-ch-122",
+                    "ch-uuid-5"
+                ),
+                ChapterDto(
+                    7,
+                    "ch-uuid-7",
+                    25,
+                    7,
+                    1536,
+                    "第 122 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-02-01",
+                    "prev-ch-121",
+                    "ch-uuid-6"
+                ),
+                ChapterDto(
+                    8,
+                    "ch-uuid-8",
+                    25,
+                    8,
+                    1024,
+                    "第 121 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-01-25",
+                    "prev-ch-120",
+                    "ch-uuid-7"
+                ),
+                ChapterDto(
+                    9,
+                    "ch-uuid-9",
+                    25,
+                    9,
+                    2048,
+                    "第 120 话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-01-18",
+                    "prev-ch-119",
+                    "ch-uuid-8"
+                ),
+                ChapterDto(
+                    10,
+                    "ch-uuid-10",
+                    25,
+                    10,
+                    1536,
+                    "第119话",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-01-11",
+                    "prev-ch-118",
+                    "ch-uuid-9"
+                ),
+                ChapterDto(
+                    11,
+                    "ch-uuid-11",
+                    25,
+                    11,
+                    1536,
+                    "异常篇汉化版宣传0",
+                    "comic-id",
+                    "preview-comic",
+                    "g1",
+                    "group-alpha",
+                    0,
+                    null,
+                    "2025-01-11",
+                    "prev-ch-118",
+                    "ch-uuid-9"
+                )
+            )
+        }
+
+        val mockGroups = remember {
+            persistentListOf(
+                GroupsDto("group-alpha", 128, "Alpha 汉化组"),
+                GroupsDto("group-beta", 85, "Beta 汉化组"),
+                GroupsDto("group-gamma", 42, "Gamma 汉化组")
+            )
+        }
+
+        var selectedGroup by remember { mutableStateOf("group-alpha") }
+
+        DetailContent(
+            comicDetail = mockDetail,
+            chapters = mockChapters,
+            groups = mockGroups,
+            selectedGroup = selectedGroup,
+            onChapterClick = { _, _, _, _ -> },
+            onGroupSelect = { selectedGroup = it },
+            onNavigateBack = {},
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+// endregion

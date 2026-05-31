@@ -42,10 +42,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
  * 账号页面
@@ -288,3 +290,46 @@ private fun LoginDialog(
 private object ButtonDefaults {
     val IconSpacing = 8.dp
 }
+
+// region Previews
+
+@Preview(showBackground = true, showSystemUi = true, name = "个人页 - 已登录")
+@Composable
+private fun ProfileLoggedInPreview() {
+    CopyManga_NeoTheme {
+        LoggedInView(
+            avatar = null,
+            username = "user123",
+            nickname = "旅行者",
+            dayDownloads = 5,
+            dayDownloadsRefresh = "2025-03-16 00:00:00",
+            ticket = 100.5f,
+            onLogout = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "个人页 - 未登录")
+@Composable
+private fun ProfileNotLoggedInPreview() {
+    CopyManga_NeoTheme {
+        NotLoggedInView(
+            onLoginClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "个人页 - 登录对话框")
+@Composable
+private fun LoginDialogPreview() {
+    CopyManga_NeoTheme {
+        LoginDialog(
+            isLoading = false,
+            error = null,
+            onLogin = { _, _ -> },
+            onDismiss = {}
+        )
+    }
+}
+
+// endregion

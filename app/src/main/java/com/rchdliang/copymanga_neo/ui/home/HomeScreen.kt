@@ -242,7 +242,7 @@ private fun ComicCard(
     }
 }
 
-@Preview(showBackground = true)
+@Preview(showBackground = true, name = "漫画卡片")
 @Composable
 private fun ComicCardPreview() {
     CopyManga_NeoTheme {
@@ -260,6 +260,66 @@ private fun ComicCardPreview() {
                     authorAlias = "作者别名"
                 ),
                 onClick = {}
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "首页 - 多分区漫画行")
+@Composable
+private fun HomeSectionsPreview() {
+    CopyManga_NeoTheme {
+        val mockComics = remember {
+            (1..8).map { index ->
+                ComicDto(
+                    name = when (index) {
+                        1 -> "冒险者的奇幻旅途"
+                        2 -> "都市灵异事件簿"
+                        3 -> "剑与魔法的学院"
+                        4 -> "星际迷航记"
+                        5 -> "美食大冒险"
+                        6 -> "异世界悠闲生活"
+                        7 -> "暗影猎手传说"
+                        else -> "机械纪元2077"
+                    },
+                    pathWord = "home-comic-$index",
+                    cover = "https://example.com/cover$index.jpg",
+                    author = listOf(AuthorDto("作者$index", "author-$index")),
+                    females = emptyList(),
+                    males = emptyList(),
+                    theme = emptyList(),
+                    popular = 1000 * index,
+                    authorAlias = "别名$index"
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+        ) {
+            Text(
+                text = "漫画推荐",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+            )
+            ComicGrid(
+                comics = mockComics.take(5),
+                onComicClick = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "最新上架",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+            )
+            ComicGrid(
+                comics = mockComics.reversed(),
+                onComicClick = {},
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

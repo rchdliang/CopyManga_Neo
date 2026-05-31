@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -53,6 +54,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -90,8 +92,6 @@ fun ReaderScreen(
         }
     }
 
-    var showOverlay by remember { mutableStateOf(true) }
-
     LaunchedEffect(chapterPathWord) {
         viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
     }
@@ -100,7 +100,6 @@ fun ReaderScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable { showOverlay = !showOverlay }
     ) {
         when (val state = uiState) {
             is ReaderUiState.Loading -> {
@@ -119,142 +118,261 @@ fun ReaderScreen(
                 )
             }
             is ReaderUiState.RiskControl -> {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Block,
-                        contentDescription = "风控",
-                        tint = Color.White,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "触发风控",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = state.reason,
-                        color = Color.LightGray,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
-                }
+                ReaderRiskControlContent(
+                    reason = state.reason,
+                    modifier = Modifier.align(Alignment.Center)
+                )
             }
+
             is ReaderUiState.Success -> {
-                val images = state.content.imageUrls
-                val pagerState = rememberPagerState(pageCount = { images.size })
-                val density = LocalDensity.current
-                val threshold = remember { with(density) { 60.dp.toPx() } }
-                var lastOverscrollTime by remember { mutableLongStateOf(0L) }
-                val coroutineScope = rememberCoroutineScope()
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(pagerState) {
-                            awaitEachGesture {
-                                // 等待用户按下手指
-                                awaitFirstDown(requireUnconsumed = false)
-                                var overscrollAmount = 0f
+                ReaderSuccessContent(
+                    images = state.content.imageUrls,
+                    chapterName = chapterName,
+                    onPrevChapter = { viewModel.loadPrevChapter() },
+                    onNextChapter = { viewModel.loadNextChapter() }
+                )
+            }
+        }
+    }
+}
 
-                                do {
-                                    // 使用 Initial 阶段，在 Pager 消费事件前获取最原始的滑动数据
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    // 获取当前手势在 X 轴上的移动量
-                                    val delta = event.calculatePan().x
+/**
+ * 风险控制提示内容 — 从 [ReaderScreen] 中抽取，供实际运行和预览复用
+ */
+@Composable
+fun ReaderRiskControlContent(
+    reason: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = Icons.Default.Block,
+            contentDescription = "风控",
+            tint = Color.White,
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "触发风控",
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = reason,
+            color = Color.LightGray,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        )
+    }
+}
 
-                                    // 判断 Pager 是否完全停留在第一页或最后一页
-                                    val atStartEdge =
-                                        pagerState.currentPage == 0 && abs(pagerState.currentPageOffsetFraction) < 0.001f
-                                    val atEndEdge =
-                                        pagerState.currentPage == pagerState.pageCount - 1 && abs(
-                                            pagerState.currentPageOffsetFraction
-                                        ) < 0.001f
+/**
+ * 阅读器成功加载后的主要内容 — 翻页 pager + 顶部 overlay
+ * 从 [ReaderScreen] 中抽取，供实际运行和预览复用
+ */
+@Composable
+fun ReaderSuccessContent(
+    images: List<String>,
+    chapterName: String,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var showOverlay by remember { mutableStateOf(true) }
+    val pagerState = rememberPagerState(pageCount = { images.size })
+    val density = LocalDensity.current
+    val threshold = remember { with(density) { 60.dp.toPx() } }
+    var lastOverscrollTime by remember { mutableLongStateOf(0L) }
+    val coroutineScope = rememberCoroutineScope()
 
-                                    if (atStartEdge && (delta > 0 || overscrollAmount > 0)) {
-                                        // 在第一页向右拉伸（delta > 0），或者处于拉伸状态下向左回缩
-                                        overscrollAmount += delta
-                                        // 防止回缩过度导致数值变成负数
-                                        overscrollAmount = overscrollAmount.coerceAtLeast(0f)
-                                    } else if (atEndEdge && (delta < 0 || overscrollAmount < 0)) {
-                                        // 在最后一页向左拉伸（delta < 0），或者处于拉伸状态下向右回缩
-                                        overscrollAmount += delta
-                                        // 防止回缩过度导致数值变成正数
-                                        overscrollAmount = overscrollAmount.coerceAtMost(0f)
-                                    } else {
-                                        overscrollAmount = 0f
-                                    }
-                                } while (event.changes.any { it.pressed }) // 只要还有手指按下，就继续循环
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clickable { showOverlay = !showOverlay }
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(pagerState) {
+                    awaitEachGesture {
+                        // 等待用户按下手指
+                        awaitFirstDown(requireUnconsumed = false)
+                        var overscrollAmount = 0f
 
-                                // 手指全部抬起，判断累积的拉伸距离是否达到阈值
-                                if (overscrollAmount > threshold) {
-                                    coroutineScope.launch {
-                                        Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT)
-                                            .show()
-                                        viewModel.loadPrevChapter()
-                                    }
-                                } else if (overscrollAmount < -threshold) {
-                                    coroutineScope.launch {
-                                        Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT)
-                                            .show()
-                                        viewModel.loadNextChapter()
-                                    }
-                                }
+                        do {
+                            // 使用 Initial 阶段，在 Pager 消费事件前获取最原始的滑动数据
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            // 获取当前手势在 X 轴上的移动量
+                            val delta = event.calculatePan().x
+
+                            // 判断 Pager 是否完全停留在第一页或最后一页
+                            val atStartEdge =
+                                pagerState.currentPage == 0 && abs(pagerState.currentPageOffsetFraction) < 0.001f
+                            val atEndEdge =
+                                pagerState.currentPage == pagerState.pageCount - 1 && abs(
+                                    pagerState.currentPageOffsetFraction
+                                ) < 0.001f
+
+                            if (atStartEdge && (delta > 0 || overscrollAmount > 0)) {
+                                // 在第一页向右拉伸（delta > 0），或者处于拉伸状态下向左回缩
+                                overscrollAmount += delta
+                                // 防止回缩过度导致数值变成负数
+                                overscrollAmount = overscrollAmount.coerceAtLeast(0f)
+                            } else if (atEndEdge && (delta < 0 || overscrollAmount < 0)) {
+                                // 在最后一页向左拉伸（delta < 0），或者处于拉伸状态下向右回缩
+                                overscrollAmount += delta
+                                // 防止回缩过度导致数值变成正数
+                                overscrollAmount = overscrollAmount.coerceAtMost(0f)
+                            } else {
+                                overscrollAmount = 0f
                             }
-                        },
-                    beyondViewportPageCount = 2,
-                ) { page ->
-                    AsyncImage(
-                        model = images[page],
-                        contentDescription = "第 ${page + 1} 页",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
-                }
+                        } while (event.changes.any { it.pressed }) // 只要还有手指按下，就继续循环
 
-                // 顶部 Overlay
-                if (showOverlay) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.6f))
-                            .statusBarsPadding() // 状态栏隐藏时，此 padding 自动为 0；滑出状态栏时，自动留出空间
-                            .padding(8.dp)
-                            .align(Alignment.TopCenter)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-//                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = java.text.SimpleDateFormat(
-                                    "HH:mm",
-                                    LocalLocale.current.platformLocale
-                                )
-                                    .format(java.util.Date()),
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "${pagerState.currentPage + 1}/${images.size}",
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                text = chapterName,
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
+                        // 手指全部抬起，判断累积的拉伸距离是否达到阈值
+                        if (overscrollAmount > threshold) {
+                            coroutineScope.launch {
+                                Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT)
+                                    .show()
+                                onPrevChapter()
+                            }
+                        } else if (overscrollAmount < -threshold) {
+                            coroutineScope.launch {
+                                Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT)
+                                    .show()
+                                onNextChapter()
+                            }
                         }
                     }
+                },
+            beyondViewportPageCount = 2,
+        ) { page ->
+            AsyncImage(
+                model = images[page],
+                contentDescription = "第 ${page + 1} 页",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        }
+
+        // 顶部 Overlay
+        if (showOverlay) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .statusBarsPadding() // 状态栏隐藏时，此 padding 自动为 0；滑出状态栏时，自动留出空间
+                    .padding(8.dp)
+                    .align(Alignment.TopCenter)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = java.text.SimpleDateFormat(
+                            "HH:mm",
+                            LocalLocale.current.platformLocale
+                        )
+                            .format(java.util.Date()),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${pagerState.currentPage + 1}/${images.size}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = chapterName,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
     }
 }
+
+// region Previews
+
+@Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 加载中")
+@Composable
+private fun ReaderLoadingPreview() {
+    CopyManga_NeoTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.White
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 加载失败")
+@Composable
+private fun ReaderErrorPreview() {
+    CopyManga_NeoTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            Text(
+                text = "加载失败：网络连接超时",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(16.dp)
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 风控提示")
+@Composable
+private fun ReaderRiskControlPreview() {
+    CopyManga_NeoTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            ReaderRiskControlContent(
+                reason = "访问过于频繁，请稍后再试",
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 阅读内容")
+@Composable
+private fun ReaderSuccessContentPreview() {
+    CopyManga_NeoTheme {
+        val mockImages = remember {
+            (1..5).map { "https://devtool.tech/api/placeholder/500/700?bgColor=%23653356&fontSize=100" }
+        }
+        ReaderSuccessContent(
+            images = mockImages,
+            chapterName = "第 128 话",
+            onPrevChapter = {},
+            onNextChapter = {}
+        )
+    }
+}
+
+// endregion
