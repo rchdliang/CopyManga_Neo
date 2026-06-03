@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResult
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
@@ -73,4 +74,21 @@ interface MangaRepository {
      * 获取书架漫画
      */
     suspend fun getFavoriteComics(offset: Int = 0, limit: Int = 21): Result<List<FavoritesDto>>
+
+    /**
+     * 查询漫画收藏状态和阅读进度
+     */
+    suspend fun queryComicStatus(pathWord: String): Result<ComicQueryResult>
+
+    /**
+     * 添加漫画到书架
+     * @param comicId 漫画 String 类型 UUID
+     */
+    suspend fun addFavorite(comicId: String): Result<Unit>
+
+    /**
+     * 从书架移除漫画
+     * @param collectId 收藏的 Int 类型 ID
+     */
+    suspend fun removeFavorite(collectId: Int): Result<Unit>
 }

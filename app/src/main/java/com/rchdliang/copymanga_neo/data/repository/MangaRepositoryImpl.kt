@@ -6,6 +6,7 @@ import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResult
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
@@ -284,6 +285,56 @@ class MangaRepositoryImpl @Inject constructor(
             Result.failure(Exception("网络连接异常 (SSL)，请检查网络"))
         } catch (e: Exception) {
             Result.failure(Exception("获取书架失败：${e.message}"))
+        }
+    }
+
+    override suspend fun queryComicStatus(pathWord: String): Result<ComicQueryResult> {
+        return try {
+            val response = apiService.queryComicStatus(pathWord)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                val results = response.body()?.results
+                if (results != null) {
+                    Result.success(results)
+                } else {
+                    Result.failure(Exception("查询状态结果为空"))
+                }
+            } else {
+                Result.failure(
+                    Exception(response.body()?.message ?: "查询状态失败")
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun addFavorite(comicId: String): Result<Unit> {
+        return try {
+            val response = apiService.addFavorite(comicId)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception(response.body()?.message ?: "添加收藏失败")
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun removeFavorite(collectId: Int): Result<Unit> {
+        return try {
+            val response = apiService.removeFavorite(collectId)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception(response.body()?.message ?: "移除收藏失败")
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

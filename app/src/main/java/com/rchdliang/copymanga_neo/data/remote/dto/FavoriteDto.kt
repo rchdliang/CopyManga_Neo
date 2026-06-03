@@ -19,7 +19,7 @@ data class FavoriteResult(
 )
 
 data class FavoritesDto(
-    @SerializedName("uuid") val uuid: Int,//整形的漫画编号?似乎没什么意义
+    @SerializedName("uuid") val uuid: Int,//整形的编号，用于在书架内部标识
     @SerializedName("name") val name: String?,
     @SerializedName("b_folder") val bFolder: Boolean?,
     @SerializedName("folder_id") val folderId: Int?,
@@ -43,7 +43,7 @@ data class FavComicDto(
     @SerializedName("datetime_updated") val datetimeUpdated: String?,
     @SerializedName("last_chapter_id") val lastChapterId: String,
     @SerializedName("last_chapter_name") val lastChapterName: String,
-    @SerializedName("browse") val browse: BrowseDto,
+    @SerializedName("browse") val browse: BrowseDto?,
 )
 
 data class BrowseDto(

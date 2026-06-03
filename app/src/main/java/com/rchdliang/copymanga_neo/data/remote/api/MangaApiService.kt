@@ -3,16 +3,19 @@ package com.rchdliang.copymanga_neo.data.remote.api
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicListResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoriteResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.LoginResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.SimpleResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResponse
 import retrofit2.Response
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.HeaderMap
 import retrofit2.http.POST
@@ -175,6 +178,41 @@ interface MangaApiService {
         @Field("platform") platform: String = "1",
         @Header("X-No-Auth") value: Int = 1,
     ): Response<LoginResponse>
+
+    /**
+     * 查询漫画收藏状态与阅读进度
+     */
+    @GET("api/v3/comic2/{pathWord}/query")
+    suspend fun queryComicStatus(
+        @Path("pathWord") pathWord: String,
+        @Query("platform") platform: Int = 1,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<ComicQueryResponse>
+
+    /**
+     * 添加漫画到书架（需要登录）
+     * @param comicId 漫画 String 类型 UUID
+     */
+    @FormUrlEncoded
+    @POST("api/v3/member/collect/comics")
+    suspend fun addFavorite(
+        @Field("comic_id") comicId: String,
+        @Field("is_collect") isCollect: Int = 1,
+        @Field("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<SimpleResponse>
+
+    /**
+     * 从书架移除漫画（需要登录）
+     * @param collectId 收藏的 Int 类型 ID
+     */
+    @FormUrlEncoded
+    @HTTP(method = "DELETE", path = "api/v3/member/collect/comics", hasBody = true)
+    suspend fun removeFavorite(
+        @Field("ids[0]") collectId: Int,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<SimpleResponse>
 }
 
 enum class QueryType(val value: String) {

@@ -2,10 +2,12 @@ package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -13,13 +15,11 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * 详情页 UI 状态
- */
 data class DetailUiState(
     val comicDetail: ComicDetailDto? = null,
     val chapters: ImmutableList<ChapterDto> = persistentListOf(),
@@ -28,38 +28,37 @@ data class DetailUiState(
     val chapterTotal: Int = 0,
     val error: String? = null,
     val riskControlReason: String? = null,
-    /** 所有汉化组分组 */
     val groups: ImmutableList<GroupsDto> = persistentListOf(),
-    /** 当前选中的分组 pathWord */
     val selectedGroup: String = "",
-    /** 章节是否正序排列 */
-    val sortAscending: Boolean = true
+    val sortAscending: Boolean = true,
+    val isLoggedIn: Boolean = false,
+    val isInShelf: Boolean = false,
+    val shelfCollectId: Int? = null,
+    val browse: BrowseDto? = null,
+    val isShelfLoading: Boolean = false
 )
 
-/**
- * 漫画详情 ViewModel
- */
 @HiltViewModel
 class DetailViewModel @Inject constructor(
-    private val mangaRepository: MangaRepository
+    private val mangaRepository: MangaRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
-    // 记录当前已加载的漫画 pathWord，避免重复加载同一漫画
     private var currentPathWord: String? = null
 
     fun loadDetail(pathWord: String) {
-        // 如果已经成功加载了同一个漫画的数据，则跳过重复加载
         if (currentPathWord == pathWord && _uiState.value.comicDetail != null) {
             return
         }
 
-        // 切换了新漫画，重置缓存标识
         currentPathWord = pathWord
 
         viewModelScope.launch {
+            val isLoggedIn = userRepository.isLoggedIn().first()
+
             _uiState.update {
                 it.copy(
                     isLoading = true,
@@ -68,14 +67,16 @@ class DetailViewModel @Inject constructor(
                     chapters = persistentListOf(),
                     chapterTotal = 0,
                     groups = persistentListOf(),
-                    selectedGroup = ""
+                    selectedGroup = "",
+                    isLoggedIn = isLoggedIn,
+                    isInShelf = false,
+                    shelfCollectId = null,
+                    browse = null
                 )
             }
 
             mangaRepository.getComicDetail(pathWord).fold(
                 onSuccess = { detail ->
-                    // 确定要使用的分组：优先默认组，否则取第一个
-                    // API 返回的是 Map<String, GroupsDto>，转为 List 供 UI 使用
                     val groupsMap = detail.groups
                     val defaultGroup = groupsMap["default"]
                     val selectedGroup =
@@ -91,6 +92,7 @@ class DetailViewModel @Inject constructor(
                         )
                     }
                     loadAllChapters(pathWord, selectedGroup)
+                    loadQueryStatus(pathWord)
                 },
                 onFailure = { error ->
                     val message = error.message ?: "未知错误"
@@ -114,13 +116,25 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 切换汉化组分组并重新加载章节
-     */
+    private suspend fun loadQueryStatus(pathWord: String) {
+        if (!_uiState.value.isLoggedIn) return
+
+        mangaRepository.queryComicStatus(pathWord).fold(
+            onSuccess = { result ->
+                _uiState.update {
+                    it.copy(
+                        isInShelf = result.collect != null,
+                        shelfCollectId = result.collect,
+                        browse = result.browse
+                    )
+                }
+            },
+            onFailure = { /* 静默失败，不影响详情展示 */ }
+        )
+    }
+
     fun selectGroup(groupPathWord: String) {
         val pathWord = currentPathWord ?: return
-
-        // 如果已经是同一分组，跳过
         if (_uiState.value.selectedGroup == groupPathWord) return
 
         _uiState.update {
@@ -137,13 +151,93 @@ class DetailViewModel @Inject constructor(
         _uiState.update { it.copy(sortAscending = !it.sortAscending) }
     }
 
-//    /**
-//     * 强制刷新数据（忽略缓存，重新加载）
-//     */
-//    fun refresh(pathWord: String) {
-//        currentPathWord = null
-//        loadDetail(pathWord)
-//    }
+    fun toggleShelf() {
+        val state = _uiState.value
+        val comicDetail = state.comicDetail ?: return
+
+        if (!state.isLoggedIn) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isShelfLoading = true) }
+
+            if (state.isInShelf && state.shelfCollectId != null) {
+                mangaRepository.removeFavorite(state.shelfCollectId).fold(
+                    onSuccess = {
+                        _uiState.update {
+                            it.copy(
+                                isInShelf = false,
+                                shelfCollectId = null,
+                                isShelfLoading = false
+                            )
+                        }
+                    },
+                    onFailure = {
+                        _uiState.update { it.copy(isShelfLoading = false) }
+                    }
+                )
+            } else {
+                mangaRepository.addFavorite(comicDetail.uuid).fold(
+                    onSuccess = {
+                        val pathWord = currentPathWord ?: return@fold
+                        viewModelScope.launch {
+                            mangaRepository.queryComicStatus(pathWord).fold(
+                                onSuccess = { result ->
+                                    _uiState.update {
+                                        it.copy(
+                                            isInShelf = result.collect != null,
+                                            shelfCollectId = result.collect,
+                                            isShelfLoading = false
+                                        )
+                                    }
+                                },
+                                onFailure = {
+                                    _uiState.update {
+                                        it.copy(
+                                            isInShelf = true,
+                                            isShelfLoading = false
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    },
+                    onFailure = {
+                        _uiState.update { it.copy(isShelfLoading = false) }
+                    }
+                )
+            }
+        }
+    }
+
+    fun getStartChapter(): StartChapterInfo? {
+        val state = _uiState.value
+        val chapters = if (state.sortAscending) state.chapters else state.chapters.reversed()
+
+        val browse = state.browse
+        if (browse != null && browse.chapterUuid != null) {
+            val lastReadIndex = chapters.indexOfFirst { it.uuid == browse.chapterUuid }
+            if (lastReadIndex >= 0) {
+                val nextIndex = lastReadIndex + 1
+                if (nextIndex < chapters.size) {
+                    val next = chapters[nextIndex]
+                    return StartChapterInfo(
+                        uuid = next.uuid,
+                        name = next.name,
+                        groupPathWord = next.groupPathWord ?: "default",
+                        isContinue = true
+                    )
+                }
+            }
+        }
+
+        val first = chapters.firstOrNull() ?: return null
+        return StartChapterInfo(
+            uuid = first.uuid,
+            name = first.name,
+            groupPathWord = first.groupPathWord ?: "default",
+            isContinue = false
+        )
+    }
 
     private fun loadAllChapters(pathWord: String, group: String = "default") {
         viewModelScope.launch {
@@ -154,7 +248,6 @@ class DetailViewModel @Inject constructor(
             val limit = 100
             var total = 0
 
-            // 先收集所有章节，最后只 emit 一次
             do {
                 mangaRepository.getChapters(pathWord, group = group, offset = offset, limit = limit)
                     .fold(
@@ -162,7 +255,6 @@ class DetailViewModel @Inject constructor(
                             total = result.total
                             allChapters.addAll(result.list)
                             offset += result.list.size
-                            // 只更新 total 让 UI 显示"共 X 话"，不复制 chapters
                             _uiState.update { it.copy(chapterTotal = total) }
                         },
                         onFailure = { error ->
@@ -177,7 +269,6 @@ class DetailViewModel @Inject constructor(
                     )
             } while (offset < total)
 
-            // 全部收集完成后，只创建一份 List
             _uiState.update {
                 it.copy(
                     chapters = allChapters.toImmutableList(),
@@ -187,3 +278,10 @@ class DetailViewModel @Inject constructor(
         }
     }
 }
+
+data class StartChapterInfo(
+    val uuid: String,
+    val name: String,
+    val groupPathWord: String,
+    val isContinue: Boolean
+)

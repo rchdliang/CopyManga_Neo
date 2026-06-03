@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.detail
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,15 +19,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Person
@@ -40,8 +42,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.runtime.Composable
@@ -70,6 +74,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
+import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
 import com.rchdliang.copymanga_neo.data.remote.dto.DisplayAndValue
@@ -81,16 +86,15 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 
-/**
- * 漫画详情屏幕
- */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DetailScreen(
     pathWord: String,
     viewModel: DetailViewModel = hiltViewModel(),
     onChapterClick: (String, String, String, String) -> Unit,
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    onNavigateToProfile: () -> Unit = {},
+    onDownloadClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -101,7 +105,6 @@ fun DetailScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
     ) {
         when {
             uiState.isLoading && uiState.comicDetail == null -> {
@@ -149,16 +152,45 @@ fun DetailScreen(
                     remember { { group: String -> viewModel.selectGroup(group) } }
                 val stableOnToggleSortOrder =
                     remember { { viewModel.toggleSortOrder() } }
+                val stableOnToggleShelf = remember(uiState.isLoggedIn) {
+                    {
+                        if (uiState.isLoggedIn) {
+                            viewModel.toggleShelf()
+                        } else {
+                            onNavigateToProfile()
+                        }
+                    }
+                }
+                val stableOnStartReading = remember {
+                    {
+                        val info = viewModel.getStartChapter()
+                        if (info != null) {
+                            onChapterClick(
+                                info.uuid,
+                                uiState.comicDetail!!.pathWord,
+                                info.name,
+                                info.groupPathWord
+                            )
+                        }
+                    }
+                }
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
                     chapters = uiState.chapters,
                     groups = uiState.groups,
                     selectedGroup = uiState.selectedGroup,
                     sortAscending = uiState.sortAscending,
+                    isLoggedIn = uiState.isLoggedIn,
+                    isInShelf = uiState.isInShelf,
+                    isShelfLoading = uiState.isShelfLoading,
+                    browse = uiState.browse,
                     onChapterClick = onChapterClick,
                     onGroupSelect = stableOnGroupSelect,
                     onToggleSortOrder = stableOnToggleSortOrder,
+                    onToggleShelf = stableOnToggleShelf,
+                    onStartReading = stableOnStartReading,
                     onNavigateBack = onNavigateBack,
+                    onDownloadClick = onDownloadClick,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -174,10 +206,17 @@ private fun DetailContent(
     groups: ImmutableList<GroupsDto>,
     selectedGroup: String,
     sortAscending: Boolean,
+    isLoggedIn: Boolean,
+    isInShelf: Boolean,
+    isShelfLoading: Boolean,
+    browse: BrowseDto?,
     onChapterClick: (String, String, String, String) -> Unit,
     onGroupSelect: (String) -> Unit,
     onToggleSortOrder: () -> Unit,
+    onToggleShelf: () -> Unit,
+    onStartReading: () -> Unit,
     onNavigateBack: () -> Unit = {},
+    onDownloadClick: () -> Unit = {},
     modifier: Modifier
 ) {
     val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
@@ -186,20 +225,42 @@ private fun DetailContent(
     Column(
         modifier = modifier
     ) {
-        // 上半部分：漫画封面和信息
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onDownloadClick) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "下载",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 漫画封面（左侧）
             SubcomposeAsyncImage(
                 model = comicDetail.cover,
                 contentDescription = comicDetail.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .width(160.dp)
+                    .width(120.dp)
                     .aspectRatio(3f / 4f)
                     .clip(MaterialTheme.shapes.medium)
             ) {
@@ -229,7 +290,7 @@ private fun DetailContent(
                                 imageVector = Icons.Default.BrokenImage,
                                 contentDescription = "加载失败",
                                 colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
-                                modifier = modifier.padding(16.dp)
+                                modifier = Modifier.padding(16.dp)
                             )
                         }
                     }
@@ -239,7 +300,7 @@ private fun DetailContent(
                             painter = painter,
                             contentDescription = comicDetail.name,
                             contentScale = ContentScale.Crop,
-                            modifier = modifier
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 
@@ -247,14 +308,10 @@ private fun DetailContent(
                 }
             }
 
-            // 漫画信息（右侧）
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // 漫画名
                 Text(
                     text = comicDetail.name,
                     style = MaterialTheme.typography.headlineSmallEmphasized,
@@ -263,7 +320,6 @@ private fun DetailContent(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                // 作者名
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -329,7 +385,90 @@ private fun DetailContent(
                 }
             }
         }
-        // 汉化组选择器（仅有多组时显示）
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onToggleShelf,
+                modifier = Modifier.weight(1f),
+                enabled = !isShelfLoading
+            ) {
+                Text(
+                    text = if (isInShelf) "已在书架" else "加入书架",
+                    maxLines = 1
+                )
+            }
+            Button(
+                onClick = onStartReading,
+                modifier = Modifier.weight(1f),
+                enabled = chapters.isNotEmpty()
+            ) {
+                Text(
+                    text = if (browse != null && browse.chapterUuid != null) "继续阅读" else "开始阅读",
+                    maxLines = 1
+                )
+            }
+        }
+
+        comicDetail.theme?.let { themes ->
+            if (themes.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    themes.forEach { theme ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = theme.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        comicDetail.brief?.let { brief ->
+            var expanded by remember { mutableStateOf(false) }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .animateContentSize()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = brief,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (expanded) Int.MAX_VALUE else 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!expanded) {
+                    Text(
+                        text = "展开 ▼",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
         if (groups.size > 1) {
             Row(
                 modifier = Modifier
@@ -357,7 +496,6 @@ private fun DetailContent(
             }
         }
 
-        // 章节列表标题
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -425,10 +563,8 @@ private fun DetailContent(
             if (sortAscending) chapters else chapters.reversed()
         }
 
-        // 下半部分：章节网格
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 90.dp),
-//            columns = GridCells.FixedSize(size = 85.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -464,7 +600,6 @@ private fun ChapterItem(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-//                indication = null,
                 onClick = {
                     onChapterClick(
                         chapter.uuid,
@@ -740,9 +875,15 @@ private fun DetailContentPreview() {
             groups = mockGroups,
             selectedGroup = selectedGroup,
             sortAscending = sortAscending,
+            isLoggedIn = true,
+            isInShelf = false,
+            isShelfLoading = false,
+            browse = null,
             onChapterClick = { _, _, _, _ -> },
             onGroupSelect = { selectedGroup = it },
             onToggleSortOrder = { sortAscending = !sortAscending },
+            onToggleShelf = {},
+            onStartReading = {},
             onNavigateBack = {},
             modifier = Modifier.fillMaxSize()
         )
