@@ -247,7 +247,16 @@ fun MainScreen(
                     HomeScreen(onComicClick = onNavigateToDetail)
                 }
                 composable(Screen.Search.route) {
-                    SearchScreen(onComicClick = onNavigateToDetail)
+                    SearchScreen(
+                        onComicClick = onNavigateToDetail,
+                        onNavigateBack = {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
                 }
                 composable(Screen.Favorites.route) {
                     FavoritesScreen(

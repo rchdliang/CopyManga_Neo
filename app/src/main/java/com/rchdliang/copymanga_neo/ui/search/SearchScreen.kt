@@ -1,37 +1,63 @@
 package com.rchdliang.copymanga_neo.ui.search
 
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.Button
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -39,84 +65,202 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
  */
 @Composable
 fun SearchScreen(
-    onComicClick: (String) -> Unit
+    viewModel: SearchViewModel = hiltViewModel(),
+    onComicClick: (String) -> Unit,
+    onNavigateBack: () -> Unit = {}
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearching by remember { mutableStateOf(false) }
-    var searchResults by remember { mutableStateOf<List<ComicDto>>(emptyList()) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val uiState by viewModel.uiState.collectAsState()
+    SearchScreen(
+        uiState = uiState,
+        onQueryChange = { viewModel.updateQuery(it) },
+        onSearch = { viewModel.search(it) },
+        onClear = { viewModel.clearSearch() },
+        onQueryTypeChange = { viewModel.updateQueryType(it) },
+        onComicClick = onComicClick,
+        onNavigateBack = onNavigateBack
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    uiState: SearchUiState,
+    onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onClear: () -> Unit,
+    onQueryTypeChange: (QueryType?) -> Unit,
+    onComicClick: (String) -> Unit,
+    onNavigateBack: () -> Unit = {}
+) {
+    val searchBarState = rememberSearchBarState()
+    val textFieldState = rememberTextFieldState()
+    val scope = rememberCoroutineScope()
+    var expanded by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = expanded) {
+        expanded = false
+    }
+
+    LaunchedEffect(uiState.query) {
+        if (textFieldState.text.toString() != uiState.query) {
+            textFieldState.setTextAndPlaceCursorAtEnd(uiState.query)
+        }
+    }
+
+    LaunchedEffect(textFieldState.text.toString()) {
+        onQueryChange(textFieldState.text.toString())
+    }
+
+    val inputField = @Composable {
+        SearchBarDefaults.InputField(
+            textFieldState = textFieldState,
+            searchBarState = searchBarState,
+            onSearch = {
+                onSearch(textFieldState.text.toString())
+            },
+            placeholder = {
+                Text(modifier = Modifier.clearAndSetSemantics {}, text = "搜索漫画")
+            },
+            leadingIcon = {
+                IconButton(onClick = {
+                    if (expanded) {
+                        expanded = false
+                    } else {
+                        onNavigateBack()
+                    }
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
+            },
+            trailingIcon = {
+                Row {
+                    if (textFieldState.text.isNotEmpty()) {
+                        IconButton(onClick = {
+                            onSearch(textFieldState.text.toString())
+                        }) {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        }
+                        IconButton(onClick = {
+                            textFieldState.setTextAndPlaceCursorAtEnd("")
+                            onClear()
+                        }) {
+                            Icon(Icons.Default.Clear, contentDescription = "清除")
+                        }
+                    }
+                }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-//            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp)
     ) {
-        // 搜索框
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("搜索漫画...") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+        SearchBar(
+            inputField = inputField,
+            expanded = expanded,
+            onExpandedChange = { newExpanded ->
+                expanded = newExpanded
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {}
+
+        SearchCategorySelector(
+            selectedType = uiState.queryType,
+            onTypeSelected = onQueryTypeChange,
+            modifier = Modifier.fillMaxWidth()
         )
 
-        // 搜索按钮
-        Button(
-            onClick = {
-                isSearching = true
-                errorMessage = null
-                // TODO: 实现搜索逻辑
-                isSearching = false
-            },
-            modifier = Modifier.align(Alignment.End)
-        ) {
-            Text("搜索")
-        }
-
-        // 搜索结果显示
         Box(modifier = Modifier.fillMaxSize()) {
-            when {
-                isSearching -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
+            SearchScreenContent(
+                uiState = uiState,
+                onComicClick = onComicClick
+            )
+        }
+    }
+}
 
-                errorMessage != null -> {
-                    Text(
-                        text = "搜索失败：$errorMessage",
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SearchCategorySelector(
+    selectedType: QueryType?,
+    onTypeSelected: (QueryType?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val categories = listOf<Pair<String, QueryType?>>(
+        "全部" to null,
+        "名称" to QueryType.NAME,
+        "作者" to QueryType.AUTHOR,
+        "汉化组" to QueryType.LOCAL
+    )
 
-                searchResults.isNotEmpty() -> {
-                    SearchResultsGrid(
-                        comics = searchResults,
-                        onComicClick = onComicClick
-                    )
-                }
-
-                searchQuery.isNotEmpty() -> {
-                    Text(
-                        text = "输入关键词后点击搜索",
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
+    Row(
+        modifier = modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
+    ) {
+        categories.forEachIndexed { index, (label, queryType) ->
+            ToggleButton(
+                checked = selectedType == queryType,
+                onCheckedChange = { if (it) onTypeSelected(queryType) },
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    categories.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                modifier = Modifier.semantics { role = Role.RadioButton }
+            ) {
+                Text(text = label, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
 }
 
 @Composable
-private fun SearchResultsGrid(
+private fun SearchScreenContent(
+    uiState: SearchUiState,
+    onComicClick: (String) -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            uiState.isLoading -> {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+
+            uiState.error != null -> {
+                Text(
+                    text = "搜索失败：${uiState.error}",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+
+            uiState.searchResults.isNotEmpty() -> {
+                SearchResultsList(
+                    comics = uiState.searchResults,
+                    onComicClick = onComicClick
+                )
+            }
+
+            uiState.query.isNotEmpty() -> {
+                Text(
+                    text = "没有找到相关结果",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultsList(
     comics: List<ComicDto>,
     onComicClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+    LazyColumn(
         contentPadding = PaddingValues(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier
     ) {
@@ -135,29 +279,51 @@ private fun SearchComicCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(4.dp)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        onClick = onClick
     ) {
-        AsyncImage(
-            model = comic.cover,
-            contentDescription = comic.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(200.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = comic.name,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            AsyncImage(
+                model = comic.cover,
+                contentDescription = comic.name,
+                modifier = Modifier.height(80.dp),
+                contentScale = ContentScale.Fit,
+            )
+            Column(
+                modifier = Modifier
+                    .height(80.dp)
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = comic.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                comic.author?.let { authors ->
+                    Text(
+                        text = "作者: " + authors.joinToString { author -> author.name },
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "热度: " + (comic.popular?.toCompactLocale() ?: "--"),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
     }
 }
-
 // region Previews
 
 @Preview(showBackground = true, showSystemUi = true, name = "搜索 - 完整界面")
@@ -165,14 +331,20 @@ private fun SearchComicCard(
 private fun SearchScreenPreview() {
     CopyManga_NeoTheme {
         SearchScreen(
-            onComicClick = {}
+            uiState = SearchUiState(query = "测试"),
+            onQueryChange = {},
+            onSearch = {},
+            onClear = {},
+            onQueryTypeChange = {},
+            onComicClick = {},
+            onNavigateBack = {}
         )
     }
 }
 
-@Preview(showBackground = true, showSystemUi = true, name = "搜索 - 搜索结果网格")
+@Preview(showBackground = true, showSystemUi = true, name = "搜索 - 搜索结果列表")
 @Composable
-private fun SearchResultsGridPreview() {
+private fun SearchResultsListPreview() {
     CopyManga_NeoTheme {
         val mockComics = remember {
             (1..8).map { index ->
@@ -199,7 +371,7 @@ private fun SearchResultsGridPreview() {
             }
         }
 
-        SearchResultsGrid(
+        SearchResultsList(
             comics = mockComics,
             onComicClick = {}
         )

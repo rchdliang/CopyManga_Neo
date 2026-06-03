@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.remote.api
 
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoriteResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.LoginResponse
@@ -64,6 +65,14 @@ interface MangaApiService {
         @Header("X-No-Auth") value: Int = 1,
     ): Response<HomeIndexResponse>
 
+    @GET("api/v3/recs?pos=3200102")
+    suspend fun getRecComics(
+        @HeaderMap headers: Map<String, String> = apiHeaders(),
+        @Header("X-No-Auth") value: Int = 1,
+        @Query("limit") limit: Int = 10,
+        @Query("offset") offset: Int = 0,
+        @Query("free_type") freeType: Int?,
+    ): Response<ComicListResponse>
     /**
      * 获取漫画详情
      * @param pathWord 漫画路径标识

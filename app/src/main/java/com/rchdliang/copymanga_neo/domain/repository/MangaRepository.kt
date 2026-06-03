@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
+import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
@@ -57,7 +58,16 @@ interface MangaRepository {
     /**
      * 搜索漫画
      */
-    suspend fun searchComics(query: String, page: Int): Result<List<ComicDto>>
+    suspend fun searchComics(
+        query: String,
+        page: Int,
+        queryType: QueryType? = null
+    ): Result<List<ComicDto>>
+
+    /**
+     * 获取推荐漫画
+     */
+    suspend fun getRecComics(limit: Int = 10, offset: Int = 0): Result<List<ComicDto>>
 
     /**
      * 获取书架漫画

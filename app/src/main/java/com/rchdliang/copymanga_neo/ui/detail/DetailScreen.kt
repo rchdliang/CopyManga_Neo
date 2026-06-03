@@ -282,25 +282,6 @@ private fun DetailContent(
                     }
                 }
 
-//                Row(
-//                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-//                    verticalAlignment = Alignment.CenterVertically,
-//                ) {
-//                    Icon(
-//                        imageVector = Icons.Filled.Description,
-//                        contentDescription = "Description",
-//                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-//                    )
-//                    comicDetail.brief?.let { desc ->
-//                        Text(
-//                            text = desc,
-//                            style = MaterialTheme.typography.bodyMedium,
-//                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-//                            maxLines = 10,
-//                            overflow = TextOverflow.Ellipsis
-//                        )
-//                    }
-//                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,

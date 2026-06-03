@@ -383,7 +383,7 @@ private fun FavoriteCard(
 
                         comic.browse.chapterUuid == comic.lastChapterId -> {
                             Text(
-                                text = "上次读到：${comic.browse.chapterName}",
+                                text = "上次读到：${comic.browse.chapterName ?: ""}",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelSmall,

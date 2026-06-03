@@ -22,7 +22,7 @@ data class HomeIndexResult(
     //返回一个列表，专题系列，内容为第xx期必看推荐
     //https://api.2026copy.com/api/v3/topics?type=1&limit=20&offset=0&_update=true
     //不清楚“_update=true”的含义
-    @SerializedName("recComics") val recComics: ComicListSection?,
+    @SerializedName("recComics") val recComics: ComicListResult?,
     //https://api.2026copy.com/api/v3/recs?pos=3200102&limit=10&offset=0
     //total 1743
     //pos代表的是什么？会改变吗？位置信息不能为空
@@ -81,23 +81,6 @@ data class TopicItem(
     @SerializedName("datetime_created") val datetimeCreated: String?
 )
 
-/**
- * 推荐漫画区块
- */
-data class ComicListSection(
-    @SerializedName("list") val list: List<ComicSectionItem>,
-    @SerializedName("total") val total: Int,
-    @SerializedName("limit") val limit: Int,
-    @SerializedName("offset") val offset: Int
-)
-
-/**
- * 漫画区块项（包含 type 和 comic 嵌套结构）
- */
-data class ComicSectionItem(
-    @SerializedName("type") val type: Int,
-    @SerializedName("comic") val comic: ComicDto
-)
 
 /**
  * 排行榜列表

@@ -2,11 +2,11 @@ package com.rchdliang.copymanga_neo.ui.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +21,8 @@ data class SearchUiState(
     val searchResults: List<ComicDto> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val currentPage: Int = 1
+    val currentPage: Int = 1,
+    val queryType: QueryType? = null
 )
 
 /**
@@ -37,16 +38,29 @@ class SearchViewModel @Inject constructor(
 
     private var searchJob: Job? = null
 
+    fun updateQuery(query: String) {
+        _uiState.value = _uiState.value.copy(query = query)
+    }
+
+    fun clearSearch() {
+        searchJob?.cancel()
+        _uiState.value = SearchUiState()
+    }
+
+    fun updateQueryType(queryType: QueryType?) {
+        _uiState.value = _uiState.value.copy(queryType = queryType)
+        if (_uiState.value.query.isNotBlank()) {
+            search(_uiState.value.query)
+        }
+    }
+
     /**
      * 更新搜索关键词并执行搜索
      */
     fun search(query: String) {
-        // 取消之前的搜索任务
         searchJob?.cancel()
 
-        // 防抖：延迟 500ms 后再执行搜索
         searchJob = viewModelScope.launch {
-            delay(500)
             _uiState.value = _uiState.value.copy(
                 query = query,
                 isLoading = true,
@@ -66,7 +80,8 @@ class SearchViewModel @Inject constructor(
     }
 
     private suspend fun performSearch(query: String) {
-        mangaRepository.searchComics(query, _uiState.value.currentPage).fold(
+        mangaRepository.searchComics(query, _uiState.value.currentPage, _uiState.value.queryType)
+            .fold(
             onSuccess = { comics ->
                 _uiState.value = _uiState.value.copy(
                     searchResults = comics,
@@ -82,25 +97,25 @@ class SearchViewModel @Inject constructor(
         )
     }
 
-    /**
-     * 刷新搜索
-     */
-    fun refresh() {
-        if (_uiState.value.query.isNotBlank()) {
-            viewModelScope.launch {
-                performSearch(_uiState.value.query)
-            }
-        }
-    }
+//    /**
+//     * 刷新搜索
+//     */
+//    fun refresh() {
+//        if (_uiState.value.query.isNotBlank()) {
+//            viewModelScope.launch {
+//                performSearch(_uiState.value.query)
+//            }
+//        }
+//    }
 
-    /**
-     * 加载更多搜索结果
-     */
-    suspend fun loadMore() {
-        if (_uiState.value.isLoading || _uiState.value.query.isBlank()) return
-        _uiState.value = _uiState.value.copy(
-            currentPage = _uiState.value.currentPage + 1
-        )
-        performSearch(_uiState.value.query)
-    }
+//    /**
+//     * 加载更多搜索结果
+//     */
+//    suspend fun loadMore() {
+//        if (_uiState.value.isLoading || _uiState.value.query.isBlank()) return
+//        _uiState.value = _uiState.value.copy(
+//            currentPage = _uiState.value.currentPage + 1
+//        )
+//        performSearch(_uiState.value.query)
+//    }
 }

@@ -137,13 +137,13 @@ class DetailViewModel @Inject constructor(
         _uiState.update { it.copy(sortAscending = !it.sortAscending) }
     }
 
-    /**
-     * 强制刷新数据（忽略缓存，重新加载）
-     */
-    fun refresh(pathWord: String) {
-        currentPathWord = null
-        loadDetail(pathWord)
-    }
+//    /**
+//     * 强制刷新数据（忽略缓存，重新加载）
+//     */
+//    fun refresh(pathWord: String) {
+//        currentPathWord = null
+//        loadDetail(pathWord)
+//    }
 
     private fun loadAllChapters(pathWord: String, group: String = "default") {
         viewModelScope.launch {

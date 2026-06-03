@@ -12,10 +12,15 @@ data class ComicListResponse(
 )
 
 data class ComicListResult(
-    @SerializedName("list") val list: List<ComicDto>,
+    @SerializedName("list") val list: List<ComicSectionItem>,
     @SerializedName("total") val total: Int,
     @SerializedName("limit") val limit: Int,
     @SerializedName("offset") val offset: Int
+)
+
+data class ComicSectionItem(
+    @SerializedName("type") val type: Int,
+    @SerializedName("comic") val comic: ComicDto
 )
 
 /**

@@ -13,6 +13,8 @@ import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,27 +24,37 @@ import javax.inject.Singleton
 @Singleton
 class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
-    @WwwRetrofit private val wwwApiService: MangaApiService
+    @param:WwwRetrofit private val wwwApiService: MangaApiService
 ) : MangaRepository {
 
-    override suspend fun getHomeComics(): Result<HomeComicsData> {
-        return try {
-            val response = apiService.getHomeComics()
+    override suspend fun getHomeComics(): Result<HomeComicsData> = coroutineScope {
+        try {
+            val homeResponseDeferred = async { apiService.getHomeComics() }
+            val recResponseDeferred = async { apiService.getRecComics(freeType = null) }
 
-            if (!response.isSuccessful) {
-                val errorBody = response.errorBody()?.string()
+            val homeResponse = homeResponseDeferred.await()
+            val recResponse = recResponseDeferred.await()
+
+            if (!homeResponse.isSuccessful) {
+                val errorBody = homeResponse.errorBody()?.string()
                 android.util.Log.e("MangaRepository", "Error response: $errorBody")
-                return Result.failure(Exception("HTTP ${response.code()}: ${response.message()}"))
+                return@coroutineScope Result.failure(Exception("HTTP ${homeResponse.code()}: ${homeResponse.message()}"))
             }
 
-            val body = response.body()
+            val body = homeResponse.body()
             android.util.Log.d("MangaRepository", "Response body is null: ${body == null}")
 
             if (body == null) {
-                return Result.failure(Exception("Response body is null"))
+                return@coroutineScope Result.failure(Exception("Response body is null"))
             }
 
-            val recComics = body.results.recComics?.list?.map { it.comic } ?: emptyList()
+            // 优先使用 getRecComics 的结果
+            val recComics = if (recResponse.isSuccessful) {
+                recResponse.body()?.results?.list?.map { it.comic } ?: emptyList()
+            } else {
+                body.results.recComics?.list?.map { it.comic } ?: emptyList()
+            }
+            
             val hotComics = body.results.hotComics?.map { it.comic } ?: emptyList()
             val newComics = body.results.newComics?.map { it.comic } ?: emptyList()
             val finishComics = body.results.finishComics?.list ?: emptyList()
@@ -206,8 +218,25 @@ class MangaRepositoryImpl @Inject constructor(
             Result.failure(e)
         }
     }
-    
-    override suspend fun searchComics(query: String, page: Int): Result<List<ComicDto>> {
+
+    override suspend fun getRecComics(limit: Int, offset: Int): Result<List<ComicDto>> {
+        return try {
+            val response = apiService.getRecComics(limit = limit, offset = offset, freeType = 0)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                Result.success(response.body()?.results?.list?.map { it.comic } ?: emptyList())
+            } else {
+                Result.failure(Exception(response.body()?.message ?: "获取推荐失败"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun searchComics(
+        query: String,
+        page: Int,
+        queryType: QueryType?
+    ): Result<List<ComicDto>> {
         return try {
             val pageSize = 20
             val offset = (page - 1) * pageSize
@@ -215,7 +244,7 @@ class MangaRepositoryImpl @Inject constructor(
                 query = query,
                 limit = pageSize,
                 offset = offset,
-                queryType = QueryType.NAME
+                queryType = queryType
             )
             if (response.isSuccessful && response.body()?.code == 200) {
                 Result.success(response.body()?.results?.list ?: emptyList())
