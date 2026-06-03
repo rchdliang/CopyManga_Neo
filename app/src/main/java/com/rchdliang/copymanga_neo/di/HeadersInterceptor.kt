@@ -43,7 +43,7 @@ class HeadersInterceptor : Interceptor {
             }
 
             isChapterHtml -> {
-                // 章节 HTML 请求：严格模拟浏览器 headers 绕过风控
+                // 章节 HTML 请求：模拟PC浏览器 ua 绕过风控
                 requestBuilder.header(
                     "User-Agent",
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36 Edg/86.0.622.38"
@@ -52,22 +52,6 @@ class HeadersInterceptor : Interceptor {
                     "Accept",
                     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
                 )
-                requestBuilder.header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-                requestBuilder.header("Upgrade-Insecure-Requests", "1")
-
-                // 添加客户端提示头 (sec-ch-ua)
-                requestBuilder.header(
-                    "sec-ch-ua",
-                    "\"Android WebView\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\""
-                )
-                requestBuilder.header("sec-ch-ua-mobile", "?0")
-                requestBuilder.header("sec-ch-ua-platform", "\"Android\"")
-
-                // Fetch Metadata
-                requestBuilder.header("Sec-Fetch-Site", "none")
-                requestBuilder.header("Sec-Fetch-Mode", "navigate")
-                requestBuilder.header("Sec-Fetch-User", "?1")
-                requestBuilder.header("Sec-Fetch-Dest", "document")
             }
 
             else -> {

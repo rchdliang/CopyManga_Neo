@@ -64,7 +64,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImagePainter
@@ -446,7 +446,7 @@ private fun DetailContent(
 
         // 下半部分：章节网格
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 85.dp),
+            columns = GridCells.Adaptive(minSize = 90.dp),
 //            columns = GridCells.FixedSize(size = 85.dp),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -483,7 +483,7 @@ private fun ChapterItem(
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null,
+//                indication = null,
                 onClick = {
                     onChapterClick(
                         chapter.uuid,
@@ -508,7 +508,7 @@ private fun ChapterItem(
 // region Previews
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Preview(showBackground = true, showSystemUi = true, name = "详情页 - 完整内容")
+@PreviewScreenSizes
 @Composable
 private fun DetailContentPreview() {
     CopyManga_NeoTheme {

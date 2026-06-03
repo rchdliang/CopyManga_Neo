@@ -68,10 +68,12 @@ interface MangaApiService {
      * 获取漫画详情
      * @param pathWord 漫画路径标识
      */
-    @GET("api/v3/comic2/{pathWord}?platform=1&_update=true")
+    @GET("api/v3/comic2/{pathWord}")
     suspend fun getComicDetail(
         @Path("pathWord") pathWord: String,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = apiHeaders(),
+        @Query("platform") platform: Int = 1,
+        @Query("_update") update: Boolean = true,
     ): Response<ComicDetailResponse>
 
     /**
@@ -87,27 +89,28 @@ interface MangaApiService {
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<ChapterListResponse>
 
-    /**
-     * 搜索漫画
-     * @param query 搜索关键词
-     * @param page 页码
-     * @param timestamp 时间戳，防止缓存
-     */
+
     @GET("api/v3/search/comic")
-    suspend fun searchComics(
+    suspend fun search(
+        @Query("platform") platform: String = "1",
         @Query("q") query: String,
-        @Query("page") page: Int = 1,
-        @Query("_t") timestamp: Long = System.currentTimeMillis(),
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+        @Query("q_type") queryType: QueryType?,
+        @Query("_update") update: Boolean = true,
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<SearchResponse>
 
     /**
      * 获取收藏漫画列表（需要登录）
      */
-    @GET("api/v3/member/collect/comics?free_type=1&_update=true&ordering=-datetime_modifier")
+    @GET("api/v3/member/collect/comics")
     suspend fun getFavoriteComics(
-        @Query("limit") limit: Int = 21,
+        @Query("free_type") freeType: Int = 1,//不清楚是什么，可能是区分漫画和小说？
+        @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0,
+        @Query("_update") update: Boolean = true,
+        @Query("ordering") order: OrderType = OrderType.MODIFIER_DESC,
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<FavoriteResponse>
 
@@ -122,18 +125,21 @@ interface MangaApiService {
     /**
      * 试看前5页（用于向云端汇报阅读进度，需认证）
      */
-    @GET("api/v3/comic/{comicPathWord}/chapter2/{chapterUuid}?platform=1&_update=true")
+    @GET("api/v3/comic/{comicPathWord}/chapter2/{chapterUuid}")
     suspend fun getTrialContent(
         @Path("comicPathWord") comicPathWord: String,
         @Path("chapterUuid") chapterUuid: String,
+        @Query("platform") platform: Int = 1,
+        @Query("_update") update: Boolean = true,
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<TrialContentResponse>
+
     /**
-     * 获取章节内容 HTML
+     * 获取章节内容 HTML（需要 www.2026copy.com 域名）
      * @param comicPathWord 漫画路径标识
      * @param chapterUuid 章节 UUID
      */
-    @GET("https://www.2026copy.com/comic/{comicPathWord}/chapter/{chapterUuid}")
+    @GET("comic/{comicPathWord}/chapter/{chapterUuid}")
     suspend fun getChapterHtml(
         @Path("comicPathWord") comicPathWord: String,
         @Path("chapterUuid") chapterUuid: String,
@@ -160,4 +166,23 @@ interface MangaApiService {
         @Field("platform") platform: String = "1",
         @Header("X-No-Auth") value: Int = 1,
     ): Response<LoginResponse>
+}
+
+enum class QueryType(val value: String) {
+    LOCAL("local"),   // 汉化组
+    NAME("name"),     // 漫画名称
+    AUTHOR("author"); // 作者
+
+    override fun toString(): String = value
+}
+
+enum class OrderType(val value: String) {
+    MODIFIER_ASC("datetime_modifier"),
+    MODIFIER_DESC("-datetime_modifier"),
+    BROWSE_ASC("datetime_browse"),
+    BROWSE_DESC("-datetime_browse"),
+    UPDATED_ASC("datetime_updated"),
+    UPDATED_DESC("-datetime_updated");
+
+    override fun toString(): String = value
 }

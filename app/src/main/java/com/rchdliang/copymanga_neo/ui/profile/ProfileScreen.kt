@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
@@ -203,6 +204,21 @@ private fun NotLoggedInView(
             )
             Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
             Text("登录")
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = onLoginClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.Login,
+                contentDescription = null,
+                modifier = Modifier
+                    .graphicsLayer { rotationZ = 270f }
+                    .size(18.dp)
+            )
+            Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+            Text("注册")
         }
     }
 }

@@ -2,12 +2,14 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
+import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
@@ -19,7 +21,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class MangaRepositoryImpl @Inject constructor(
-    private val apiService: MangaApiService
+    private val apiService: MangaApiService,
+    @WwwRetrofit private val wwwApiService: MangaApiService
 ) : MangaRepository {
 
     override suspend fun getHomeComics(): Result<HomeComicsData> {
@@ -166,7 +169,7 @@ class MangaRepositoryImpl @Inject constructor(
                 )
             }
 
-            val response = apiService.getChapterHtml(comicPathWord, chapterUuid)
+            val response = wwwApiService.getChapterHtml(comicPathWord, chapterUuid)
             val code = response.code()
             if (code == 210) {
                 val bodyString = response.errorBody()?.string() ?: ""
@@ -206,7 +209,14 @@ class MangaRepositoryImpl @Inject constructor(
     
     override suspend fun searchComics(query: String, page: Int): Result<List<ComicDto>> {
         return try {
-            val response = apiService.searchComics(query, page)
+            val pageSize = 20
+            val offset = (page - 1) * pageSize
+            val response = apiService.search(
+                query = query,
+                limit = pageSize,
+                offset = offset,
+                queryType = QueryType.NAME
+            )
             if (response.isSuccessful && response.body()?.code == 200) {
                 Result.success(response.body()?.results?.list ?: emptyList())
             } else {

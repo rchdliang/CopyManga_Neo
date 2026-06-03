@@ -111,4 +111,27 @@ object NetworkModule {
     fun provideSystemApiService(@ApiRetrofit retrofit: Retrofit): SystemApiService {
         return retrofit.create(SystemApiService::class.java)
     }
+
+    /**
+     * 提供 WWW 专用的 Retrofit 实例（用于 www.2026copy.com）
+     */
+    @Provides
+    @Singleton
+    @WwwRetrofit
+    fun provideWwwRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(WWW_BASE_URL)
+            .client(okHttpClient)
+            .build()
+    }
+
+    /**
+     * 提供 MangaApiService（使用 WWW 域名，用于章节 HTML 等 www 域请求）
+     */
+    @Provides
+    @Singleton
+    @WwwRetrofit
+    fun provideMangaWwwApiService(@WwwRetrofit retrofit: Retrofit): MangaApiService {
+        return retrofit.create(MangaApiService::class.java)
+    }
 }

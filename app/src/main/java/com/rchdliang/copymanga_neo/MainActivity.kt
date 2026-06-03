@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -97,7 +96,6 @@ sealed class Screen(val route: String) {
 }
 
 @ExperimentalMaterial3ExpressiveApi
-@PreviewScreenSizes
 @Composable
 fun CopyManga_NeoApp(
     mainViewModel: MainViewModel = hiltViewModel()
