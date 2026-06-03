@@ -246,10 +246,11 @@ class MangaRepositoryImpl @Inject constructor(
                 offset = offset,
                 queryType = queryType
             )
-            if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list ?: emptyList())
+            val body = response.body()
+            if (response.isSuccessful && body?.code == 200) {
+                Result.success(body.results.list)
             } else {
-                Result.failure(Exception(response.body()?.message ?: "搜索失败"))
+                Result.failure(Exception(body?.message ?: "搜索失败"))
             }
         } catch (e: Exception) {
             Result.failure(e)

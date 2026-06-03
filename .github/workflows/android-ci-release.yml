@@ -85,9 +85,12 @@ jobs:
             **/build/outputs/apk/**/release/*.apk
           if-no-files-found: error
 
+      - name: Rename APK
+        run: |
+          find . -path "*/build/outputs/apk/*/release/*.apk" -exec sh -c 'cp "$1" "CopyManga_Neo_${{ github.ref_name }}.apk"' _ {} \;
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            **/build/outputs/apk/**/release/*.apk
-          generate_release_notes: true
+          files: CopyManga_Neo_${{ github.ref_name }}.apk
+          body: ${{ github.event.head_commit.message }}

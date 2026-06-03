@@ -20,8 +20,10 @@ data class SearchUiState(
     val query: String = "",
     val searchResults: List<ComicDto> = emptyList(),
     val isLoading: Boolean = false,
+    val isLoadingMore: Boolean = false,
     val error: String? = null,
     val currentPage: Int = 1,
+    val hasMore: Boolean = false,
     val queryType: QueryType? = null
 )
 
@@ -37,6 +39,7 @@ class SearchViewModel @Inject constructor(
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     fun updateQuery(query: String) {
         _uiState.value = _uiState.value.copy(query = query)
@@ -44,6 +47,7 @@ class SearchViewModel @Inject constructor(
 
     fun clearSearch() {
         searchJob?.cancel()
+        loadMoreJob?.cancel()
         _uiState.value = SearchUiState()
     }
 
@@ -59,12 +63,15 @@ class SearchViewModel @Inject constructor(
      */
     fun search(query: String) {
         searchJob?.cancel()
+        loadMoreJob?.cancel()
 
         searchJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 query = query,
                 isLoading = true,
-                error = null
+                error = null,
+                currentPage = 1,
+                hasMore = false
             )
 
             if (query.isBlank()) {
@@ -75,47 +82,40 @@ class SearchViewModel @Inject constructor(
                 return@launch
             }
 
-            performSearch(query)
+            performSearch(query, isLoadMore = false)
         }
     }
 
-    private suspend fun performSearch(query: String) {
-        mangaRepository.searchComics(query, _uiState.value.currentPage, _uiState.value.queryType)
-            .fold(
-            onSuccess = { comics ->
-                _uiState.value = _uiState.value.copy(
-                    searchResults = comics,
-                    isLoading = false
-                )
-            },
-            onFailure = { error ->
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = error.message
-                )
-            }
-        )
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isLoading || state.isLoadingMore || !state.hasMore || state.query.isBlank()) return
+
+        loadMoreJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingMore = true)
+            performSearch(state.query, isLoadMore = true)
+        }
     }
 
-//    /**
-//     * 刷新搜索
-//     */
-//    fun refresh() {
-//        if (_uiState.value.query.isNotBlank()) {
-//            viewModelScope.launch {
-//                performSearch(_uiState.value.query)
-//            }
-//        }
-//    }
-
-//    /**
-//     * 加载更多搜索结果
-//     */
-//    suspend fun loadMore() {
-//        if (_uiState.value.isLoading || _uiState.value.query.isBlank()) return
-//        _uiState.value = _uiState.value.copy(
-//            currentPage = _uiState.value.currentPage + 1
-//        )
-//        performSearch(_uiState.value.query)
-//    }
+    private suspend fun performSearch(query: String, isLoadMore: Boolean) {
+        val page = if (isLoadMore) _uiState.value.currentPage + 1 else 1
+        mangaRepository.searchComics(query, page, _uiState.value.queryType)
+            .fold(
+                onSuccess = { comics ->
+                    _uiState.value = _uiState.value.copy(
+                        searchResults = if (isLoadMore) _uiState.value.searchResults + comics else comics,
+                        isLoading = false,
+                        isLoadingMore = false,
+                        currentPage = page,
+                        hasMore = comics.size >= 20
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isLoadingMore = false,
+                        error = if (isLoadMore) _uiState.value.error else error.message
+                    )
+                }
+            )
+    }
 }

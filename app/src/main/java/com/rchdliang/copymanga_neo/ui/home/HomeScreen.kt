@@ -4,16 +4,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -52,22 +55,32 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onComicClick: (String) -> Unit,
+    onNavigateToSearch: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val pullToRefreshState = rememberPullToRefreshState()
 
-    PullToRefreshBox(
-        isRefreshing = uiState.isLoading,
-        onRefresh = { viewModel.loadComics() },
-        state = pullToRefreshState,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = pullToRefreshState,
-                isRefreshing = uiState.isLoading,
-                modifier = Modifier.align(Alignment.TopCenter),
-            )
-        },
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        SearchEntryBar(
+            onClick = onNavigateToSearch,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        )
+
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoading,
+            onRefresh = { viewModel.loadComics() },
+            state = pullToRefreshState,
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullToRefreshState,
+                    isRefreshing = uiState.isLoading,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
         when {
             (uiState.error != null && uiState.recComicList.isEmpty()) -> {
                 Column(
@@ -99,7 +112,9 @@ fun HomeScreen(
             else -> {
                 val onComicClickRemembered = remember(onComicClick) { onComicClick }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp),
 //                    contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
                     // 推荐漫画
@@ -108,7 +123,7 @@ fun HomeScreen(
                             Text(
                                 text = "漫画推荐",
                                 style = MaterialTheme.typography.headlineMedium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                                modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
                             )
                         }
                         item(key = "rec_grid", contentType = "comic_grid") {
@@ -175,6 +190,37 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+        }
+    }
+}
+
+@Composable
+private fun SearchEntryBar(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        modifier = modifier.height(48.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = "搜索漫画",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge
+            )
         }
     }
 }

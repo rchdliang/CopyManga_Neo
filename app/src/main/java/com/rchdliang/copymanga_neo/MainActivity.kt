@@ -11,13 +11,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.AccountBox
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +39,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
+import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
 import com.rchdliang.copymanga_neo.ui.profile.ProfileScreen
@@ -92,6 +93,7 @@ sealed class Screen(val route: String) {
 
     object Search : Screen("search")
     object Favorites : Screen("favorites")
+    object Downloads : Screen("downloads")
     object Profile : Screen("profile")
 }
 
@@ -118,9 +120,22 @@ fun CopyManga_NeoApp(
                         isLoggedIn = isLoggedIn,
                         onNavigateToDetail = { pathWord ->
                             navController.navigate(Screen.Detail.createRoute(pathWord))
+                        },
+                        onNavigateToSearch = {
+                            navController.navigate(Screen.Search.route)
                         }
                     )
                 }
+            }
+
+            // 搜索页（全屏覆盖，无底部导航）
+            composable(Screen.Search.route) {
+                SearchScreen(
+                    onComicClick = { pathWord ->
+                        navController.navigate(Screen.Detail.createRoute(pathWord))
+                    },
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             // 详情页（脱离底部导航栏）
@@ -180,7 +195,8 @@ fun CopyManga_NeoApp(
 @Composable
 fun MainScreen(
     isLoggedIn: Boolean,
-    onNavigateToDetail: (String) -> Unit
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToSearch: () -> Unit
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -188,7 +204,7 @@ fun MainScreen(
 
     val currentDestination = when (currentRoute) {
         Screen.Home.route -> AppDestinations.HOME
-        Screen.Search.route -> AppDestinations.SEARCH
+        Screen.Downloads.route -> AppDestinations.DOWNLOADS
         Screen.Favorites.route -> AppDestinations.BOOKSHELF
         Screen.Profile.route -> AppDestinations.PROFILE
         else -> AppDestinations.HOME
@@ -209,7 +225,7 @@ fun MainScreen(
                     onClick = {
                         val targetRoute = when (destination) {
                             AppDestinations.HOME -> Screen.Home.route
-                            AppDestinations.SEARCH -> Screen.Search.route
+                            AppDestinations.DOWNLOADS -> Screen.Downloads.route
                             AppDestinations.BOOKSHELF -> {
                                 if (!isLoggedIn) Screen.Profile.route
                                 else Screen.Favorites.route
@@ -244,19 +260,13 @@ fun MainScreen(
                 startDestination = Screen.Home.route
             ) {
                 composable(Screen.Home.route) {
-                    HomeScreen(onComicClick = onNavigateToDetail)
-                }
-                composable(Screen.Search.route) {
-                    SearchScreen(
+                    HomeScreen(
                         onComicClick = onNavigateToDetail,
-                        onNavigateBack = {
-                            navController.navigate(Screen.Home.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                        onNavigateToSearch = onNavigateToSearch
                     )
+                }
+                composable(Screen.Downloads.route) {
+                    DownloadsScreen(onComicClick = onNavigateToDetail)
                 }
                 composable(Screen.Favorites.route) {
                     FavoritesScreen(
@@ -283,7 +293,7 @@ enum class AppDestinations(
     val unselectedIcon: ImageVector,
 ) {
     HOME("首页", Icons.Filled.Home, Icons.Outlined.Home),
-    SEARCH("搜索", Icons.Filled.Search, Icons.Outlined.Search),
+    DOWNLOADS("下载", Icons.Filled.Download, Icons.Outlined.Download),
     BOOKSHELF("书架", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder),
     PROFILE("账号", Icons.Filled.AccountBox, Icons.Outlined.AccountBox),
 }
