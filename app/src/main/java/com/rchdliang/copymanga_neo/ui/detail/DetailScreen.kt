@@ -448,7 +448,10 @@ private fun DetailContent(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { expanded = !expanded }
                     .animateContentSize()
                     .padding(horizontal = 16.dp, vertical = 6.dp)
             ) {
@@ -459,13 +462,13 @@ private fun DetailContent(
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (!expanded) {
-                    Text(
-                        text = "展开 ▼",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+//                if (!expanded) {
+//                    Text(
+//                        text = "展开 ▼",
+//                        style = MaterialTheme.typography.labelSmall,
+//                        color = MaterialTheme.colorScheme.primary
+//                    )
+//                }
             }
         }
 

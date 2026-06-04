@@ -2,38 +2,56 @@ package com.rchdliang.copymanga_neo.ui.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.data.local.ReaderPreferencesStore
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
-    private val repository: MangaRepository
+    private val repository: MangaRepository,
+    private val prefs: ReaderPreferencesStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
+
+    val readingDirection: StateFlow<String> = prefs.readingDirection
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "RIGHT_TO_LEFT")
+
+    val pageScale: StateFlow<String> = prefs.pageScale
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "FIT_SCREEN")
+
+    val screenOrientation: StateFlow<String> = prefs.screenOrientation
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "SYSTEM_DEFAULT")
 
     private var currentComicPathWord: String = ""
     private var currentChapterUuid: String = ""
     private var currentGroup: String = "default"
 
     fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
+        if (currentChapterUuid == chapterUuid && _uiState.value is ReaderUiState.Success) {
+            android.util.Log.i(
+                "ReaderViewModel",
+                "loadChapter skipped: already loaded $chapterUuid"
+            )
+            return
+        }
         currentComicPathWord = comicPathWord
         currentChapterUuid = chapterUuid
         currentGroup = group
 
         viewModelScope.launch {
-            // 先发送试看请求，让云端记录阅读进度（失败不阻塞内容加载）
             try {
                 repository.trialChapterContent(comicPathWord, chapterUuid)
             } catch (_: Exception) {
-                // 忽略错误
             }
 
             _uiState.value = ReaderUiState.Loading
@@ -75,6 +93,18 @@ class ReaderViewModel @Inject constructor(
                 android.util.Log.i("ReaderViewModel", "Loading Next Chapter")
             }
         }
+    }
+
+    fun setReadingDirection(value: String) {
+        viewModelScope.launch { prefs.setReadingDirection(value) }
+    }
+
+    fun setPageScale(value: String) {
+        viewModelScope.launch { prefs.setPageScale(value) }
+    }
+
+    fun setScreenOrientation(value: String) {
+        viewModelScope.launch { prefs.setScreenOrientation(value) }
     }
 }
 

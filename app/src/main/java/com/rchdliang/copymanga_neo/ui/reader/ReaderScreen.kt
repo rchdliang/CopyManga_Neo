@@ -1,24 +1,19 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
@@ -29,40 +24,37 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 
-/**
- * 阅读器屏幕
- * 显示章节图片列表，支持左右翻页和跨章节跳转
- */
 @Composable
 fun ReaderScreen(
     chapterPathWord: String,
@@ -73,251 +65,379 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val readingDirectionPref by viewModel.readingDirection.collectAsStateWithLifecycle()
+    val pageScalePref by viewModel.pageScale.collectAsStateWithLifecycle()
+    val screenOrientationPref by viewModel.screenOrientation.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val activity = context as Activity
     val view = LocalView.current
 
-    // 隐藏状态栏逻辑：进入阅读器时隐藏，退出时恢复
+    val screenOrient = remember(screenOrientationPref) {
+        ScreenOrientationSetting.fromName(screenOrientationPref)
+    }
+    LaunchedEffect(screenOrient) {
+        activity.requestedOrientation = screenOrient.activityOrientation
+    }
     DisposableEffect(Unit) {
-        val window = (context as Activity).window
+        onDispose {
+            if (!activity.isChangingConfigurations) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val window = context.window
         val insetsController = WindowCompat.getInsetsController(window, view)
-        // 隐藏状态栏
         insetsController.hide(WindowInsetsCompat.Type.statusBars())
-        // 设置行为：滑动边缘临时显示状态栏，过一会儿自动隐藏
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
-        onDispose {
-            // 退出阅读器时恢复状态栏
-            insetsController.show(WindowInsetsCompat.Type.statusBars())
-        }
+        onDispose { insetsController.show(WindowInsetsCompat.Type.statusBars()) }
     }
 
     LaunchedEffect(chapterPathWord) {
         viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .background(Color.Black)) {
         when (val state = uiState) {
-            is ReaderUiState.Loading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = Color.White
-                )
-            }
-            is ReaderUiState.Error -> {
-                Text(
-                    text = "加载失败：${state.message}",
-                    color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(16.dp)
-                )
-            }
-            is ReaderUiState.RiskControl -> {
-                ReaderRiskControlContent(
-                    reason = state.reason,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            }
+            is ReaderUiState.Loading -> CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center), color = Color.White
+            )
 
-            is ReaderUiState.Success -> {
-                ReaderSuccessContent(
-                    images = state.content.imageUrls,
-                    chapterName = chapterName,
-                    onPrevChapter = { viewModel.loadPrevChapter() },
-                    onNextChapter = { viewModel.loadNextChapter() }
-                )
-            }
+            is ReaderUiState.Error -> Text(
+                "加载失败：${state.message}", color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(16.dp)
+            )
+
+            is ReaderUiState.RiskControl -> ReaderRiskControlContent(
+                state.reason, modifier = Modifier.align(Alignment.Center)
+            )
+
+            is ReaderUiState.Success -> ReaderSuccessContent(
+                images = state.content.imageUrls,
+                chapterName = state.content.chapterName.ifEmpty { chapterName },
+                readingDirection = readingDirectionPref,
+                pageScale = pageScalePref,
+                screenOrientation = screenOrientationPref,
+                onPrevChapter = { viewModel.loadPrevChapter() },
+                onNextChapter = { viewModel.loadNextChapter() },
+                onRefresh = {
+                    viewModel.loadChapter(
+                        comicPathWord,
+                        chapterPathWord,
+                        groupPathWord
+                    )
+                },
+                onReadingDirectionChange = { viewModel.setReadingDirection(it) },
+                onPageScaleChange = { viewModel.setPageScale(it) },
+                onScreenOrientationChange = { viewModel.setScreenOrientation(it) }
+            )
         }
     }
 }
 
-/**
- * 风险控制提示内容 — 从 [ReaderScreen] 中抽取，供实际运行和预览复用
- */
-@Composable
-fun ReaderRiskControlContent(
-    reason: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = Icons.Default.Block,
-            contentDescription = "风控",
-            tint = Color.White,
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "触发风控",
-            color = Color.White,
-            style = MaterialTheme.typography.titleLarge
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = reason,
-            color = Color.LightGray,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        )
-    }
-}
+// ── ReaderSuccessContent ──────────────────────────────────────────
 
-/**
- * 阅读器成功加载后的主要内容 — 翻页 pager + 顶部 overlay
- * 从 [ReaderScreen] 中抽取，供实际运行和预览复用
- */
 @Composable
 fun ReaderSuccessContent(
     images: List<String>,
     chapterName: String,
+    readingDirection: String,
+    pageScale: String,
+    screenOrientation: String,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    onRefresh: () -> Unit,
+    onReadingDirectionChange: (String) -> Unit,
+    onPageScaleChange: (String) -> Unit,
+    onScreenOrientationChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showOverlay by remember { mutableStateOf(true) }
-    val pagerState = rememberPagerState(pageCount = { images.size })
-    val density = LocalDensity.current
-    val threshold = remember { with(density) { 60.dp.toPx() } }
-    var lastOverscrollTime by remember { mutableLongStateOf(0L) }
     val coroutineScope = rememberCoroutineScope()
+    val locale = LocalLocale.current.platformLocale
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .clickable { showOverlay = !showOverlay }
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(pagerState) {
-                    awaitEachGesture {
-                        // 等待用户按下手指
-                        awaitFirstDown(requireUnconsumed = false)
-                        var overscrollAmount = 0f
+    val dir = remember(readingDirection) {
+        ReadingDirection.entries.find { it.name == readingDirection }
+            ?: ReadingDirection.RIGHT_TO_LEFT
+    }
+    val scale = remember(pageScale) {
+        PageScale.entries.find { it.name == pageScale } ?: PageScale.FIT_SCREEN
+    }
+    val orient = remember(screenOrientation) {
+        ScreenOrientationSetting.fromName(screenOrientation)
+    }
 
-                        do {
-                            // 使用 Initial 阶段，在 Pager 消费事件前获取最原始的滑动数据
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            // 获取当前手势在 X 轴上的移动量
-                            val delta = event.calculatePan().x
+    var previousPageInOriginal by rememberSaveable { mutableIntStateOf(0) }
+    var lastImageCount by rememberSaveable { mutableIntStateOf(0) }
+    var prevDir by remember { mutableStateOf(dir) }
+    var dirStable by remember { mutableStateOf(false) }
+    var showSettingsMenu by remember { mutableStateOf(false) }
 
-                            // 判断 Pager 是否完全停留在第一页或最后一页
-                            val atStartEdge =
-                                pagerState.currentPage == 0 && abs(pagerState.currentPageOffsetFraction) < 0.001f
-                            val atEndEdge =
-                                pagerState.currentPage == pagerState.pageCount - 1 && abs(
-                                    pagerState.currentPageOffsetFraction
-                                ) < 0.001f
+    if (dir != prevDir) {
+        dirStable = false
+        prevDir = dir
+    }
+    var showImageMenu by remember { mutableStateOf(false) }
 
-                            if (atStartEdge && (delta > 0 || overscrollAmount > 0)) {
-                                // 在第一页向右拉伸（delta > 0），或者处于拉伸状态下向左回缩
-                                overscrollAmount += delta
-                                // 防止回缩过度导致数值变成负数
-                                overscrollAmount = overscrollAmount.coerceAtLeast(0f)
-                            } else if (atEndEdge && (delta < 0 || overscrollAmount < 0)) {
-                                // 在最后一页向左拉伸（delta < 0），或者处于拉伸状态下向右回缩
-                                overscrollAmount += delta
-                                // 防止回缩过度导致数值变成正数
-                                overscrollAmount = overscrollAmount.coerceAtMost(0f)
-                            } else {
-                                overscrollAmount = 0f
-                            }
-                        } while (event.changes.any { it.pressed }) // 只要还有手指按下，就继续循环
+    if (images.size != lastImageCount && images.isNotEmpty()) {
+        previousPageInOriginal = 0
+        lastImageCount = images.size
+    }
 
-                        // 手指全部抬起，判断累积的拉伸距离是否达到阈值
-                        if (overscrollAmount > threshold) {
-                            coroutineScope.launch {
-                                Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT)
-                                    .show()
-                                onPrevChapter()
-                            }
-                        } else if (overscrollAmount < -threshold) {
-                            coroutineScope.launch {
-                                Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT)
-                                    .show()
-                                onNextChapter()
-                            }
-                        }
-                    }
-                },
-            beyondViewportPageCount = 2,
-        ) { page ->
-            AsyncImage(
-                model = images[page],
-                contentDescription = "第 ${page + 1} 页",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
+    val isContinuous = dir == ReadingDirection.TOP_TO_BOTTOM
+    val contentScale = scale.toContentScale()
+
+    val initialPage = previousPageInOriginal.coerceIn(0, (images.size - 1).coerceAtLeast(0))
+
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { images.size.coerceAtLeast(1) }
+    )
+    val listState = rememberLazyListState()
+    val continuousVisibleIndex by remember { derivedStateOf { listState.firstVisibleItemIndex } }
+
+    val currentPageIndex = if (isContinuous) continuousVisibleIndex else pagerState.currentPage
+    if (dirStable) {
+        previousPageInOriginal = currentPageIndex
+    }
+
+    LaunchedEffect(dir) {
+        if (images.isNotEmpty()) {
+            val target = previousPageInOriginal.coerceIn(0, images.size - 1)
+            if (isContinuous) listState.scrollToItem(target) else pagerState.scrollToPage(target)
+            dirStable = true
+        }
+    }
+
+    val displayedPageNumber = currentPageIndex + 1
+
+    // 翻页 — reverseLayout 下 LTR/RTL 方向统一
+    fun animateToPagerPage(target: Int) {
+        coroutineScope.launch {
+            pagerState.animateScrollToPage(
+                target.coerceIn(
+                    0,
+                    (pagerState.pageCount - 1).coerceAtLeast(0)
+                )
             )
         }
+    }
 
-        // 顶部 Overlay
-        if (showOverlay) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .statusBarsPadding() // 状态栏隐藏时，此 padding 自动为 0；滑出状态栏时，自动留出空间
-                    .padding(8.dp)
-                    .align(Alignment.TopCenter)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+    fun animateToListIndex(target: Int) {
+        coroutineScope.launch {
+            listState.animateScrollToItem(target.coerceIn(0, (images.size - 1).coerceAtLeast(0)))
+        }
+    }
+
+    val goForward: () -> Unit = {
+        when {
+            isContinuous -> {
+                if (currentPageIndex >= images.size - 1 ||
+                    (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                        ?: -1) >= images.size - 1
                 ) {
-                    Text(
-                        text = java.text.SimpleDateFormat(
-                            "HH:mm",
-                            LocalLocale.current.platformLocale
-                        )
-                            .format(java.util.Date()),
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "${pagerState.currentPage + 1}/${images.size}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = chapterName,
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Log.i("ReaderScreen", ">>> goForward -> onNextChapter (continuous) at boundary")
+                    onNextChapter()
+                } else {
+                    animateToListIndex(currentPageIndex + 1)
+                }
+            }
+
+            else -> {
+                if (pagerState.currentPage >= pagerState.pageCount - 1) {
+                    Log.i("ReaderScreen", ">>> goForward -> onNextChapter (pager) at boundary")
+                    onNextChapter()
+                } else {
+                    animateToPagerPage(pagerState.currentPage + 1)
                 }
             }
         }
     }
+
+    val goBackward: () -> Unit = {
+        when {
+            isContinuous -> {
+                if (currentPageIndex <= 0) {
+                    Log.i(
+                        "ReaderScreen",
+                        ">>> goBackward -> onPrevChapter (continuous) at boundary"
+                    )
+                    onPrevChapter()
+                } else {
+                    animateToListIndex(currentPageIndex - 1)
+                }
+            }
+
+            else -> {
+                if (pagerState.currentPage <= 0) {
+                    Log.i("ReaderScreen", ">>> goBackward -> onPrevChapter (pager) at boundary")
+                    onPrevChapter()
+                } else {
+                    animateToPagerPage(pagerState.currentPage - 1)
+                }
+            }
+        }
+    }
+
+    // 连续模式跨章节滑动
+    val density = LocalDensity.current
+    val threshold = remember { with(density) { 60.dp.toPx() } }
+    val continuousOverscroll = remember { mutableFloatStateOf(0f) }
+    val nestedScrollConnection = remember(coroutineScope, threshold) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                Log.d(
+                    "ReaderScreen",
+                    "continuous onPreScroll: overscrollAccum=$continuousOverscroll threshold=$threshold available=(${available.x},${available.y}) source=$source"
+                )
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                continuousOverscroll.floatValue += available.y
+                Log.d(
+                    "ReaderScreen",
+                    "continuous onPostScroll: consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y}) -> accum=${continuousOverscroll.floatValue}"
+                )
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val v = continuousOverscroll.floatValue
+                Log.i(
+                    "ReaderScreen",
+                    "continuous onPostFling: accum=$v threshold=$threshold consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y})"
+                )
+                if (v > threshold) {
+                    Log.i(
+                        "ReaderScreen",
+                        ">>> TRIGGER prevChapter (continuous) accum=$v > threshold=$threshold"
+                    )
+                    coroutineScope.launch {
+                        Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT).show()
+                        onPrevChapter()
+                    }
+                } else if (v < -threshold) {
+                    Log.i(
+                        "ReaderScreen",
+                        ">>> TRIGGER nextChapter (continuous) accum=$v < -$threshold"
+                    )
+                    coroutineScope.launch {
+                        Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT).show()
+                        onNextChapter()
+                    }
+                } else {
+                    Log.i("ReaderScreen", ">>> NO trigger (continuous) accum=$v, below threshold")
+                }
+                continuousOverscroll.floatValue = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
+    val timeText = java.text.SimpleDateFormat("HH:mm", locale).format(java.util.Date())
+
+    val toggleMenu = { showSettingsMenu = !showSettingsMenu }
+
+    // 全屏布局
+    Box(modifier = modifier
+        .fillMaxSize()
+        .background(Color.Black)) {
+        ReaderContent(
+            effectiveImages = images,
+            isContinuous = isContinuous,
+            isRtl = dir == ReadingDirection.RIGHT_TO_LEFT,
+            contentScale = contentScale,
+            displayedPageNumber = displayedPageNumber,
+            pagerState = pagerState,
+            listState = listState,
+            continuousNestedScrollConnection = nestedScrollConnection,
+            onForward = goForward,
+            onBackward = goBackward,
+            onPrevChapter = onPrevChapter,
+            onNextChapter = onNextChapter,
+            onShowMenu = { showSettingsMenu = true },
+            onLongPress = { showImageMenu = true }
+        )
+
+        ReaderTopBar(
+            timeText = timeText,
+            chapterName = chapterName,
+            modifier = Modifier
+                .statusBarsPadding()
+                .align(Alignment.TopCenter)
+        )
+
+        if (images.isNotEmpty()) {
+            ReaderPageIndicator(
+                pageText = "$displayedPageNumber/${images.size}",
+                onClick = { showSettingsMenu = true },
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    }
+
+    if (showSettingsMenu) {
+        ReaderSettingsDialog(
+            readingDirection = dir,
+            pageScale = scale,
+            screenOrientation = orient,
+            onReadingDirectionChange = { onReadingDirectionChange(it.name) },
+            onPageScaleChange = { onPageScaleChange(it.name) },
+            onScreenOrientationChange = { onScreenOrientationChange(it.name) },
+            onDismiss = { showSettingsMenu = false }
+        )
+    }
+
+    if (showImageMenu) {
+        ReaderImageActionDialog(
+            title = "$chapterName - 第${displayedPageNumber}页",
+            currentImageUrl = images.getOrNull(currentPageIndex),
+            onRefresh = { showImageMenu = false; onRefresh() },
+            onDismiss = { showImageMenu = false }
+        )
+    }
 }
 
-// region Previews
+// ── RiskControl ────────────────────────────────────────────────────
+
+@Composable
+fun ReaderRiskControlContent(reason: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Default.Block, "风控", tint = Color.White, modifier = Modifier.size(64.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("触发风控", color = Color.White, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            reason, color = Color.LightGray, style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp)
+        )
+    }
+}
+
+// ── Previews ──────────────────────────────────────────────────────
 
 @Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 加载中")
 @Composable
 private fun ReaderLoadingPreview() {
     CopyManga_NeoTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = Color.White
-            )
+        Box(Modifier
+            .fillMaxSize()
+            .background(Color.Black)) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
         }
     }
 }
@@ -326,13 +446,11 @@ private fun ReaderLoadingPreview() {
 @Composable
 private fun ReaderErrorPreview() {
     CopyManga_NeoTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
+        Box(Modifier
+            .fillMaxSize()
+            .background(Color.Black)) {
             Text(
-                text = "加载失败：网络连接超时",
+                "加载失败：网络连接超时",
                 color = Color.White,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -346,15 +464,10 @@ private fun ReaderErrorPreview() {
 @Composable
 private fun ReaderRiskControlPreview() {
     CopyManga_NeoTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            ReaderRiskControlContent(
-                reason = "访问过于频繁，请稍后再试",
-                modifier = Modifier.align(Alignment.Center)
-            )
+        Box(Modifier
+            .fillMaxSize()
+            .background(Color.Black)) {
+            ReaderRiskControlContent("访问过于频繁，请稍后再试", Modifier.align(Alignment.Center))
         }
     }
 }
@@ -363,16 +476,20 @@ private fun ReaderRiskControlPreview() {
 @Composable
 private fun ReaderSuccessContentPreview() {
     CopyManga_NeoTheme {
-        val mockImages = remember {
-            (1..5).map { "https://devtool.tech/api/placeholder/500/700?bgColor=%23653356&fontSize=100" }
-        }
+        val mock =
+            remember { (1..5).map { "https://devtool.tech/api/placeholder/500/700?bgColor=%23653356&fontSize=100" } }
         ReaderSuccessContent(
-            images = mockImages,
+            images = mock,
             chapterName = "第 128 话",
+            readingDirection = "RIGHT_TO_LEFT",
+            pageScale = "FIT_SCREEN",
+            screenOrientation = "SYSTEM_DEFAULT",
             onPrevChapter = {},
-            onNextChapter = {}
+            onNextChapter = {},
+            onRefresh = {},
+            onReadingDirectionChange = {},
+            onPageScaleChange = {},
+            onScreenOrientationChange = {}
         )
     }
 }
-
-// endregion

@@ -6,5 +6,6 @@ package com.rchdliang.copymanga_neo.domain.model
 data class ChapterContent(
     val imageUrls: List<String>,
     val prevUuid: String?,
-    val nextUuid: String?
+    val nextUuid: String?,
+    val chapterName: String = ""
 )

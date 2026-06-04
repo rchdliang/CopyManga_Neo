@@ -163,9 +163,10 @@ class MangaRepositoryImpl @Inject constructor(
         group: String
     ): Result<ChapterContent> {
         return try {
-            // 先从章节列表 API 获取上下章 UUID
+            // 先从章节列表 API 获取上下章 UUID 及章节名称
             var prevUuid: String? = null
             var nextUuid: String? = null
+            var chapterName: String? = null
             try {
                 val chaptersResult = getChapters(comicPathWord, group = group, limit = 500)
                 chaptersResult.onSuccess { chapterList ->
@@ -173,6 +174,7 @@ class MangaRepositoryImpl @Inject constructor(
                     if (currentChapter != null) {
                         prevUuid = currentChapter.prevChapter
                         nextUuid = currentChapter.nextChapter
+                        chapterName = currentChapter.name
                     }
                 }
             } catch (e: Exception) {
@@ -211,7 +213,14 @@ class MangaRepositoryImpl @Inject constructor(
                             "解析章节内容失败(${it.message})，HTML 前 500 字符: ${html.take(500)}"
                         )
                     }
-                result.map { imageUrls -> ChapterContent(imageUrls, prevUuid, nextUuid) }
+                result.map { imageUrls ->
+                    ChapterContent(
+                        imageUrls,
+                        prevUuid,
+                        nextUuid,
+                        chapterName ?: ""
+                    )
+                }
             } else {
                 Result.failure(Exception("获取章节页面失败: ${response.code()}"))
             }
