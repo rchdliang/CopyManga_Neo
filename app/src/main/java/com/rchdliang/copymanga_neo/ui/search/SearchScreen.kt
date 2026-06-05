@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.search
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,6 +162,7 @@ fun SearchScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp)
     ) {
         SearchBar(
@@ -195,7 +197,7 @@ private fun SearchCategorySelector(
     onTypeSelected: (QueryType?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val categories = listOf<Pair<String, QueryType?>>(
+    val categories = listOf(
         "全部" to null,
         "名称" to QueryType.NAME,
         "作者" to QueryType.AUTHOR,
@@ -272,7 +274,7 @@ private fun SearchResultsList(
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
     onLoadMore: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier.background(MaterialTheme.colorScheme.surfaceBright)
 ) {
     val gridState = rememberLazyGridState()
 
@@ -333,6 +335,7 @@ private fun SearchComicCard(
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             AsyncImage(
                 model = comic.cover,
