@@ -3,8 +3,11 @@ package com.rchdliang.copymanga_neo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -15,6 +18,9 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.AccountBox
@@ -44,7 +50,10 @@ import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -56,11 +65,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
@@ -72,7 +79,9 @@ import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
 import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @ExperimentalMaterial3ExpressiveApi
 @AndroidEntryPoint
@@ -226,16 +235,49 @@ fun MainScreen(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val pagerState = rememberPagerState(pageCount = { AppDestinations.entries.size })
+    val scope = rememberCoroutineScope()
+    var pageNavigationJob by remember { mutableStateOf<Job?>(null) }
 
-    val currentDestination = when (currentRoute) {
-        Screen.Home.route -> AppDestinations.HOME
-        Screen.Downloads.route -> AppDestinations.DOWNLOADS
-        Screen.Favorites.route -> AppDestinations.BOOKSHELF
-        Screen.Profile.route -> AppDestinations.PROFILE
-        else -> AppDestinations.HOME
+    fun targetPageFor(destination: AppDestinations): Int {
+        return when (destination) {
+            AppDestinations.BOOKSHELF -> {
+                if (isLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
+            }
+
+            else -> destination.ordinal
+        }
+    }
+
+    fun animateToPage(targetPage: Int) {
+        if (targetPage == pagerState.targetPage) return
+
+        pageNavigationJob?.cancel()
+        pageNavigationJob = scope.launch {
+            val distance = abs(targetPage - pagerState.currentPage).coerceAtLeast(2)
+            pagerState.animateScrollToPage(
+                page = targetPage,
+                animationSpec = tween(
+                    durationMillis = 100 * distance + 100,
+                    easing = EaseInOut
+                )
+            )
+        }
+    }
+
+    fun animateToDestination(destination: AppDestinations) {
+        animateToPage(targetPageFor(destination))
+    }
+
+    val currentDestination = AppDestinations.entries.getOrElse(pagerState.targetPage) {
+        AppDestinations.HOME
+    }
+
+    BackHandler(
+        enabled = pagerState.targetPage != AppDestinations.HOME.ordinal ||
+                pagerState.settledPage != AppDestinations.HOME.ordinal
+    ) {
+        animateToPage(AppDestinations.HOME.ordinal)
     }
 
     val density = LocalDensity.current
@@ -245,12 +287,12 @@ fun MainScreen(
 
     if (isExpanded) {
         WideScreenLayout(
-            navController = navController,
+            pagerState = pagerState,
             currentDestination = currentDestination,
-            currentRoute = currentRoute,
-            isLoggedIn = isLoggedIn,
+            onDestinationSelected = ::animateToDestination,
             onNavigateToDetail = onNavigateToDetail,
-            onNavigateToSearch = onNavigateToSearch
+            onNavigateToSearch = onNavigateToSearch,
+            onNavigateToProfile = { animateToPage(AppDestinations.PROFILE.ordinal) }
         )
     } else {
         NavigationSuiteScaffold(
@@ -267,25 +309,7 @@ fun MainScreen(
                         label = { Text(destination.label) },
                         selected = currentDestination == destination,
                         onClick = {
-                            val targetRoute = when (destination) {
-                                AppDestinations.HOME -> Screen.Home.route
-                                AppDestinations.DOWNLOADS -> Screen.Downloads.route
-                                AppDestinations.BOOKSHELF -> {
-                                    if (!isLoggedIn) Screen.Profile.route
-                                    else Screen.Favorites.route
-                                }
-
-                                AppDestinations.PROFILE -> Screen.Profile.route
-                            }
-                            if (currentRoute != targetRoute) {
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
+                            animateToDestination(destination)
                         }
                     )
                 }
@@ -303,37 +327,13 @@ fun MainScreen(
                     .clip(MaterialTheme.shapes.extraSmall)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                NavHost(
-                    navController = navController,
-                    startDestination = Screen.Home.route
-                ) {
-                    composable(Screen.Home.route) {
-                        HomeScreen(
-                            onComicClick = onNavigateToDetail,
-                            onNavigateToSearch = onNavigateToSearch
-                        )
-                    }
-                    composable(Screen.Downloads.route) {
-                        DownloadsScreen(onComicClick = onNavigateToDetail)
-                    }
-                    composable(Screen.Favorites.route) {
-                        FavoritesScreen(
-                            onComicClick = onNavigateToDetail,
-                            onNavigateToProfile = {
-                                navController.navigate(Screen.Profile.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
-                    composable(Screen.Profile.route) {
-                        ProfileScreen()
-                    }
-                }
+                MainPagerContent(
+                    pagerState = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    onNavigateToDetail = onNavigateToDetail,
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToProfile = { animateToPage(AppDestinations.PROFILE.ordinal) }
+                )
             }
         }
     }
@@ -342,12 +342,12 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WideScreenLayout(
-    navController: NavHostController,
+    pagerState: PagerState,
     currentDestination: AppDestinations,
-    currentRoute: String?,
-    isLoggedIn: Boolean,
+    onDestinationSelected: (AppDestinations) -> Unit,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
+    onNavigateToProfile: () -> Unit
 ) {
     val railState = rememberWideNavigationRailState(
         initialValue = WideNavigationRailValue.Collapsed
@@ -402,23 +402,7 @@ private fun WideScreenLayout(
                     railExpanded = railState.targetValue == WideNavigationRailValue.Expanded,
                     selected = currentDestination == destination,
                     onClick = {
-                        val targetRoute = when (destination) {
-                            AppDestinations.HOME -> Screen.Home.route
-                            AppDestinations.DOWNLOADS -> Screen.Downloads.route
-                            AppDestinations.BOOKSHELF -> {
-                                if (!isLoggedIn) Screen.Profile.route
-                                else Screen.Favorites.route
-                            }
-
-                            AppDestinations.PROFILE -> Screen.Profile.route
-                        }
-                        if (currentRoute != targetRoute) {
-                            navController.navigate(targetRoute) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                        onDestinationSelected(destination)
                     },
                     icon = {
                         Icon(
@@ -439,35 +423,45 @@ private fun WideScreenLayout(
                 .clip(MaterialTheme.shapes.large)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            NavHost(
-                navController = navController,
-                startDestination = Screen.Home.route
-            ) {
-                composable(Screen.Home.route) {
-                    HomeScreen(
-                        onComicClick = onNavigateToDetail,
-                        onNavigateToSearch = onNavigateToSearch
-                    )
-                }
-                composable(Screen.Downloads.route) {
-                    DownloadsScreen(onComicClick = onNavigateToDetail)
-                }
-                composable(Screen.Favorites.route) {
-                    FavoritesScreen(
-                        onComicClick = onNavigateToDetail,
-                        onNavigateToProfile = {
-                            navController.navigate(Screen.Profile.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
-                }
-                composable(Screen.Profile.route) {
-                    ProfileScreen()
-                }
-            }
+            MainPagerContent(
+                pagerState = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                onNavigateToDetail = onNavigateToDetail,
+                onNavigateToSearch = onNavigateToSearch,
+                onNavigateToProfile = onNavigateToProfile
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun MainPagerContent(
+    pagerState: PagerState,
+    modifier: Modifier = Modifier,
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToSearch: () -> Unit,
+    onNavigateToProfile: () -> Unit
+) {
+    HorizontalPager(
+        state = pagerState,
+        userScrollEnabled = true,
+        modifier = modifier
+    ) { page ->
+        when (AppDestinations.entries[page]) {
+            AppDestinations.HOME -> HomeScreen(
+                onComicClick = onNavigateToDetail,
+                onNavigateToSearch = onNavigateToSearch
+            )
+
+            AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)
+
+            AppDestinations.BOOKSHELF -> FavoritesScreen(
+                onComicClick = onNavigateToDetail,
+                onNavigateToProfile = onNavigateToProfile
+            )
+
+            AppDestinations.PROFILE -> ProfileScreen()
         }
     }
 }
