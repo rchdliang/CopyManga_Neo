@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -462,13 +463,6 @@ private fun DetailContent(
                     maxLines = if (expanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis
                 )
-//                if (!expanded) {
-//                    Text(
-//                        text = "展开 ▼",
-//                        style = MaterialTheme.typography.labelSmall,
-//                        color = MaterialTheme.colorScheme.primary
-//                    )
-//                }
             }
         }
 
@@ -490,6 +484,14 @@ private fun DetailContent(
                                 groups.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                 else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                             },
+                            colors = ToggleButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                                disabledContainerColor = Color.Unspecified,
+                                disabledContentColor = Color.Unspecified,
+                                checkedContainerColor = MaterialTheme.colorScheme.primary,
+                                checkedContentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
                             modifier = Modifier.semantics { role = Role.RadioButton }
                         ) {
                             Text(text = group.name, style = MaterialTheme.typography.labelLarge)

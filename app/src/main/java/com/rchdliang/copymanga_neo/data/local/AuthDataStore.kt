@@ -39,13 +39,16 @@ class AuthDataStore @Inject constructor(
     private var cachedAvatar: String? = null
 
     init {
-        // 启动时从 DataStore 读取缓存，确保 Interceptor 能同步获取 token
         runBlocking {
             val prefs = dataStore.data.first()
             cachedToken = prefs[KEY_TOKEN]
             cachedUsername = prefs[KEY_USERNAME]
             cachedAvatar = prefs[KEY_AVATAR]
         }
+        android.util.Log.d(
+            "AuthDataStore",
+            "Init complete: token=${if (cachedToken != null) "***" else "null"}"
+        )
     }
 
     /** 保存 token、用户名和头像 */
@@ -96,4 +99,7 @@ class AuthDataStore @Inject constructor(
 
     /** 是否已登录（Flow） */
     fun isLoggedIn(): Flow<Boolean> = getToken().map { it != null }
+
+    /** 是否已登录（同步，取缓存值） */
+    fun isLoggedInSync(): Boolean = cachedToken != null
 }

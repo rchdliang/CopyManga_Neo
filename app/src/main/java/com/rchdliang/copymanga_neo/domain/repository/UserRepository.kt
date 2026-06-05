@@ -33,6 +33,11 @@ interface UserRepository {
     fun isLoggedIn(): Flow<Boolean>
 
     /**
+     * 是否已登录（同步，取缓存值，适用于初始化状态）
+     */
+    fun isLoggedInSync(): Boolean
+
+    /**
      * 获取当前用户名
      */
     fun getUsername(): Flow<String?>

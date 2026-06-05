@@ -17,9 +17,13 @@ class MainViewModel @Inject constructor(
 ) : ViewModel() {
 
     val isLoggedIn: StateFlow<Boolean> = userRepository.isLoggedIn()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, userRepository.isLoggedInSync())
 
     init {
+        android.util.Log.d(
+            "MainViewModel",
+            "isLoggedIn initial: ${userRepository.isLoggedInSync()}"
+        )
         checkAuthStatus()
     }
 

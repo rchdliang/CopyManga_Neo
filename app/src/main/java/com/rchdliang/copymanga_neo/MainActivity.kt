@@ -235,6 +235,7 @@ fun MainScreen(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
+    android.util.Log.d("MainScreen", "Recompose: isLoggedIn=$isLoggedIn")
     val pagerState = rememberPagerState(pageCount = { AppDestinations.entries.size })
     val scope = rememberCoroutineScope()
     var pageNavigationJob by remember { mutableStateOf<Job?>(null) }
@@ -242,7 +243,13 @@ fun MainScreen(
     fun targetPageFor(destination: AppDestinations): Int {
         return when (destination) {
             AppDestinations.BOOKSHELF -> {
-                if (isLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
+                val target =
+                    if (isLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
+                android.util.Log.d(
+                    "MainScreen",
+                    "targetPageFor(BOOKSHELF): isLoggedIn=$isLoggedIn -> page=$target (BOOKSHELF=${AppDestinations.BOOKSHELF.ordinal}, PROFILE=${AppDestinations.PROFILE.ordinal})"
+                )
+                target
             }
 
             else -> destination.ordinal
@@ -445,7 +452,7 @@ private fun MainPagerContent(
 ) {
     HorizontalPager(
         state = pagerState,
-        userScrollEnabled = true,
+        userScrollEnabled = false,
         modifier = modifier
     ) { page ->
         when (AppDestinations.entries[page]) {
