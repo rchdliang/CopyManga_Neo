@@ -483,14 +483,6 @@ private fun DetailContent(
                                 groups.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                                 else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                             },
-//                            colors = ToggleButtonColors(
-//                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-//                                contentColor = MaterialTheme.colorScheme.onSurface,
-//                                disabledContainerColor = Color.Unspecified,
-//                                disabledContentColor = Color.Unspecified,
-//                                checkedContainerColor = MaterialTheme.colorScheme.primary,
-//                                checkedContentColor = MaterialTheme.colorScheme.onPrimary,
-//                            ),
                             modifier = Modifier.semantics { role = Role.RadioButton }
                         ) {
                             Text(text = group.name, style = MaterialTheme.typography.labelLarge)
