@@ -26,7 +26,15 @@ class MainViewModel @Inject constructor(
     private fun checkAuthStatus() {
         viewModelScope.launch {
             if (userRepository.isLoggedIn().first()) {
-                userRepository.getMemberInfo()
+                userRepository.getMemberInfo().fold(
+                    onSuccess = { /* 静默刷新用户信息 */ },
+                    onFailure = { error ->
+                        android.util.Log.w(
+                            "MainViewModel",
+                            "refresh member info failed: ${error.message}"
+                        )
+                    }
+                )
             }
         }
     }

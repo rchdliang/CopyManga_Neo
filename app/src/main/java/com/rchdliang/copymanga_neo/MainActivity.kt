@@ -7,31 +7,56 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.AccountBox
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.WideNavigationRail
+import androidx.compose.material3.WideNavigationRailColors
+import androidx.compose.material3.WideNavigationRailDefaults
+import androidx.compose.material3.WideNavigationRailItem
+import androidx.compose.material3.WideNavigationRailValue
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
+import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -47,6 +72,7 @@ import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
 import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
 @ExperimentalMaterial3ExpressiveApi
 @AndroidEntryPoint
@@ -106,7 +132,7 @@ fun CopyManga_NeoApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
     ) {
         NavHost(
             navController = navController,
@@ -212,17 +238,168 @@ fun MainScreen(
         else -> AppDestinations.HOME
     }
 
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            AppDestinations.entries.forEach { destination ->
-                item(
-                    icon = {
-                        Icon(
-                            imageVector = if (currentDestination == destination) destination.selectedIcon else destination.unselectedIcon,
-                            contentDescription = destination.label
+    val density = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(density) { containerSize.width.toDp() }
+    val isExpanded = windowWidthDp >= 840.dp
+
+    if (isExpanded) {
+        WideScreenLayout(
+            navController = navController,
+            currentDestination = currentDestination,
+            currentRoute = currentRoute,
+            isLoggedIn = isLoggedIn,
+            onNavigateToDetail = onNavigateToDetail,
+            onNavigateToSearch = onNavigateToSearch
+        )
+    } else {
+        NavigationSuiteScaffold(
+            layoutType = NavigationSuiteType.NavigationBar,
+            navigationSuiteItems = {
+                AppDestinations.entries.forEach { destination ->
+                    item(
+                        icon = {
+                            Icon(
+                                imageVector = if (currentDestination == destination) destination.selectedIcon else destination.unselectedIcon,
+                                contentDescription = destination.label
+                            )
+                        },
+                        label = { Text(destination.label) },
+                        selected = currentDestination == destination,
+                        onClick = {
+                            val targetRoute = when (destination) {
+                                AppDestinations.HOME -> Screen.Home.route
+                                AppDestinations.DOWNLOADS -> Screen.Downloads.route
+                                AppDestinations.BOOKSHELF -> {
+                                    if (!isLoggedIn) Screen.Profile.route
+                                    else Screen.Favorites.route
+                                }
+
+                                AppDestinations.PROFILE -> Screen.Profile.route
+                            }
+                            if (currentRoute != targetRoute) {
+                                navController.navigate(targetRoute) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        }
+                    )
+                }
+            },
+            navigationSuiteColors = NavigationSuiteDefaults.colors(
+                shortNavigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                navigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                navigationRailContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                navigationDrawerContainerColor = MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = Screen.Home.route
+                ) {
+                    composable(Screen.Home.route) {
+                        HomeScreen(
+                            onComicClick = onNavigateToDetail,
+                            onNavigateToSearch = onNavigateToSearch
                         )
-                    },
-                    label = { Text(destination.label) },
+                    }
+                    composable(Screen.Downloads.route) {
+                        DownloadsScreen(onComicClick = onNavigateToDetail)
+                    }
+                    composable(Screen.Favorites.route) {
+                        FavoritesScreen(
+                            onComicClick = onNavigateToDetail,
+                            onNavigateToProfile = {
+                                navController.navigate(Screen.Profile.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                    composable(Screen.Profile.route) {
+                        ProfileScreen()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun WideScreenLayout(
+    navController: NavHostController,
+    currentDestination: AppDestinations,
+    currentRoute: String?,
+    isLoggedIn: Boolean,
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToSearch: () -> Unit
+) {
+    val railState = rememberWideNavigationRailState(
+        initialValue = WideNavigationRailValue.Collapsed
+    )
+    val scope = rememberCoroutineScope()
+    val railWindowInsets = WindowInsets.safeDrawing.only(
+        WindowInsetsSides.Vertical + WindowInsetsSides.Start
+    )
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        WideNavigationRail(
+            state = railState,
+            windowInsets = railWindowInsets,
+            colors = WideNavigationRailColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modalContainerColor = WideNavigationRailDefaults.colors().modalContainerColor,
+                modalScrimColor = WideNavigationRailDefaults.colors().modalScrimColor,
+                modalContentColor = WideNavigationRailDefaults.colors().modalContentColor
+            ),
+            header = {
+                IconButton(
+                    modifier = Modifier
+                        .padding(start = 24.dp)
+                        .semantics {
+                            stateDescription =
+                                if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                    "已展开" else "已折叠"
+                        },
+                    onClick = {
+                        scope.launch {
+                            if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                railState.collapse()
+                            else
+                                railState.expand()
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (railState.targetValue == WideNavigationRailValue.Expanded)
+                            Icons.AutoMirrored.Filled.MenuOpen
+                        else
+                            Icons.Filled.Menu,
+                        contentDescription = if (railState.targetValue == WideNavigationRailValue.Expanded)
+                            "折叠侧栏" else "展开侧栏"
+                    )
+                }
+            }
+        ) {
+            AppDestinations.entries.forEach { destination ->
+                WideNavigationRailItem(
+                    railExpanded = railState.targetValue == WideNavigationRailValue.Expanded,
                     selected = currentDestination == destination,
                     onClick = {
                         val targetRoute = when (destination) {
@@ -232,6 +409,7 @@ fun MainScreen(
                                 if (!isLoggedIn) Screen.Profile.route
                                 else Screen.Favorites.route
                             }
+
                             AppDestinations.PROFILE -> Screen.Profile.route
                         }
                         if (currentRoute != targetRoute) {
@@ -241,20 +419,24 @@ fun MainScreen(
                                 restoreState = true
                             }
                         }
-                    }
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = if (currentDestination == destination)
+                                destination.selectedIcon else destination.unselectedIcon,
+                            contentDescription = destination.label
+                        )
+                    },
+                    label = { Text(destination.label) }
                 )
             }
-        },
-        navigationSuiteColors = NavigationSuiteDefaults.colors(
-            shortNavigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationBarContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationRailContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-            navigationDrawerContainerColor = MaterialTheme.colorScheme.surfaceContainer
-        )
-    ) {
+        }
+
         Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxSize()
+                .clip(MaterialTheme.shapes.large)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
             NavHost(
@@ -289,6 +471,7 @@ fun MainScreen(
         }
     }
 }
+
 enum class AppDestinations(
     val label: String,
     val selectedIcon: ImageVector,

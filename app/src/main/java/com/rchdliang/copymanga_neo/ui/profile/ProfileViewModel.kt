@@ -141,7 +141,15 @@ class ProfileViewModel @Inject constructor(
     /** 登出 */
     fun logout() {
         viewModelScope.launch {
-            userRepository.logout()
+            userRepository.logout().fold(
+                onSuccess = {
+                    _uiState.value = ProfileUiState()
+                },
+                onFailure = { error ->
+                    android.util.Log.e("ProfileViewModel", "Logout failed: ${error.message}")
+                    _uiState.value = ProfileUiState()
+                }
+            )
         }
     }
 }

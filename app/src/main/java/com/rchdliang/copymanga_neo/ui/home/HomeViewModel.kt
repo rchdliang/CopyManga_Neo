@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,12 +36,20 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("HomeViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            error = throwable.message
+        )
+    }
+
     init {
         loadComics()
     }
 
     fun loadComics() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             mangaRepository.getHomeComics().fold(
                 onSuccess = { homeComicsData ->
@@ -66,17 +75,5 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
-//
-//    fun refresh() {
-//        _uiState.value = _uiState.value.copy(currentPage = 1)
-//        loadComics()
-//    }
-//
-//    fun loadMore() {
-//        if (_uiState.value.isLoading) return
-//        _uiState.value = _uiState.value.copy(
-//            currentPage = _uiState.value.currentPage + 1
-//        )
-//        loadComics()
-//    }
+
 }

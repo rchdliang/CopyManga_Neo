@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.LoginResult
 import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResult
 import com.rchdliang.copymanga_neo.di.PersistentCookieJar
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
@@ -77,6 +78,8 @@ class UserRepositoryImpl @Inject constructor(
             )
 
             Result.success(loginResult)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("UserRepository", "Login exception: ${e.message}", e)
             Result.failure(e)
@@ -112,6 +115,8 @@ class UserRepositoryImpl @Inject constructor(
             )
 
             Result.success(memberInfo)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("UserRepository", "getMemberInfo exception: ${e.message}", e)
             Result.failure(e)
@@ -124,6 +129,8 @@ class UserRepositoryImpl @Inject constructor(
             cookieJar.clearAll()
             android.util.Log.d("UserRepository", "Logout success")
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }

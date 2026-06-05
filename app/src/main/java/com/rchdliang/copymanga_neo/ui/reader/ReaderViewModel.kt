@@ -49,10 +49,13 @@ class ReaderViewModel @Inject constructor(
         currentGroup = group
 
         viewModelScope.launch {
-            try {
-                repository.trialChapterContent(comicPathWord, chapterUuid)
-            } catch (_: Exception) {
-            }
+            repository.trialChapterContent(comicPathWord, chapterUuid)
+                .onFailure { error ->
+                    android.util.Log.w(
+                        "ReaderViewModel",
+                        "trialChapterContent failed: ${error.message}"
+                    )
+                }
 
             _uiState.value = ReaderUiState.Loading
             repository.getChapterContent(comicPathWord, chapterUuid, group)

@@ -179,27 +179,22 @@ class DetailViewModel @Inject constructor(
                 mangaRepository.addFavorite(comicDetail.uuid).fold(
                     onSuccess = {
                         val pathWord = currentPathWord ?: return@fold
-                        viewModelScope.launch {
-                            mangaRepository.queryComicStatus(pathWord).fold(
-                                onSuccess = { result ->
-                                    _uiState.update {
-                                        it.copy(
-                                            isInShelf = result.collect != null,
-                                            shelfCollectId = result.collect,
-                                            isShelfLoading = false
-                                        )
-                                    }
-                                },
-                                onFailure = {
-                                    _uiState.update {
-                                        it.copy(
-                                            isInShelf = true,
-                                            isShelfLoading = false
-                                        )
-                                    }
+                        mangaRepository.queryComicStatus(pathWord).fold(
+                            onSuccess = { result ->
+                                _uiState.update {
+                                    it.copy(
+                                        isInShelf = result.collect != null,
+                                        shelfCollectId = result.collect,
+                                        isShelfLoading = false
+                                    )
                                 }
-                            )
-                        }
+                            },
+                            onFailure = {
+                                _uiState.update {
+                                    it.copy(isInShelf = true, isShelfLoading = false)
+                                }
+                            }
+                        )
                     },
                     onFailure = {
                         _uiState.update { it.copy(isShelfLoading = false) }

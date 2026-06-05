@@ -14,8 +14,9 @@ import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,7 +29,7 @@ class MangaRepositoryImpl @Inject constructor(
     @param:WwwRetrofit private val wwwApiService: MangaApiService
 ) : MangaRepository {
 
-    override suspend fun getHomeComics(): Result<HomeComicsData> = coroutineScope {
+    override suspend fun getHomeComics(): Result<HomeComicsData> = supervisorScope {
         try {
             val homeResponseDeferred = async { apiService.getHomeComics() }
             val recResponseDeferred = async { apiService.getRecComics(freeType = null) }
@@ -39,14 +40,14 @@ class MangaRepositoryImpl @Inject constructor(
             if (!homeResponse.isSuccessful) {
                 val errorBody = homeResponse.errorBody()?.string()
                 android.util.Log.e("MangaRepository", "Error response: $errorBody")
-                return@coroutineScope Result.failure(Exception("HTTP ${homeResponse.code()}: ${homeResponse.message()}"))
+                return@supervisorScope Result.failure(Exception("HTTP ${homeResponse.code()}: ${homeResponse.message()}"))
             }
 
             val body = homeResponse.body()
             android.util.Log.d("MangaRepository", "Response body is null: ${body == null}")
 
             if (body == null) {
-                return@coroutineScope Result.failure(Exception("Response body is null"))
+                return@supervisorScope Result.failure(Exception("Response body is null"))
             }
 
             // 优先使用 getRecComics 的结果
@@ -73,6 +74,8 @@ class MangaRepositoryImpl @Inject constructor(
                     finishComics = finishComics
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("MangaRepository", "Exception loading comics: ${e.message}", e)
             Result.failure(e)
@@ -109,6 +112,8 @@ class MangaRepositoryImpl @Inject constructor(
                 )
                 Result.failure(Exception(errorMessage))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("MangaRepository", "获取详情异常: ${e.message}", e)
             Result.failure(e)
@@ -129,6 +134,8 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取章节列表失败"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -151,6 +158,8 @@ class MangaRepositoryImpl @Inject constructor(
                     Exception(response.body()?.message ?: "试看请求失败")
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w("MangaRepository", "试看请求异常: ${e.message}")
             Result.failure(e)
@@ -224,6 +233,8 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 Result.failure(Exception("获取章节页面失败: ${response.code()}"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -237,6 +248,8 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取推荐失败"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -262,6 +275,8 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 Result.failure(Exception(body?.message ?: "搜索失败"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -286,6 +301,8 @@ class MangaRepositoryImpl @Inject constructor(
                 }
                 Result.failure(Exception(message))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: java.net.SocketTimeoutException) {
             Result.failure(Exception("请求超时，请检查网络后重试"))
         } catch (e: java.net.UnknownHostException) {
@@ -312,6 +329,8 @@ class MangaRepositoryImpl @Inject constructor(
                     Exception(response.body()?.message ?: "查询状态失败")
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -327,6 +346,8 @@ class MangaRepositoryImpl @Inject constructor(
                     Exception(response.body()?.message ?: "添加收藏失败")
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -342,6 +363,8 @@ class MangaRepositoryImpl @Inject constructor(
                     Exception(response.body()?.message ?: "移除收藏失败")
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
