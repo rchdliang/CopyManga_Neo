@@ -35,7 +35,8 @@ data class DetailUiState(
     val isInShelf: Boolean = false,
     val shelfCollectId: Int? = null,
     val browse: BrowseDto? = null,
-    val isShelfLoading: Boolean = false
+    val isShelfLoading: Boolean = false,
+    val shelfMessage: String? = null
 )
 
 @HiltViewModel
@@ -167,12 +168,18 @@ class DetailViewModel @Inject constructor(
                             it.copy(
                                 isInShelf = false,
                                 shelfCollectId = null,
-                                isShelfLoading = false
+                                isShelfLoading = false,
+                                shelfMessage = "已从书架中删除"
                             )
                         }
                     },
-                    onFailure = {
-                        _uiState.update { it.copy(isShelfLoading = false) }
+                    onFailure = { error ->
+                        _uiState.update {
+                            it.copy(
+                                isShelfLoading = false,
+                                shelfMessage = error.message ?: "删除失败"
+                            )
+                        }
                     }
                 )
             } else {
@@ -185,7 +192,8 @@ class DetailViewModel @Inject constructor(
                                     it.copy(
                                         isInShelf = result.collect != null,
                                         shelfCollectId = result.collect,
-                                        isShelfLoading = false
+                                        isShelfLoading = false,
+                                        shelfMessage = "已添加到书架"
                                     )
                                 }
                             },
@@ -196,12 +204,21 @@ class DetailViewModel @Inject constructor(
                             }
                         )
                     },
-                    onFailure = {
-                        _uiState.update { it.copy(isShelfLoading = false) }
+                    onFailure = { error ->
+                        _uiState.update {
+                            it.copy(
+                                isShelfLoading = false,
+                                shelfMessage = error.message ?: "添加失败"
+                            )
+                        }
                     }
                 )
             }
         }
+    }
+
+    fun clearShelfMessage() {
+        _uiState.update { it.copy(shelfMessage = null) }
     }
 
     fun getStartChapter(): StartChapterInfo? {

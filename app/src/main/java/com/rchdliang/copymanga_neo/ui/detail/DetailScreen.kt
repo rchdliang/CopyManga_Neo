@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.detail
 
+import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -107,9 +109,17 @@ fun DetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val pullToRefreshState = rememberPullToRefreshState()
+    val context = LocalContext.current
 
     LaunchedEffect(pathWord) {
         viewModel.loadDetail(pathWord)
+    }
+
+    LaunchedEffect(uiState.shelfMessage) {
+        uiState.shelfMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.clearShelfMessage()
+        }
     }
 
     PullToRefreshBox(

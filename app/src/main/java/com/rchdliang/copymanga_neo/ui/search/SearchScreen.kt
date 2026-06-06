@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -24,11 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -37,6 +39,10 @@ import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +61,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -76,6 +83,7 @@ fun SearchScreen(
     onNavigateBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pullToRefreshState = rememberPullToRefreshState()
     SearchScreen(
         uiState = uiState,
         onQueryChange = { viewModel.updateQuery(it) },
@@ -84,11 +92,13 @@ fun SearchScreen(
         onLoadMore = { viewModel.loadMore() },
         onQueryTypeChange = { viewModel.updateQueryType(it) },
         onComicClick = onComicClick,
-        onNavigateBack = onNavigateBack
+        onNavigateBack = onNavigateBack,
+        onRefresh = { viewModel.search(viewModel.uiState.value.query) },
+        pullToRefreshState = pullToRefreshState
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SearchScreen(
     uiState: SearchUiState,
@@ -98,7 +108,9 @@ fun SearchScreen(
     onLoadMore: () -> Unit = {},
     onQueryTypeChange: (QueryType?) -> Unit,
     onComicClick: (String) -> Unit,
-    onNavigateBack: () -> Unit = {}
+    onNavigateBack: () -> Unit = {},
+    onRefresh: () -> Unit = {},
+    pullToRefreshState: PullToRefreshState = rememberPullToRefreshState()
 ) {
     val searchBarState = rememberSearchBarState()
     val textFieldState = rememberTextFieldState()
@@ -181,16 +193,26 @@ fun SearchScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Box(
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoading,
+            onRefresh = onRefresh,
+            state = pullToRefreshState,
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullToRefreshState,
+                    isRefreshing = uiState.isLoading,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .clip(MaterialTheme.shapes.large)
-
         ) {
             SearchScreenContent(
                 uiState = uiState,
                 onComicClick = onComicClick,
-                onLoadMore = onLoadMore
+                onLoadMore = onLoadMore,
+                onRetry = { onSearch(uiState.query) }
             )
         }
     }
@@ -233,24 +255,42 @@ private fun SearchCategorySelector(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchScreenContent(
     uiState: SearchUiState,
     onComicClick: (String) -> Unit,
-    onLoadMore: () -> Unit = {}
+    onLoadMore: () -> Unit = {},
+    onRetry: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         when {
-            uiState.isLoading -> {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            }
-
-            uiState.error != null -> {
-                Text(
-                    text = "搜索失败：${uiState.error}",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            uiState.error != null && uiState.searchResults.isEmpty() && !uiState.isLoading -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "错误",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "搜索失败：${uiState.error}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    FilledTonalButton(
+                        onClick = onRetry,
+                    ) { Text("重试") }
+                }
             }
 
             uiState.searchResults.isNotEmpty() -> {
@@ -262,7 +302,7 @@ private fun SearchScreenContent(
                 )
             }
 
-            uiState.query.isNotEmpty() -> {
+            uiState.query.isNotEmpty() && !uiState.isLoading -> {
                 Text(
                     text = "没有找到相关结果",
                     modifier = Modifier.align(Alignment.Center),

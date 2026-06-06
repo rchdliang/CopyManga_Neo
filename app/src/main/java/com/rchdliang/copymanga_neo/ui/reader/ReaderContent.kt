@@ -1,14 +1,18 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
 import android.util.Log
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,11 +20,16 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,11 +37,14 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -42,7 +54,6 @@ fun ReaderContent(
     isContinuous: Boolean,
     isRtl: Boolean,
     contentScale: ContentScale,
-    displayedPageNumber: Int,
     pagerState: PagerState,
     listState: LazyListState,
     continuousNestedScrollConnection: NestedScrollConnection,
@@ -54,6 +65,7 @@ fun ReaderContent(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     Box(modifier = modifier
         .fillMaxSize()
         .background(Color.Black)) {
@@ -74,13 +86,72 @@ fun ReaderContent(
                         onLongPress = onLongPress
                     )
             ) {
-                itemsIndexed(effectiveImages) { _, url ->
-                    AsyncImage(
-                        model = url,
+                itemsIndexed(effectiveImages) { index, url ->
+                    var retryKey by rememberSaveable(url) { mutableIntStateOf(0) }
+                    val request = remember(url, retryKey) {
+                        ImageRequest.Builder(context)
+                            .data(url)
+                            .setParameter("retry_hash", retryKey)
+                            .build()
+                    }
+                    SubcomposeAsyncImage(
+                        model = request,
                         contentDescription = null,
                         modifier = Modifier.fillMaxWidth(),
                         contentScale = contentScale
-                    )
+                    ) {
+                        when (painter.state) {
+                            is AsyncImagePainter.State.Loading -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(300.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = (index + 1).toString(),
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        CircularWavyProgressIndicator(color = Color.White)
+                                    }
+                                }
+                            }
+
+                            is AsyncImagePainter.State.Error -> {
+                                val error = painter.state as AsyncImagePainter.State.Error
+                                val message = error.result.throwable.message
+                                    ?: error.result.throwable.javaClass.simpleName
+                                    ?: "未知错误"
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(300.dp)
+                                        .clickable { retryKey++ },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "加载失败:$message",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                }
+                            }
+
+                            is AsyncImagePainter.State.Success -> {
+                                Image(
+                                    painter = painter,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentScale = contentScale
+                                )
+                            }
+
+                            else -> Unit
+                        }
+                    }
                 }
             }
         } else {
@@ -114,12 +185,69 @@ fun ReaderContent(
                     ),
                 beyondViewportPageCount = 2
             ) { page ->
-                AsyncImage(
-                    model = effectiveImages[page],
+                val url = effectiveImages[page]
+                var retryKey by rememberSaveable(url) { mutableIntStateOf(0) }
+                val request = remember(url, retryKey) {
+                    ImageRequest.Builder(context)
+                        .data(url)
+                        .setParameter("retry_hash", retryKey)
+                        .build()
+                }
+                SubcomposeAsyncImage(
+                    model = request,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = contentScale
-                )
+                ) {
+                    when (painter.state) {
+                        is AsyncImagePainter.State.Loading -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = (page + 1).toString(),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    CircularWavyProgressIndicator(color = Color.White)
+                                }
+                            }
+                        }
+
+                        is AsyncImagePainter.State.Error -> {
+                            val error = painter.state as AsyncImagePainter.State.Error
+                            val message = error.result.throwable.message
+                                ?: error.result.throwable.javaClass.simpleName
+                                ?: "未知错误"
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable { retryKey++ },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "加载失败:$message",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
+
+                        is AsyncImagePainter.State.Success -> {
+                            Image(
+                                painter = painter,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = contentScale
+                            )
+                        }
+
+                        else -> Unit
+                    }
+                }
             }
         }
     }

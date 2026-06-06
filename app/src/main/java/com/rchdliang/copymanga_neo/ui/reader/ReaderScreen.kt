@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -17,7 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -103,16 +104,30 @@ fun ReaderScreen(
         .fillMaxSize()
         .background(Color.Black)) {
         when (val state = uiState) {
-            is ReaderUiState.Loading -> CircularProgressIndicator(
+            is ReaderUiState.Loading -> CircularWavyProgressIndicator(
                 modifier = Modifier.align(Alignment.Center), color = Color.White
             )
 
-            is ReaderUiState.Error -> Text(
-                "加载失败：${state.message}", color = Color.White,
+            is ReaderUiState.Error -> Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(16.dp)
-            )
+                    .fillMaxSize()
+                    .clickable {
+                        viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "加载失败：${state.message}", color = Color.White,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "点击屏幕重试", color = Color.White,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
 
             is ReaderUiState.RiskControl -> ReaderRiskControlContent(
                 state.reason, modifier = Modifier.align(Alignment.Center)
@@ -361,7 +376,6 @@ fun ReaderSuccessContent(
             isContinuous = isContinuous,
             isRtl = dir == ReadingDirection.RIGHT_TO_LEFT,
             contentScale = contentScale,
-            displayedPageNumber = displayedPageNumber,
             pagerState = pagerState,
             listState = listState,
             continuousNestedScrollConnection = nestedScrollConnection,
@@ -437,7 +451,7 @@ private fun ReaderLoadingPreview() {
         Box(Modifier
             .fillMaxSize()
             .background(Color.Black)) {
-            CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
+            CircularWavyProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
         }
     }
 }
