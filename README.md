@@ -13,9 +13,11 @@
 
 ## 说明
 
-漫画数据均来源于[拷貝漫畫](https://copymanga.com/)官方，作者不对其中呈现的任何内容负责。
+漫画数据均来源于[拷貝漫畫](https://2026copy.com/)官方，作者不对其中呈现的任何内容负责。
 
-本应用使用官方 APP 的 API，通过 AES/CBC 客户端解密章节图片进行渲染。
+本应用使用了官方的网站的api，由于个人能力有限，未能获取到所有api（如评论功能）。
+
+同时，本项目是Vibe Coding的产物，无法保证应用的稳定性，也无法承诺后续的维护更新。如有问题，请使用官方的客户端。
 
 ## 功能
 
@@ -51,48 +53,10 @@
 | 构建    | Gradle Kotlin DSL (AGP 9.2)            |
 | 最低支持  | Android 12 (API 31)                    |
 
-## 构建
-
-### 环境要求
-
-- Android Studio Meerkat (2025.2.1) 或更高版本
-- JDK 17+
-- Android SDK 37
-
-### Debug 构建
-
-```bash
-./gradlew assembleDebug
-```
-
-### Release 构建
-
-1. 创建签名文件 `release-keystore.jks`
-2. 在根目录创建 `keystore.properties` 并填写签名信息：
-
-```properties
-storeFile=release-keystore.jks
-storePassword=your_store_password
-keyAlias=your_key_alias
-keyPassword=your_key_password
-```
-
-3. 执行构建：
-
-```bash
-./gradlew assembleRelease
-```
-
-## CI/CD
-
-GitHub Actions 自动构建（[
-`.github/workflows/android-ci-release.yml`](.github/workflows/android-ci-release.yml)）：
-
-- **Push / PR** → 构建 Debug APK
-- **推送标签 (`v*`)** → 构建签名 Release APK 并发布到 GitHub Release
 
 ## 声明
 
 此项目是个人为了学习而开发，仅用于学习和测试，请于下载后 24 小时内删除。
 所有漫画内容版权归原作者及拷貝漫畫平台所有。
-
+所用API皆从官方网站收集，不提供任何破解内容。
+在此致敬[fumiama/copymanga](https://github.com/fumiama/copymanga)
