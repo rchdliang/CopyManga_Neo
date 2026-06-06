@@ -1,16 +1,18 @@
 <div align="center">
-
+  <img width="200" height="200" src="app/src/main/ic_launcher-playstore.png" alt="CopyManga Neo Logo">
+</div>
+<div align="center">
   <h1>CopyManga Neo</h1>
-  拷貝漫畫的第三方 Android 客户端，使用 Kotlin + Jetpack Compose 构建<br><br>
+</div>
+<div align="center">
+  拷貝漫畫的第三方 Android 客户端，使用 Kotlin + Jetpack Compose 构建
 
 ![GitHub repo size](https://img.shields.io/github/repo-size/rchdliang/CopyManga_Neo)
 ![GitHub Repo stars](https://img.shields.io/github/stars/rchdliang/CopyManga_Neo)
 ![GitHub all releases](https://img.shields.io/github/downloads/rchdliang/CopyManga_Neo/total)
 ![License](https://img.shields.io/github/license/rchdliang/CopyManga_Neo)
-
 </div>
 
-<br/>
 
 ## 说明
 
@@ -18,7 +20,9 @@
 
 本应用使用了官方的网站的api，由于个人能力有限，未能获取到所有api（如评论功能）。
 
-同时，本项目是Vibe Coding的产物，无法保证应用的稳定性，也无法承诺后续的维护更新。如有问题，请使用官方的客户端。
+同时，本项目是 Vibe Coding ~~AI造屎~~ 的产物，无法保证应用的稳定性，也无法承诺后续的维护更新。如有问题，请使用官方的客户端。
+
+本项目不接受任何赞助，若想支持本项目，请赞助[拷貝漫畫](https://2026copy.com/)官方
 
 ## 功能
 
@@ -33,7 +37,10 @@
 ## 预览
 
 <div align="center">
-  <em>截图待补充</em>
+  <em>
+    <img src="screenshots/Screenshot_Pad_HomeScreen.jpg" width="32%" alt="home" />
+    <img src="screenshots/Screenshot_Phone_HomeScreen.jpg" width="32%" alt="home" />
+</em>
 </div>
 
 <br/>

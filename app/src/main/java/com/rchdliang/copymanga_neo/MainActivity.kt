@@ -179,7 +179,11 @@ fun CopyManga_NeoApp(
                 arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
             ) { backStackEntry ->
                 val pathWord = backStackEntry.arguments?.getString("pathWord") ?: return@composable
-                Box(modifier = Modifier.statusBarsPadding()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
                     DetailScreen(
                         pathWord = pathWord,
                         onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->

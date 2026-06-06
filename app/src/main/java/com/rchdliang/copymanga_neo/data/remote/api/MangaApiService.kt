@@ -195,7 +195,7 @@ interface MangaApiService {
      * @param comicId 漫画 String 类型 UUID
      */
     @FormUrlEncoded
-    @POST("api/v3/member/collect/comics")
+    @POST("api/v3/member/collect/comic")
     suspend fun addFavorite(
         @Field("comic_id") comicId: String,
         @Field("is_collect") isCollect: Int = 1,

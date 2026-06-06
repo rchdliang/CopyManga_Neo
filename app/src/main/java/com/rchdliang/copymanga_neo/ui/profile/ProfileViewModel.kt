@@ -27,7 +27,8 @@ data class ProfileUiState(
     val dayDownloads: Int? = null,
     val dayDownloadsRefresh: String? = null,
     val ticket: Float? = null,
-    val rewardTicket: Float? = null
+    val rewardTicket: Float? = null,
+    val isRefreshing: Boolean = false
 )
 
 /**
@@ -98,6 +99,32 @@ class ProfileViewModel @Inject constructor(
         } catch (e: Exception) {
             android.util.Log.e("ProfileViewModel", "Format refresh time failed: ${e.message}")
             isoString
+        }
+    }
+
+    /** 下拉刷新 */
+    fun refresh() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isRefreshing = true)
+            userRepository.getMemberInfo().fold(
+                onSuccess = { info ->
+                    _uiState.value = _uiState.value.copy(
+                        nickname = info.nickname,
+                        dayDownloads = info.dayDownloads,
+                        dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
+                        ticket = info.ticket,
+                        rewardTicket = info.rewardTicket,
+                        isRefreshing = false
+                    )
+                },
+                onFailure = { error ->
+                    android.util.Log.e(
+                        "ProfileViewModel",
+                        "Refresh member info failed: ${error.message}"
+                    )
+                    _uiState.value = _uiState.value.copy(isRefreshing = false)
+                }
+            )
         }
     }
 

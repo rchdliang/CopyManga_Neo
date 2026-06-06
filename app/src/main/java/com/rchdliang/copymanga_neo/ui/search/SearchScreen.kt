@@ -49,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -180,7 +181,12 @@ fun SearchScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(MaterialTheme.shapes.large)
+
+        ) {
             SearchScreenContent(
                 uiState = uiState,
                 onComicClick = onComicClick,
@@ -274,7 +280,9 @@ private fun SearchResultsList(
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
     onLoadMore: () -> Unit = {},
-    modifier: Modifier = Modifier.background(MaterialTheme.colorScheme.surfaceBright)
+    modifier: Modifier = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.surfaceBright)
 ) {
     val gridState = rememberLazyGridState()
 
@@ -299,7 +307,7 @@ private fun SearchResultsList(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         state = gridState,
-        modifier = modifier
+        modifier = Modifier.fillMaxSize()
     ) {
         items(comics) { comic ->
             SearchComicCard(
@@ -335,7 +343,7 @@ private fun SearchComicCard(
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
+//            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             AsyncImage(
                 model = comic.cover,

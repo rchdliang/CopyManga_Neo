@@ -123,6 +123,7 @@ fun HomeScreen(
                             Text(
                                 text = "漫画推荐",
                                 style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
                             )
                         }
@@ -141,6 +142,7 @@ fun HomeScreen(
                             Text(
                                 text = "热门更新",
                                 style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
@@ -159,6 +161,7 @@ fun HomeScreen(
                             Text(
                                 text = "最新上架",
                                 style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }
@@ -177,6 +180,7 @@ fun HomeScreen(
                             Text(
                                 text = "完结漫画",
                                 style = MaterialTheme.typography.headlineMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                             )
                         }

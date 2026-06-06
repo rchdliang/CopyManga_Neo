@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +31,9 @@ import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,34 +57,50 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 /**
  * 账号页面
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val pullToRefreshState = rememberPullToRefreshState()
 
     Box(
-        modifier = Modifier
-//            .statusBarsPadding()
-            .fillMaxSize(),
-        contentAlignment = Alignment.Center
+        modifier = Modifier.fillMaxSize()
     ) {
         if (uiState.isLoggedIn) {
-            // 已登录状态
-            LoggedInView(
-                username = uiState.username,
-                nickname = uiState.nickname,
-                avatar = uiState.avatar,
-                dayDownloads = uiState.dayDownloads,
-                dayDownloadsRefresh = uiState.dayDownloadsRefresh,
-                ticket = uiState.ticket,
-                onLogout = { viewModel.logout() }
-            )
+            PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { viewModel.refresh() },
+                state = pullToRefreshState,
+                indicator = {
+                    PullToRefreshDefaults.LoadingIndicator(
+                        state = pullToRefreshState,
+                        isRefreshing = uiState.isRefreshing,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                LoggedInView(
+                    username = uiState.username,
+                    nickname = uiState.nickname,
+                    avatar = uiState.avatar,
+                    dayDownloads = uiState.dayDownloads,
+                    dayDownloadsRefresh = uiState.dayDownloadsRefresh,
+                    ticket = uiState.ticket,
+                    onLogout = { viewModel.logout() }
+                )
+            }
         } else {
-            // 未登录状态
-            NotLoggedInView(
-                onLoginClick = { viewModel.showLoginDialog() }
-            )
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                NotLoggedInView(
+                    onLoginClick = { viewModel.showLoginDialog() }
+                )
+            }
         }
     }
 
@@ -108,7 +128,9 @@ private fun LoggedInView(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = Modifier.padding(16.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
         AsyncImage(
             model = avatar,
@@ -122,7 +144,8 @@ private fun LoggedInView(
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = nickname ?: username ?: "未知用户",
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface
         )
         if (username != null && nickname != null && nickname != username) {
             Text(
@@ -138,7 +161,8 @@ private fun LoggedInView(
         if (dayDownloads != null) {
             Text(
                 text = "今日剩余下载: $dayDownloads",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (dayDownloadsRefresh != null) {
                 Text(
@@ -152,7 +176,8 @@ private fun LoggedInView(
         if (ticket != null) {
             Text(
                 text = "点券: $ticket",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 

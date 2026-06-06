@@ -4,6 +4,9 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
@@ -41,6 +46,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -48,6 +54,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -97,26 +106,57 @@ fun DetailScreen(
     onDownloadClick: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pullToRefreshState = rememberPullToRefreshState()
 
     LaunchedEffect(pathWord) {
         viewModel.loadDetail(pathWord)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
+    PullToRefreshBox(
+        isRefreshing = uiState.isLoading,
+        onRefresh = { viewModel.loadDetail(pathWord) },
+        state = pullToRefreshState,
+        indicator = {
+            PullToRefreshDefaults.LoadingIndicator(
+                state = pullToRefreshState,
+                isRefreshing = uiState.isLoading,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        },
+        modifier = Modifier.fillMaxSize()
     ) {
         when {
-            uiState.isLoading && uiState.comicDetail == null -> {
-                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
-            }
+//            uiState.isLoading && uiState.comicDetail == null -> {
+//                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
+//            }
 
             uiState.error != null && uiState.comicDetail == null -> {
-                Text(
-                    text = "加载失败：${uiState.error}",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.error
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "错误",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "加载失败：${uiState.error}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    FilledTonalButton(
+                        onClick = { viewModel.loadDetail(pathWord) },
+                    ) { Text("重试") }
+                }
             }
 
             uiState.riskControlReason != null && uiState.comicDetail == null -> {
@@ -222,8 +262,15 @@ private fun DetailContent(
     val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
     val currentOnChapterClick by rememberUpdatedState(onChapterClick)
 
+    val pullGestureScrollableState = rememberScrollableState { 0f }//Fake Scrollable
     Column(
-        modifier = modifier.background(MaterialTheme.colorScheme.surface)
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
+            .scrollable(
+                state = pullGestureScrollableState,
+                orientation = Orientation.Vertical
+            )
     ) {
         Row(
             modifier = Modifier
