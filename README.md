@@ -6,6 +6,7 @@
 ![GitHub repo size](https://img.shields.io/github/repo-size/rchdliang/CopyManga_Neo)
 ![GitHub Repo stars](https://img.shields.io/github/stars/rchdliang/CopyManga_Neo)
 ![GitHub all releases](https://img.shields.io/github/downloads/rchdliang/CopyManga_Neo/total)
+![License](https://img.shields.io/github/license/rchdliang/CopyManga_Neo)
 
 </div>
 
@@ -60,3 +61,25 @@
 所有漫画内容版权归原作者及拷貝漫畫平台所有。
 所用API皆从官方网站收集，不提供任何破解内容。
 在此致敬[fumiama/copymanga](https://github.com/fumiama/copymanga)
+
+## License
+
+本项目采用 [GNU General Public License v3.0](LICENSE) 开源许可证。
+
+```
+CopyManga Neo
+Copyright (C) 2026 rchdliang
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+```
