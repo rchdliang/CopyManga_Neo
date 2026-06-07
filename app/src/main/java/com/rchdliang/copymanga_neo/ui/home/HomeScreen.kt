@@ -1,7 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -34,16 +32,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -246,90 +240,10 @@ private fun ComicGrid(
             contentType = { "comic_card" }
         ) { comic ->
             ComicCard(
-                comic = comic,
+                name = comic.name,
+                cover = comic.cover,
+                subtitle = comic.author?.firstOrNull()?.name,
                 onClick = { onComicClick(comic.pathWord) }
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ComicCard(
-    comic: ComicDto,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.large,
-        modifier = modifier.size(width = 120.dp, height = 180.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.BottomStart,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            AsyncImage(
-                model = ImageRequest
-                    .Builder(LocalContext.current)
-                    .crossfade(true)
-                    .data(comic.cover)
-                    .build(),
-                contentDescription = comic.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(8.dp)) {
-                    Text(
-                        text = comic.name,
-                        minLines = 2,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    comic.author?.firstOrNull()?.let { author ->
-                        Text(
-                            text = author.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-
-        }
-
-    }
-}
-
-@Preview(showBackground = true, name = "漫画卡片")
-@Composable
-private fun ComicCardPreview() {
-    CopyManga_NeoTheme {
-        Box(modifier = Modifier.padding(16.dp)) {
-            ComicCard(
-                comic = ComicDto(
-                    name = "示例漫画名称",
-                    pathWord = "test-comic",
-                    cover = "https://example.com/cover.jpg",
-                    author = listOf(AuthorDto("作者名称", "author-path")),
-                    females = emptyList(),
-                    males = emptyList(),
-                    theme = emptyList(),
-                    popular = 1000,
-                    authorAlias = "作者别名"
-                ),
-                onClick = {}
             )
         }
     }

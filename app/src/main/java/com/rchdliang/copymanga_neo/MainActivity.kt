@@ -202,8 +202,7 @@ fun CopyManga_NeoApp(
                             )
                         },
                         onNavigateBack = { navController.popBackStack() },
-                        onNavigateToProfile = { navController.popBackStack() },
-                        onDownloadClick = { /* TODO: 下载功能 */ }
+                        onNavigateToProfile = { navController.popBackStack() }
                     )
                 }
             }
