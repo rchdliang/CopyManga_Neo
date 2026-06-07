@@ -50,6 +50,16 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare release notes
+        run: |
+          set -euo pipefail
+          git cat-file tag "refs/tags/${GITHUB_REF_NAME}" \
+            | sed '1,/^$/d; /^-----BEGIN .*SIGNATURE-----$/,$d' \
+            > release_body.txt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -87,10 +97,14 @@ jobs:
 
       - name: Rename APK
         run: |
-          find . -path "*/build/outputs/apk/*/release/*.apk" -exec sh -c 'cp "$1" "CopyManga_Neo_${{ github.ref_name }}.apk"' _ {} \;
+          set -euo pipefail
+          apk="$(find app/build/outputs/apk -path "*/release/*.apk" -type f | head -n 1)"
+          test -n "$apk"
+          cp "$apk" "CopyManga_Neo_${GITHUB_REF_NAME}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: CopyManga_Neo_${{ github.ref_name }}.apk
-          body: ${{ github.event.head_commit.message }}
+          body_path: release_body.txt
+          fail_on_unmatched_files: true
