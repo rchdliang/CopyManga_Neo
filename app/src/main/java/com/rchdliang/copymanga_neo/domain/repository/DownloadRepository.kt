@@ -20,6 +20,9 @@ interface DownloadRepository {
     fun getDownloadProgress(): kotlinx.coroutines.flow.StateFlow<Map<String, DownloadProgressInfo>>
     fun getActiveTask(): kotlinx.coroutines.flow.StateFlow<ComicDownloadTask?>
     fun enqueueDownload(task: ComicDownloadTask)
+    fun pauseComic(pathWord: String)
+    fun resumeComic(pathWord: String)
+    fun isPaused(pathWord: String): Boolean
     fun cancelComic(pathWord: String)
     fun cancelAll()
     fun setImageConcurrency(count: Int)

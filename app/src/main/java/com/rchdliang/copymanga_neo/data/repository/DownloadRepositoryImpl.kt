@@ -73,6 +73,18 @@ class DownloadRepositoryImpl @Inject constructor(
         return downloadManager.activeTask
     }
 
+    override fun pauseComic(pathWord: String) {
+        downloadManager.pauseComic(pathWord)
+    }
+
+    override fun resumeComic(pathWord: String) {
+        downloadManager.resumeComic(pathWord)
+    }
+
+    override fun isPaused(pathWord: String): Boolean {
+        return downloadManager.isPaused(pathWord)
+    }
+
     override fun enqueueDownload(task: ComicDownloadTask) {
         downloadManager.enqueue(task)
     }

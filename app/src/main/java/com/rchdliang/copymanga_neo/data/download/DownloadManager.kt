@@ -56,6 +56,8 @@ class DownloadManager @Inject constructor(
     val activeTask: StateFlow<ComicDownloadTask?> = _activeTask.asStateFlow()
 
     private var currentTasks = mutableMapOf<String, ComicDownloadTask>()
+    private val pausedComics = mutableSetOf<String>()
+    private val taskInfoMap = mutableMapOf<String, ComicDownloadTask>()
 
     init {
         scope.launch { processQueue() }
@@ -67,21 +69,42 @@ class DownloadManager @Inject constructor(
 
     fun enqueue(task: ComicDownloadTask) {
         currentTasks[task.pathWord] = task
+        taskInfoMap[task.pathWord] = task
+        Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
         scope.launch { queue.send(task) }
         updateProgressForTask(task)
     }
 
     fun cancelComic(pathWord: String) {
         scope.launch {
+            pausedComics.remove(pathWord)
             currentTasks.remove(pathWord)
+            taskInfoMap.remove(pathWord)
             val updated = _downloadProgress.value.toMutableMap()
             updated.remove(pathWord)
             _downloadProgress.value = updated
             if (_activeTask.value?.pathWord == pathWord) {
                 _activeTask.value = null
             }
+            Log.d(TAG, "cancelComic: $pathWord (task cancelled, downloaded chapters preserved)")
         }
     }
+
+    fun pauseComic(pathWord: String) {
+        pausedComics.add(pathWord)
+        Log.d(TAG, "pauseComic: $pathWord")
+        currentTasks[pathWord]?.let { updateProgressForTask(it) }
+    }
+
+    fun resumeComic(pathWord: String) {
+        pausedComics.remove(pathWord)
+        Log.d(TAG, "resumeComic: $pathWord")
+        currentTasks[pathWord]?.let { task ->
+            scope.launch { queue.send(task) }
+        }
+    }
+
+    fun isPaused(pathWord: String): Boolean = pathWord in pausedComics
 
     fun cancelAll() {
         scope.launch {
@@ -98,9 +121,17 @@ class DownloadManager @Inject constructor(
     private suspend fun processQueue() {
         for (task in queue) {
             if (!currentTasks.containsKey(task.pathWord)) continue
+            if (task.pathWord in pausedComics) continue
             _activeTask.value = task
             processComicTask(task)
-            currentTasks.remove(task.pathWord)
+            if (task.pathWord in pausedComics) {
+                val updatedTask = currentTasks[task.pathWord]
+                if (updatedTask != null) {
+                    scope.launch { queue.send(updatedTask) }
+                }
+            } else {
+                currentTasks.remove(task.pathWord)
+            }
             _activeTask.value = null
         }
     }
@@ -114,6 +145,10 @@ class DownloadManager @Inject constructor(
         for ((index, chapterItem) in chaptersToDownload.withIndex()) {
             if (!currentTasks.containsKey(comicPathWord)) {
                 Log.d(TAG, "Task cancelled for $comicPathWord")
+                return
+            }
+            if (comicPathWord in pausedComics) {
+                Log.d(TAG, "Task paused for $comicPathWord")
                 return
             }
 
@@ -141,6 +176,29 @@ class DownloadManager @Inject constructor(
                         chapterContent.imageUrls
                     )
 
+                    if (comicPathWord in pausedComics) {
+                        Log.d(
+                            TAG,
+                            "Chapter $comicPathWord/${chapterItem.chapter.name} paused mid-download"
+                        )
+                        if (idx >= 0) {
+                            updatedChapters[idx] = chapterItem.copy(
+                                status = ChapterDownloadStatus.WAITING,
+                                progress = 0f
+                            )
+                        }
+                        currentTasks[comicPathWord] = updatedTask.copy(chapters = updatedChapters)
+                        updateProgressForTask(currentTasks[comicPathWord]!!)
+                        return
+                    }
+
+                    if (imagePaths.size < chapterContent.imageUrls.size) {
+                        Log.w(
+                            TAG,
+                            "Chapter ${chapterItem.chapter.name} incomplete: ${imagePaths.size}/${chapterContent.imageUrls.size}"
+                        )
+                    }
+
                     val entity = DownloadedChapterEntity(
                         uuid = chapterItem.chapter.uuid,
                         comicPathWord = comicPathWord,
@@ -160,9 +218,8 @@ class DownloadManager @Inject constructor(
                         )
                     }
                     currentTasks[comicPathWord] = updatedTask.copy(chapters = updatedChapters)
-                    comicDao.updateChapterCount(comicPathWord, updatedChapters.count {
-                        it.status == ChapterDownloadStatus.DOWNLOADED
-                    })
+                    val roomChapterCount = chapterDao.getChapterUuids(comicPathWord).size
+                    comicDao.updateChapterCount(comicPathWord, roomChapterCount)
                 } else {
                     markChapterError(
                         comicPathWord,
@@ -218,6 +275,10 @@ class DownloadManager @Inject constructor(
 
         val paths = mutableListOf<String>()
         for ((i, url) in imageUrls.withIndex()) {
+            if (comicPathWord in pausedComics) {
+                Log.d(TAG, "Paused during image download for $chapterUuid")
+                break
+            }
             imageConcurrency.acquire()
             try {
                 val ext = url.substringAfterLast('.').substringBefore('?').ifEmpty { "jpg" }
@@ -270,8 +331,17 @@ class DownloadManager @Inject constructor(
         val currentChapter = task.chapters.firstOrNull {
             it.status == ChapterDownloadStatus.DOWNLOADING
         }
+        val status = when {
+            task.pathWord in pausedComics -> DownloadTaskStatus.PAUSED
+            task.chapters.all { it.status == ChapterDownloadStatus.DOWNLOADED } -> DownloadTaskStatus.COMPLETED
+            currentChapter != null -> DownloadTaskStatus.DOWNLOADING
+            task.errorCount > 0 -> DownloadTaskStatus.ERROR
+            else -> DownloadTaskStatus.IDLE
+        }
         val info = DownloadProgressInfo(
             comicPathWord = task.pathWord,
+            name = task.name,
+            cover = task.cover,
             completedChapters = task.completedChapters,
             totalChapters = task.totalChapters,
             overallProgress = task.overallProgress,
@@ -280,12 +350,7 @@ class DownloadManager @Inject constructor(
             }.coerceAtLeast(0),
             currentChapterName = currentChapter?.chapter?.name,
             currentChapterProgress = currentChapter?.progress ?: 0f,
-            status = when {
-                task.chapters.all { it.status == ChapterDownloadStatus.DOWNLOADED } -> DownloadTaskStatus.COMPLETED
-                currentChapter != null -> DownloadTaskStatus.DOWNLOADING
-                task.errorCount > 0 -> DownloadTaskStatus.ERROR
-                else -> DownloadTaskStatus.IDLE
-            }
+            status = status
         )
         val updated = _downloadProgress.value.toMutableMap()
         updated[task.pathWord] = info

@@ -47,6 +47,8 @@ data class ComicDownloadTask(
 
 data class DownloadProgressInfo(
     val comicPathWord: String,
+    val name: String,
+    val cover: String?,
     val completedChapters: Int,
     val totalChapters: Int,
     val overallProgress: Float,

@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +39,8 @@ fun DownloadingCard(
     name: String,
     cover: String?,
     progressInfo: DownloadProgressInfo,
+    isPaused: Boolean,
+    onPauseResume: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -75,15 +80,13 @@ fun DownloadingCard(
                 Spacer(Modifier.height(4.dp))
 
                 val statusText = when (progressInfo.status) {
+                    DownloadTaskStatus.PAUSED -> "已暂停（${progressInfo.completedChapters}/${progressInfo.totalChapters} 章）"
                     DownloadTaskStatus.DOWNLOADING -> {
-                        val currentName = progressInfo.currentChapterName ?: ""
-                        "已完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章" +
-                                if (currentName.isNotBlank()) "（正在下载：$currentName）" else ""
+                        "已完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章"
                     }
-
                     DownloadTaskStatus.COMPLETED -> "下载完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章"
                     DownloadTaskStatus.ERROR -> "已完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章（部分出错）"
-                    else -> "等待中..."
+                    else -> "等待中（${progressInfo.completedChapters}/${progressInfo.totalChapters} 章）"
                 }
 
                 Text(
@@ -95,36 +98,57 @@ fun DownloadingCard(
                 )
             }
 
+            IconButton(onClick = onPauseResume) {
+                Icon(
+                    imageVector = when {
+                        progressInfo.status == DownloadTaskStatus.COMPLETED -> Icons.Filled.Check
+                        isPaused -> Icons.Filled.PlayArrow
+                        else -> Icons.Filled.Pause
+                    },
+                    contentDescription = when {
+                        progressInfo.status == DownloadTaskStatus.COMPLETED -> "已完成"
+                        isPaused -> "继续"
+                        else -> "暂停"
+                    },
+                    tint = when {
+                        progressInfo.status == DownloadTaskStatus.COMPLETED -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
             IconButton(onClick = onCancel) {
                 Icon(
-                    imageVector = Icons.Default.Cancel,
+                    imageVector = Icons.Default.Close,
                     contentDescription = "取消下载",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        if (progressInfo.status != DownloadTaskStatus.COMPLETED) {
+            Spacer(Modifier.height(8.dp))
 
-        LinearWavyProgressIndicator(
-            progress = { animatedOverallProgress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp),
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            color = when (progressInfo.status) {
-                DownloadTaskStatus.COMPLETED -> MaterialTheme.colorScheme.primary
-                DownloadTaskStatus.ERROR -> MaterialTheme.colorScheme.error
-                else -> MaterialTheme.colorScheme.primary
-            }
-        )
+            LinearWavyProgressIndicator(
+                progress = { animatedOverallProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp),
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = when (progressInfo.status) {
+                    DownloadTaskStatus.PAUSED -> MaterialTheme.colorScheme.outlineVariant
+                    DownloadTaskStatus.ERROR -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.primary
+                }
+            )
 
-        Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(4.dp))
 
-        Text(
-            text = "${(progressInfo.overallProgress * 100).toInt()}%",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            Text(
+                text = "${(progressInfo.overallProgress * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

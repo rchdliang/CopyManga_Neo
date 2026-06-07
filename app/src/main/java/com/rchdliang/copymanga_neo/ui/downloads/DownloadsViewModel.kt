@@ -2,7 +2,6 @@ package com.rchdliang.copymanga_neo.ui.downloads
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
@@ -17,7 +16,7 @@ import javax.inject.Inject
 data class DownloadsUiState(
     val downloadedComics: List<DownloadedComicInfo> = emptyList(),
     val activeDownloads: Map<String, DownloadProgressInfo> = emptyMap(),
-    val activeTasks: Map<String, ComicDownloadTask> = emptyMap(),
+    val pausedComics: Set<String> = emptySet(),
     val isLoading: Boolean = false
 )
 
@@ -35,13 +34,14 @@ class DownloadsViewModel @Inject constructor(
                 downloadRepository.getAllDownloadedComics(),
                 downloadRepository.getDownloadProgress(),
                 downloadRepository.getActiveTask()
-            ) { comics, progress, activeTask ->
-                val activeTasksMap = mutableMapOf<String, ComicDownloadTask>()
-                activeTask?.let { activeTasksMap[it.pathWord] = it }
+            ) { comics, progress, _ ->
+                val paused =
+                    progress.filter { it.value.status == com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus.PAUSED }
+                        .keys
                 DownloadsUiState(
                     downloadedComics = comics,
                     activeDownloads = progress,
-                    activeTasks = activeTasksMap
+                    pausedComics = paused
                 )
             }.collect { state ->
                 _uiState.value = state
@@ -51,6 +51,14 @@ class DownloadsViewModel @Inject constructor(
 
     fun setImageConcurrency(count: Int) {
         downloadRepository.setImageConcurrency(count)
+    }
+
+    fun pauseComic(pathWord: String) {
+        downloadRepository.pauseComic(pathWord)
+    }
+
+    fun resumeComic(pathWord: String) {
+        downloadRepository.resumeComic(pathWord)
     }
 
     fun cancelComic(pathWord: String) {

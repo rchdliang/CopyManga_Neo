@@ -209,7 +209,8 @@ private fun NotLoggedInView(
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "未登录",
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
