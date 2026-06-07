@@ -4,10 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -16,14 +16,20 @@ class MainViewModel @Inject constructor(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
-    val isLoggedIn: StateFlow<Boolean> = userRepository.isLoggedIn()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, userRepository.isLoggedInSync())
+    private val _isLoggedIn = MutableStateFlow(userRepository.isLoggedInSync())
+    val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()
 
     init {
         android.util.Log.d(
             "MainViewModel",
-            "isLoggedIn initial: ${userRepository.isLoggedInSync()}"
+            "init: isLoggedInSync=${userRepository.isLoggedInSync()}"
         )
+        viewModelScope.launch {
+            userRepository.isLoggedIn().collect { value ->
+                android.util.Log.d("MainViewModel", "isLoggedIn Flow emitted: $value")
+                _isLoggedIn.value = value
+            }
+        }
         checkAuthStatus()
     }
 

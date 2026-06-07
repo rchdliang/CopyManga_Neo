@@ -62,12 +62,16 @@ class DetailViewModel @Inject constructor(
 
     private var currentPathWord: String? = null
 
+    private var observeDownloadJob: kotlinx.coroutines.Job? = null
+
     fun loadDetail(pathWord: String) {
         if (currentPathWord == pathWord && _uiState.value.comicDetail != null) {
             return
         }
 
         currentPathWord = pathWord
+        observeDownloadJob?.cancel()
+        observeDownloadJob = viewModelScope.launch { observeDownload(pathWord) }
 
         viewModelScope.launch {
             val isLoggedIn = userRepository.isLoggedIn().first()
@@ -279,6 +283,14 @@ class DetailViewModel @Inject constructor(
                 chapterDownloadStatuses = statuses,
                 chapterDownloadProgresses = progresses
             )
+        }
+    }
+
+    private suspend fun observeDownload(pathWord: String) {
+        downloadRepository.getActiveTask().collect { task ->
+            if (task == null || task.pathWord == pathWord) {
+                refreshDownloadStatus(pathWord)
+            }
         }
     }
 

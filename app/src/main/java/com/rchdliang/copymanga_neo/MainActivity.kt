@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -247,15 +248,16 @@ fun MainScreen(
     val pagerState = rememberPagerState(pageCount = { AppDestinations.entries.size })
     val scope = rememberCoroutineScope()
     var pageNavigationJob by remember { mutableStateOf<Job?>(null) }
+    val currentIsLoggedIn by rememberUpdatedState(isLoggedIn)
 
     fun targetPageFor(destination: AppDestinations): Int {
         return when (destination) {
             AppDestinations.BOOKSHELF -> {
                 val target =
-                    if (isLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
+                    if (currentIsLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
                 android.util.Log.d(
                     "MainScreen",
-                    "targetPageFor(BOOKSHELF): isLoggedIn=$isLoggedIn -> page=$target (BOOKSHELF=${AppDestinations.BOOKSHELF.ordinal}, PROFILE=${AppDestinations.PROFILE.ordinal})"
+                    "targetPageFor(BOOKSHELF): isLoggedIn=$currentIsLoggedIn -> page=$target (BOOKSHELF=${AppDestinations.BOOKSHELF.ordinal}, PROFILE=${AppDestinations.PROFILE.ordinal})"
                 )
                 target
             }
