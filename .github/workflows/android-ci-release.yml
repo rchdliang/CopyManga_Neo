@@ -57,9 +57,19 @@ jobs:
       - name: Prepare release notes
         run: |
           set -euo pipefail
-          git cat-file tag "refs/tags/${GITHUB_REF_NAME}" \
-            | sed '1,/^$/d; /^-----BEGIN .*SIGNATURE-----$/,$d' \
-            > release_body.txt
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+          if [ "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" = "tag" ]; then
+            git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents)' \
+              | sed '/^-----BEGIN .*SIGNATURE-----$/,$d' \
+              > release_body.txt
+          else
+            git log -1 --pretty=%B > release_body.txt
+          fi
+
+          if [ ! -s release_body.txt ]; then
+            git log -1 --pretty=%B > release_body.txt
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -92,7 +102,8 @@ jobs:
         with:
           name: CopyManga_Neo-${{ github.ref_name }}-android-release-apk
           path: |
-            **/build/outputs/apk/**/release/*.apk
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/*/release/*.apk
           if-no-files-found: error
 
       - name: Rename APK
