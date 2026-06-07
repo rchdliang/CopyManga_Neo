@@ -266,6 +266,11 @@ class DetailViewModel @Inject constructor(
         val statuses = mutableMapOf<String, ChapterDownloadStatus>()
         val progresses = mutableMapOf<String, Float>()
 
+        android.util.Log.d(
+            "DetailViewModel",
+            "refreshDownloadStatus: pathWord=$pathWord, downloadedUuids=${downloadedUuids.size}, taskPathWord=${task?.pathWord}"
+        )
+
         downloadedUuids.forEach { uuid ->
             statuses[uuid] = ChapterDownloadStatus.DOWNLOADED
         }
@@ -287,10 +292,14 @@ class DetailViewModel @Inject constructor(
     }
 
     private suspend fun observeDownload(pathWord: String) {
-        downloadRepository.getActiveTask().collect { task ->
-            if (task == null || task.pathWord == pathWord) {
-                refreshDownloadStatus(pathWord)
+        try {
+            downloadRepository.getActiveTask().collect { task ->
+                if (task == null || task.pathWord == pathWord) {
+                    refreshDownloadStatus(pathWord)
+                }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("DetailViewModel", "observeDownload error for $pathWord", e)
         }
     }
 

@@ -290,5 +290,8 @@ class DownloadManager @Inject constructor(
         val updated = _downloadProgress.value.toMutableMap()
         updated[task.pathWord] = info
         _downloadProgress.value = updated
+        if (_activeTask.value?.pathWord == task.pathWord) {
+            _activeTask.value = task
+        }
     }
 }

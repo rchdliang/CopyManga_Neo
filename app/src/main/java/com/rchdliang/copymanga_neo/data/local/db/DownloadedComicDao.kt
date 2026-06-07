@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -18,6 +19,9 @@ interface DownloadedComicDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertComic(comic: DownloadedComicEntity)
+
+    @Update
+    suspend fun updateComic(comic: DownloadedComicEntity)
 
     @Query("UPDATE downloaded_comics SET downloadedChapters = :downloadedChapters WHERE pathWord = :pathWord")
     suspend fun updateChapterCount(pathWord: String, downloadedChapters: Int)

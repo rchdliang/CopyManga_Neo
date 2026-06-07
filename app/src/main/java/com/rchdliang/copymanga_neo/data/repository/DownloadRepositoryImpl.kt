@@ -49,7 +49,12 @@ class DownloadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun saveComicCache(entity: DownloadedComicEntity) {
-        comicDao.insertComic(entity)
+        val existing = comicDao.getComic(entity.pathWord)
+        if (existing != null) {
+            comicDao.updateComic(entity)
+        } else {
+            comicDao.insertComic(entity)
+        }
     }
 
     override suspend fun deleteComic(pathWord: String) {
