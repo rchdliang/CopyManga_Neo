@@ -138,10 +138,15 @@ fun CopyManga_NeoApp(
     mainViewModel: MainViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
+    val density = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(density) { containerSize.width.toDp() }
+    val isExpanded = windowWidthDp >= 840.dp
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .background(if (isExpanded) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)
     ) {
         NavHost(
             navController = navController,
