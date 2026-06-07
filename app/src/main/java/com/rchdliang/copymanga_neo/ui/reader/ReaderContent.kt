@@ -156,10 +156,12 @@ fun ReaderContent(
             }
         } else {
             val density = LocalDensity.current
-            val thresholdPx = remember { with(density) { 60.dp.toPx() } }
+            val thresholdPx = remember(density) { with(density) { 60.dp.toPx() } }
             val coroutineScope = rememberCoroutineScope()
 
-            val pagerOverscrollConnection = remember(coroutineScope, thresholdPx, isRtl) {
+            val pagerOverscrollConnection = remember(
+                coroutineScope, thresholdPx, isRtl, onPrevChapter, onNextChapter
+            ) {
                 PagerChapterOverscroll(
                     coroutineScope = coroutineScope,
                     thresholdPx = thresholdPx,

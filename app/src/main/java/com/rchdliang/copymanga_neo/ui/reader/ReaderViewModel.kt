@@ -32,9 +32,27 @@ class ReaderViewModel @Inject constructor(
     val screenOrientation: StateFlow<String> = prefs.screenOrientation
         .stateIn(viewModelScope, SharingStarted.Eagerly, "SYSTEM_DEFAULT")
 
+    private var initialized = false
     private var currentComicPathWord: String = ""
     private var currentChapterUuid: String = ""
     private var currentGroup: String = "default"
+
+    fun openReader(
+        comicPathWord: String,
+        initialChapterPathWord: String,
+        groupPathWord: String
+    ) {
+        if (initialized &&
+            currentComicPathWord == comicPathWord &&
+            currentGroup == groupPathWord
+        ) {
+            return
+        }
+        initialized = true
+        currentComicPathWord = comicPathWord
+        currentGroup = groupPathWord
+        loadChapter(comicPathWord, initialChapterPathWord, groupPathWord)
+    }
 
     fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
         if (currentChapterUuid == chapterUuid && _uiState.value is ReaderUiState.Success) {
@@ -96,6 +114,12 @@ class ReaderViewModel @Inject constructor(
                 android.util.Log.i("ReaderViewModel", "Loading Next Chapter")
             }
         }
+    }
+
+    fun refreshCurrentChapter() {
+        val comic = currentComicPathWord.ifEmpty { return }
+        val chapter = currentChapterUuid.ifEmpty { return }
+        loadChapter(comic, chapter, currentGroup.ifEmpty { "default" })
     }
 
     fun setReadingDirection(value: String) {

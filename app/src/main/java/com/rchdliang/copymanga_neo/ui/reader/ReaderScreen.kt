@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.util.Log
 import android.widget.Toast
@@ -32,6 +34,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,25 +73,27 @@ fun ReaderScreen(
     val pageScalePref by viewModel.pageScale.collectAsStateWithLifecycle()
     val screenOrientationPref by viewModel.screenOrientation.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val activity = context as Activity
+    val activity = context.findActivity()
     val view = LocalView.current
 
     val screenOrient = remember(screenOrientationPref) {
         ScreenOrientationSetting.fromName(screenOrientationPref)
     }
-    LaunchedEffect(screenOrient) {
-        activity.requestedOrientation = screenOrient.activityOrientation
+    LaunchedEffect(activity, screenOrient) {
+        activity?.requestedOrientation = screenOrient.activityOrientation
     }
     DisposableEffect(Unit) {
         onDispose {
-            if (!activity.isChangingConfigurations) {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.let {
+                if (!it.isChangingConfigurations) {
+                    it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
             }
         }
     }
 
     DisposableEffect(Unit) {
-        val window = context.window
+        val window = activity?.window ?: return@DisposableEffect onDispose { }
         val insetsController = WindowCompat.getInsetsController(window, view)
         insetsController.hide(WindowInsetsCompat.Type.statusBars())
         insetsController.systemBarsBehavior =
@@ -96,8 +101,8 @@ fun ReaderScreen(
         onDispose { insetsController.show(WindowInsetsCompat.Type.statusBars()) }
     }
 
-    LaunchedEffect(chapterPathWord) {
-        viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
+    LaunchedEffect(comicPathWord, groupPathWord) {
+        viewModel.openReader(comicPathWord, chapterPathWord, groupPathWord)
     }
 
     Box(modifier = Modifier
@@ -112,7 +117,7 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable {
-                        viewModel.loadChapter(comicPathWord, chapterPathWord, groupPathWord)
+                        viewModel.refreshCurrentChapter()
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -141,13 +146,7 @@ fun ReaderScreen(
                 screenOrientation = screenOrientationPref,
                 onPrevChapter = { viewModel.loadPrevChapter() },
                 onNextChapter = { viewModel.loadNextChapter() },
-                onRefresh = {
-                    viewModel.loadChapter(
-                        comicPathWord,
-                        chapterPathWord,
-                        groupPathWord
-                    )
-                },
+                onRefresh = { viewModel.refreshCurrentChapter() },
                 onReadingDirectionChange = { viewModel.setReadingDirection(it) },
                 onPageScaleChange = { viewModel.setPageScale(it) },
                 onScreenOrientationChange = { viewModel.setScreenOrientation(it) }
@@ -302,8 +301,10 @@ fun ReaderSuccessContent(
 
     // 连续模式跨章节滑动
     val density = LocalDensity.current
-    val threshold = remember { with(density) { 60.dp.toPx() } }
+    val threshold = remember(density) { with(density) { 60.dp.toPx() } }
     val continuousOverscroll = remember { mutableFloatStateOf(0f) }
+    val latestOnPrevChapter by rememberUpdatedState(onPrevChapter)
+    val latestOnNextChapter by rememberUpdatedState(onNextChapter)
     val nestedScrollConnection = remember(coroutineScope, threshold) {
         object : NestedScrollConnection {
             override fun onPreScroll(
@@ -343,7 +344,7 @@ fun ReaderSuccessContent(
                     )
                     coroutineScope.launch {
                         Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT).show()
-                        onPrevChapter()
+                        latestOnPrevChapter()
                     }
                 } else if (v < -threshold) {
                     Log.i(
@@ -352,7 +353,7 @@ fun ReaderSuccessContent(
                     )
                     coroutineScope.launch {
                         Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT).show()
-                        onNextChapter()
+                        latestOnNextChapter()
                     }
                 } else {
                     Log.i("ReaderScreen", ">>> NO trigger (continuous) accum=$v, below threshold")
@@ -443,6 +444,12 @@ fun ReaderRiskControlContent(reason: String, modifier: Modifier = Modifier) {
 }
 
 // ── Previews ──────────────────────────────────────────────────────
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Preview(showBackground = true, showSystemUi = true, name = "阅读器 - 加载中")
 @Composable
