@@ -126,6 +126,39 @@ class DownloadManager @Inject constructor(
 
     fun isPaused(pathWord: String): Boolean = pathWord in pausedComics
 
+    fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>) {
+        val task = currentTasks[comicPathWord] ?: return
+        val remainingChapters = task.chapters.filter { it.chapter.uuid !in chapterUuids }
+        if (remainingChapters.isEmpty()) {
+            cancelComic(comicPathWord)
+        } else {
+            val updatedTask = task.copy(chapters = remainingChapters)
+            currentTasks[comicPathWord] = updatedTask
+            taskInfoMap[comicPathWord] = updatedTask
+            updateProgressForTask(updatedTask)
+            Log.d(
+                TAG,
+                "removeChaptersFromTask: $comicPathWord, removed ${chapterUuids.size}, remaining ${remainingChapters.size}"
+            )
+        }
+    }
+
+    fun deleteChapterFiles(comicPathWord: String, chapterUuid: String) {
+        val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord/$chapterUuid")
+        if (dir.exists()) {
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        }
+    }
+
+    fun deleteComicFiles(comicPathWord: String) {
+        val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord")
+        if (dir.exists()) {
+            dir.listFiles()?.forEach { it.deleteRecursively() }
+            dir.delete()
+        }
+    }
+
     fun cancelAll() {
         scope.launch {
             currentTasks.clear()

@@ -33,4 +33,10 @@ interface DownloadedChapterDao {
 
     @Query("SELECT uuid FROM downloaded_chapters WHERE comicPathWord = :comicPathWord")
     suspend fun getChapterUuids(comicPathWord: String): List<String>
+
+    @Query("DELETE FROM downloaded_chapters WHERE uuid IN (:uuids)")
+    suspend fun deleteChaptersByUuids(uuids: List<String>)
+
+    @Query("SELECT imagePaths FROM downloaded_chapters WHERE uuid IN (:uuids)")
+    suspend fun getImagePaths(uuids: List<String>): List<String>
 }

@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.ui.downloads
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -17,7 +19,8 @@ data class DownloadsUiState(
     val downloadedComics: List<DownloadedComicInfo> = emptyList(),
     val activeDownloads: Map<String, DownloadProgressInfo> = emptyMap(),
     val pausedComics: Set<String> = emptySet(),
-    val isLoading: Boolean = false
+    val isSelectionMode: Boolean = false,
+    val selectedPathWords: Set<String> = emptySet()
 )
 
 @HiltViewModel
@@ -35,13 +38,13 @@ class DownloadsViewModel @Inject constructor(
                 downloadRepository.getDownloadProgress(),
                 downloadRepository.getActiveTask()
             ) { comics, progress, _ ->
-                val paused =
-                    progress.filter { it.value.status == com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus.PAUSED }
-                        .keys
+                val paused = progress.filter { it.value.status == DownloadTaskStatus.PAUSED }.keys
                 DownloadsUiState(
                     downloadedComics = comics,
                     activeDownloads = progress,
-                    pausedComics = paused
+                    pausedComics = paused,
+                    isSelectionMode = _uiState.value.isSelectionMode,
+                    selectedPathWords = _uiState.value.selectedPathWords
                 )
             }.collect { state ->
                 _uiState.value = state
@@ -49,29 +52,54 @@ class DownloadsViewModel @Inject constructor(
         }
     }
 
-    fun setImageConcurrency(count: Int) {
-        downloadRepository.setImageConcurrency(count)
+    fun setImageConcurrency(count: Int) = downloadRepository.setImageConcurrency(count)
+    fun pauseComic(pathWord: String) = downloadRepository.pauseComic(pathWord)
+    fun resumeComic(pathWord: String) = downloadRepository.resumeComic(pathWord)
+    fun cancelComic(pathWord: String) = downloadRepository.cancelComic(pathWord)
+    fun cancelAll() = downloadRepository.cancelAll()
+
+    fun enterSelectionMode(pathWord: String) {
+        _uiState.update { it.copy(isSelectionMode = true, selectedPathWords = setOf(pathWord)) }
     }
 
-    fun pauseComic(pathWord: String) {
-        downloadRepository.pauseComic(pathWord)
+    fun exitSelectionMode() {
+        _uiState.update { it.copy(isSelectionMode = false, selectedPathWords = emptySet()) }
     }
 
-    fun resumeComic(pathWord: String) {
-        downloadRepository.resumeComic(pathWord)
+    fun toggleSelection(pathWord: String) {
+        _uiState.update { state ->
+            val set = state.selectedPathWords.toMutableSet()
+            if (set.contains(pathWord)) set.remove(pathWord) else set.add(pathWord)
+            state.copy(selectedPathWords = set)
+        }
     }
 
-    fun cancelComic(pathWord: String) {
-        downloadRepository.cancelComic(pathWord)
+    fun selectAll() {
+        _uiState.update { state ->
+            state.copy(selectedPathWords = state.downloadedComics.map { it.pathWord }.toSet())
+        }
     }
 
-    fun cancelAll() {
-        downloadRepository.cancelAll()
+    fun invertSelection() {
+        _uiState.update { state ->
+            val all = state.downloadedComics.map { it.pathWord }.toSet()
+            state.copy(selectedPathWords = all - state.selectedPathWords)
+        }
     }
 
-    fun deleteComic(pathWord: String) {
+    fun clearSelection() {
+        _uiState.update { it.copy(selectedPathWords = emptySet()) }
+    }
+
+    fun deleteSelected() {
+        val pathWords = _uiState.value.selectedPathWords.toList()
+        if (pathWords.isEmpty()) return
+        exitSelectionMode()
         viewModelScope.launch {
-            downloadRepository.deleteComic(pathWord)
+            pathWords.forEach { pathWord ->
+                downloadRepository.cancelComic(pathWord)
+                downloadRepository.deleteComicAndChapters(pathWord)
+            }
         }
     }
 }

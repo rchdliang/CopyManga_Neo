@@ -36,6 +36,7 @@ fun ChapterItem(
     chapter: ChapterDto,
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
+    isDeletableInDeleteMode: Boolean = true,
     downloadStatus: ChapterDownloadStatus? = null,
     downloadProgress: Float? = null,
     onClick: () -> Unit,
@@ -47,7 +48,10 @@ fun ChapterItem(
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
 
+    val isNonDeletableInMode = isSelectionMode && !isDeletableInDeleteMode
+
     val bgColor = when {
+        isNonDeletableInMode -> MaterialTheme.colorScheme.surfaceContainerLow
         isSelectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADED -> MaterialTheme.colorScheme.primaryContainer
         downloadStatus == ChapterDownloadStatus.WAITING -> MaterialTheme.colorScheme.secondaryContainer
@@ -57,6 +61,7 @@ fun ChapterItem(
     }
 
     val contentColor = when {
+        isNonDeletableInMode -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
         isSelectionMode && isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADED -> MaterialTheme.colorScheme.onPrimaryContainer
         downloadStatus == ChapterDownloadStatus.WAITING -> MaterialTheme.colorScheme.onSecondaryContainer

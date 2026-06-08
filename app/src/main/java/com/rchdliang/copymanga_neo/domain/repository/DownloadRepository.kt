@@ -17,6 +17,9 @@ interface DownloadRepository {
     suspend fun isComicDownloaded(pathWord: String): Boolean
     suspend fun deleteComic(pathWord: String)
     suspend fun deleteChapter(uuid: String)
+    suspend fun deleteChapters(comicPathWord: String, uuids: List<String>)
+    suspend fun deleteComicAndChapters(pathWord: String)
+    fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>)
     fun getDownloadProgress(): kotlinx.coroutines.flow.StateFlow<Map<String, DownloadProgressInfo>>
     fun getActiveTask(): kotlinx.coroutines.flow.StateFlow<ComicDownloadTask?>
     fun enqueueDownload(task: ComicDownloadTask)

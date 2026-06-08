@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -259,7 +260,7 @@ private fun FavoriteGridPreview() {
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(120.dp),
+            columns = GridCells.Adaptive(135.dp),
             contentPadding = PaddingValues(8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -288,7 +289,9 @@ private fun FavoriteCard(
     Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        modifier = modifier.height(200.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(3f / 4f)
     ) {
         Box(
             contentAlignment = Alignment.BottomStart,

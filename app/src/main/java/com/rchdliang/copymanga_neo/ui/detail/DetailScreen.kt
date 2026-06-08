@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
@@ -246,15 +247,31 @@ fun DetailScreen(
                     chapterDownloadStatuses = uiState.chapterDownloadStatuses,
                     chapterDownloadProgresses = uiState.chapterDownloadProgresses,
                     onChapterClick = onChapterClick,
-                    onChapterLongPress = { uuid -> viewModel.enterSelectionMode(uuid) },
+                    onChapterLongPress = { uuid ->
+                        val status = uiState.chapterDownloadStatuses[uuid]
+                        if (status == ChapterDownloadStatus.DOWNLOADED ||
+                            status == ChapterDownloadStatus.WAITING ||
+                            status == ChapterDownloadStatus.DOWNLOADING
+                        ) {
+                            viewModel.enterDeleteMode(uuid)
+                        } else {
+                            viewModel.enterSelectionMode(uuid)
+                        }
+                    },
                     onChapterToggleSelect = { uuid -> viewModel.toggleChapterSelection(uuid) },
                     onGroupSelect = stableOnGroupSelect,
                     onToggleSortOrder = stableOnToggleSortOrder,
                     onToggleShelf = stableOnToggleShelf,
                     onStartReading = stableOnStartReading,
                     onNavigateBack = onNavigateBack,
-                    onExitSelection = { viewModel.exitSelectionMode() },
-                    onSelectAll = { viewModel.selectAll() },
+                    onExitSelection = {
+                        if (uiState.isDeleteMode) viewModel.exitDeleteMode()
+                        else viewModel.exitSelectionMode()
+                    },
+                    onSelectAll = {
+                        if (uiState.isDeleteMode) viewModel.selectAllDeletable()
+                        else viewModel.selectAll()
+                    },
                     onInvertSelection = { viewModel.invertSelection() },
                     onSelectToLatest = { viewModel.selectToLatest() },
                     onSelectBeforeLatest = { viewModel.selectBeforeLatest() },
@@ -265,6 +282,10 @@ fun DetailScreen(
                     onStartDownload = {
                         viewModel.startDownload()
                     },
+                    isDeleteMode = uiState.isDeleteMode,
+                    hasDownloadableChapters = viewModel.hasDownloadableChapters(),
+                    onEnterDeleteModeEmpty = { viewModel.enterDeleteModeEmpty() },
+                    onDeleteSelected = { viewModel.deleteSelectedChapters() },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -306,6 +327,10 @@ private fun DetailContent(
     onClearSelection: () -> Unit,
     onEnterSelectionModeEmpty: () -> Unit,
     onStartDownload: () -> Unit,
+    isDeleteMode: Boolean = false,
+    hasDownloadableChapters: Boolean = false,
+    onEnterDeleteModeEmpty: () -> Unit = {},
+    onDeleteSelected: () -> Unit = {},
     modifier: Modifier
 ) {
     val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
@@ -314,8 +339,13 @@ private fun DetailContent(
     val currentOnChapterToggleSelect by rememberUpdatedState(onChapterToggleSelect)
 
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
-        BackHandler(enabled = isSelectionMode) {
-            onExitSelection()
+        val anySelectionMode = isSelectionMode || isDeleteMode
+        BackHandler(enabled = anySelectionMode) {
+            if (isDeleteMode) {
+                onExitSelection() // will call exitDeleteMode via DetailScreen callback
+            } else {
+                onExitSelection()
+            }
         }
 
         Column(
@@ -326,7 +356,7 @@ private fun DetailContent(
                     orientation = Orientation.Vertical
                 )
         ) {
-            if (isSelectionMode) {
+            if (isSelectionMode || isDeleteMode) {
                 SelectionTopRow(
                     selectedCount = selectedChapterUuids.size,
                     canSelectBetween = canSelectBetween(),
@@ -354,6 +384,15 @@ private fun DetailContent(
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
+                    if (hasDownloadableChapters) {
+                        IconButton(onClick = onEnterDeleteModeEmpty) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "删除下载",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                     IconButton(onClick = {
                         if (chapters.isNotEmpty()) {
                             onEnterSelectionModeEmpty()
@@ -679,7 +718,7 @@ private fun DetailContent(
                 if (sortAscending) chapters else chapters.reversed()
             }
 
-            val bottomPadding = if (isSelectionMode) 80.dp else 4.dp
+            val bottomPadding = if (isSelectionMode || isDeleteMode) 80.dp else 4.dp
 
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 90.dp),
@@ -701,15 +740,21 @@ private fun DetailContent(
                     val chapter = displayedChapters[index]
                     val status = chapterDownloadStatuses[chapter.uuid]
                     val progress = chapterDownloadProgresses[chapter.uuid]
+                    val isDeletable = status == ChapterDownloadStatus.DOWNLOADED ||
+                            status == ChapterDownloadStatus.WAITING ||
+                            status == ChapterDownloadStatus.DOWNLOADING
                     ChapterItem(
                         chapter = chapter,
                         isSelected = chapter.uuid in selectedChapterUuids,
-                        isSelectionMode = isSelectionMode,
+                        isSelectionMode = isSelectionMode || isDeleteMode,
+                        isDeletableInDeleteMode = if (isDeleteMode) isDeletable else true,
                         downloadStatus = status,
                         downloadProgress = progress,
                         onClick = {
-                            if (isSelectionMode) {
-                                currentOnChapterToggleSelect(chapter.uuid)
+                            if (isSelectionMode || isDeleteMode) {
+                                if (!isDeleteMode || isDeletable) {
+                                    currentOnChapterToggleSelect(chapter.uuid)
+                                }
                             } else {
                                 currentOnChapterClick(
                                     chapter.uuid,
@@ -727,12 +772,20 @@ private fun DetailContent(
             }
         }
 
-        if (isSelectionMode) {
-            SelectionBottomBar(
-                selectedCount = selectedChapterUuids.size,
-                onStartDownload = onStartDownload,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+        if (isSelectionMode || isDeleteMode) {
+            if (isDeleteMode) {
+                DeleteBottomBar(
+                    selectedCount = selectedChapterUuids.size,
+                    onDelete = onDeleteSelected,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            } else {
+                SelectionBottomBar(
+                    selectedCount = selectedChapterUuids.size,
+                    onStartDownload = onStartDownload,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
         }
     }
 }
@@ -879,6 +932,38 @@ private fun SelectionBottomBar(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text("下载 $selectedCount 章")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun DeleteBottomBar(
+    selectedCount: Int,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BottomAppBar(
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        actions = {
+            Button(
+                onClick = onDelete,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("删除 $selectedCount 章")
             }
         }
     )

@@ -46,6 +46,7 @@ data class DetailUiState(
     val isShelfLoading: Boolean = false,
     val shelfMessage: String? = null,
     val isSelectionMode: Boolean = false,
+    val isDeleteMode: Boolean = false,
     val selectedChapterUuids: Set<String> = emptySet(),
     val downloadedChapterUuids: Set<String> = emptySet(),
     val chapterDownloadStatuses: Map<String, ChapterDownloadStatus> = emptyMap(),
@@ -635,6 +636,79 @@ class DetailViewModel @Inject constructor(
     fun getSelectedChapters(): List<ChapterDto> {
         val state = _uiState.value
         return state.chapters.filter { it.uuid in state.selectedChapterUuids }
+    }
+
+    // endregion
+
+    // region 删除模式
+
+    fun enterDeleteMode(chapterUuid: String) {
+        _uiState.update {
+            it.copy(
+                isDeleteMode = true,
+                selectedChapterUuids = setOf(chapterUuid)
+            )
+        }
+    }
+
+    fun enterDeleteModeEmpty() {
+        _uiState.update {
+            it.copy(
+                isDeleteMode = true,
+                selectedChapterUuids = emptySet()
+            )
+        }
+    }
+
+    fun exitDeleteMode() {
+        _uiState.update {
+            it.copy(
+                isDeleteMode = false,
+                selectedChapterUuids = emptySet()
+            )
+        }
+    }
+
+    fun selectAllDeletable() {
+        _uiState.update { state ->
+            val deletableUuids = state.chapterDownloadStatuses
+                .filter {
+                    it.value == ChapterDownloadStatus.DOWNLOADED ||
+                            it.value == ChapterDownloadStatus.WAITING ||
+                            it.value == ChapterDownloadStatus.DOWNLOADING
+                }
+                .keys
+            state.copy(selectedChapterUuids = deletableUuids)
+        }
+    }
+
+    fun canDeleteChapter(chapterUuid: String): Boolean {
+        val status = _uiState.value.chapterDownloadStatuses[chapterUuid]
+        return status == ChapterDownloadStatus.DOWNLOADED ||
+                status == ChapterDownloadStatus.WAITING ||
+                status == ChapterDownloadStatus.DOWNLOADING
+    }
+
+    fun hasDownloadableChapters(): Boolean {
+        return _uiState.value.chapterDownloadStatuses.any {
+            it.value == ChapterDownloadStatus.DOWNLOADED ||
+                    it.value == ChapterDownloadStatus.WAITING ||
+                    it.value == ChapterDownloadStatus.DOWNLOADING
+        }
+    }
+
+    fun deleteSelectedChapters() {
+        val state = _uiState.value
+        val pathWord = currentPathWord ?: return
+        val selectedUuids = state.selectedChapterUuids
+        if (selectedUuids.isEmpty()) return
+
+        viewModelScope.launch {
+            downloadRepository.removeChaptersFromTask(pathWord, selectedUuids)
+            downloadRepository.deleteChapters(pathWord, selectedUuids.toList())
+            exitDeleteMode()
+            refreshDownloadStatus(pathWord)
+        }
     }
 
     // endregion

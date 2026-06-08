@@ -58,7 +58,25 @@ class DownloadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteComic(pathWord: String) {
+        downloadManager.deleteComicFiles(pathWord)
         comicDao.deleteComic(pathWord)
+    }
+
+    override suspend fun deleteChapters(comicPathWord: String, uuids: List<String>) {
+        uuids.forEach { downloadManager.deleteChapterFiles(comicPathWord, it) }
+        chapterDao.deleteChaptersByUuids(uuids)
+        val remainingCount = chapterDao.getChapterUuids(comicPathWord).size
+        comicDao.updateChapterCount(comicPathWord, remainingCount)
+    }
+
+    override suspend fun deleteComicAndChapters(pathWord: String) {
+        downloadManager.deleteComicFiles(pathWord)
+        chapterDao.deleteChaptersByComic(pathWord)
+        comicDao.deleteComic(pathWord)
+    }
+
+    override fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>) {
+        downloadManager.removeChaptersFromTask(comicPathWord, chapterUuids)
     }
 
     override suspend fun deleteChapter(uuid: String) {
