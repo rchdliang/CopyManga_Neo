@@ -15,3 +15,7 @@ keystore.properties
 /app/release
 /.codewhale
 /.kotlin
+/.reasonix
+/.codegraph
+AGENTS.md
+reasonix.toml

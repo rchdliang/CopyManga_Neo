@@ -261,6 +261,7 @@ fun DetailScreen(
                     onSelectBetween = { viewModel.selectBetween() },
                     canSelectBetween = { viewModel.canSelectBetween() },
                     onClearSelection = { viewModel.clearSelection() },
+                    onEnterSelectionModeEmpty = { viewModel.enterSelectionModeEmpty() },
                     onStartDownload = {
                         viewModel.startDownload()
                     },
@@ -303,6 +304,7 @@ private fun DetailContent(
     onSelectBetween: () -> Unit,
     canSelectBetween: () -> Boolean,
     onClearSelection: () -> Unit,
+    onEnterSelectionModeEmpty: () -> Unit,
     onStartDownload: () -> Unit,
     modifier: Modifier
 ) {
@@ -354,7 +356,7 @@ private fun DetailContent(
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(onClick = {
                         if (chapters.isNotEmpty()) {
-                            onChapterLongPress(chapters.first().uuid)
+                            onEnterSelectionModeEmpty()
                         }
                     }) {
                         Icon(
@@ -1022,6 +1024,7 @@ private fun DetailContentPreview() {
             onSelectBetween = {},
             canSelectBetween = { false },
             onClearSelection = {},
+            onEnterSelectionModeEmpty = {},
             onStartDownload = {},
             modifier = Modifier.fillMaxSize()
         )

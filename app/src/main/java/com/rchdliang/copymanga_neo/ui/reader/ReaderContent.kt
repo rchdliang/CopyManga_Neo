@@ -47,6 +47,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun ReaderContent(
@@ -86,11 +87,12 @@ fun ReaderContent(
                         onLongPress = onLongPress
                     )
             ) {
-                itemsIndexed(effectiveImages) { index, url ->
-                    var retryKey by rememberSaveable(url) { mutableIntStateOf(0) }
-                    val request = remember(url, retryKey) {
+                itemsIndexed(effectiveImages) { index, path ->
+                    var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
+                    val request = remember(path, retryKey) {
+                        val data: Any = if (path.startsWith("http")) path else File(path)
                         ImageRequest.Builder(context)
-                            .data(url)
+                            .data(data)
                             .setParameter("retry_hash", retryKey)
                             .build()
                     }
@@ -187,11 +189,12 @@ fun ReaderContent(
                     ),
                 beyondViewportPageCount = 2
             ) { page ->
-                val url = effectiveImages[page]
-                var retryKey by rememberSaveable(url) { mutableIntStateOf(0) }
-                val request = remember(url, retryKey) {
+                val path = effectiveImages[page]
+                var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
+                val request = remember(path, retryKey) {
+                    val data: Any = if (path.startsWith("http")) path else File(path)
                     ImageRequest.Builder(context)
-                        .data(url)
+                        .data(data)
                         .setParameter("retry_hash", retryKey)
                         .build()
                 }

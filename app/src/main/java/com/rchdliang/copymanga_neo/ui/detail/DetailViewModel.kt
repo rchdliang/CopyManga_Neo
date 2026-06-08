@@ -6,10 +6,13 @@ import com.rchdliang.copymanga_neo.data.download.ChapterDownloadItem
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
+import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
+import com.rchdliang.copymanga_neo.data.remote.dto.DisplayAndValue
 import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
+import com.rchdliang.copymanga_neo.data.remote.dto.LastChapterDto
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
@@ -94,7 +97,7 @@ class DetailViewModel @Inject constructor(
                 )
             }
 
-            loadLocalCache(pathWord)
+            val hasLocal = loadLocalCache(pathWord)
             refreshDownloadStatus(pathWord)
 
             mangaRepository.getComicDetail(pathWord).fold(
@@ -118,8 +121,8 @@ class DetailViewModel @Inject constructor(
                     loadQueryStatus(pathWord)
                 },
                 onFailure = { error ->
-                    val localDetail = _uiState.value.comicDetail
-                    if (localDetail != null) {
+                    if (hasLocal) {
+                        android.util.Log.d("DetailViewModel", "Network failed, showing local cache")
                         _uiState.update { it.copy(isLoading = false) }
                     } else {
                         val message = error.message ?: "未知错误"
@@ -173,21 +176,92 @@ class DetailViewModel @Inject constructor(
                     loadQueryStatus(pathWord)
                 },
                 onFailure = { error ->
-                    _uiState.update { it.copy(isLoading = false) }
+                    if (_uiState.value.hasLocalCache) {
+                        _uiState.update { it.copy(isLoading = false) }
+                    } else {
+                        _uiState.update { it.copy(isLoading = false) }
+                    }
                 }
             )
         }
     }
 
-    private suspend fun loadLocalCache(pathWord: String) {
-        val comic = downloadRepository.getDownloadedComic(pathWord)
-        if (comic != null) {
-            _uiState.update {
-                it.copy(
-                    hasLocalCache = true
-                )
+    private suspend fun loadLocalCache(pathWord: String): Boolean {
+        val cachedComic = downloadRepository.getDownloadedComic(pathWord) ?: return false
+        val cachedChapters = downloadRepository.getDownloadedChapters(pathWord)
+
+        val authorList = if (cachedComic.authorNames.isNotBlank()) {
+            cachedComic.authorNames.split(",").map { name ->
+                AuthorDto(name.trim(), "")
             }
+        } else null
+
+        val detail = ComicDetailDto(
+            uuid = "",
+            b404 = false,
+            bHidden = false,
+            ban = 0,
+            name = cachedComic.name,
+            comicAlias = "",
+            pathWord = cachedComic.pathWord,
+            closeComment = false,
+            closeRoast = false,
+            freeType = DisplayAndValue("免费", 0),
+            restrict = DisplayAndValue("一般向", 0),
+            reclass = DisplayAndValue("", 0),
+            females = null,
+            males = null,
+            clubs = null,
+            region = DisplayAndValue("", 0),
+            status = DisplayAndValue(
+                cachedComic.statusDisplay,
+                if (cachedComic.statusDisplay == "已完结") 1 else 0
+            ),
+            author = authorList,
+            theme = null,
+            parodies = null,
+            brief = cachedComic.brief,
+            lastUpdate = cachedComic.lastUpdate,
+            cover = cachedComic.cover,
+            lastChapter = if (cachedComic.lastChapterName != null) LastChapterDto(
+                "",
+                cachedComic.lastChapterName
+            ) else null,
+            popular = null,
+            channel = null
+        )
+
+        val chapters = cachedChapters.map { entity ->
+            ChapterDto(
+                index = entity.index,
+                uuid = entity.uuid,
+                count = cachedChapters.size,
+                ordered = entity.index,
+                size = entity.imageCount,
+                name = entity.name,
+                comicId = "",
+                comicPathWord = entity.comicPathWord,
+                groupId = null,
+                groupPathWord = "default",
+                type = 0,
+                news = null,
+                datetimeCreated = null,
+                prevChapter = null,
+                nextChapter = null
+            )
+        }.toImmutableList()
+
+        _uiState.update {
+            it.copy(
+                hasLocalCache = true,
+                comicDetail = detail,
+                chapters = chapters,
+                chapterTotal = chapters.size,
+                isLoading = false
+            )
         }
+
+        return true
     }
 
     private suspend fun saveLocalCache(detail: ComicDetailDto) {
@@ -449,6 +523,18 @@ class DetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 进入多选模式但不预先选中任何章节
+     */
+    fun enterSelectionModeEmpty() {
+        _uiState.update {
+            it.copy(
+                isSelectionMode = true,
+                selectedChapterUuids = emptySet()
+            )
+        }
+    }
+
     fun exitSelectionMode() {
         _uiState.update {
             it.copy(
@@ -463,12 +549,6 @@ class DetailViewModel @Inject constructor(
             val selected = state.selectedChapterUuids.toMutableSet()
             if (selected.contains(chapterUuid)) {
                 selected.remove(chapterUuid)
-                if (selected.isEmpty()) {
-                    return@update state.copy(
-                        isSelectionMode = false,
-                        selectedChapterUuids = emptySet()
-                    )
-                }
             } else {
                 selected.add(chapterUuid)
             }

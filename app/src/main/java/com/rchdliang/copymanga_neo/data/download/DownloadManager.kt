@@ -68,11 +68,31 @@ class DownloadManager @Inject constructor(
     }
 
     fun enqueue(task: ComicDownloadTask) {
-        currentTasks[task.pathWord] = task
-        taskInfoMap[task.pathWord] = task
-        Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
-        scope.launch { queue.send(task) }
-        updateProgressForTask(task)
+        val existing = currentTasks[task.pathWord]
+        if (existing != null) {
+            // 合并：将新章节追加到已有任务中，避免覆盖正在下载的任务
+            val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
+            val newChapters = task.chapters.filter { it.chapter.uuid !in existingUuids }
+            if (newChapters.isNotEmpty()) {
+                val mergedChapters = existing.chapters + newChapters
+                val mergedTask = existing.copy(chapters = mergedChapters)
+                currentTasks[task.pathWord] = mergedTask
+                taskInfoMap[task.pathWord] = mergedTask
+                updateProgressForTask(mergedTask)
+                Log.d(
+                    TAG,
+                    "enqueue (merged): ${task.name}, added ${newChapters.size} chapters, total ${mergedChapters.size}"
+                )
+            } else {
+                Log.d(TAG, "enqueue: ${task.name} - all chapters already in queue, skipped")
+            }
+        } else {
+            currentTasks[task.pathWord] = task
+            taskInfoMap[task.pathWord] = task
+            Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
+            scope.launch { queue.send(task) }
+            updateProgressForTask(task)
+        }
     }
 
     fun cancelComic(pathWord: String) {
@@ -138,11 +158,9 @@ class DownloadManager @Inject constructor(
 
     private suspend fun processComicTask(task: ComicDownloadTask) {
         val comicPathWord = task.pathWord
-        val chaptersToDownload = task.chapters.filter {
-            it.status == ChapterDownloadStatus.WAITING || it.status == ChapterDownloadStatus.ERROR
-        }
 
-        for ((index, chapterItem) in chaptersToDownload.withIndex()) {
+        // 使用 while 循环每次从 currentTasks 重新读取，以支持中途合并进来的新章节
+        while (true) {
             if (!currentTasks.containsKey(comicPathWord)) {
                 Log.d(TAG, "Task cancelled for $comicPathWord")
                 return
@@ -152,16 +170,21 @@ class DownloadManager @Inject constructor(
                 return
             }
 
-            val updatedTask = currentTasks[comicPathWord] ?: return
-            val updatedChapters = updatedTask.chapters.toMutableList()
-            val idx = updatedChapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
-            if (idx >= 0) {
-                updatedChapters[idx] = chapterItem.copy(
-                    status = ChapterDownloadStatus.DOWNLOADING,
-                    progress = 0f
-                )
-            }
-            currentTasks[comicPathWord] = updatedTask.copy(chapters = updatedChapters)
+            val currentTask = currentTasks[comicPathWord] ?: return
+            val chapters = currentTask.chapters
+            val chapterItem = chapters.firstOrNull {
+                it.status == ChapterDownloadStatus.WAITING || it.status == ChapterDownloadStatus.ERROR
+            } ?: break  // 没有待处理的章节，退出循环
+
+            val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+
+            // 标记为 DOWNLOADING
+            val updatedChapters = chapters.toMutableList()
+            updatedChapters[idx] = chapterItem.copy(
+                status = ChapterDownloadStatus.DOWNLOADING,
+                progress = 0f
+            )
+            currentTasks[comicPathWord] = currentTask.copy(chapters = updatedChapters)
             updateProgressForTask(currentTasks[comicPathWord]!!)
 
             try {
@@ -181,14 +204,7 @@ class DownloadManager @Inject constructor(
                             TAG,
                             "Chapter $comicPathWord/${chapterItem.chapter.name} paused mid-download"
                         )
-                        if (idx >= 0) {
-                            updatedChapters[idx] = chapterItem.copy(
-                                status = ChapterDownloadStatus.WAITING,
-                                progress = 0f
-                            )
-                        }
-                        currentTasks[comicPathWord] = updatedTask.copy(chapters = updatedChapters)
-                        updateProgressForTask(currentTasks[comicPathWord]!!)
+                        markChapterWaiting(comicPathWord, chapterItem)
                         return
                     }
 
@@ -211,31 +227,17 @@ class DownloadManager @Inject constructor(
                     )
                     chapterDao.insertChapter(entity)
 
-                    if (idx >= 0) {
-                        updatedChapters[idx] = chapterItem.copy(
-                            status = ChapterDownloadStatus.DOWNLOADED,
-                            progress = 1f
-                        )
-                    }
-                    currentTasks[comicPathWord] = updatedTask.copy(chapters = updatedChapters)
+                    markChapterCompleted(comicPathWord, chapterItem)
                     val roomChapterCount = chapterDao.getChapterUuids(comicPathWord).size
                     comicDao.updateChapterCount(comicPathWord, roomChapterCount)
                 } else {
-                    markChapterError(
-                        comicPathWord,
-                        chapterItem,
-                        idx,
-                        updatedChapters,
-                        "获取章节内容失败"
-                    )
+                    markChapterError(comicPathWord, chapterItem, "获取章节内容失败")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "下载章节失败: ${chapterItem.chapter.name}", e)
                 markChapterError(
                     comicPathWord,
                     chapterItem,
-                    idx,
-                    updatedChapters,
                     e.message ?: "未知错误"
                 )
             }
@@ -249,8 +251,9 @@ class DownloadManager @Inject constructor(
             }) {
             updateProgressForTask(
                 finalTask.copy(
-                chapters = finalTask.chapters.map { it.copy(progress = 1f) }
-            ))
+                    chapters = finalTask.chapters.map { it.copy(progress = 1f) }
+                )
+            )
         }
     }
 
@@ -312,19 +315,50 @@ class DownloadManager @Inject constructor(
     private fun markChapterError(
         comicPathWord: String,
         chapterItem: ChapterDownloadItem,
-        idx: Int,
-        updatedChapters: MutableList<ChapterDownloadItem>,
         message: String
     ) {
+        val task = currentTasks[comicPathWord] ?: return
+        val chapters = task.chapters.toMutableList()
+        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
         if (idx >= 0) {
-            updatedChapters[idx] = chapterItem.copy(
+            chapters[idx] = chapterItem.copy(
                 status = ChapterDownloadStatus.ERROR,
                 errorMessage = message
             )
         }
-        currentTasks[comicPathWord]?.let { task ->
-            currentTasks[comicPathWord] = task.copy(chapters = updatedChapters)
+        currentTasks[comicPathWord] = task.copy(chapters = chapters)
+    }
+
+    private fun markChapterCompleted(
+        comicPathWord: String,
+        chapterItem: ChapterDownloadItem
+    ) {
+        val task = currentTasks[comicPathWord] ?: return
+        val chapters = task.chapters.toMutableList()
+        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+        if (idx >= 0) {
+            chapters[idx] = chapterItem.copy(
+                status = ChapterDownloadStatus.DOWNLOADED,
+                progress = 1f
+            )
         }
+        currentTasks[comicPathWord] = task.copy(chapters = chapters)
+    }
+
+    private fun markChapterWaiting(
+        comicPathWord: String,
+        chapterItem: ChapterDownloadItem
+    ) {
+        val task = currentTasks[comicPathWord] ?: return
+        val chapters = task.chapters.toMutableList()
+        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+        if (idx >= 0) {
+            chapters[idx] = chapterItem.copy(
+                status = ChapterDownloadStatus.WAITING,
+                progress = 0f
+            )
+        }
+        currentTasks[comicPathWord] = task.copy(chapters = chapters)
     }
 
     private fun updateProgressForTask(task: ComicDownloadTask) {

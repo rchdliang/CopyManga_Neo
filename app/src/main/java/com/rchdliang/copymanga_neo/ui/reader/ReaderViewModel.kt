@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.local.ReaderPreferencesStore
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +18,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     private val repository: MangaRepository,
-    private val prefs: ReaderPreferencesStore
+    private val prefs: ReaderPreferencesStore,
+    private val downloadRepository: DownloadRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -55,18 +57,32 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
-        if (currentChapterUuid == chapterUuid && _uiState.value is ReaderUiState.Success) {
-            android.util.Log.i(
-                "ReaderViewModel",
-                "loadChapter skipped: already loaded $chapterUuid"
-            )
-            return
-        }
         currentComicPathWord = comicPathWord
         currentChapterUuid = chapterUuid
         currentGroup = group
 
         viewModelScope.launch {
+            _uiState.value = ReaderUiState.Loading
+
+            val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
+            if (downloadedChapter != null) {
+                val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
+                val currentIndex = allChapters.indexOfFirst { it.uuid == chapterUuid }
+                val prevUuid = if (currentIndex > 0) allChapters[currentIndex - 1].uuid else null
+                val nextUuid =
+                    if (currentIndex >= 0 && currentIndex < allChapters.lastIndex) allChapters[currentIndex + 1].uuid else null
+
+                _uiState.value = ReaderUiState.Success(
+                    ChapterContent(
+                        imageUrls = downloadedChapter.imagePaths,
+                        prevUuid = prevUuid,
+                        nextUuid = nextUuid,
+                        chapterName = downloadedChapter.name
+                    )
+                )
+                return@launch
+            }
+
             repository.trialChapterContent(comicPathWord, chapterUuid)
                 .onFailure { error ->
                     android.util.Log.w(
@@ -75,7 +91,6 @@ class ReaderViewModel @Inject constructor(
                     )
                 }
 
-            _uiState.value = ReaderUiState.Loading
             repository.getChapterContent(comicPathWord, chapterUuid, group)
                 .onSuccess { content ->
                     _uiState.value = ReaderUiState.Success(content)
@@ -92,15 +107,11 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun loadPrevChapter() {
-        android.util.Log.i("ReaderViewModel", "entering -> loadPrevChapter()")
         val currentState = _uiState.value
         if (currentState is ReaderUiState.Success) {
-            android.util.Log.i("ReaderViewModel", "ReaderUiState: Success")
             val prevUuid = currentState.content.prevUuid
-            android.util.Log.i("ReaderViewModel", currentState.content.toString())
             if (prevUuid != null) {
                 loadChapter(currentComicPathWord, prevUuid, currentGroup)
-                android.util.Log.i("ReaderViewModel", "Loading Prev Chapter")
             }
         }
     }
@@ -111,7 +122,6 @@ class ReaderViewModel @Inject constructor(
             val nextUuid = currentState.content.nextUuid
             if (nextUuid != null) {
                 loadChapter(currentComicPathWord, nextUuid, currentGroup)
-                android.util.Log.i("ReaderViewModel", "Loading Next Chapter")
             }
         }
     }
