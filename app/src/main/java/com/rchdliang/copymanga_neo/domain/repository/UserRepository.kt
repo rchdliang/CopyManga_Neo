@@ -43,4 +43,42 @@ interface UserRepository {
     fun getUsername(): Flow<String?>
 
     fun getAvatar(): Flow<String?>
+
+    /**
+     * 保存登录凭据偏好
+     * @param username 用户名
+     * @param password 原始密码
+     * @param rememberPassword 是否记住密码
+     * @param autoLogin 是否自动登录
+     */
+    suspend fun saveCredentials(
+        username: String,
+        password: String,
+        rememberPassword: Boolean,
+        autoLogin: Boolean
+    )
+
+    /** 获取是否记住密码（Flow） */
+    fun getRememberPassword(): Flow<Boolean>
+
+    /** 获取是否自动登录（Flow） */
+    fun getAutoLogin(): Flow<Boolean>
+
+    /** 获取保存的用户名（Flow） */
+    fun getSavedUsername(): Flow<String?>
+
+    /** 获取保存的密码（Flow） */
+    fun getSavedPassword(): Flow<String?>
+
+    /** 是否自动登录（同步） */
+    fun getAutoLoginSync(): Boolean
+
+    /** 是否记住密码（同步） */
+    fun getRememberPasswordSync(): Boolean
+
+    /** 保存的用户名（同步） */
+    fun getSavedUsernameSync(): String?
+
+    /** 保存的密码（同步） */
+    fun getSavedPasswordSync(): String?
 }

@@ -28,7 +28,11 @@ data class ProfileUiState(
     val dayDownloadsRefresh: String? = null,
     val ticket: Float? = null,
     val rewardTicket: Float? = null,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val savedUsername: String? = null,
+    val savedPassword: String? = null,
+    val rememberPassword: Boolean = false,
+    val autoLogin: Boolean = false
 )
 
 /**
@@ -43,7 +47,6 @@ class ProfileViewModel @Inject constructor(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
-        // 监听登录状态
         viewModelScope.launch {
             userRepository.isLoggedIn().collect { loggedIn ->
                 _uiState.value = _uiState.value.copy(isLoggedIn = loggedIn)
@@ -62,6 +65,30 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.getAvatar().collect { avatar ->
                 _uiState.value = _uiState.value.copy(avatar = avatar)
+            }
+        }
+
+        viewModelScope.launch {
+            userRepository.getRememberPassword().collect { remember ->
+                _uiState.value = _uiState.value.copy(rememberPassword = remember)
+            }
+        }
+
+        viewModelScope.launch {
+            userRepository.getAutoLogin().collect { autoLogin ->
+                _uiState.value = _uiState.value.copy(autoLogin = autoLogin)
+            }
+        }
+
+        viewModelScope.launch {
+            userRepository.getSavedUsername().collect { savedUsername ->
+                _uiState.value = _uiState.value.copy(savedUsername = savedUsername)
+            }
+        }
+
+        viewModelScope.launch {
+            userRepository.getSavedPassword().collect { savedPassword ->
+                _uiState.value = _uiState.value.copy(savedPassword = savedPassword)
             }
         }
     }
@@ -139,7 +166,12 @@ class ProfileViewModel @Inject constructor(
     }
 
     /** 登录 */
-    fun login(username: String, password: String) {
+    fun login(
+        username: String,
+        password: String,
+        rememberPassword: Boolean,
+        autoLogin: Boolean
+    ) {
         if (username.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(loginError = "账号和密码不能为空")
             return
@@ -149,6 +181,7 @@ class ProfileViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoginLoading = true, loginError = null)
             userRepository.login(username, password).fold(
                 onSuccess = {
+                    userRepository.saveCredentials(username, password, rememberPassword, autoLogin)
                     _uiState.value = _uiState.value.copy(
                         isLoginLoading = false,
                         showLoginDialog = false,
@@ -170,11 +203,29 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.logout().fold(
                 onSuccess = {
-                    _uiState.value = ProfileUiState()
+                    _uiState.value = _uiState.value.copy(
+                        isLoggedIn = false,
+                        username = null,
+                        avatar = null,
+                        nickname = null,
+                        dayDownloads = null,
+                        dayDownloadsRefresh = null,
+                        ticket = null,
+                        rewardTicket = null
+                    )
                 },
                 onFailure = { error ->
                     android.util.Log.e("ProfileViewModel", "Logout failed: ${error.message}")
-                    _uiState.value = ProfileUiState()
+                    _uiState.value = _uiState.value.copy(
+                        isLoggedIn = false,
+                        username = null,
+                        avatar = null,
+                        nickname = null,
+                        dayDownloads = null,
+                        dayDownloadsRefresh = null,
+                        ticket = null,
+                        rewardTicket = null
+                    )
                 }
             )
         }

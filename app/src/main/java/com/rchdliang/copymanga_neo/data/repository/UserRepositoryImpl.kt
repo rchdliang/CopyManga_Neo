@@ -144,6 +144,31 @@ class UserRepositoryImpl @Inject constructor(
 
     override fun getAvatar(): Flow<String?> = authDataStore.getAvatar()
 
+    override suspend fun saveCredentials(
+        username: String,
+        password: String,
+        rememberPassword: Boolean,
+        autoLogin: Boolean
+    ) {
+        authDataStore.saveCredentials(username, password, rememberPassword, autoLogin)
+    }
+
+    override fun getRememberPassword(): Flow<Boolean> = authDataStore.getRememberPassword()
+
+    override fun getAutoLogin(): Flow<Boolean> = authDataStore.getAutoLogin()
+
+    override fun getSavedUsername(): Flow<String?> = authDataStore.getSavedUsername()
+
+    override fun getSavedPassword(): Flow<String?> = authDataStore.getSavedPassword()
+
+    override fun getAutoLoginSync(): Boolean = authDataStore.getAutoLoginSync()
+
+    override fun getRememberPasswordSync(): Boolean = authDataStore.getRememberPasswordSync()
+
+    override fun getSavedUsernameSync(): String? = authDataStore.getSavedUsernameSync()
+
+    override fun getSavedPasswordSync(): String? = authDataStore.getSavedPasswordSync()
+
     /**
      * 从 response 的 set-cookie header 中提取 token
      * Cookie 格式可能为：token=xxx; Path=/; ...

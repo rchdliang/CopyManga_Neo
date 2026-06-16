@@ -9,21 +9,28 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
@@ -71,6 +78,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
@@ -157,8 +165,10 @@ fun CopyManga_NeoApp(
             composable(Screen.Main.route) {
                 Box(modifier = Modifier.statusBarsPadding()) {
                     val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
+                    val avatar by mainViewModel.avatar.collectAsState()
                     MainScreen(
                         isLoggedIn = isLoggedIn,
+                        avatar = avatar,
                         onNavigateToDetail = { pathWord ->
                             navController.navigate(Screen.Detail.createRoute(pathWord))
                         },
@@ -241,6 +251,7 @@ fun CopyManga_NeoApp(
 @Composable
 fun MainScreen(
     isLoggedIn: Boolean,
+    avatar: String?,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
@@ -304,6 +315,8 @@ fun MainScreen(
 
     if (isExpanded) {
         WideScreenLayout(
+            isLoggedIn = isLoggedIn,
+            avatar = avatar,
             pagerState = pagerState,
             currentDestination = currentDestination,
             onDestinationSelected = ::animateToDestination,
@@ -359,6 +372,8 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun WideScreenLayout(
+    isLoggedIn: Boolean,
+    avatar: String?,
     pagerState: PagerState,
     currentDestination: AppDestinations,
     onDestinationSelected: (AppDestinations) -> Unit,
@@ -386,31 +401,62 @@ private fun WideScreenLayout(
                 modalContentColor = WideNavigationRailDefaults.colors().modalContentColor
             ),
             header = {
-                IconButton(
+                Column(
                     modifier = Modifier
+                        .padding(top = 16.dp)
                         .padding(start = 24.dp)
-                        .semantics {
-                            stateDescription =
-                                if (railState.targetValue == WideNavigationRailValue.Expanded)
-                                    "已展开" else "已折叠"
-                        },
-                    onClick = {
-                        scope.launch {
-                            if (railState.targetValue == WideNavigationRailValue.Expanded)
-                                railState.collapse()
-                            else
-                                railState.expand()
-                        }
-                    }
                 ) {
-                    Icon(
-                        imageVector = if (railState.targetValue == WideNavigationRailValue.Expanded)
-                            Icons.AutoMirrored.Filled.MenuOpen
-                        else
-                            Icons.Filled.Menu,
-                        contentDescription = if (railState.targetValue == WideNavigationRailValue.Expanded)
-                            "折叠侧栏" else "展开侧栏"
+                    SubcomposeAsyncImage(
+                        model = if (isLoggedIn) avatar else null,
+                        contentDescription = "用户头像",
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable { onNavigateToProfile() },
+                        loading = {
+                            Icon(
+                                imageVector = Icons.Filled.AccountCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        },
+                        error = {
+                            Icon(
+                                imageVector = Icons.Filled.AccountCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IconButton(
+                        modifier = Modifier
+                            .semantics {
+                                stateDescription =
+                                    if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                        "已展开" else "已折叠"
+                            },
+                        onClick = {
+                            scope.launch {
+                                if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                    railState.collapse()
+                                else
+                                    railState.expand()
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                Icons.AutoMirrored.Filled.MenuOpen
+                            else
+                                Icons.Filled.Menu,
+                            contentDescription = if (railState.targetValue == WideNavigationRailValue.Expanded)
+                                "折叠侧栏" else "展开侧栏"
+                        )
+                    }
                 }
             }
         ) {
@@ -491,5 +537,5 @@ enum class AppDestinations(
     HOME("首页", Icons.Filled.Home, Icons.Outlined.Home),
     DOWNLOADS("下载", Icons.Filled.Download, Icons.Outlined.Download),
     BOOKSHELF("书架", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder),
-    PROFILE("账号", Icons.Filled.AccountBox, Icons.Outlined.AccountBox),
+    PROFILE("我的", Icons.Filled.AccountBox, Icons.Outlined.AccountBox),
 }
