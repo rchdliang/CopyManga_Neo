@@ -28,6 +28,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+sealed interface ChapterBatchAction {
+    data object ManageDownloads : ChapterBatchAction
+}
+
+data class ChapterBatchSelectionState(
+    val action: ChapterBatchAction,
+    val selectedChapterUuids: Set<String> = emptySet()
+)
+
 data class DetailUiState(
     val comicDetail: ComicDetailDto? = null,
     val chapters: ImmutableList<ChapterDto> = persistentListOf(),
@@ -45,9 +54,7 @@ data class DetailUiState(
     val browse: BrowseDto? = null,
     val isShelfLoading: Boolean = false,
     val shelfMessage: String? = null,
-    val isSelectionMode: Boolean = false,
-    val isDeleteMode: Boolean = false,
-    val selectedChapterUuids: Set<String> = emptySet(),
+    val batchSelection: ChapterBatchSelectionState? = null,
     val downloadedChapterUuids: Set<String> = emptySet(),
     val chapterDownloadStatuses: Map<String, ChapterDownloadStatus> = emptyMap(),
     val chapterDownloadProgresses: Map<String, Float> = emptyMap(),
@@ -93,8 +100,7 @@ class DetailViewModel @Inject constructor(
                     isInShelf = false,
                     shelfCollectId = null,
                     browse = null,
-                    isSelectionMode = false,
-                    selectedChapterUuids = emptySet()
+                    batchSelection = null
                 )
             }
 
@@ -168,8 +174,7 @@ class DetailViewModel @Inject constructor(
                             isLoading = false,
                             chapters = persistentListOf(),
                             chapterTotal = 0,
-                            isSelectionMode = false,
-                            selectedChapterUuids = emptySet()
+                            batchSelection = null
                         )
                     }
                     saveLocalCache(detail.comicDetail)
@@ -285,56 +290,6 @@ class DetailViewModel @Inject constructor(
         downloadRepository.saveComicCache(entity)
     }
 
-    fun startDownload() {
-        val state = _uiState.value
-        val detail = state.comicDetail ?: return
-        val selectedChapters = state.chapters.filter { it.uuid in state.selectedChapterUuids }
-        if (selectedChapters.isEmpty()) return
-
-        exitSelectionMode()
-
-        val authors = detail.author?.joinToString(",") { it.name } ?: ""
-
-        viewModelScope.launch {
-            val existing = downloadRepository.getDownloadedComic(detail.pathWord)
-            val entity = DownloadedComicEntity(
-                pathWord = detail.pathWord,
-                name = detail.name,
-                cover = detail.cover,
-                authorNames = authors,
-                statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
-                lastUpdate = detail.lastUpdate,
-                lastChapterName = detail.lastChapter?.lastChapterName,
-                brief = detail.brief,
-                totalChapters = selectedChapters.size + (existing?.totalChapters ?: 0),
-                downloadedChapters = existing?.downloadedChapters ?: 0,
-                downloadAt = System.currentTimeMillis()
-            )
-            downloadRepository.saveComicCache(entity)
-
-            val downloadItems = selectedChapters.map { chapter ->
-                ChapterDownloadItem(
-                    chapter = chapter,
-                    status = ChapterDownloadStatus.WAITING
-                )
-            }
-
-            val task = ComicDownloadTask(
-                pathWord = detail.pathWord,
-                name = detail.name,
-                cover = detail.cover,
-                chapters = downloadItems,
-                authorNames = authors,
-                statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
-                lastUpdate = detail.lastUpdate,
-                brief = detail.brief
-            )
-
-            downloadRepository.enqueueDownload(task)
-            refreshDownloadStatus(detail.pathWord)
-        }
-    }
-
     private suspend fun refreshDownloadStatus(pathWord: String) {
         val downloadedUuids = downloadRepository.getDownloadedChapterUuids(pathWord)
         val task = downloadRepository.getActiveTask().value
@@ -404,8 +359,7 @@ class DetailViewModel @Inject constructor(
                 selectedGroup = groupPathWord,
                 chapters = persistentListOf(),
                 chapterTotal = 0,
-                isSelectionMode = false,
-                selectedChapterUuids = emptySet()
+                batchSelection = null
             )
         }
         loadAllChapters(pathWord, groupPathWord)
@@ -513,180 +467,166 @@ class DetailViewModel @Inject constructor(
         )
     }
 
-    // region 多选模式
+    // region 批量管理章节
 
-    fun enterSelectionMode(chapterUuid: String) {
-        _uiState.update {
-            it.copy(
-                isSelectionMode = true,
-                selectedChapterUuids = setOf(chapterUuid)
-            )
-        }
-    }
-
-    /**
-     * 进入多选模式但不预先选中任何章节
-     */
-    fun enterSelectionModeEmpty() {
-        _uiState.update {
-            it.copy(
-                isSelectionMode = true,
-                selectedChapterUuids = emptySet()
-            )
-        }
-    }
-
-    fun exitSelectionMode() {
-        _uiState.update {
-            it.copy(
-                isSelectionMode = false,
-                selectedChapterUuids = emptySet()
-            )
-        }
-    }
-
-    fun toggleChapterSelection(chapterUuid: String) {
+    fun enterManageMode(chapterUuid: String? = null) {
         _uiState.update { state ->
-            val selected = state.selectedChapterUuids.toMutableSet()
-            if (selected.contains(chapterUuid)) {
-                selected.remove(chapterUuid)
-            } else {
-                selected.add(chapterUuid)
-            }
-            state.copy(selectedChapterUuids = selected)
-        }
-    }
-
-    fun selectAll() {
-        _uiState.update { state ->
-            state.copy(
-                selectedChapterUuids = state.chapters.map { it.uuid }.toSet()
-            )
-        }
-    }
-
-    fun invertSelection() {
-        _uiState.update { state ->
-            val allUuids = state.chapters.map { it.uuid }.toSet()
-            val inverted = allUuids - state.selectedChapterUuids
-            state.copy(selectedChapterUuids = inverted)
-        }
-    }
-
-    fun selectToLatest() {
-        _uiState.update { state ->
-            val chapters = if (state.sortAscending) state.chapters
-            else state.chapters.reversed()
-            if (chapters.isEmpty() || state.selectedChapterUuids.isEmpty()) return@update state
-            val sortedSelected = chapters.filter { it.uuid in state.selectedChapterUuids }
-            val firstSelected = sortedSelected.first()
-            val firstIndex = chapters.indexOf(firstSelected)
-            val range = chapters.drop(firstIndex).map { it.uuid }.toSet()
-            state.copy(selectedChapterUuids = range)
-        }
-    }
-
-    fun selectBeforeLatest() {
-        _uiState.update { state ->
-            val chapters = if (state.sortAscending) state.chapters
-            else state.chapters.reversed()
-            if (chapters.isEmpty() || state.selectedChapterUuids.isEmpty()) return@update state
-            val sortedSelected = chapters.filter { it.uuid in state.selectedChapterUuids }
-            val lastSelected = sortedSelected.last()
-            val lastIndex = chapters.indexOf(lastSelected)
-            val range = chapters.take(lastIndex + 1).map { it.uuid }.toSet()
-            state.copy(selectedChapterUuids = range)
-        }
-    }
-
-    fun selectBetween() {
-        _uiState.update { state ->
-            val chapters = if (state.sortAscending) state.chapters
-            else state.chapters.reversed()
-            if (chapters.isEmpty() || state.selectedChapterUuids.size < 2) return@update state
-            val sortedSelected = chapters.filter { it.uuid in state.selectedChapterUuids }
-            val firstSelected = sortedSelected.first()
-            val lastSelected = sortedSelected.last()
-            val firstIndex = chapters.indexOf(firstSelected)
-            val lastIndex = chapters.indexOf(lastSelected)
-            val range = chapters.subList(firstIndex, lastIndex + 1).map { it.uuid }.toSet()
-            if (range.size == state.selectedChapterUuids.size) return@update state
-            state.copy(selectedChapterUuids = range)
-        }
-    }
-
-    fun canSelectBetween(): Boolean {
-        val state = _uiState.value
-        if (state.selectedChapterUuids.size < 2) return false
-        val chapters = if (state.sortAscending) state.chapters
-        else state.chapters.reversed()
-        val sortedSelected = chapters.filter { it.uuid in state.selectedChapterUuids }
-        val firstIndex = chapters.indexOf(sortedSelected.first())
-        val lastIndex = chapters.indexOf(sortedSelected.last())
-        val rangeSize = lastIndex - firstIndex + 1
-        return rangeSize > state.selectedChapterUuids.size
-    }
-
-    fun clearSelection() {
-        _uiState.update {
-            it.copy(selectedChapterUuids = emptySet())
-        }
-    }
-
-    fun getSelectedChapters(): List<ChapterDto> {
-        val state = _uiState.value
-        return state.chapters.filter { it.uuid in state.selectedChapterUuids }
-    }
-
-    // endregion
-
-    // region 删除模式
-
-    fun enterDeleteMode(chapterUuid: String) {
-        _uiState.update {
-            it.copy(
-                isDeleteMode = true,
-                selectedChapterUuids = setOf(chapterUuid)
-            )
-        }
-    }
-
-    fun enterDeleteModeEmpty() {
-        _uiState.update {
-            it.copy(
-                isDeleteMode = true,
-                selectedChapterUuids = emptySet()
-            )
-        }
-    }
-
-    fun exitDeleteMode() {
-        _uiState.update {
-            it.copy(
-                isDeleteMode = false,
-                selectedChapterUuids = emptySet()
-            )
-        }
-    }
-
-    fun selectAllDeletable() {
-        _uiState.update { state ->
-            val deletableUuids = state.chapterDownloadStatuses
+            val downloadableUuids = state.chapterDownloadStatuses
                 .filter {
                     it.value == ChapterDownloadStatus.DOWNLOADED ||
                             it.value == ChapterDownloadStatus.WAITING ||
                             it.value == ChapterDownloadStatus.DOWNLOADING
                 }
                 .keys
-            state.copy(selectedChapterUuids = deletableUuids)
+            val initialSelection = if (chapterUuid != null) {
+                downloadableUuids + chapterUuid
+            } else {
+                downloadableUuids
+            }
+            state.copy(
+                batchSelection = ChapterBatchSelectionState(
+                    action = ChapterBatchAction.ManageDownloads,
+                    selectedChapterUuids = initialSelection
+                )
+            )
         }
     }
 
-    fun canDeleteChapter(chapterUuid: String): Boolean {
-        val status = _uiState.value.chapterDownloadStatuses[chapterUuid]
-        return status == ChapterDownloadStatus.DOWNLOADED ||
-                status == ChapterDownloadStatus.WAITING ||
-                status == ChapterDownloadStatus.DOWNLOADING
+    fun exitBatchMode() {
+        _uiState.update { it.copy(batchSelection = null) }
+    }
+
+    fun toggleChapterSelection(chapterUuid: String) {
+        _uiState.update { state ->
+            val batch = state.batchSelection ?: return@update state
+            val selected = batch.selectedChapterUuids.toMutableSet()
+            if (selected.contains(chapterUuid)) {
+                selected.remove(chapterUuid)
+            } else {
+                selected.add(chapterUuid)
+            }
+            state.copy(batchSelection = batch.copy(selectedChapterUuids = selected))
+        }
+    }
+
+    fun selectAll() {
+        _uiState.update { state ->
+            val batch = state.batchSelection ?: return@update state
+            state.copy(
+                batchSelection = batch.copy(
+                    selectedChapterUuids = state.chapters.map { it.uuid }.toSet()
+                )
+            )
+        }
+    }
+
+    fun invertSelection() {
+        _uiState.update { state ->
+            val batch = state.batchSelection ?: return@update state
+            val allUuids = state.chapters.map { it.uuid }.toSet()
+            val inverted = allUuids - batch.selectedChapterUuids
+            state.copy(batchSelection = batch.copy(selectedChapterUuids = inverted))
+        }
+    }
+
+    fun selectToLatest() {
+        setRangeSelected(
+            fromFirstSelected = true,
+            toEnd = true,
+            selected = true
+        )
+    }
+
+    fun unselectToLatest() {
+        setRangeSelected(
+            fromFirstSelected = true,
+            toEnd = true,
+            selected = false
+        )
+    }
+
+    fun selectToFirst() {
+        setRangeSelected(
+            fromFirstSelected = false,
+            toEnd = false,
+            selected = true
+        )
+    }
+
+    fun unselectToFirst() {
+        setRangeSelected(
+            fromFirstSelected = false,
+            toEnd = false,
+            selected = false
+        )
+    }
+
+    fun selectBetween() {
+        setRangeSelected(
+            fromFirstSelected = true,
+            toEnd = false,
+            selected = true
+        )
+    }
+
+    fun unselectBetween() {
+        setRangeSelected(
+            fromFirstSelected = true,
+            toEnd = false,
+            selected = false
+        )
+    }
+
+    private fun setRangeSelected(fromFirstSelected: Boolean, toEnd: Boolean, selected: Boolean) {
+        _uiState.update { state ->
+            val batch = state.batchSelection ?: return@update state
+            val chapters = if (state.sortAscending) state.chapters
+            else state.chapters.reversed()
+            if (chapters.isEmpty() || batch.selectedChapterUuids.isEmpty()) return@update state
+            val sortedSelected = chapters.filter { it.uuid in batch.selectedChapterUuids }
+
+            val startIndex: Int
+            val endIndex: Int
+            if (fromFirstSelected) {
+                val first = sortedSelected.first()
+                startIndex = chapters.indexOf(first)
+                endIndex = if (toEnd) chapters.lastIndex
+                else chapters.indexOf(sortedSelected.last())
+            } else {
+                val last = sortedSelected.last()
+                startIndex = 0
+                endIndex = chapters.indexOf(last)
+            }
+            if (startIndex < 0 || endIndex < 0) return@update state
+
+            val range = chapters.subList(startIndex, endIndex + 1).map { it.uuid }.toSet()
+            val newSelected = if (selected) {
+                batch.selectedChapterUuids + range
+            } else {
+                batch.selectedChapterUuids - range
+            }
+            state.copy(batchSelection = batch.copy(selectedChapterUuids = newSelected))
+        }
+    }
+
+    fun canSelectBetween(): Boolean {
+        val state = _uiState.value
+        val selected = state.batchSelection?.selectedChapterUuids ?: return false
+        if (selected.size < 2) return false
+        val chapters = if (state.sortAscending) state.chapters
+        else state.chapters.reversed()
+        val sortedSelected = chapters.filter { it.uuid in selected }
+        val firstIndex = chapters.indexOf(sortedSelected.first())
+        val lastIndex = chapters.indexOf(sortedSelected.last())
+        val rangeSize = lastIndex - firstIndex + 1
+        return rangeSize > selected.size
+    }
+
+    fun clearSelection() {
+        _uiState.update { state ->
+            val batch = state.batchSelection ?: return@update state
+            state.copy(batchSelection = batch.copy(selectedChapterUuids = emptySet()))
+        }
     }
 
     fun hasDownloadableChapters(): Boolean {
@@ -697,17 +637,99 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    fun deleteSelectedChapters() {
+    fun getSelectedChapterUuids(): Set<String> {
+        return _uiState.value.batchSelection?.selectedChapterUuids ?: emptySet()
+    }
+
+    fun confirmBatchAction() {
         val state = _uiState.value
         val pathWord = currentPathWord ?: return
-        val selectedUuids = state.selectedChapterUuids
-        if (selectedUuids.isEmpty()) return
+        val detail = state.comicDetail ?: return
+        val selected = state.batchSelection?.selectedChapterUuids ?: return
+
+        val downloadedUuids = state.chapterDownloadStatuses
+            .filter { it.value == ChapterDownloadStatus.DOWNLOADED }
+            .keys
+
+        val activeDownloadUuids = state.chapterDownloadStatuses
+            .filter {
+                it.value == ChapterDownloadStatus.WAITING ||
+                        it.value == ChapterDownloadStatus.DOWNLOADING
+            }
+            .keys
+
+        val toDownloadUuids = selected.filter { uuid ->
+            val status = state.chapterDownloadStatuses[uuid]
+            status != ChapterDownloadStatus.DOWNLOADED &&
+                    status != ChapterDownloadStatus.WAITING &&
+                    status != ChapterDownloadStatus.DOWNLOADING
+        }.toSet()
+
+        val toDeleteLocalUuids = downloadedUuids - selected
+        val toCancelDownloadUuids = activeDownloadUuids - selected
+
+        if (toDownloadUuids.isEmpty() && toDeleteLocalUuids.isEmpty() && toCancelDownloadUuids.isEmpty()) {
+            exitBatchMode()
+            return
+        }
 
         viewModelScope.launch {
-            downloadRepository.removeChaptersFromTask(pathWord, selectedUuids)
-            downloadRepository.deleteChapters(pathWord, selectedUuids.toList())
-            exitDeleteMode()
+            if (toCancelDownloadUuids.isNotEmpty()) {
+                downloadRepository.removeChaptersFromTask(pathWord, toCancelDownloadUuids)
+            }
+            if (toDeleteLocalUuids.isNotEmpty()) {
+                downloadRepository.removeChaptersFromTask(pathWord, toDeleteLocalUuids)
+                downloadRepository.deleteChapters(pathWord, toDeleteLocalUuids.toList())
+            }
+            if (toDownloadUuids.isNotEmpty()) {
+                val chaptersToDownload = state.chapters.filter { it.uuid in toDownloadUuids }
+                enqueueChaptersDownload(detail, chaptersToDownload)
+            }
+            exitBatchMode()
             refreshDownloadStatus(pathWord)
+        }
+    }
+
+    private fun enqueueChaptersDownload(detail: ComicDetailDto, chapters: List<ChapterDto>) {
+        val authors = detail.author?.joinToString(",") { it.name } ?: ""
+
+        viewModelScope.launch {
+            val existing = downloadRepository.getDownloadedComic(detail.pathWord)
+            val entity = DownloadedComicEntity(
+                pathWord = detail.pathWord,
+                name = detail.name,
+                cover = detail.cover,
+                authorNames = authors,
+                statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
+                lastUpdate = detail.lastUpdate,
+                lastChapterName = detail.lastChapter?.lastChapterName,
+                brief = detail.brief,
+                totalChapters = chapters.size + (existing?.totalChapters ?: 0),
+                downloadedChapters = existing?.downloadedChapters ?: 0,
+                downloadAt = System.currentTimeMillis()
+            )
+            downloadRepository.saveComicCache(entity)
+
+            val downloadItems = chapters.map { chapter ->
+                ChapterDownloadItem(
+                    chapter = chapter,
+                    status = ChapterDownloadStatus.WAITING
+                )
+            }
+
+            val task = ComicDownloadTask(
+                pathWord = detail.pathWord,
+                name = detail.name,
+                cover = detail.cover,
+                chapters = downloadItems,
+                authorNames = authors,
+                statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
+                lastUpdate = detail.lastUpdate,
+                brief = detail.brief
+            )
+
+            downloadRepository.enqueueDownload(task)
+            refreshDownloadStatus(detail.pathWord)
         }
     }
 

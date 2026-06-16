@@ -38,7 +38,10 @@ class DownloadsViewModel @Inject constructor(
                 downloadRepository.getDownloadProgress(),
                 downloadRepository.getActiveTask()
             ) { comics, progress, _ ->
-                val paused = progress.filter { it.value.status == DownloadTaskStatus.PAUSED }.keys
+                val paused = progress.filter {
+                    it.value.status == DownloadTaskStatus.PAUSED ||
+                            it.value.status == DownloadTaskStatus.PAUSED_BY_RISK
+                }.keys
                 DownloadsUiState(
                     downloadedComics = comics,
                     activeDownloads = progress,

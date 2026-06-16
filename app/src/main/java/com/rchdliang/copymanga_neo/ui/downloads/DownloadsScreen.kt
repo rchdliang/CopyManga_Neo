@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -107,12 +108,13 @@ fun DownloadsScreen(
                 text = "正在下载",
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
 
             if (hasActive) {
                 uiState.activeDownloads.entries.forEach { (pathWord, progressInfo) ->
                     val paused = pathWord in uiState.pausedComics
+                    val isError = progressInfo.status == DownloadTaskStatus.ERROR
                     DownloadingCard(
                         name = progressInfo.name,
                         cover = progressInfo.cover,
@@ -123,6 +125,9 @@ fun DownloadsScreen(
                             else viewModel.pauseComic(pathWord)
                         },
                         onCancel = { viewModel.cancelComic(pathWord) },
+                        onRetry = if (isError) {
+                            { viewModel.resumeComic(pathWord) }
+                        } else null,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

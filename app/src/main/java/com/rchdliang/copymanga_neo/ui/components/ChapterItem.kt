@@ -27,8 +27,40 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
+
+private enum class ChapterManageVisualState {
+    Normal,
+    Downloaded,
+    Downloading,
+    WillDownload,
+    WillDeleteLocal
+}
+
+private fun resolveChapterManageVisualState(
+    status: ChapterDownloadStatus?,
+    selected: Boolean
+): ChapterManageVisualState {
+    return when (status) {
+        ChapterDownloadStatus.DOWNLOADED -> {
+            if (selected) ChapterManageVisualState.Downloaded
+            else ChapterManageVisualState.WillDeleteLocal
+        }
+
+        ChapterDownloadStatus.WAITING,
+        ChapterDownloadStatus.DOWNLOADING -> {
+            if (selected) ChapterManageVisualState.Downloading
+            else ChapterManageVisualState.Normal
+        }
+
+        else -> {
+            if (selected) ChapterManageVisualState.WillDownload
+            else ChapterManageVisualState.Normal
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -36,7 +68,6 @@ fun ChapterItem(
     chapter: ChapterDto,
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
-    isDeletableInDeleteMode: Boolean = true,
     downloadStatus: ChapterDownloadStatus? = null,
     downloadProgress: Float? = null,
     onClick: () -> Unit,
@@ -48,11 +79,27 @@ fun ChapterItem(
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
     )
 
-    val isNonDeletableInMode = isSelectionMode && !isDeletableInDeleteMode
+    val visualState = if (isSelectionMode) {
+        resolveChapterManageVisualState(downloadStatus, isSelected)
+    } else {
+        null
+    }
 
     val bgColor = when {
-        isNonDeletableInMode -> MaterialTheme.colorScheme.surfaceContainerLow
-        isSelectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer
+        visualState == ChapterManageVisualState.Normal ->
+            MaterialTheme.colorScheme.surface
+
+        visualState == ChapterManageVisualState.Downloaded ->
+            MaterialTheme.colorScheme.secondaryContainer
+
+        visualState == ChapterManageVisualState.Downloading ->
+            MaterialTheme.colorScheme.tertiaryContainer
+
+        visualState == ChapterManageVisualState.WillDownload ->
+            MaterialTheme.colorScheme.primaryContainer
+
+        visualState == ChapterManageVisualState.WillDeleteLocal ->
+            MaterialTheme.colorScheme.errorContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADED -> MaterialTheme.colorScheme.primaryContainer
         downloadStatus == ChapterDownloadStatus.WAITING -> MaterialTheme.colorScheme.secondaryContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.tertiaryContainer
@@ -61,13 +108,33 @@ fun ChapterItem(
     }
 
     val contentColor = when {
-        isNonDeletableInMode -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-        isSelectionMode && isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        visualState == ChapterManageVisualState.Normal ->
+            MaterialTheme.colorScheme.onSurface
+
+        visualState == ChapterManageVisualState.Downloaded ->
+            MaterialTheme.colorScheme.onSecondaryContainer
+
+        visualState == ChapterManageVisualState.Downloading ->
+            MaterialTheme.colorScheme.onTertiaryContainer
+
+        visualState == ChapterManageVisualState.WillDownload ->
+            MaterialTheme.colorScheme.onPrimaryContainer
+
+        visualState == ChapterManageVisualState.WillDeleteLocal ->
+            MaterialTheme.colorScheme.onErrorContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADED -> MaterialTheme.colorScheme.onPrimaryContainer
         downloadStatus == ChapterDownloadStatus.WAITING -> MaterialTheme.colorScheme.onSecondaryContainer
         downloadStatus == ChapterDownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.onTertiaryContainer
         downloadStatus == ChapterDownloadStatus.ERROR -> MaterialTheme.colorScheme.onErrorContainer
         else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    val marker = when (visualState) {
+        ChapterManageVisualState.Downloaded -> "\u2713"
+        ChapterManageVisualState.Downloading -> "\u25CB"
+        ChapterManageVisualState.WillDownload -> "\u2193"
+        ChapterManageVisualState.WillDeleteLocal -> "\u00D7"
+        else -> null
     }
 
     Box(
@@ -92,65 +159,60 @@ fun ChapterItem(
             overflow = TextOverflow.Ellipsis
         )
 
-        if (isSelectionMode && isSelected) {
-            Box(
+        if (marker != null) {
+            Text(
+                text = marker,
+                color = contentColor,
+                fontSize = 12.sp,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(2.dp)
-                    .size(12.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .background(MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "已选择",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(1.dp)
-                )
-            }
+            )
         }
 
-        when (downloadStatus) {
-            ChapterDownloadStatus.DOWNLOADING -> {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(2.dp)
-                        .size(14.dp)
-                ) {
-                    CircularWavyProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.size(14.dp),
-                        trackColor = Color.Transparent
+        if (!isSelectionMode) {
+            when (downloadStatus) {
+                ChapterDownloadStatus.DOWNLOADING -> {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(2.dp)
+                            .size(14.dp)
+                    ) {
+                        CircularWavyProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier.size(14.dp),
+                            trackColor = Color.Transparent
+                        )
+                    }
+                }
+
+                ChapterDownloadStatus.ERROR -> {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = "下载失败",
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp)
+                            .size(12.dp)
                     )
                 }
-            }
 
-            ChapterDownloadStatus.ERROR -> {
-                Icon(
-                    imageVector = Icons.Filled.Warning,
-                    contentDescription = "下载失败",
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(2.dp)
-                        .size(12.dp)
-                )
-            }
+                ChapterDownloadStatus.DOWNLOADED -> {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "已下载",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp)
+                            .size(12.dp)
+                    )
+                }
 
-            ChapterDownloadStatus.DOWNLOADED -> {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "已下载",
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(2.dp)
-                        .size(12.dp)
-                )
+                else -> {}
             }
-
-            else -> {}
         }
     }
 }

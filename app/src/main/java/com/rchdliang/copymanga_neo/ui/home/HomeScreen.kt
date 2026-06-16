@@ -286,6 +286,7 @@ private fun HomeSectionsPreview() {
             Text(
                 text = "漫画推荐",
                 style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
             )
             ComicGrid(
@@ -298,6 +299,7 @@ private fun HomeSectionsPreview() {
             Text(
                 text = "最新上架",
                 style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
             )
             ComicGrid(

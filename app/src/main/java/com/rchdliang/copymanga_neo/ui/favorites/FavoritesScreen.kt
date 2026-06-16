@@ -141,6 +141,7 @@ fun FavoritesScreen(
             uiState.favorites.isEmpty() -> {
                 Text(
                     text = "暂无收藏，快去添加喜欢的漫画吧！",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }

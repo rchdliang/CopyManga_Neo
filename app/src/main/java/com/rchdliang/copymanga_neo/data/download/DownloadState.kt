@@ -55,13 +55,26 @@ data class DownloadProgressInfo(
     val currentChapterIndex: Int,
     val currentChapterName: String?,
     val currentChapterProgress: Float,
-    val status: DownloadTaskStatus
+    val status: DownloadTaskStatus,
+    /** 当前状态描述文案 */
+    val statusText: String = "等待中",
+    /** 错误信息（出错或风控暂停时显示） */
+    val errorMessage: String? = null,
+    /** 当前章节已下载图片数 */
+    val downloadedImages: Int = 0,
+    /** 当前章节总图片数 */
+    val totalImages: Int = 0,
+    /** 下载速度，单位 bytes/s */
+    val speedBytesPerSecond: Long = 0L
 )
 
 enum class DownloadTaskStatus {
     IDLE,
+    WAITING,
+    REQUESTING_PAGE,
     DOWNLOADING,
     PAUSED,
+    PAUSED_BY_RISK,
     COMPLETED,
     ERROR
 }
