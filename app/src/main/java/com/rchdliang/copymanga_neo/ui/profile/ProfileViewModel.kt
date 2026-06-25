@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -15,6 +16,7 @@ import javax.inject.Inject
 
 /**
  * 账号页面 UI 状态
+ * 注意：密码不再通过 UiState 暴露，改用 [ProfileViewModel.getSavedPasswordSync] 同步读取
  */
 data class ProfileUiState(
     val isLoggedIn: Boolean = false,
@@ -30,7 +32,6 @@ data class ProfileUiState(
     val rewardTicket: Float? = null,
     val isRefreshing: Boolean = false,
     val savedUsername: String? = null,
-    val savedPassword: String? = null,
     val rememberPassword: Boolean = false,
     val autoLogin: Boolean = false
 )
@@ -49,7 +50,7 @@ class ProfileViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             userRepository.isLoggedIn().collect { loggedIn ->
-                _uiState.value = _uiState.value.copy(isLoggedIn = loggedIn)
+                _uiState.update { it.copy(isLoggedIn = loggedIn) }
                 if (loggedIn) {
                     refreshMemberInfo()
                 }
@@ -58,53 +59,53 @@ class ProfileViewModel @Inject constructor(
 
         viewModelScope.launch {
             userRepository.getUsername().collect { username ->
-                _uiState.value = _uiState.value.copy(username = username)
+                _uiState.update { it.copy(username = username) }
             }
         }
 
         viewModelScope.launch {
             userRepository.getAvatar().collect { avatar ->
-                _uiState.value = _uiState.value.copy(avatar = avatar)
+                _uiState.update { it.copy(avatar = avatar) }
             }
         }
 
         viewModelScope.launch {
             userRepository.getRememberPassword().collect { remember ->
-                _uiState.value = _uiState.value.copy(rememberPassword = remember)
+                _uiState.update { it.copy(rememberPassword = remember) }
             }
         }
 
         viewModelScope.launch {
             userRepository.getAutoLogin().collect { autoLogin ->
-                _uiState.value = _uiState.value.copy(autoLogin = autoLogin)
+                _uiState.update { it.copy(autoLogin = autoLogin) }
             }
         }
 
         viewModelScope.launch {
             userRepository.getSavedUsername().collect { savedUsername ->
-                _uiState.value = _uiState.value.copy(savedUsername = savedUsername)
+                _uiState.update { it.copy(savedUsername = savedUsername) }
             }
         }
-
-        viewModelScope.launch {
-            userRepository.getSavedPassword().collect { savedPassword ->
-                _uiState.value = _uiState.value.copy(savedPassword = savedPassword)
-            }
-        }
+        // 密码不再通过 Flow 收集到 UiState，避免明文密码驻留内存状态
     }
+
+    /** 获取保存的密码（同步，供 LoginDialog 预填充使用，不暴露到 UiState） */
+    fun getSavedPasswordSync(): String? = userRepository.getSavedPasswordSync()
 
     /** 刷新用户信息 */
     fun refreshMemberInfo() {
         viewModelScope.launch {
             userRepository.getMemberInfo().fold(
                 onSuccess = { info ->
-                    _uiState.value = _uiState.value.copy(
-                        nickname = info.nickname,
-                        dayDownloads = info.dayDownloads,
-                        dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
-                        ticket = info.ticket,
-                        rewardTicket = info.rewardTicket
-                    )
+                    _uiState.update {
+                        it.copy(
+                            nickname = info.nickname,
+                            dayDownloads = info.dayDownloads,
+                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
+                            ticket = info.ticket,
+                            rewardTicket = info.rewardTicket
+                        )
+                    }
                 },
                 onFailure = { error ->
                     android.util.Log.e(
@@ -132,24 +133,26 @@ class ProfileViewModel @Inject constructor(
     /** 下拉刷新 */
     fun refresh() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isRefreshing = true)
+            _uiState.update { it.copy(isRefreshing = true) }
             userRepository.getMemberInfo().fold(
                 onSuccess = { info ->
-                    _uiState.value = _uiState.value.copy(
-                        nickname = info.nickname,
-                        dayDownloads = info.dayDownloads,
-                        dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
-                        ticket = info.ticket,
-                        rewardTicket = info.rewardTicket,
-                        isRefreshing = false
-                    )
+                    _uiState.update {
+                        it.copy(
+                            nickname = info.nickname,
+                            dayDownloads = info.dayDownloads,
+                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
+                            ticket = info.ticket,
+                            rewardTicket = info.rewardTicket,
+                            isRefreshing = false
+                        )
+                    }
                 },
                 onFailure = { error ->
                     android.util.Log.e(
                         "ProfileViewModel",
                         "Refresh member info failed: ${error.message}"
                     )
-                    _uiState.value = _uiState.value.copy(isRefreshing = false)
+                    _uiState.update { it.copy(isRefreshing = false) }
                 }
             )
         }
@@ -157,12 +160,12 @@ class ProfileViewModel @Inject constructor(
 
     /** 显示登录对话框 */
     fun showLoginDialog() {
-        _uiState.value = _uiState.value.copy(showLoginDialog = true, loginError = null)
+        _uiState.update { it.copy(showLoginDialog = true, loginError = null) }
     }
 
     /** 隐藏登录对话框 */
     fun hideLoginDialog() {
-        _uiState.value = _uiState.value.copy(showLoginDialog = false, loginError = null)
+        _uiState.update { it.copy(showLoginDialog = false, loginError = null) }
     }
 
     /** 登录 */
@@ -173,26 +176,30 @@ class ProfileViewModel @Inject constructor(
         autoLogin: Boolean
     ) {
         if (username.isBlank() || password.isBlank()) {
-            _uiState.value = _uiState.value.copy(loginError = "账号和密码不能为空")
+            _uiState.update { it.copy(loginError = "账号和密码不能为空") }
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoginLoading = true, loginError = null)
+            _uiState.update { it.copy(isLoginLoading = true, loginError = null) }
             userRepository.login(username, password).fold(
                 onSuccess = {
                     userRepository.saveCredentials(username, password, rememberPassword, autoLogin)
-                    _uiState.value = _uiState.value.copy(
-                        isLoginLoading = false,
-                        showLoginDialog = false,
-                        loginError = null
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isLoginLoading = false,
+                            showLoginDialog = false,
+                            loginError = null
+                        )
+                    }
                 },
                 onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoginLoading = false,
-                        loginError = error.message ?: "登录失败"
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isLoginLoading = false,
+                            loginError = error.message ?: "登录失败"
+                        )
+                    }
                 }
             )
         }
@@ -203,29 +210,33 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             userRepository.logout().fold(
                 onSuccess = {
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = false,
-                        username = null,
-                        avatar = null,
-                        nickname = null,
-                        dayDownloads = null,
-                        dayDownloadsRefresh = null,
-                        ticket = null,
-                        rewardTicket = null
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isLoggedIn = false,
+                            username = null,
+                            avatar = null,
+                            nickname = null,
+                            dayDownloads = null,
+                            dayDownloadsRefresh = null,
+                            ticket = null,
+                            rewardTicket = null
+                        )
+                    }
                 },
                 onFailure = { error ->
                     android.util.Log.e("ProfileViewModel", "Logout failed: ${error.message}")
-                    _uiState.value = _uiState.value.copy(
-                        isLoggedIn = false,
-                        username = null,
-                        avatar = null,
-                        nickname = null,
-                        dayDownloads = null,
-                        dayDownloadsRefresh = null,
-                        ticket = null,
-                        rewardTicket = null
-                    )
+                    _uiState.update {
+                        it.copy(
+                            isLoggedIn = false,
+                            username = null,
+                            avatar = null,
+                            nickname = null,
+                            dayDownloads = null,
+                            dayDownloadsRefresh = null,
+                            ticket = null,
+                            rewardTicket = null
+                        )
+                    }
                 }
             )
         }

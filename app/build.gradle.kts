@@ -119,6 +119,9 @@ dependencies {
     
     // DataStore
     implementation(libs.datastore.preferences)
+
+    // Security Crypto (加密存储)
+    implementation(libs.androidx.security.crypto)
     
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -55,6 +54,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.launch
 
@@ -172,9 +172,9 @@ fun ReaderSuccessContent(
     onScreenOrientationChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val locale = LocalLocale.current.platformLocale
+    val toastHost = LocalToastHost.current
 
     val dir = remember(readingDirection) {
         ReadingDirection.entries.find { it.name == readingDirection }
@@ -343,7 +343,7 @@ fun ReaderSuccessContent(
                         ">>> TRIGGER prevChapter (continuous) accum=$v > threshold=$threshold"
                     )
                     coroutineScope.launch {
-                        Toast.makeText(context, "切换到上一章", Toast.LENGTH_SHORT).show()
+                        toastHost.showToast("切换到上一章")
                         latestOnPrevChapter()
                     }
                 } else if (v < -threshold) {
@@ -352,7 +352,7 @@ fun ReaderSuccessContent(
                         ">>> TRIGGER nextChapter (continuous) accum=$v < -$threshold"
                     )
                     coroutineScope.launch {
-                        Toast.makeText(context, "切换到下一章", Toast.LENGTH_SHORT).show()
+                        toastHost.showToast("切换到下一章")
                         latestOnNextChapter()
                     }
                 } else {

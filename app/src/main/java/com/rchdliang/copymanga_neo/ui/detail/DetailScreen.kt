@@ -1,6 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.detail
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
@@ -85,7 +84,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +105,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.LastChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ThemeDto
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -122,7 +121,7 @@ fun DetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val pullToRefreshState = rememberPullToRefreshState()
-    val context = LocalContext.current
+    val toastHost = LocalToastHost.current
 
     LaunchedEffect(pathWord) {
         viewModel.loadDetail(pathWord)
@@ -130,7 +129,7 @@ fun DetailScreen(
 
     LaunchedEffect(uiState.shelfMessage) {
         uiState.shelfMessage?.let { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            toastHost.showToast(message)
             viewModel.clearShelfMessage()
         }
     }

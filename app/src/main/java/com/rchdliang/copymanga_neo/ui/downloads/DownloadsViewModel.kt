@@ -42,15 +42,15 @@ class DownloadsViewModel @Inject constructor(
                     it.value.status == DownloadTaskStatus.PAUSED ||
                             it.value.status == DownloadTaskStatus.PAUSED_BY_RISK
                 }.keys
-                DownloadsUiState(
-                    downloadedComics = comics,
-                    activeDownloads = progress,
-                    pausedComics = paused,
-                    isSelectionMode = _uiState.value.isSelectionMode,
-                    selectedPathWords = _uiState.value.selectedPathWords
-                )
-            }.collect { state ->
-                _uiState.value = state
+                Triple(comics, progress, paused)
+            }.collect { (comics, progress, paused) ->
+                _uiState.update {
+                    it.copy(
+                        downloadedComics = comics,
+                        activeDownloads = progress,
+                        pausedComics = paused
+                    )
+                }
             }
         }
     }

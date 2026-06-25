@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.di
 
 import android.util.Log
+import com.rchdliang.copymanga_neo.BuildConfig
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
@@ -37,27 +38,29 @@ class RequestLoggingInterceptor : Interceptor {
         val method = request.method
         val url = request.url.toString()
 
-        val headerParts = mutableListOf<String>()
-        request.headers.forEach { (name, value) ->
-            if (name.lowercase() in interestingHeaders) {
-                // 对 Authorization 做脱敏：只显示前几个字符
-                val displayValue =
-                    if (name.equals("Authorization", ignoreCase = true) && value.length > 20) {
-                        value.take(20) + "…"
-                    } else {
-                        value
-                    }
-                headerParts.add("$name: $displayValue")
+        if (BuildConfig.DEBUG) {
+            val headerParts = mutableListOf<String>()
+            request.headers.forEach { (name, value) ->
+                if (name.lowercase() in interestingHeaders) {
+                    // 对 Authorization 做脱敏：不显示 token 值
+                    val displayValue =
+                        if (name.equals("Authorization", ignoreCase = true)) {
+                            "Token ***"
+                        } else {
+                            value
+                        }
+                    headerParts.add("$name: $displayValue")
+                }
             }
-        }
 
-        val headersSummary = if (headerParts.isNotEmpty()) {
-            "\n  Headers: [${headerParts.joinToString(", ")}]"
-        } else {
-            ""
-        }
+            val headersSummary = if (headerParts.isNotEmpty()) {
+                "\n  Headers: [${headerParts.joinToString(", ")}]"
+            } else {
+                ""
+            }
 
-        Log.d(TAG, "→ $method $url$headersSummary")
+            Log.d(TAG, "→ $method $url$headersSummary")
+        }
 
         // --- 执行请求 ---
         val startNs = System.nanoTime()
@@ -73,10 +76,12 @@ class RequestLoggingInterceptor : Interceptor {
         val elapsedMs = (System.nanoTime() - startNs) / 1_000_000
 
         // --- 响应日志 ---
-        val code = response.code
-        val message = response.message
-        val status = if (response.isSuccessful) "✓" else "⚠"
-        Log.d(TAG, "$status $method $url  ← $code $message (${elapsedMs}ms)")
+        if (BuildConfig.DEBUG) {
+            val code = response.code
+            val message = response.message
+            val status = if (response.isSuccessful) "✓" else "⚠"
+            Log.d(TAG, "$status $method $url  ← $code $message (${elapsedMs}ms)")
+        }
 
         return response
     }

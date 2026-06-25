@@ -20,6 +20,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,6 +76,8 @@ class DetailViewModel @Inject constructor(
 
     private var observeDownloadJob: kotlinx.coroutines.Job? = null
 
+    private var loadDetailJob: kotlinx.coroutines.Job? = null
+
     fun loadDetail(pathWord: String) {
         if (currentPathWord == pathWord && _uiState.value.comicDetail != null) {
             return
@@ -84,7 +87,8 @@ class DetailViewModel @Inject constructor(
         observeDownloadJob?.cancel()
         observeDownloadJob = viewModelScope.launch { observeDownload(pathWord) }
 
-        viewModelScope.launch {
+        loadDetailJob?.cancel()
+        loadDetailJob = viewModelScope.launch {
             val isLoggedIn = userRepository.isLoggedIn().first()
 
             _uiState.update {
@@ -328,6 +332,8 @@ class DetailViewModel @Inject constructor(
                     refreshDownloadStatus(pathWord)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("DetailViewModel", "observeDownload error for $pathWord", e)
         }

@@ -79,6 +79,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.SubcomposeAsyncImage
+import com.rchdliang.copymanga_neo.ui.components.AppToastHost
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
@@ -157,10 +158,11 @@ fun CopyManga_NeoApp(
             .fillMaxSize()
             .background(if (isExpanded) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Main.route,
-        ) {
+        AppToastHost {
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Main.route,
+            ) {
             // 主界面（包含底部导航栏）
             composable(Screen.Main.route) {
                 Box(modifier = Modifier.statusBarsPadding()) {
@@ -243,7 +245,8 @@ fun CopyManga_NeoApp(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-        }
+            } // NavHost
+        } // AppToastHost
     }
 }
 

@@ -1,7 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
 import android.content.Intent
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -33,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -113,6 +113,7 @@ fun ReaderImageActionDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val toastHost = LocalToastHost.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -132,11 +133,11 @@ fun ReaderImageActionDialog(
                 }
                 ActionRow(icon = Icons.Default.Save, label = "保存") {
                     onDismiss()
-                    Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                    toastHost.showToast("功能开发中")
                 }
                 ActionRow(icon = Icons.Default.SaveAlt, label = "保存到") {
                     onDismiss()
-                    Toast.makeText(context, "功能开发中", Toast.LENGTH_SHORT).show()
+                    toastHost.showToast("功能开发中")
                 }
             }
         },

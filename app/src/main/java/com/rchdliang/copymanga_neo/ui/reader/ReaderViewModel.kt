@@ -7,6 +7,8 @@ import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +37,7 @@ class ReaderViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, "SYSTEM_DEFAULT")
 
     private var initialized = false
+    private var loadJob: Job? = null
     private var currentComicPathWord: String = ""
     private var currentChapterUuid: String = ""
     private var currentGroup: String = "default"
@@ -61,48 +64,56 @@ class ReaderViewModel @Inject constructor(
         currentChapterUuid = chapterUuid
         currentGroup = group
 
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _uiState.value = ReaderUiState.Loading
 
-            val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
-            if (downloadedChapter != null) {
-                val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
-                val currentIndex = allChapters.indexOfFirst { it.uuid == chapterUuid }
-                val prevUuid = if (currentIndex > 0) allChapters[currentIndex - 1].uuid else null
-                val nextUuid =
-                    if (currentIndex >= 0 && currentIndex < allChapters.lastIndex) allChapters[currentIndex + 1].uuid else null
+            try {
+                val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
+                if (downloadedChapter != null) {
+                    val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
+                    val currentIndex = allChapters.indexOfFirst { it.uuid == chapterUuid }
+                    val prevUuid = if (currentIndex > 0) allChapters[currentIndex - 1].uuid else null
+                    val nextUuid =
+                        if (currentIndex >= 0 && currentIndex < allChapters.lastIndex) allChapters[currentIndex + 1].uuid else null
 
-                _uiState.value = ReaderUiState.Success(
-                    ChapterContent(
-                        imageUrls = downloadedChapter.imagePaths,
-                        prevUuid = prevUuid,
-                        nextUuid = nextUuid,
-                        chapterName = downloadedChapter.name
+                    _uiState.value = ReaderUiState.Success(
+                        ChapterContent(
+                            imageUrls = downloadedChapter.imagePaths,
+                            prevUuid = prevUuid,
+                            nextUuid = nextUuid,
+                            chapterName = downloadedChapter.name
+                        )
                     )
-                )
-                return@launch
-            }
-
-            repository.trialChapterContent(comicPathWord, chapterUuid)
-                .onFailure { error ->
-                    android.util.Log.w(
-                        "ReaderViewModel",
-                        "trialChapterContent failed: ${error.message}"
-                    )
+                    return@launch
                 }
 
-            repository.getChapterContent(comicPathWord, chapterUuid, group)
-                .onSuccess { content ->
-                    _uiState.value = ReaderUiState.Success(content)
-                }
-                .onFailure { error ->
-                    val message = error.message ?: "未知错误"
-                    if (message == "contentKey为空" || message.startsWith("code 210:")) {
-                        _uiState.value = ReaderUiState.RiskControl(message)
-                    } else {
-                        _uiState.value = ReaderUiState.Error(message)
+                repository.trialChapterContent(comicPathWord, chapterUuid)
+                    .onFailure { error ->
+                        android.util.Log.w(
+                            "ReaderViewModel",
+                            "trialChapterContent failed: ${error.message}"
+                        )
                     }
-                }
+
+                repository.getChapterContent(comicPathWord, chapterUuid, group)
+                    .onSuccess { content ->
+                        _uiState.value = ReaderUiState.Success(content)
+                    }
+                    .onFailure { error ->
+                        val message = error.message ?: "未知错误"
+                        if (message == "contentKey为空" || message.startsWith("code 210:")) {
+                            _uiState.value = ReaderUiState.RiskControl(message)
+                        } else {
+                            _uiState.value = ReaderUiState.Error(message)
+                        }
+                    }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("ReaderViewModel", "loadChapter failed", e)
+                _uiState.value = ReaderUiState.Error(e.message ?: "未知错误")
+            }
         }
     }
 

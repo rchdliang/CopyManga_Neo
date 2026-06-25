@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.di
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.rchdliang.copymanga_neo.BuildConfig
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -36,17 +37,19 @@ class PersistentCookieJar(context: Context) : CookieJar {
         cookieStore[url.host] = merged
         saveCookiesToPrefs(url.host, merged)
 
-        cookies.forEach {
-            android.util.Log.v("CookieJar", "Save from ${url.host}: ${it.name}=${it.value}")
+        if (BuildConfig.DEBUG) {
+            cookies.forEach {
+                android.util.Log.v("CookieJar", "Save from ${url.host}: ${it.name}")
+            }
         }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val cookies = cookieStore[url.host] ?: emptyList()
-        if (cookies.isNotEmpty()) {
+        if (cookies.isNotEmpty() && BuildConfig.DEBUG) {
             android.util.Log.v(
                 "CookieJar",
-                "Load for ${url.host}: ${cookies.joinToString("; ") { "${it.name}=${it.value}" }}"
+                "Load for ${url.host}: ${cookies.joinToString("; ") { it.name }}"
             )
         }
         return cookies

@@ -43,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -198,7 +199,7 @@ private fun ProfileMainPage(
             isLoading = uiState.isLoginLoading,
             error = uiState.loginError,
             savedUsername = uiState.savedUsername,
-            savedPassword = uiState.savedPassword,
+            savedPasswordProvider = { viewModel.getSavedPasswordSync() },
             rememberPassword = uiState.rememberPassword,
             autoLogin = uiState.autoLogin,
             onLogin = { username, password, remember, auto ->
@@ -444,7 +445,7 @@ private fun LoginDialog(
     isLoading: Boolean,
     error: String?,
     savedUsername: String?,
-    savedPassword: String?,
+    savedPasswordProvider: () -> String?,
     rememberPassword: Boolean,
     autoLogin: Boolean,
     onLogin: (String, String, Boolean, Boolean) -> Unit,
@@ -456,12 +457,15 @@ private fun LoginDialog(
     var remember by remember { mutableStateOf(rememberPassword) }
     var auto by remember { mutableStateOf(autoLogin) }
 
-    // 如果已保存凭据，预填充
-    if (savedUsername != null && usernameState.text.isEmpty()) {
-        usernameState.edit { replace(0, length, savedUsername) }
-    }
-    if (savedPassword != null && passwordState.text.isEmpty()) {
-        passwordState.edit { replace(0, length, savedPassword) }
+    // 预填充已保存的凭据（用 LaunchedEffect 避免在组合阶段产生副作用）
+    LaunchedEffect(Unit) {
+        if (savedUsername != null && usernameState.text.isEmpty()) {
+            usernameState.edit { replace(0, length, savedUsername) }
+        }
+        val savedPassword = savedPasswordProvider()
+        if (savedPassword != null && passwordState.text.isEmpty()) {
+            passwordState.edit { replace(0, length, savedPassword) }
+        }
     }
 
     AlertDialog(

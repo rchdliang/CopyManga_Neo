@@ -1,9 +1,12 @@
 package com.rchdliang.copymanga_neo.di
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.repository.UserRepositoryImpl
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
@@ -36,8 +39,28 @@ abstract class AuthModule {
 
         @Provides
         @Singleton
-        fun provideAuthDataStore(dataStore: DataStore<Preferences>): AuthDataStore {
-            return AuthDataStore(dataStore)
+        fun provideAuthDataStore(
+            dataStore: DataStore<Preferences>,
+            encryptedPrefs: SharedPreferences
+        ): AuthDataStore {
+            return AuthDataStore(dataStore, encryptedPrefs)
+        }
+
+        @Provides
+        @Singleton
+        fun provideEncryptedSharedPreferences(
+            @ApplicationContext context: Context
+        ): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                "auth_encrypted_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
         }
 
         @Provides

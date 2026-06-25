@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.data.local
 
+import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -7,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -15,10 +18,12 @@ import javax.inject.Singleton
 /**
  * 认证数据持久化存储
  * 使用 DataStore<Preferences> 存储 token、用户名、头像和登录偏好
+ * 密码使用 EncryptedSharedPreferences 加密存储，不以明文形式落盘
  */
 @Singleton
 class AuthDataStore @Inject constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
+    private val encryptedPrefs: SharedPreferences
 ) {
 
     companion object {
@@ -26,9 +31,11 @@ class AuthDataStore @Inject constructor(
         private val KEY_USERNAME = stringPreferencesKey("auth_username")
         private val KEY_AVATAR = stringPreferencesKey("auth_avatar")
         private val KEY_SAVED_USERNAME = stringPreferencesKey("saved_username")
-        private val KEY_SAVED_PASSWORD = stringPreferencesKey("saved_password")
         private val KEY_REMEMBER_PASSWORD = booleanPreferencesKey("remember_password")
         private val KEY_AUTO_LOGIN = booleanPreferencesKey("auto_login")
+
+        /** EncryptedSharedPreferences 中存储密码的键 */
+        private const val ENCRYPTED_KEY_PASSWORD = "saved_password"
     }
 
     /** 缓存当前 token，供 OkHttp Interceptor 同步读取 */
@@ -55,7 +62,7 @@ class AuthDataStore @Inject constructor(
     @Volatile
     private var cachedSavedUsername: String? = null
 
-    /** 缓存保存的密码 */
+    /** 缓存保存的密码（从 EncryptedSharedPreferences 读取） */
     @Volatile
     private var cachedSavedPassword: String? = null
 
@@ -68,8 +75,17 @@ class AuthDataStore @Inject constructor(
             cachedRememberPassword = prefs[KEY_REMEMBER_PASSWORD] ?: false
             cachedAutoLogin = prefs[KEY_AUTO_LOGIN] ?: false
             cachedSavedUsername = prefs[KEY_SAVED_USERNAME]
-            cachedSavedPassword = prefs[KEY_SAVED_PASSWORD]
+
+            // 迁移：将 DataStore 中的明文密码迁移到 EncryptedSharedPreferences
+            val legacyPasswordKey = stringPreferencesKey("saved_password")
+            val legacyPassword = prefs[legacyPasswordKey]
+            if (legacyPassword != null && encryptedPrefs.getString(ENCRYPTED_KEY_PASSWORD, null) == null) {
+                encryptedPrefs.edit { putString(ENCRYPTED_KEY_PASSWORD, legacyPassword) }
+                dataStore.edit { it.remove(legacyPasswordKey) }
+            }
         }
+        // 从 EncryptedSharedPreferences 读取密码到缓存
+        cachedSavedPassword = encryptedPrefs.getString(ENCRYPTED_KEY_PASSWORD, null)
         android.util.Log.d(
             "AuthDataStore",
             "Init complete: token=${if (cachedToken != null) "***" else "null"}, autoLogin=$cachedAutoLogin"
@@ -95,7 +111,7 @@ class AuthDataStore @Inject constructor(
     /**
      * 保存登录凭据偏好
      * @param username 用户名
-     * @param password 原始密码
+     * @param password 原始密码（加密存储到 EncryptedSharedPreferences）
      * @param rememberPassword 是否记住密码
      * @param autoLogin 是否自动登录
      */
@@ -110,19 +126,20 @@ class AuthDataStore @Inject constructor(
         if (rememberPassword) {
             cachedSavedUsername = username
             cachedSavedPassword = password
+            // 密码加密存储，不以明文形式落盘
+            encryptedPrefs.edit { putString(ENCRYPTED_KEY_PASSWORD, password) }
         } else {
             cachedSavedUsername = null
             cachedSavedPassword = null
+            encryptedPrefs.edit { remove(ENCRYPTED_KEY_PASSWORD) }
         }
         dataStore.edit { prefs ->
             prefs[KEY_REMEMBER_PASSWORD] = rememberPassword
             prefs[KEY_AUTO_LOGIN] = autoLogin
             if (rememberPassword) {
                 prefs[KEY_SAVED_USERNAME] = username
-                prefs[KEY_SAVED_PASSWORD] = password
             } else {
                 prefs.remove(KEY_SAVED_USERNAME)
-                prefs.remove(KEY_SAVED_PASSWORD)
             }
         }
     }
@@ -166,11 +183,10 @@ class AuthDataStore @Inject constructor(
     /** 获取保存的用户名（同步） */
     fun getSavedUsernameSync(): String? = cachedSavedUsername
 
-    /** 获取保存的密码（Flow） */
-    fun getSavedPassword(): Flow<String?> =
-        dataStore.data.map { prefs -> prefs[KEY_SAVED_PASSWORD] }
+    /** 获取保存的密码（Flow，基于缓存，避免在 UiState 中持有明文密码） */
+    fun getSavedPassword(): Flow<String?> = flowOf(cachedSavedPassword)
 
-    /** 获取保存的密码（同步） */
+    /** 获取保存的密码（同步，从加密缓存读取） */
     fun getSavedPasswordSync(): String? = cachedSavedPassword
 
     /** 清除认证数据（登出） */
