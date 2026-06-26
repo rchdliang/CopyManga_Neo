@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -82,6 +83,14 @@ fun ProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var currentPage by remember { mutableStateOf(ProfilePage.MAIN) }
+    val toastHost = LocalToastHost.current
+
+    LaunchedEffect(uiState.toastMessage) {
+        uiState.toastMessage?.let {
+            toastHost.showToast(it)
+            viewModel.clearToastMessage()
+        }
+    }
 
     when (currentPage) {
         ProfilePage.MAIN -> ProfileMainPage(

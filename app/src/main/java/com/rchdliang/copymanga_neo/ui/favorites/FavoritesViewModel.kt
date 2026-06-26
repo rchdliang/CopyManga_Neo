@@ -18,7 +18,8 @@ data class FavoritesUiState(
     val isLoading: Boolean = false,
     val favorites: List<FavoriteItem> = emptyList(),
     val error: String? = null,
-    val isLoggedIn: Boolean = false
+    val isLoggedIn: Boolean = false,
+    val toastMessage: String? = null
 )
 
 @HiltViewModel
@@ -32,7 +33,17 @@ class FavoritesViewModel @Inject constructor(
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("FavoritesViewModel", "Unhandled coroutine exception", throwable)
-        _uiState.update { it.copy(isLoading = false, error = throwable.message) }
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                error = throwable.message,
+                toastMessage = throwable.message ?: "操作失败"
+            )
+        }
+    }
+
+    fun clearToastMessage() {
+        _uiState.update { it.copy(toastMessage = null) }
     }
 
     init {
@@ -71,7 +82,13 @@ class FavoritesViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(isLoading = false, error = error.message) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = error.message,
+                            toastMessage = error.message ?: "加载失败"
+                        )
+                    }
                 }
         }
     }

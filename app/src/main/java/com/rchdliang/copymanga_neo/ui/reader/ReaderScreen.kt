@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,7 +56,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.ui.components.ToastState
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -74,6 +74,8 @@ fun ReaderScreen(
     val readingDirectionPref by viewModel.readingDirection.collectAsStateWithLifecycle()
     val pageScalePref by viewModel.pageScale.collectAsStateWithLifecycle()
     val screenOrientationPref by viewModel.screenOrientation.collectAsStateWithLifecycle()
+    val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+    val toastHost = LocalToastHost.current
     val context = LocalContext.current
     val activity = context.findActivity()
     val view = LocalView.current
@@ -106,6 +108,16 @@ fun ReaderScreen(
     LaunchedEffect(comicPathWord, groupPathWord) {
         viewModel.openReader(comicPathWord, chapterPathWord, groupPathWord)
     }
+
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let {
+            toastHost.showToast(it)
+            viewModel.clearToastMessage()
+        }
+    }
+
+    // 章节切换时的目标页码：null=保持当前页（方向切换/刷新），非null=跳转到指定页（切章/撤回）
+    val pendingInitialPage = remember { mutableStateOf<Int?>(null) }
 
     Box(modifier = Modifier
         .fillMaxSize()
@@ -148,10 +160,13 @@ fun ReaderScreen(
                 screenOrientation = screenOrientationPref,
                 onPrevChapter = { viewModel.loadPrevChapter() },
                 onNextChapter = { viewModel.loadNextChapter() },
+                hasPrevChapter = state.content.prevUuid != null,
+                hasNextChapter = state.content.nextUuid != null,
                 onRefresh = { viewModel.refreshCurrentChapter() },
                 onReadingDirectionChange = { viewModel.setReadingDirection(it) },
                 onPageScaleChange = { viewModel.setPageScale(it) },
-                onScreenOrientationChange = { viewModel.setScreenOrientation(it) }
+                onScreenOrientationChange = { viewModel.setScreenOrientation(it) },
+                pendingInitialPage = pendingInitialPage
             )
         }
     }
@@ -168,15 +183,53 @@ fun ReaderSuccessContent(
     screenOrientation: String,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    hasPrevChapter: Boolean,
+    hasNextChapter: Boolean,
     onRefresh: () -> Unit,
     onReadingDirectionChange: (String) -> Unit,
     onPageScaleChange: (String) -> Unit,
     onScreenOrientationChange: (String) -> Unit,
+    pendingInitialPage: MutableState<Int?>,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     val locale = LocalLocale.current.platformLocale
     val toastHost = LocalToastHost.current
+    var previousPageInOriginal by rememberSaveable { mutableIntStateOf(0) }
+
+    // 章节切换时显示带撤回按钮的 Snackbar
+    val onPrevChapterWithSnackbar: () -> Unit =
+        remember(onPrevChapter, onNextChapter, hasPrevChapter) {
+            {
+                if (hasPrevChapter) {
+                    val savedPage = previousPageInOriginal
+                    pendingInitialPage.value = 0
+                    onPrevChapter()
+                    toastHost.showSnackbar("已切换到上一章", "撤回") {
+                        pendingInitialPage.value = savedPage
+                        onNextChapter()
+                    }
+                } else {
+                    toastHost.showToast("已是第一章")
+                }
+            }
+        }
+    val onNextChapterWithSnackbar: () -> Unit =
+        remember(onNextChapter, onPrevChapter, hasNextChapter) {
+            {
+                if (hasNextChapter) {
+                    val savedPage = previousPageInOriginal
+                    pendingInitialPage.value = 0
+                    onNextChapter()
+                    toastHost.showSnackbar("已切换到下一章", "撤回") {
+                        pendingInitialPage.value = savedPage
+                        onPrevChapter()
+                    }
+                } else {
+                    toastHost.showToast("已是最后一章")
+                }
+            }
+        }
 
     val dir = remember(readingDirection) {
         ReadingDirection.entries.find { it.name == readingDirection }
@@ -189,7 +242,6 @@ fun ReaderSuccessContent(
         ScreenOrientationSetting.fromName(screenOrientation)
     }
 
-    var previousPageInOriginal by rememberSaveable { mutableIntStateOf(0) }
     var prevDir by remember { mutableStateOf(dir) }
     var dirStable by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
@@ -220,9 +272,11 @@ fun ReaderSuccessContent(
     // 章节切换或方向切换时重置滚动位置
     LaunchedEffect(dir, images) {
         if (images.isNotEmpty()) {
-            val target = previousPageInOriginal.coerceIn(0, images.size - 1)
+            val target = pendingInitialPage.value?.coerceIn(0, images.size - 1)
+                ?: previousPageInOriginal.coerceIn(0, images.size - 1)
             if (isContinuous) listState.scrollToItem(target) else pagerState.scrollToPage(target)
             dirStable = true
+            pendingInitialPage.value = null
         }
     }
 
@@ -256,7 +310,7 @@ fun ReaderSuccessContent(
                     (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
                         ?: -1) >= images.size - 1
                 ) {
-                    onNextChapter()
+                    onNextChapterWithSnackbar()
                 } else {
                     animateToListIndex(currentPageIndex + 1)
                 }
@@ -264,7 +318,7 @@ fun ReaderSuccessContent(
 
             else -> {
                 if (pagerState.currentPage >= pagerState.pageCount - 1) {
-                    onNextChapter()
+                    onNextChapterWithSnackbar()
                 } else {
                     animateToPagerPage(pagerState.currentPage + 1)
                 }
@@ -276,7 +330,7 @@ fun ReaderSuccessContent(
         when {
             isContinuous -> {
                 if (currentPageIndex <= 0) {
-                    onPrevChapter()
+                    onPrevChapterWithSnackbar()
                 } else {
                     animateToListIndex(currentPageIndex - 1)
                 }
@@ -284,7 +338,7 @@ fun ReaderSuccessContent(
 
             else -> {
                 if (pagerState.currentPage <= 0) {
-                    onPrevChapter()
+                    onPrevChapterWithSnackbar()
                 } else {
                     animateToPagerPage(pagerState.currentPage - 1)
                 }
@@ -298,9 +352,8 @@ fun ReaderSuccessContent(
     val nestedScrollConnection = rememberContinuousOverscroll(
         coroutineScope = coroutineScope,
         threshold = threshold,
-        toastHost = toastHost,
-        onPrevChapter = onPrevChapter,
-        onNextChapter = onNextChapter
+        onPrevChapter = onPrevChapterWithSnackbar,
+        onNextChapter = onNextChapterWithSnackbar
     )
 
     val timeText = java.text.SimpleDateFormat("HH:mm", locale).format(java.util.Date())
@@ -319,8 +372,8 @@ fun ReaderSuccessContent(
             continuousNestedScrollConnection = nestedScrollConnection,
             onForward = goForward,
             onBackward = goBackward,
-            onPrevChapter = onPrevChapter,
-            onNextChapter = onNextChapter,
+            onPrevChapter = onPrevChapterWithSnackbar,
+            onNextChapter = onNextChapterWithSnackbar,
             onShowMenu = { showSettingsMenu = true },
             onLongPress = { showImageMenu = true }
         )
@@ -370,7 +423,6 @@ fun ReaderSuccessContent(
 private fun rememberContinuousOverscroll(
     coroutineScope: CoroutineScope,
     threshold: Float,
-    toastHost: ToastState,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit
 ): NestedScrollConnection {
@@ -399,15 +451,9 @@ private fun rememberContinuousOverscroll(
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
                 val v = continuousOverscroll.floatValue
                 if (v > threshold) {
-                    coroutineScope.launch {
-                        toastHost.showToast("切换到上一章")
-                        latestOnPrevChapter()
-                    }
+                    coroutineScope.launch { latestOnPrevChapter() }
                 } else if (v < -threshold) {
-                    coroutineScope.launch {
-                        toastHost.showToast("切换到下一章")
-                        latestOnNextChapter()
-                    }
+                    coroutineScope.launch { latestOnNextChapter() }
                 }
                 continuousOverscroll.floatValue = 0f
                 return Velocity.Zero
@@ -496,10 +542,13 @@ private fun ReaderSuccessContentPreview() {
             screenOrientation = "SYSTEM_DEFAULT",
             onPrevChapter = {},
             onNextChapter = {},
+            hasPrevChapter = true,
+            hasNextChapter = true,
             onRefresh = {},
             onReadingDirectionChange = {},
             onPageScaleChange = {},
-            onScreenOrientationChange = {}
+            onScreenOrientationChange = {},
+            pendingInitialPage = remember { mutableStateOf<Int?>(null) }
         )
     }
 }

@@ -28,9 +28,17 @@ class ReaderViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
+    private val _toastMessage = MutableStateFlow<String?>(null)
+    val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
+
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("ReaderViewModel", "Unhandled coroutine exception", throwable)
         _uiState.value = ReaderUiState.Error(throwable.message ?: "未知错误")
+        _toastMessage.value = throwable.message ?: "操作失败"
+    }
+
+    fun clearToastMessage() {
+        _toastMessage.value = null
     }
 
     val readingDirection: StateFlow<String> = prefs.readingDirection
@@ -112,6 +120,7 @@ class ReaderViewModel @Inject constructor(
                             _uiState.value = ReaderUiState.RiskControl(message)
                         } else {
                             _uiState.value = ReaderUiState.Error(message)
+                            _toastMessage.value = message
                         }
                     }
             } catch (e: CancellationException) {
@@ -119,6 +128,7 @@ class ReaderViewModel @Inject constructor(
             } catch (e: Exception) {
                 android.util.Log.e("ReaderViewModel", "loadChapter failed", e)
                 _uiState.value = ReaderUiState.Error(e.message ?: "未知错误")
+                _toastMessage.value = e.message ?: "加载失败"
             }
         }
     }

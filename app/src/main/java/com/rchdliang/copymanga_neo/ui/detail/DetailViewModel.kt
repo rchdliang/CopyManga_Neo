@@ -55,7 +55,7 @@ data class DetailUiState(
     val shelfCollectId: Int? = null,
     val browse: BrowseInfo? = null,
     val isShelfLoading: Boolean = false,
-    val shelfMessage: String? = null,
+    val toastMessage: String? = null,
     val batchSelection: ChapterBatchSelectionState? = null,
     val downloadedChapterUuids: Set<String> = emptySet(),
     val chapterDownloadStatuses: Map<String, ChapterDownloadStatus> = emptyMap(),
@@ -81,7 +81,8 @@ class DetailViewModel @Inject constructor(
             it.copy(
                 isLoading = false,
                 isLoadingChapters = false,
-                error = throwable.message
+                error = throwable.message,
+                toastMessage = throwable.message ?: "操作失败"
             )
         }
     }
@@ -146,7 +147,12 @@ class DetailViewModel @Inject constructor(
                 onFailure = { error ->
                     if (hasLocal) {
                         android.util.Log.d("DetailViewModel", "Network failed, showing local cache")
-                        _uiState.update { it.copy(isLoading = false) }
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                toastMessage = "网络加载失败"
+                            )
+                        }
                     } else {
                         val message = error.message ?: "未知错误"
                         if (message.startsWith("code 210:")) {
@@ -160,7 +166,8 @@ class DetailViewModel @Inject constructor(
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
-                                    error = message
+                                    error = message,
+                                    toastMessage = message
                                 )
                             }
                         }
@@ -198,10 +205,11 @@ class DetailViewModel @Inject constructor(
                     loadQueryStatus(pathWord)
                 },
                 onFailure = { error ->
-                    if (_uiState.value.hasLocalCache) {
-                        _uiState.update { it.copy(isLoading = false) }
-                    } else {
-                        _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            toastMessage = error.message ?: "刷新失败"
+                        )
                     }
                 }
             )
@@ -403,7 +411,7 @@ class DetailViewModel @Inject constructor(
                                 isInShelf = false,
                                 shelfCollectId = null,
                                 isShelfLoading = false,
-                                shelfMessage = "已从书架中删除"
+                                toastMessage = "已从书架中删除"
                             )
                         }
                     },
@@ -411,7 +419,7 @@ class DetailViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isShelfLoading = false,
-                                shelfMessage = error.message ?: "删除失败"
+                                toastMessage = error.message ?: "删除失败"
                             )
                         }
                     }
@@ -427,7 +435,7 @@ class DetailViewModel @Inject constructor(
                                         isInShelf = result.collect != null,
                                         shelfCollectId = result.collect,
                                         isShelfLoading = false,
-                                        shelfMessage = "已添加到书架"
+                                        toastMessage = "已添加到书架"
                                     )
                                 }
                             },
@@ -442,7 +450,7 @@ class DetailViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isShelfLoading = false,
-                                shelfMessage = error.message ?: "添加失败"
+                                toastMessage = error.message ?: "添加失败"
                             )
                         }
                     }
@@ -451,8 +459,8 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    fun clearShelfMessage() {
-        _uiState.update { it.copy(shelfMessage = null) }
+    fun clearToastMessage() {
+        _uiState.update { it.copy(toastMessage = null) }
     }
 
     fun getStartChapter(): StartChapterInfo? {
@@ -775,7 +783,8 @@ class DetailViewModel @Inject constructor(
                             _uiState.update {
                                 it.copy(
                                     error = error.message,
-                                    isLoadingChapters = false
+                                    isLoadingChapters = false,
+                                    toastMessage = error.message ?: "章节加载失败"
                                 )
                             }
                             return@launch

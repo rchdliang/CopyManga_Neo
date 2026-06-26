@@ -34,7 +34,8 @@ data class ProfileUiState(
     val isRefreshing: Boolean = false,
     val savedUsername: String? = null,
     val rememberPassword: Boolean = false,
-    val autoLogin: Boolean = false
+    val autoLogin: Boolean = false,
+    val toastMessage: String? = null
 )
 
 /**
@@ -54,9 +55,13 @@ class ProfileViewModel @Inject constructor(
             it.copy(
                 isLoginLoading = false,
                 isRefreshing = false,
-                loginError = throwable.message
+                toastMessage = throwable.message ?: "操作失败"
             )
         }
+    }
+
+    fun clearToastMessage() {
+        _uiState.update { it.copy(toastMessage = null) }
     }
 
     init {
@@ -128,7 +133,12 @@ class ProfileViewModel @Inject constructor(
                         "ProfileViewModel",
                         "Refresh member info failed: ${error.message}"
                     )
-                    _uiState.update { it.copy(isRefreshing = false) }
+                    _uiState.update {
+                        it.copy(
+                            isRefreshing = false,
+                            toastMessage = error.message ?: "刷新失败"
+                        )
+                    }
                 }
             )
         }
@@ -228,7 +238,8 @@ class ProfileViewModel @Inject constructor(
                             dayDownloads = null,
                             dayDownloadsRefresh = null,
                             ticket = null,
-                            rewardTicket = null
+                            rewardTicket = null,
+                            toastMessage = "登出失败"
                         )
                     }
                 }

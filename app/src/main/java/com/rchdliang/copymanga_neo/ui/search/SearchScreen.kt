@@ -71,6 +71,7 @@ import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -84,6 +85,15 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
+    val toastHost = LocalToastHost.current
+
+    LaunchedEffect(uiState.toastMessage) {
+        uiState.toastMessage?.let {
+            toastHost.showToast(it)
+            viewModel.clearToastMessage()
+        }
+    }
+
     SearchScreen(
         uiState = uiState,
         onQueryChange = { viewModel.updateQuery(it) },

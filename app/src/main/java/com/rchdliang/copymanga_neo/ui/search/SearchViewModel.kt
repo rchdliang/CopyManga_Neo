@@ -25,7 +25,8 @@ data class SearchUiState(
     val error: String? = null,
     val currentPage: Int = 1,
     val hasMore: Boolean = false,
-    val queryType: QueryType? = null
+    val queryType: QueryType? = null,
+    val toastMessage: String? = null
 )
 
 /**
@@ -44,8 +45,13 @@ class SearchViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             isLoading = false,
             isLoadingMore = false,
-            error = throwable.message
+            error = throwable.message,
+            toastMessage = throwable.message ?: "操作失败"
         )
+    }
+
+    fun clearToastMessage() {
+        _uiState.value = _uiState.value.copy(toastMessage = null)
     }
 
     private var searchJob: Job? = null
@@ -123,7 +129,8 @@ class SearchViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoadingMore = false,
-                        error = if (isLoadMore) _uiState.value.error else error.message
+                        error = if (isLoadMore) _uiState.value.error else error.message,
+                        toastMessage = error.message ?: "搜索失败"
                     )
                 }
             )

@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,12 +32,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 全局 Toast 状态持有者，提供 showToast 方法以显示自定义 Compose Toast。
  * 通过 [AppToastHost] 创建并提供给整个 App 使用。
  */
-class ToastState internal constructor(private val scope: CoroutineScope) {
+class ToastState internal constructor(
+    private val scope: CoroutineScope,
+    private val snackbarHostState: SnackbarHostState
+) {
     var message by mutableStateOf<String?>(null)
         private set
 
@@ -47,8 +55,32 @@ class ToastState internal constructor(private val scope: CoroutineScope) {
         hideJob?.cancel()
         this.message = message
         hideJob = scope.launch {
-            delay(2000L)
+            delay(2000L.milliseconds)
             this@ToastState.message = null
+        }
+    }
+
+    /**
+     * 显示带操作按钮的 Snackbar（基于 Material3 Snackbar）。
+     *
+     * @param message 消息文本
+     * @param actionLabel 操作按钮文字（如"撤回"）
+     * @param onAction 用户点击操作按钮时的回调
+     */
+    fun showSnackbar(
+        message: String,
+        actionLabel: String,
+        onAction: (() -> Unit)? = null
+    ) {
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                onAction?.invoke()
+            }
         }
     }
 }
@@ -72,7 +104,15 @@ fun AppToastHost(
     content: @Composable () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    val toastState = remember { ToastState(scope) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val toastState = remember { ToastState(scope, snackbarHostState) }
+
+    val currentMessage = toastState.message
+    // 缓存上一个非 null 的 message，退出动画期间保持文本不变
+    val displayMessage = remember { mutableStateOf("") }
+    if (currentMessage != null) {
+        displayMessage.value = currentMessage
+    }
 
     CompositionLocalProvider(LocalToastHost provides toastState) {
         Box(modifier = modifier.fillMaxSize()) {
@@ -87,7 +127,7 @@ fun AppToastHost(
                 contentAlignment = Alignment.BottomCenter
             ) {
                 AnimatedVisibility(
-                    visible = toastState.message != null,
+                    visible = currentMessage != null,
                     enter = fadeIn() + slideInVertically { it },
                     exit = fadeOut() + slideOutVertically { it }
                 ) {
@@ -97,7 +137,7 @@ fun AppToastHost(
                         shadowElevation = 4.dp
                     ) {
                         Text(
-                            text = toastState.message.orEmpty(),
+                            text = displayMessage.value,
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
@@ -105,6 +145,12 @@ fun AppToastHost(
                     }
                 }
             }
+
+            // Snackbar 宿主（用于带操作按钮的消息，如章节切换撤回）
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
 }

@@ -22,7 +22,8 @@ data class HomeUiState(
     val newComics: List<ComicSummary> = emptyList(),
     val finishComics: List<ComicSummary> = emptyList(),
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val toastMessage: String? = null
 )
 
 /**
@@ -41,9 +42,14 @@ class HomeViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isLoading = false,
-                error = throwable.message
+                error = throwable.message,
+                toastMessage = throwable.message ?: "操作失败"
             )
         }
+    }
+
+    fun clearToastMessage() {
+        _uiState.update { it.copy(toastMessage = null) }
     }
 
     init {
@@ -69,7 +75,8 @@ class HomeViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = error.message
+                            error = error.message,
+                            toastMessage = error.message ?: "加载失败"
                         )
                     }
                     android.util.Log.e(

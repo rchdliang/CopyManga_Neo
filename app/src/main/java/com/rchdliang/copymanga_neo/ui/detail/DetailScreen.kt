@@ -127,10 +127,10 @@ fun DetailScreen(
         viewModel.loadDetail(pathWord)
     }
 
-    LaunchedEffect(uiState.shelfMessage) {
-        uiState.shelfMessage?.let { message ->
+    LaunchedEffect(uiState.toastMessage) {
+        uiState.toastMessage?.let { message ->
             toastHost.showToast(message)
-            viewModel.clearShelfMessage()
+            viewModel.clearToastMessage()
         }
     }
 
