@@ -1,7 +1,6 @@
 package com.rchdliang.copymanga_neo.di
 
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
-import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -47,9 +46,7 @@ class AuthInterceptor(
         // 如果收到 401 且本地记录为已登录，说明 Token 已失效
         if (response.code == 401 && token != null) {
             android.util.Log.w("AuthInterceptor", "Received 401, clearing auth and cookies")
-            runBlocking {
-                authDataStore.clearAuth()
-            }
+            authDataStore.clearAuthSync()
             cookieJar.clearAll()
         }
 

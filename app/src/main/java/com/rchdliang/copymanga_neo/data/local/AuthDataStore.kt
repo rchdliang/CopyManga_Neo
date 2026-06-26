@@ -7,10 +7,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,8 +70,11 @@ class AuthDataStore @Inject constructor(
     @Volatile
     private var cachedSavedPassword: String? = null
 
+    /** 内部协程作用域，用于异步执行 DataStore 写入操作（避免在 Interceptor 中阻塞） */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     init {
-        runBlocking {
+        runBlocking(Dispatchers.IO) {
             val prefs = dataStore.data.first()
             cachedToken = prefs[KEY_TOKEN]
             cachedUsername = prefs[KEY_USERNAME]
@@ -200,6 +207,20 @@ class AuthDataStore @Inject constructor(
             prefs.remove(KEY_AVATAR)
         }
         // 登出时不清除记住密码/自动登录偏好，保留凭据
+    }
+
+    /** 同步清除认证缓存（供 OkHttp Interceptor 调用，避免 runBlocking） */
+    fun clearAuthSync() {
+        cachedToken = null
+        cachedUsername = null
+        cachedAvatar = null
+        scope.launch {
+            dataStore.edit { prefs ->
+                prefs.remove(KEY_TOKEN)
+                prefs.remove(KEY_USERNAME)
+                prefs.remove(KEY_AVATAR)
+            }
+        }
     }
 
     /** 是否已登录（Flow） */

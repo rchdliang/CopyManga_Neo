@@ -11,6 +11,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SimpleResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResponse
+import com.rchdliang.copymanga_neo.domain.model.QueryType
 import retrofit2.Response
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -213,14 +214,6 @@ interface MangaApiService {
         @Field("ids[0]") collectId: Int,
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<SimpleResponse>
-}
-
-enum class QueryType(val value: String) {
-    LOCAL("local"),   // 汉化组
-    NAME("name"),     // 漫画名称
-    AUTHOR("author"); // 作者
-
-    override fun toString(): String = value
 }
 
 enum class OrderType(val value: String) {

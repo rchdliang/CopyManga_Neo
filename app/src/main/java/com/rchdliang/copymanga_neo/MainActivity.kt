@@ -55,7 +55,6 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +72,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -166,8 +166,8 @@ fun CopyManga_NeoApp(
             // 主界面（包含底部导航栏）
             composable(Screen.Main.route) {
                 Box(modifier = Modifier.statusBarsPadding()) {
-                    val isLoggedIn by mainViewModel.isLoggedIn.collectAsState()
-                    val avatar by mainViewModel.avatar.collectAsState()
+                    val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
+                    val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
                     MainScreen(
                         isLoggedIn = isLoggedIn,
                         avatar = avatar,

@@ -2,10 +2,11 @@ package com.rchdliang.copymanga_neo.ui.favorites
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +16,7 @@ import javax.inject.Inject
 
 data class FavoritesUiState(
     val isLoading: Boolean = false,
-    val favorites: List<FavoritesDto> = emptyList(),
+    val favorites: List<FavoriteItem> = emptyList(),
     val error: String? = null,
     val isLoggedIn: Boolean = false
 )
@@ -29,8 +30,13 @@ class FavoritesViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("FavoritesViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.update { it.copy(isLoading = false, error = throwable.message) }
+    }
+
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.isLoggedIn().collect { loggedIn ->
                 _uiState.update { state ->
                     state.copy(
@@ -40,6 +46,9 @@ class FavoritesViewModel @Inject constructor(
                 }
                 if (loggedIn && _uiState.value.favorites.isEmpty() && !_uiState.value.isLoading) {
                     loadFavorites()
+                } else if (!loggedIn) {
+                    // 登出时清空收藏列表，避免重新登录后显示过时数据
+                    _uiState.update { it.copy(favorites = emptyList(), error = null) }
                 }
             }
         }
@@ -48,7 +57,7 @@ class FavoritesViewModel @Inject constructor(
     fun loadFavorites() {
         if (!_uiState.value.isLoggedIn) return
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, error = null) }
             mangaRepository.getFavoriteComics()
                 .onSuccess { favorites ->
@@ -56,7 +65,8 @@ class FavoritesViewModel @Inject constructor(
                         it.copy(
                             isLoading = false,
                             favorites = favorites,
-                            error = if (favorites.isEmpty()) "暂无收藏，快去添加喜欢的漫画吧！" else null
+                            // 空收藏不是错误，不设置 error 以避免显示重试按钮
+                            error = null
                         )
                     }
                 }

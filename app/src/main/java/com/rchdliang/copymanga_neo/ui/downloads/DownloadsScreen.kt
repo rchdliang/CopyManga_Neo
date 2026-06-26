@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,8 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -30,12 +31,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 
@@ -45,30 +46,36 @@ fun DownloadsScreen(
     onComicClick: (String) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val hasActive = uiState.activeDownloads.isNotEmpty()
     val hasDownloaded = uiState.downloadedComics.isNotEmpty()
+    val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         BackHandler(enabled = uiState.isSelectionMode) {
             viewModel.exitSelectionMode()
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(135.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 8.dp,
+                end = 8.dp,
+                top = 8.dp,
+                bottom = bottomPadding
+            ),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // 选择模式顶栏
             if (uiState.isSelectionMode) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                ) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
                             .statusBarsPadding()
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -104,95 +111,101 @@ fun DownloadsScreen(
                 }
             }
 
-            Text(
-                text = "正在下载",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
+            // "正在下载" 标题
+            item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
+                Text(
+                    text = "正在下载",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
 
+            // 正在下载的卡片
             if (hasActive) {
                 uiState.activeDownloads.entries.forEach { (pathWord, progressInfo) ->
                     val paused = pathWord in uiState.pausedComics
                     val isError = progressInfo.status == DownloadTaskStatus.ERROR
-                    DownloadingCard(
-                        name = progressInfo.name,
-                        cover = progressInfo.cover,
-                        progressInfo = progressInfo,
-                        isPaused = paused,
-                        onPauseResume = {
-                            if (paused) viewModel.resumeComic(pathWord)
-                            else viewModel.pauseComic(pathWord)
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "active_$pathWord") {
+                        DownloadingCard(
+                            name = progressInfo.name,
+                            cover = progressInfo.cover,
+                            progressInfo = progressInfo,
+                            isPaused = paused,
+                            onPauseResume = {
+                                if (paused) viewModel.resumeComic(pathWord)
+                                else viewModel.pauseComic(pathWord)
+                            },
+                            onCancel = { viewModel.cancelComic(pathWord) },
+                            onRetry = if (isError) {
+                                { viewModel.resumeComic(pathWord) }
+                            } else null,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            } else {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "active_empty") {
+                    Text(
+                        text = "暂无下载任务",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+            }
+
+            // 分隔间距
+            item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
+                Spacer(Modifier.height(24.dp))
+            }
+
+            // "已下载" 标题
+            item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_header") {
+                Text(
+                    text = "已下载（${uiState.downloadedComics.size} 部）",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+            }
+
+            // 已下载漫画网格
+            if (hasDownloaded) {
+                items(
+                    items = uiState.downloadedComics,
+                    key = { it.pathWord }
+                ) { comic ->
+                    ComicCard(
+                        name = comic.name,
+                        cover = comic.cover,
+                        subtitle = "${comic.downloadedChapters}/${comic.totalChapters} 章",
+                        isSelected = comic.pathWord in uiState.selectedPathWords,
+                        onClick = {
+                            if (uiState.isSelectionMode) {
+                                viewModel.toggleSelection(comic.pathWord)
+                            } else {
+                                onComicClick(comic.pathWord)
+                            }
                         },
-                        onCancel = { viewModel.cancelComic(pathWord) },
-                        onRetry = if (isError) {
-                            { viewModel.resumeComic(pathWord) }
-                        } else null,
-                        modifier = Modifier.fillMaxWidth()
+                        onLongClick = {
+                            viewModel.enterSelectionMode(comic.pathWord)
+                        }
                     )
                 }
             } else {
-                Text(
-                    text = "暂无下载任务",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Text(
-                text = "已下载（${uiState.downloadedComics.size} 部）",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
-
-            if (hasDownloaded) {
-                val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
-                Spacer(Modifier.height(bottomPadding))
-
-                val columns = 3
-                val rows = uiState.downloadedComics.chunked(columns)
-                rows.forEach { row ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        row.forEach { comic ->
-                            ComicCard(
-                                name = comic.name,
-                                cover = comic.cover,
-                                subtitle = "${comic.downloadedChapters}/${comic.totalChapters} 章",
-                                isSelected = comic.pathWord in uiState.selectedPathWords,
-                                onClick = {
-                                    if (uiState.isSelectionMode) {
-                                        viewModel.toggleSelection(comic.pathWord)
-                                    } else {
-                                        onComicClick(comic.pathWord)
-                                    }
-                                },
-                                onLongClick = {
-                                    viewModel.enterSelectionMode(comic.pathWord)
-                                }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
+                item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
+                    Text(
+                        text = "暂无已下载内容",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
                 }
-            } else {
-                Text(
-                    text = "暂无已下载内容",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
             }
         }
 
+        // 选择模式底栏
         if (uiState.isSelectionMode) {
             BottomAppBar(
                 modifier = Modifier.align(Alignment.BottomCenter),

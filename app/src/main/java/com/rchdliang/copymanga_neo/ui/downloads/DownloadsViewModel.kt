@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,8 +32,12 @@ class DownloadsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("DownloadsViewModel", "Unhandled coroutine exception", throwable)
+    }
+
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             combine(
                 downloadRepository.getAllDownloadedComics(),
                 downloadRepository.getDownloadProgress(),
@@ -98,7 +103,7 @@ class DownloadsViewModel @Inject constructor(
         val pathWords = _uiState.value.selectedPathWords.toList()
         if (pathWords.isEmpty()) return
         exitSelectionMode()
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             pathWords.forEach { pathWord ->
                 downloadRepository.cancelComic(pathWord)
                 downloadRepository.deleteComicAndChapters(pathWord)

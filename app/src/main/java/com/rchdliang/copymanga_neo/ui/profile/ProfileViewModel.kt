@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,8 +48,19 @@ class ProfileViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("ProfileViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.update {
+            it.copy(
+                isLoginLoading = false,
+                isRefreshing = false,
+                loginError = throwable.message
+            )
+        }
+    }
+
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.isLoggedIn().collect { loggedIn ->
                 _uiState.update { it.copy(isLoggedIn = loggedIn) }
                 if (loggedIn) {
@@ -57,31 +69,31 @@ class ProfileViewModel @Inject constructor(
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.getUsername().collect { username ->
                 _uiState.update { it.copy(username = username) }
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.getAvatar().collect { avatar ->
                 _uiState.update { it.copy(avatar = avatar) }
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.getRememberPassword().collect { remember ->
                 _uiState.update { it.copy(rememberPassword = remember) }
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.getAutoLogin().collect { autoLogin ->
                 _uiState.update { it.copy(autoLogin = autoLogin) }
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.getSavedUsername().collect { savedUsername ->
                 _uiState.update { it.copy(savedUsername = savedUsername) }
             }
@@ -92,48 +104,12 @@ class ProfileViewModel @Inject constructor(
     /** 获取保存的密码（同步，供 LoginDialog 预填充使用，不暴露到 UiState） */
     fun getSavedPasswordSync(): String? = userRepository.getSavedPasswordSync()
 
-    /** 刷新用户信息 */
-    fun refreshMemberInfo() {
-        viewModelScope.launch {
-            userRepository.getMemberInfo().fold(
-                onSuccess = { info ->
-                    _uiState.update {
-                        it.copy(
-                            nickname = info.nickname,
-                            dayDownloads = info.dayDownloads,
-                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
-                            ticket = info.ticket,
-                            rewardTicket = info.rewardTicket
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    android.util.Log.e(
-                        "ProfileViewModel",
-                        "Refresh member info failed: ${error.message}"
-                    )
-                }
-            )
-        }
-    }
-
-    private fun formatRefreshTime(isoString: String?): String? {
-        if (isoString == null) return null
-        return try {
-            val zonedDateTime = ZonedDateTime.parse(isoString)
-            val localDateTime = zonedDateTime.withZoneSameInstant(ZoneId.systemDefault())
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            localDateTime.format(formatter)
-        } catch (e: Exception) {
-            android.util.Log.e("ProfileViewModel", "Format refresh time failed: ${e.message}")
-            isoString
-        }
-    }
-
-    /** 下拉刷新 */
-    fun refresh() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
+    /** 刷新用户信息（合并原 refreshMemberInfo 和 refresh 的重复逻辑） */
+    fun refreshMemberInfo(isPullToRefresh: Boolean = false) {
+        viewModelScope.launch(exceptionHandler) {
+            if (isPullToRefresh) {
+                _uiState.update { it.copy(isRefreshing = true) }
+            }
             userRepository.getMemberInfo().fold(
                 onSuccess = { info ->
                     _uiState.update {
@@ -158,6 +134,24 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    private fun formatRefreshTime(isoString: String?): String? {
+        if (isoString == null) return null
+        return try {
+            val zonedDateTime = ZonedDateTime.parse(isoString)
+            val localDateTime = zonedDateTime.withZoneSameInstant(ZoneId.systemDefault())
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            localDateTime.format(formatter)
+        } catch (e: Exception) {
+            android.util.Log.e("ProfileViewModel", "Format refresh time failed: ${e.message}")
+            isoString
+        }
+    }
+
+    /** 下拉刷新 */
+    fun refresh() {
+        refreshMemberInfo(isPullToRefresh = true)
+    }
+
     /** 显示登录对话框 */
     fun showLoginDialog() {
         _uiState.update { it.copy(showLoginDialog = true, loginError = null) }
@@ -180,7 +174,7 @@ class ProfileViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoginLoading = true, loginError = null) }
             userRepository.login(username, password).fold(
                 onSuccess = {
@@ -207,7 +201,7 @@ class ProfileViewModel @Inject constructor(
 
     /** 登出 */
     fun logout() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             userRepository.logout().fold(
                 onSuccess = {
                     _uiState.update {

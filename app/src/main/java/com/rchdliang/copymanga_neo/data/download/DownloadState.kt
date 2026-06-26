@@ -1,6 +1,6 @@
 package com.rchdliang.copymanga_neo.data.download
 
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 
 enum class ChapterDownloadStatus {
     NOT_DOWNLOADED,
@@ -11,7 +11,7 @@ enum class ChapterDownloadStatus {
 }
 
 data class ChapterDownloadItem(
-    val chapter: ChapterDto,
+    val chapter: ChapterInfo,
     val status: ChapterDownloadStatus = ChapterDownloadStatus.NOT_DOWNLOADED,
     val progress: Float = 0f,
     val errorMessage: String? = null

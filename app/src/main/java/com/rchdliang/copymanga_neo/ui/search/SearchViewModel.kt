@@ -2,10 +2,11 @@ package com.rchdliang.copymanga_neo.ui.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rchdliang.copymanga_neo.data.remote.api.QueryType
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,7 @@ import javax.inject.Inject
  */
 data class SearchUiState(
     val query: String = "",
-    val searchResults: List<ComicDto> = emptyList(),
+    val searchResults: List<ComicSummary> = emptyList(),
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: String? = null,
@@ -37,6 +38,15 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("SearchViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            isLoadingMore = false,
+            error = throwable.message
+        )
+    }
 
     private var searchJob: Job? = null
     private var loadMoreJob: Job? = null
@@ -65,7 +75,7 @@ class SearchViewModel @Inject constructor(
         searchJob?.cancel()
         loadMoreJob?.cancel()
 
-        searchJob = viewModelScope.launch {
+        searchJob = viewModelScope.launch(exceptionHandler) {
             _uiState.value = _uiState.value.copy(
                 query = query,
                 isLoading = true,
@@ -90,7 +100,7 @@ class SearchViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isLoading || state.isLoadingMore || !state.hasMore || state.query.isBlank()) return
 
-        loadMoreJob = viewModelScope.launch {
+        loadMoreJob = viewModelScope.launch(exceptionHandler) {
             _uiState.value = _uiState.value.copy(isLoadingMore = true)
             performSearch(state.query, isLoadMore = true)
         }

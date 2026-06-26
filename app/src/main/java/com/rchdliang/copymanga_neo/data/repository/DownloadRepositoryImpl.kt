@@ -9,7 +9,6 @@ import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
 import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
-import com.rchdliang.copymanga_neo.domain.model.toInfo
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +47,20 @@ class DownloadRepositoryImpl @Inject constructor(
         return comicDao.getComic(pathWord) != null
     }
 
-    override suspend fun saveComicCache(entity: DownloadedComicEntity) {
+    override suspend fun saveComicCache(info: DownloadedComicInfo) {
+        val entity = DownloadedComicEntity(
+            pathWord = info.pathWord,
+            name = info.name,
+            cover = info.cover,
+            authorNames = info.authorNames,
+            statusDisplay = info.statusDisplay,
+            lastUpdate = info.lastUpdate,
+            lastChapterName = info.lastChapterName,
+            brief = info.brief,
+            totalChapters = info.totalChapters,
+            downloadedChapters = info.downloadedChapters,
+            downloadAt = info.downloadAt
+        )
         val existing = comicDao.getComic(entity.pathWord)
         if (existing != null) {
             comicDao.updateComic(entity)

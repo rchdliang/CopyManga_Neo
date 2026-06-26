@@ -1,14 +1,14 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
-import com.rchdliang.copymanga_neo.data.remote.api.QueryType
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResult
-import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
-import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ChapterList
+import com.rchdliang.copymanga_neo.domain.model.ComicDetail
+import com.rchdliang.copymanga_neo.domain.model.ComicStatus
+import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
+import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.domain.model.TrialContent
 
 /**
  * 漫画数据仓库接口
@@ -22,7 +22,7 @@ interface MangaRepository {
     /**
      * 获取漫画详情
      */
-    suspend fun getComicDetail(pathWord: String): Result<ComicDetailResult>
+    suspend fun getComicDetail(pathWord: String): Result<ComicDetail>
     
     /**
      * 获取章节列表（单页）
@@ -36,7 +36,7 @@ interface MangaRepository {
         group: String = "default",
         offset: Int = 0,
         limit: Int = 20
-    ): Result<ChapterListResult>
+    ): Result<ChapterList>
 
     /**
      * 获取漫画前五页（用于记录阅读进度）
@@ -45,7 +45,7 @@ interface MangaRepository {
     suspend fun trialChapterContent(
         comicPathWord: String,
         chapterUuid: String,
-    ): Result<TrialContentResult>
+    ): Result<TrialContent>
     /**
      * 获取章节具体内容（图片列表）
      * @param group 汉化组 pathWord
@@ -63,22 +63,22 @@ interface MangaRepository {
         query: String,
         page: Int,
         queryType: QueryType? = null
-    ): Result<List<ComicDto>>
+    ): Result<List<ComicSummary>>
 
     /**
      * 获取推荐漫画
      */
-    suspend fun getRecComics(limit: Int = 10, offset: Int = 0): Result<List<ComicDto>>
+    suspend fun getRecComics(limit: Int = 10, offset: Int = 0): Result<List<ComicSummary>>
 
     /**
      * 获取书架漫画
      */
-    suspend fun getFavoriteComics(offset: Int = 0, limit: Int = 21): Result<List<FavoritesDto>>
+    suspend fun getFavoriteComics(offset: Int = 0, limit: Int = 21): Result<List<FavoriteItem>>
 
     /**
      * 查询漫画收藏状态和阅读进度
      */
-    suspend fun queryComicStatus(pathWord: String): Result<ComicQueryResult>
+    suspend fun queryComicStatus(pathWord: String): Result<ComicStatus>
 
     /**
      * 添加漫画到书架

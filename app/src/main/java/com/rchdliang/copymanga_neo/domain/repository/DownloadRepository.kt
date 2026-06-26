@@ -13,7 +13,7 @@ interface DownloadRepository {
     suspend fun getDownloadedChapters(comicPathWord: String): List<DownloadedChapterInfo>
     suspend fun getDownloadedChapter(uuid: String): DownloadedChapterInfo?
     suspend fun getDownloadedChapterUuids(comicPathWord: String): Set<String>
-    suspend fun saveComicCache(entity: com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity)
+    suspend fun saveComicCache(info: DownloadedComicInfo)
     suspend fun isComicDownloaded(pathWord: String): Boolean
     suspend fun deleteComic(pathWord: String)
     suspend fun deleteChapter(uuid: String)

@@ -1,7 +1,7 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
-import com.rchdliang.copymanga_neo.data.remote.dto.LoginResult
-import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResult
+import com.rchdliang.copymanga_neo.domain.model.LoginInfo
+import com.rchdliang.copymanga_neo.domain.model.MemberInfo
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -15,12 +15,12 @@ interface UserRepository {
      * @param rawPassword 原始密码（未编码）
      * @return 登录结果
      */
-    suspend fun login(username: String, rawPassword: String): Result<LoginResult>
+    suspend fun login(username: String, rawPassword: String): Result<LoginInfo>
 
     /**
      * 获取用户信息
      */
-    suspend fun getMemberInfo(): Result<MemberInfoResult>
+    suspend fun getMemberInfo(): Result<MemberInfo>
 
     /**
      * 登出

@@ -1,8 +1,5 @@
 package com.rchdliang.copymanga_neo.domain.model
 
-import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
-import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
-
 data class DownloadedComicInfo(
     val pathWord: String,
     val name: String,
@@ -17,20 +14,6 @@ data class DownloadedComicInfo(
     val downloadAt: Long
 )
 
-fun DownloadedComicEntity.toInfo() = DownloadedComicInfo(
-    pathWord = pathWord,
-    name = name,
-    cover = cover,
-    authorNames = authorNames,
-    statusDisplay = statusDisplay,
-    lastUpdate = lastUpdate,
-    lastChapterName = lastChapterName,
-    brief = brief,
-    totalChapters = totalChapters,
-    downloadedChapters = downloadedChapters,
-    downloadAt = downloadAt
-)
-
 data class DownloadedChapterInfo(
     val uuid: String,
     val comicPathWord: String,
@@ -40,11 +23,3 @@ data class DownloadedChapterInfo(
     val imagePaths: List<String>
 )
 
-fun DownloadedChapterEntity.toInfo() = DownloadedChapterInfo(
-    uuid = uuid,
-    comicPathWord = comicPathWord,
-    name = name,
-    index = index,
-    imageCount = imageCount,
-    imagePaths = imagePaths.split(",").filter { it.isNotBlank() }
-)

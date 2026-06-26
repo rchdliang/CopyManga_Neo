@@ -46,7 +46,6 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,11 +65,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.rchdliang.copymanga_neo.data.remote.api.QueryType
-import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
+import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -82,7 +82,7 @@ fun SearchScreen(
     onComicClick: (String) -> Unit,
     onNavigateBack: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
     SearchScreen(
         uiState = uiState,
@@ -316,7 +316,7 @@ private fun SearchScreenContent(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchResultsList(
-    comics: List<ComicDto>,
+    comics: List<ComicSummary>,
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
     onLoadMore: () -> Unit = {},
@@ -349,7 +349,7 @@ private fun SearchResultsList(
         state = gridState,
         modifier = Modifier.fillMaxSize()
     ) {
-        items(comics) { comic ->
+        items(comics, key = { it.pathWord }) { comic ->
             SearchComicCard(
                 comic = comic,
                 onClick = { onComicClick(comic.pathWord) }
@@ -372,7 +372,7 @@ private fun SearchResultsList(
 
 @Composable
 private fun SearchComicCard(
-    comic: ComicDto,
+    comic: ComicSummary,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -449,7 +449,7 @@ private fun SearchResultsListPreview() {
     CopyManga_NeoTheme {
         val mockComics = remember {
             (1..8).map { index ->
-                ComicDto(
+                ComicSummary(
                     name = when (index) {
                         1 -> "冒险者的旅途"
                         2 -> "都市灵异事件簿"
@@ -462,7 +462,7 @@ private fun SearchResultsListPreview() {
                     },
                     pathWord = "search-comic-$index",
                     cover = "https://example.com/cover$index.jpg",
-                    author = listOf(AuthorDto("作者$index", "author-$index")),
+                    author = listOf(Author("作者$index", "author-$index")),
                     females = emptyList(),
                     males = emptyList(),
                     theme = emptyList(),

@@ -5,14 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadItem
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
-import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
-import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
-import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
-import com.rchdliang.copymanga_neo.data.remote.dto.DisplayAndValue
-import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
-import com.rchdliang.copymanga_neo.data.remote.dto.LastChapterDto
+import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
+import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.model.ComicInfo
+import com.rchdliang.copymanga_neo.domain.model.DisplayValue
+import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
+import com.rchdliang.copymanga_neo.domain.model.LastChapter
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
@@ -21,6 +21,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,20 +40,20 @@ data class ChapterBatchSelectionState(
 )
 
 data class DetailUiState(
-    val comicDetail: ComicDetailDto? = null,
-    val chapters: ImmutableList<ChapterDto> = persistentListOf(),
+    val comicDetail: ComicInfo? = null,
+    val chapters: ImmutableList<ChapterInfo> = persistentListOf(),
     val isLoading: Boolean = false,
     val isLoadingChapters: Boolean = false,
     val chapterTotal: Int = 0,
     val error: String? = null,
     val riskControlReason: String? = null,
-    val groups: ImmutableList<GroupsDto> = persistentListOf(),
+    val groups: ImmutableList<ChapterGroup> = persistentListOf(),
     val selectedGroup: String = "",
     val sortAscending: Boolean = true,
     val isLoggedIn: Boolean = false,
     val isInShelf: Boolean = false,
     val shelfCollectId: Int? = null,
-    val browse: BrowseDto? = null,
+    val browse: BrowseInfo? = null,
     val isShelfLoading: Boolean = false,
     val shelfMessage: String? = null,
     val batchSelection: ChapterBatchSelectionState? = null,
@@ -74,6 +75,17 @@ class DetailViewModel @Inject constructor(
 
     private var currentPathWord: String? = null
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("DetailViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                isLoadingChapters = false,
+                error = throwable.message
+            )
+        }
+    }
+
     private var observeDownloadJob: kotlinx.coroutines.Job? = null
 
     private var loadDetailJob: kotlinx.coroutines.Job? = null
@@ -85,10 +97,10 @@ class DetailViewModel @Inject constructor(
 
         currentPathWord = pathWord
         observeDownloadJob?.cancel()
-        observeDownloadJob = viewModelScope.launch { observeDownload(pathWord) }
+        observeDownloadJob = viewModelScope.launch(exceptionHandler) { observeDownload(pathWord) }
 
         loadDetailJob?.cancel()
-        loadDetailJob = viewModelScope.launch {
+        loadDetailJob = viewModelScope.launch(exceptionHandler) {
             val isLoggedIn = userRepository.isLoggedIn().first()
 
             _uiState.update {
@@ -121,13 +133,13 @@ class DetailViewModel @Inject constructor(
 
                     _uiState.update {
                         it.copy(
-                            comicDetail = detail.comicDetail,
+                            comicDetail = detail.comic,
                             groups = groupsMap.values.toImmutableList(),
                             selectedGroup = selectedGroup,
                             isLoading = false
                         )
                     }
-                    saveLocalCache(detail.comicDetail)
+                    saveLocalCache(detail.comic)
                     loadAllChapters(pathWord, selectedGroup)
                     loadQueryStatus(pathWord)
                 },
@@ -160,7 +172,7 @@ class DetailViewModel @Inject constructor(
 
     fun refreshDetail() {
         val pathWord = currentPathWord ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, error = null, riskControlReason = null) }
             mangaRepository.getComicDetail(pathWord).fold(
                 onSuccess = { detail ->
@@ -172,7 +184,7 @@ class DetailViewModel @Inject constructor(
 
                     _uiState.update {
                         it.copy(
-                            comicDetail = detail.comicDetail,
+                            comicDetail = detail.comic,
                             groups = groupsMap.values.toImmutableList(),
                             selectedGroup = selectedGroup,
                             isLoading = false,
@@ -181,7 +193,7 @@ class DetailViewModel @Inject constructor(
                             batchSelection = null
                         )
                     }
-                    saveLocalCache(detail.comicDetail)
+                    saveLocalCache(detail.comic)
                     loadAllChapters(pathWord, selectedGroup)
                     loadQueryStatus(pathWord)
                 },
@@ -202,11 +214,11 @@ class DetailViewModel @Inject constructor(
 
         val authorList = if (cachedComic.authorNames.isNotBlank()) {
             cachedComic.authorNames.split(",").map { name ->
-                AuthorDto(name.trim(), "")
+                Author(name.trim(), "")
             }
         } else null
 
-        val detail = ComicDetailDto(
+        val detail = ComicInfo(
             uuid = "",
             b404 = false,
             bHidden = false,
@@ -216,14 +228,14 @@ class DetailViewModel @Inject constructor(
             pathWord = cachedComic.pathWord,
             closeComment = false,
             closeRoast = false,
-            freeType = DisplayAndValue("免费", 0),
-            restrict = DisplayAndValue("一般向", 0),
-            reclass = DisplayAndValue("", 0),
+            freeType = DisplayValue("免费", 0),
+            restrict = DisplayValue("一般向", 0),
+            reclass = DisplayValue("", 0),
             females = null,
             males = null,
             clubs = null,
-            region = DisplayAndValue("", 0),
-            status = DisplayAndValue(
+            region = DisplayValue("", 0),
+            status = DisplayValue(
                 cachedComic.statusDisplay,
                 if (cachedComic.statusDisplay == "已完结") 1 else 0
             ),
@@ -233,7 +245,7 @@ class DetailViewModel @Inject constructor(
             brief = cachedComic.brief,
             lastUpdate = cachedComic.lastUpdate,
             cover = cachedComic.cover,
-            lastChapter = if (cachedComic.lastChapterName != null) LastChapterDto(
+            lastChapter = if (cachedComic.lastChapterName != null) LastChapter(
                 "",
                 cachedComic.lastChapterName
             ) else null,
@@ -242,7 +254,7 @@ class DetailViewModel @Inject constructor(
         )
 
         val chapters = cachedChapters.map { entity ->
-            ChapterDto(
+            ChapterInfo(
                 index = entity.index,
                 uuid = entity.uuid,
                 count = cachedChapters.size,
@@ -274,18 +286,18 @@ class DetailViewModel @Inject constructor(
         return true
     }
 
-    private suspend fun saveLocalCache(detail: ComicDetailDto) {
+    private suspend fun saveLocalCache(detail: ComicInfo) {
         val existing = downloadRepository.getDownloadedComic(detail.pathWord)
         if (existing == null) return
         val authors = detail.author?.joinToString(",") { it.name } ?: ""
-        val entity = DownloadedComicEntity(
+        val entity = DownloadedComicInfo(
             pathWord = detail.pathWord,
             name = detail.name,
             cover = detail.cover,
             authorNames = authors,
             statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
             lastUpdate = detail.lastUpdate,
-            lastChapterName = detail.lastChapter?.lastChapterName,
+            lastChapterName = detail.lastChapter?.name,
             brief = detail.brief,
             totalChapters = existing.totalChapters,
             downloadedChapters = existing.downloadedChapters,
@@ -380,7 +392,7 @@ class DetailViewModel @Inject constructor(
         val comicDetail = state.comicDetail ?: return
         if (!state.isLoggedIn) return
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isShelfLoading = true) }
 
             if (state.isInShelf && state.shelfCollectId != null) {
@@ -679,7 +691,7 @@ class DetailViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             if (toCancelDownloadUuids.isNotEmpty()) {
                 downloadRepository.removeChaptersFromTask(pathWord, toCancelDownloadUuids)
             }
@@ -696,19 +708,19 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    private fun enqueueChaptersDownload(detail: ComicDetailDto, chapters: List<ChapterDto>) {
+    private fun enqueueChaptersDownload(detail: ComicInfo, chapters: List<ChapterInfo>) {
         val authors = detail.author?.joinToString(",") { it.name } ?: ""
 
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val existing = downloadRepository.getDownloadedComic(detail.pathWord)
-            val entity = DownloadedComicEntity(
+            val entity = DownloadedComicInfo(
                 pathWord = detail.pathWord,
                 name = detail.name,
                 cover = detail.cover,
                 authorNames = authors,
                 statusDisplay = if (detail.status.value == 1) "已完结" else "连载中",
                 lastUpdate = detail.lastUpdate,
-                lastChapterName = detail.lastChapter?.lastChapterName,
+                lastChapterName = detail.lastChapter?.name,
                 brief = detail.brief,
                 totalChapters = chapters.size + (existing?.totalChapters ?: 0),
                 downloadedChapters = existing?.downloadedChapters ?: 0,
@@ -742,10 +754,10 @@ class DetailViewModel @Inject constructor(
     // endregion
 
     private fun loadAllChapters(pathWord: String, group: String = "default") {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoadingChapters = true) }
 
-            val allChapters = mutableListOf<ChapterDto>()
+            val allChapters = mutableListOf<ChapterInfo>()
             var offset = 0
             val limit = 100
             var total = 0

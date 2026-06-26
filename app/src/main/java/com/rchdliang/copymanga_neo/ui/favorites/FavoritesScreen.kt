@@ -31,7 +31,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -43,13 +42,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
-import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
-import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
-import com.rchdliang.copymanga_neo.data.remote.dto.FavComicDto
-import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
+import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
+import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
+import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -62,7 +62,7 @@ fun FavoritesScreen(
     onComicClick: (String) -> Unit,
     onNavigateToProfile: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
 
     PullToRefreshBox(
@@ -154,10 +154,10 @@ fun FavoritesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(uiState.favorites) { favorite ->
+                    items(uiState.favorites, key = { it.comic.pathWord }) { favorite ->
                         FavoriteCard(
                             favorite = favorite,
-                            onClick = { onComicClick(favorite.favComic.pathWord) }
+                            onClick = { onComicClick(favorite.comic.pathWord) }
                         )
                     }
                 }
@@ -174,17 +174,17 @@ fun FavoritesScreen(
 private fun FavoriteCardPreview() {
     CopyManga_NeoTheme {
         val mockFavorite = remember {
-            FavoritesDto(
+            FavoriteItem(
                 uuid = 1,
                 name = null,
                 bFolder = false,
                 folderId = null,
-                favComic = FavComicDto(
+                comic = FavoriteComic(
                     uuid = "fav-uuid-1",
                     bDisplay = true,
                     name = "示例漫画：冒险者的旅途",
                     pathWord = "adventure-journey",
-                    author = listOf(AuthorDto("山田太郎", "yamada-taro")),
+                    author = listOf(Author("山田太郎", "yamada-taro")),
                     theme = emptyList(),
                     cover = "https://example.com/cover.jpg",
                     status = 0,
@@ -192,7 +192,7 @@ private fun FavoriteCardPreview() {
                     datetimeUpdated = "2025-03-15",
                     lastChapterId = "ch-128",
                     lastChapterName = "第 128 话",
-                    browse = BrowseDto(
+                    browse = BrowseInfo(
                         comicUuid = "fav-uuid-1",
                         pathWord = "adventure-journey",
                         chapterUuid = "ch-120",
@@ -216,12 +216,12 @@ private fun FavoriteGridPreview() {
     CopyManga_NeoTheme {
         val mockFavorites = remember {
             (1..6).map { index ->
-                FavoritesDto(
+                FavoriteItem(
                     uuid = index,
                     name = null,
                     bFolder = false,
                     folderId = null,
-                    favComic = FavComicDto(
+                    comic = FavoriteComic(
                         uuid = "fav-uuid-$index",
                         bDisplay = true,
                         name = when (index) {
@@ -233,7 +233,7 @@ private fun FavoriteGridPreview() {
                             else -> "异世界悠闲生活"
                         },
                         pathWord = "comic-$index",
-                        author = listOf(AuthorDto("作者$index", "author-$index")),
+                        author = listOf(Author("作者$index", "author-$index")),
                         theme = emptyList(),
                         cover = "https://example.com/cover$index.jpg",
                         status = index % 2,
@@ -241,7 +241,7 @@ private fun FavoriteGridPreview() {
                         datetimeUpdated = "2025-03-${10 + index}",
                         lastChapterId = "ch-$index",
                         lastChapterName = "第 ${100 + index} 话",
-                        browse = BrowseDto(
+                        browse = BrowseInfo(
                             comicUuid = "fav-uuid-$index",
                             pathWord = "comic-$index",
                             chapterUuid = when (index % 3) {
@@ -282,11 +282,11 @@ private fun FavoriteGridPreview() {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun FavoriteCard(
-    favorite: FavoritesDto,
+    favorite: FavoriteItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val comic = favorite.favComic
+    val comic = favorite.comic
     Card(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,

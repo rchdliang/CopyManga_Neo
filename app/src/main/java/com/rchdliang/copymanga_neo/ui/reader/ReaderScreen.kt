@@ -4,7 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
-import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -55,7 +55,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.ToastState
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 
@@ -188,20 +190,14 @@ fun ReaderSuccessContent(
     }
 
     var previousPageInOriginal by rememberSaveable { mutableIntStateOf(0) }
-    var lastImageCount by rememberSaveable { mutableIntStateOf(0) }
     var prevDir by remember { mutableStateOf(dir) }
     var dirStable by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
+    var showImageMenu by remember { mutableStateOf(false) }
 
     if (dir != prevDir) {
         dirStable = false
         prevDir = dir
-    }
-    var showImageMenu by remember { mutableStateOf(false) }
-
-    if (images.size != lastImageCount && images.isNotEmpty()) {
-        previousPageInOriginal = 0
-        lastImageCount = images.size
     }
 
     val isContinuous = dir == ReadingDirection.TOP_TO_BOTTOM
@@ -221,12 +217,19 @@ fun ReaderSuccessContent(
         previousPageInOriginal = currentPageIndex
     }
 
-    LaunchedEffect(dir) {
+    // 章节切换或方向切换时重置滚动位置
+    LaunchedEffect(dir, images) {
         if (images.isNotEmpty()) {
             val target = previousPageInOriginal.coerceIn(0, images.size - 1)
             if (isContinuous) listState.scrollToItem(target) else pagerState.scrollToPage(target)
             dirStable = true
         }
+    }
+
+    // 对话框打开时拦截返回键，避免直接退出阅读器
+    BackHandler(enabled = showSettingsMenu || showImageMenu) {
+        showSettingsMenu = false
+        showImageMenu = false
     }
 
     val displayedPageNumber = currentPageIndex + 1
@@ -235,10 +238,7 @@ fun ReaderSuccessContent(
     fun animateToPagerPage(target: Int) {
         coroutineScope.launch {
             pagerState.animateScrollToPage(
-                target.coerceIn(
-                    0,
-                    (pagerState.pageCount - 1).coerceAtLeast(0)
-                )
+                target.coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
             )
         }
     }
@@ -256,7 +256,6 @@ fun ReaderSuccessContent(
                     (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
                         ?: -1) >= images.size - 1
                 ) {
-                    Log.i("ReaderScreen", ">>> goForward -> onNextChapter (continuous) at boundary")
                     onNextChapter()
                 } else {
                     animateToListIndex(currentPageIndex + 1)
@@ -265,7 +264,6 @@ fun ReaderSuccessContent(
 
             else -> {
                 if (pagerState.currentPage >= pagerState.pageCount - 1) {
-                    Log.i("ReaderScreen", ">>> goForward -> onNextChapter (pager) at boundary")
                     onNextChapter()
                 } else {
                     animateToPagerPage(pagerState.currentPage + 1)
@@ -278,10 +276,6 @@ fun ReaderSuccessContent(
         when {
             isContinuous -> {
                 if (currentPageIndex <= 0) {
-                    Log.i(
-                        "ReaderScreen",
-                        ">>> goBackward -> onPrevChapter (continuous) at boundary"
-                    )
                     onPrevChapter()
                 } else {
                     animateToListIndex(currentPageIndex - 1)
@@ -290,7 +284,6 @@ fun ReaderSuccessContent(
 
             else -> {
                 if (pagerState.currentPage <= 0) {
-                    Log.i("ReaderScreen", ">>> goBackward -> onPrevChapter (pager) at boundary")
                     onPrevChapter()
                 } else {
                     animateToPagerPage(pagerState.currentPage - 1)
@@ -302,71 +295,15 @@ fun ReaderSuccessContent(
     // 连续模式跨章节滑动
     val density = LocalDensity.current
     val threshold = remember(density) { with(density) { 60.dp.toPx() } }
-    val continuousOverscroll = remember { mutableFloatStateOf(0f) }
-    val latestOnPrevChapter by rememberUpdatedState(onPrevChapter)
-    val latestOnNextChapter by rememberUpdatedState(onNextChapter)
-    val nestedScrollConnection = remember(coroutineScope, threshold) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                Log.d(
-                    "ReaderScreen",
-                    "continuous onPreScroll: overscrollAccum=$continuousOverscroll threshold=$threshold available=(${available.x},${available.y}) source=$source"
-                )
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: androidx.compose.ui.geometry.Offset,
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                continuousOverscroll.floatValue += available.y
-                Log.d(
-                    "ReaderScreen",
-                    "continuous onPostScroll: consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y}) -> accum=${continuousOverscroll.floatValue}"
-                )
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val v = continuousOverscroll.floatValue
-                Log.i(
-                    "ReaderScreen",
-                    "continuous onPostFling: accum=$v threshold=$threshold consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y})"
-                )
-                if (v > threshold) {
-                    Log.i(
-                        "ReaderScreen",
-                        ">>> TRIGGER prevChapter (continuous) accum=$v > threshold=$threshold"
-                    )
-                    coroutineScope.launch {
-                        toastHost.showToast("切换到上一章")
-                        latestOnPrevChapter()
-                    }
-                } else if (v < -threshold) {
-                    Log.i(
-                        "ReaderScreen",
-                        ">>> TRIGGER nextChapter (continuous) accum=$v < -$threshold"
-                    )
-                    coroutineScope.launch {
-                        toastHost.showToast("切换到下一章")
-                        latestOnNextChapter()
-                    }
-                } else {
-                    Log.i("ReaderScreen", ">>> NO trigger (continuous) accum=$v, below threshold")
-                }
-                continuousOverscroll.floatValue = 0f
-                return Velocity.Zero
-            }
-        }
-    }
+    val nestedScrollConnection = rememberContinuousOverscroll(
+        coroutineScope = coroutineScope,
+        threshold = threshold,
+        toastHost = toastHost,
+        onPrevChapter = onPrevChapter,
+        onNextChapter = onNextChapter
+    )
 
     val timeText = java.text.SimpleDateFormat("HH:mm", locale).format(java.util.Date())
-
-    val toggleMenu = { showSettingsMenu = !showSettingsMenu }
 
     // 全屏布局
     Box(modifier = modifier
@@ -424,6 +361,58 @@ fun ReaderSuccessContent(
             onRefresh = { showImageMenu = false; onRefresh() },
             onDismiss = { showImageMenu = false }
         )
+    }
+}
+
+// ── 连续模式跨章节滑动 NestedScrollConnection ──────────────────────
+
+@Composable
+private fun rememberContinuousOverscroll(
+    coroutineScope: CoroutineScope,
+    threshold: Float,
+    toastHost: ToastState,
+    onPrevChapter: () -> Unit,
+    onNextChapter: () -> Unit
+): NestedScrollConnection {
+    val continuousOverscroll = remember { mutableFloatStateOf(0f) }
+    val latestOnPrevChapter by rememberUpdatedState(onPrevChapter)
+    val latestOnNextChapter by rememberUpdatedState(onNextChapter)
+
+    return remember(coroutineScope, threshold) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
+                continuousOverscroll.floatValue += available.y
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                val v = continuousOverscroll.floatValue
+                if (v > threshold) {
+                    coroutineScope.launch {
+                        toastHost.showToast("切换到上一章")
+                        latestOnPrevChapter()
+                    }
+                } else if (v < -threshold) {
+                    coroutineScope.launch {
+                        toastHost.showToast("切换到下一章")
+                        latestOnNextChapter()
+                    }
+                }
+                continuousOverscroll.floatValue = 0f
+                return Velocity.Zero
+            }
+        }
     }
 }
 

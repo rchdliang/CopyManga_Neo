@@ -3,9 +3,9 @@ package com.rchdliang.copymanga_neo.data.repository
 import android.util.Base64
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.data.remote.dto.LoginResult
-import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResult
 import com.rchdliang.copymanga_neo.di.PersistentCookieJar
+import com.rchdliang.copymanga_neo.domain.model.LoginInfo
+import com.rchdliang.copymanga_neo.domain.model.MemberInfo
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +25,7 @@ class UserRepositoryImpl @Inject constructor(
     private val cookieJar: PersistentCookieJar
 ) : UserRepository {
 
-    override suspend fun login(username: String, rawPassword: String): Result<LoginResult> {
+    override suspend fun login(username: String, rawPassword: String): Result<LoginInfo> {
         return try {
             // 1. 生成随机4位盐
             val salt = Random.nextInt(1000, 10000).toString()
@@ -77,7 +77,7 @@ class UserRepositoryImpl @Inject constructor(
                 "Login success: username=${loginResult.username}, token=$token"
             )
 
-            Result.success(loginResult)
+            Result.success(loginResult.toLoginInfo())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -86,7 +86,7 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getMemberInfo(): Result<MemberInfoResult> {
+    override suspend fun getMemberInfo(): Result<MemberInfo> {
         return try {
             val response = apiService.getMemberInfo()
             if (response.code() == 401) {
@@ -114,7 +114,7 @@ class UserRepositoryImpl @Inject constructor(
                 avatar = memberInfo.avatar
             )
 
-            Result.success(memberInfo)
+            Result.success(memberInfo.toMemberInfo())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

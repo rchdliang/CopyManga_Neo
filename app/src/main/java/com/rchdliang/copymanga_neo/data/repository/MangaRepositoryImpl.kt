@@ -2,17 +2,18 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.data.remote.api.QueryType
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResult
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResult
-import com.rchdliang.copymanga_neo.data.remote.dto.FavoritesDto
-import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
 import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ChapterList
+import com.rchdliang.copymanga_neo.domain.model.ComicDetail
+import com.rchdliang.copymanga_neo.domain.model.ComicStatus
+import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
+import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.domain.model.TrialContent
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -68,10 +69,10 @@ class MangaRepositoryImpl @Inject constructor(
 
             Result.success(
                 HomeComicsData(
-                    recComics = recComics,
-                    hotComics = hotComics,
-                    newComics = newComics,
-                    finishComics = finishComics
+                    recComics = recComics.map { it.toSummary() },
+                    hotComics = hotComics.map { it.toSummary() },
+                    newComics = newComics.map { it.toSummary() },
+                    finishComics = finishComics.map { it.toSummary() }
                 )
             )
         } catch (e: CancellationException) {
@@ -82,7 +83,7 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getComicDetail(pathWord: String): Result<ComicDetailResult> {
+    override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> {
         return try {
             val response = apiService.getComicDetail(pathWord)
             val body = response.body()
@@ -100,9 +101,7 @@ class MangaRepositoryImpl @Inject constructor(
             }
 
             if (response.isSuccessful && body?.code == 200) {
-                body.results.let {
-                    Result.success(it)
-                }
+                Result.success(body.results.toDetail())
             } else {
                 val errorCode = body?.code ?: response.code()
                 val errorMessage = body?.message ?: response.message()
@@ -125,12 +124,19 @@ class MangaRepositoryImpl @Inject constructor(
         group: String,
         offset: Int,
         limit: Int
-    ): Result<ChapterListResult> {
+    ): Result<ChapterList> {
         return try {
             val response = apiService.getChapters(pathWord, group, limit = limit, offset = offset)
             if (response.isSuccessful && response.body()?.code == 200) {
 //                android.util.Log.i("MangaRepositoryImpl", "Chapter[0]=" + response.body()!!.results.component1()[0].toString())
-                Result.success(response.body()?.results ?: ChapterListResult(emptyList(), 0, 20, 0))
+                Result.success(
+                    (response.body()?.results ?: ChapterListResult(
+                        emptyList(),
+                        0,
+                        20,
+                        0
+                    )).toList()
+                )
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取章节列表失败"))
             }
@@ -144,11 +150,11 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun trialChapterContent(
         comicPathWord: String,
         chapterUuid: String
-    ): Result<TrialContentResult> {
+    ): Result<TrialContent> {
         return try {
             val response = apiService.getTrialContent(comicPathWord, chapterUuid)
             if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()!!.results)
+                Result.success(response.body()!!.results.toContent())
             } else {
                 android.util.Log.w(
                     "MangaRepository",
@@ -240,11 +246,12 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getRecComics(limit: Int, offset: Int): Result<List<ComicDto>> {
+    override suspend fun getRecComics(limit: Int, offset: Int): Result<List<ComicSummary>> {
         return try {
             val response = apiService.getRecComics(limit = limit, offset = offset, freeType = 0)
             if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list?.map { it.comic } ?: emptyList())
+                Result.success(response.body()?.results?.list?.map { it.comic.toSummary() }
+                    ?: emptyList())
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取推荐失败"))
             }
@@ -259,7 +266,7 @@ class MangaRepositoryImpl @Inject constructor(
         query: String,
         page: Int,
         queryType: QueryType?
-    ): Result<List<ComicDto>> {
+    ): Result<List<ComicSummary>> {
         return try {
             val pageSize = 20
             val offset = (page - 1) * pageSize
@@ -271,7 +278,7 @@ class MangaRepositoryImpl @Inject constructor(
             )
             val body = response.body()
             if (response.isSuccessful && body?.code == 200) {
-                Result.success(body.results.list)
+                Result.success(body.results.list.map { it.toSummary() })
             } else {
                 Result.failure(Exception(body?.message ?: "搜索失败"))
             }
@@ -285,11 +292,12 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun getFavoriteComics(
         offset: Int,
         limit: Int
-    ): Result<List<FavoritesDto>> {
+    ): Result<List<FavoriteItem>> {
         return try {
             val response = apiService.getFavoriteComics(offset = offset, limit = limit)
             if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list ?: emptyList())
+                Result.success(response.body()?.results?.list?.map { it.toFavoriteItem() }
+                    ?: emptyList())
             } else {
                 val message = when (val code = response.code()) {
                     401 -> "401 未登录，请先登录账号"
@@ -314,13 +322,13 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun queryComicStatus(pathWord: String): Result<ComicQueryResult> {
+    override suspend fun queryComicStatus(pathWord: String): Result<ComicStatus> {
         return try {
             val response = apiService.queryComicStatus(pathWord)
             if (response.isSuccessful && response.body()?.code == 200) {
                 val results = response.body()?.results
                 if (results != null) {
-                    Result.success(results)
+                    Result.success(results.toStatus())
                 } else {
                     Result.failure(Exception("查询状态结果为空"))
                 }

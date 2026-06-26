@@ -156,7 +156,7 @@ fun DownloadingCard(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     if (!progressInfo.errorMessage.isNullOrBlank()) {
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.width(4.dp))
 
                         Text(
                             text = progressInfo.errorMessage,

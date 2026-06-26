@@ -29,7 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 
 private enum class ChapterManageVisualState {
     Normal,
@@ -65,7 +65,7 @@ private fun resolveChapterManageVisualState(
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ChapterItem(
-    chapter: ChapterDto,
+    chapter: ChapterInfo,
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     downloadStatus: ChapterDownloadStatus? = null,

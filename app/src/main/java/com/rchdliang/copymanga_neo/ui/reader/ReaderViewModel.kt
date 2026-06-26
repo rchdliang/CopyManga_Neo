@@ -8,6 +8,7 @@ import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +27,11 @@ class ReaderViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
+
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("ReaderViewModel", "Unhandled coroutine exception", throwable)
+        _uiState.value = ReaderUiState.Error(throwable.message ?: "未知错误")
+    }
 
     val readingDirection: StateFlow<String> = prefs.readingDirection
         .stateIn(viewModelScope, SharingStarted.Eagerly, "RIGHT_TO_LEFT")
@@ -65,7 +71,7 @@ class ReaderViewModel @Inject constructor(
         currentGroup = group
 
         loadJob?.cancel()
-        loadJob = viewModelScope.launch {
+        loadJob = viewModelScope.launch(exceptionHandler) {
             _uiState.value = ReaderUiState.Loading
 
             try {
@@ -144,15 +150,15 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun setReadingDirection(value: String) {
-        viewModelScope.launch { prefs.setReadingDirection(value) }
+        viewModelScope.launch(exceptionHandler) { prefs.setReadingDirection(value) }
     }
 
     fun setPageScale(value: String) {
-        viewModelScope.launch { prefs.setPageScale(value) }
+        viewModelScope.launch(exceptionHandler) { prefs.setPageScale(value) }
     }
 
     fun setScreenOrientation(value: String) {
-        viewModelScope.launch { prefs.setScreenOrientation(value) }
+        viewModelScope.launch(exceptionHandler) { prefs.setScreenOrientation(value) }
     }
 }
 

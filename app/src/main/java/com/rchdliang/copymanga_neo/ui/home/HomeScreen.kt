@@ -27,7 +27,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,8 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDto
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
@@ -51,7 +51,7 @@ fun HomeScreen(
     onComicClick: (String) -> Unit,
     onNavigateToSearch: () -> Unit = {},
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -104,7 +104,6 @@ fun HomeScreen(
             }
 
             else -> {
-                val onComicClickRemembered = remember(onComicClick) { onComicClick }
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -124,7 +123,7 @@ fun HomeScreen(
                         item(key = "rec_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.recComicList,
-                                onComicClick = onComicClickRemembered,
+                                onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -143,7 +142,7 @@ fun HomeScreen(
                         item(key = "hot_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.hotComics,
-                                onComicClick = onComicClickRemembered,
+                                onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -162,7 +161,7 @@ fun HomeScreen(
                         item(key = "new_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.newComics,
-                                onComicClick = onComicClickRemembered,
+                                onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -181,7 +180,7 @@ fun HomeScreen(
                         item(key = "finish_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.finishComics,
-                                onComicClick = onComicClickRemembered,
+                                onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -225,7 +224,7 @@ private fun SearchEntryBar(
 
 @Composable
 private fun ComicGrid(
-    comics: List<ComicDto>,
+    comics: List<ComicSummary>,
     onComicClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -255,7 +254,7 @@ private fun HomeSectionsPreview() {
     CopyManga_NeoTheme {
         val mockComics = remember {
             (1..8).map { index ->
-                ComicDto(
+                ComicSummary(
                     name = when (index) {
                         1 -> "冒险者的奇幻旅途"
                         2 -> "都市灵异事件簿"
@@ -268,7 +267,7 @@ private fun HomeSectionsPreview() {
                     },
                     pathWord = "home-comic-$index",
                     cover = "https://example.com/cover$index.jpg",
-                    author = listOf(AuthorDto("作者$index", "author-$index")),
+                    author = listOf(Author("作者$index", "author-$index")),
                     females = emptyList(),
                     males = emptyList(),
                     theme = emptyList(),

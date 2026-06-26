@@ -1,6 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
-import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,7 +65,6 @@ fun ReaderContent(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     Box(modifier = modifier
         .fillMaxSize()
         .background(Color.Black)) {
@@ -87,73 +85,16 @@ fun ReaderContent(
                         onLongPress = onLongPress
                     )
             ) {
-                itemsIndexed(effectiveImages) { index, path ->
-                    var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
-                    val request = remember(path, retryKey) {
-                        val data: Any = if (path.startsWith("http")) path else File(path)
-                        ImageRequest.Builder(context)
-                            .data(data)
-                            .setParameter("retry_hash", retryKey)
-                            .build()
-                    }
-                    SubcomposeAsyncImage(
-                        model = request,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxWidth(),
-                        contentScale = contentScale
-                    ) {
-                        when (painter.state) {
-                            is AsyncImagePainter.State.Loading -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(300.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = (index + 1).toString(),
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        Spacer(Modifier.height(12.dp))
-                                        CircularWavyProgressIndicator(color = Color.White)
-                                    }
-                                }
-                            }
-
-                            is AsyncImagePainter.State.Error -> {
-                                val error = painter.state as AsyncImagePainter.State.Error
-                                val message = error.result.throwable.message
-                                    ?: error.result.throwable.javaClass.simpleName
-                                    ?: "未知错误"
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(300.dp)
-                                        .clickable { retryKey++ },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "加载失败:$message",
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                }
-                            }
-
-                            is AsyncImagePainter.State.Success -> {
-                                Image(
-                                    painter = painter,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentScale = contentScale
-                                )
-                            }
-
-                            else -> Unit
-                        }
-                    }
+                itemsIndexed(
+                    items = effectiveImages,
+                    key = { _, path -> path }
+                ) { index, path ->
+                    ReaderImageItem(
+                        pageNumber = index,
+                        path = path,
+                        contentScale = contentScale,
+                        isContinuous = true
+                    )
                 }
             }
         } else {
@@ -187,73 +128,100 @@ fun ReaderContent(
                         onShowMenu = onShowMenu,
                         onLongPress = onLongPress
                     ),
-                beyondViewportPageCount = 2
+                beyondViewportPageCount = 1
             ) { page ->
-                val path = effectiveImages[page]
-                var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
-                val request = remember(path, retryKey) {
-                    val data: Any = if (path.startsWith("http")) path else File(path)
-                    ImageRequest.Builder(context)
-                        .data(data)
-                        .setParameter("retry_hash", retryKey)
-                        .build()
-                }
-                SubcomposeAsyncImage(
-                    model = request,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = contentScale
+                ReaderImageItem(
+                    pageNumber = page,
+                    path = effectiveImages[page],
+                    contentScale = contentScale,
+                    isContinuous = false
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 阅读器图片项 — 连续模式与分页模式共用的图片渲染组件
+ * 提取自原 LazyColumn 和 HorizontalPager 中重复的 SubcomposeAsyncImage 逻辑
+ */
+@Composable
+private fun ReaderImageItem(
+    pageNumber: Int,
+    path: String,
+    contentScale: ContentScale,
+    isContinuous: Boolean
+) {
+    val context = LocalContext.current
+    var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
+    val request = remember(path, retryKey) {
+        val data: Any = if (path.startsWith("http")) path else File(path)
+        ImageRequest.Builder(context)
+            .data(data)
+            .setParameter("retry_hash", retryKey)
+            .build()
+    }
+
+    val imageModifier = if (isContinuous) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
+    val placeholderModifier = if (isContinuous) {
+        Modifier
+            .fillMaxWidth()
+            .height(300.dp)
+    } else {
+        Modifier.fillMaxSize()
+    }
+
+    SubcomposeAsyncImage(
+        model = request,
+        contentDescription = null,
+        modifier = imageModifier,
+        contentScale = contentScale
+    ) {
+        when (painter.state) {
+            is AsyncImagePainter.State.Loading -> {
+                Box(
+                    modifier = placeholderModifier,
+                    contentAlignment = Alignment.Center
                 ) {
-                    when (painter.state) {
-                        is AsyncImagePainter.State.Loading -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = (page + 1).toString(),
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Spacer(Modifier.height(12.dp))
-                                    CircularWavyProgressIndicator(color = Color.White)
-                                }
-                            }
-                        }
-
-                        is AsyncImagePainter.State.Error -> {
-                            val error = painter.state as AsyncImagePainter.State.Error
-                            val message = error.result.throwable.message
-                                ?: error.result.throwable.javaClass.simpleName
-                                ?: "未知错误"
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable { retryKey++ },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    "加载失败:$message",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                            }
-                        }
-
-                        is AsyncImagePainter.State.Success -> {
-                            Image(
-                                painter = painter,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = contentScale
-                            )
-                        }
-
-                        else -> Unit
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = (pageNumber + 1).toString(),
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        CircularWavyProgressIndicator(color = Color.White)
                     }
                 }
             }
+
+            is AsyncImagePainter.State.Error -> {
+                val error = painter.state as AsyncImagePainter.State.Error
+                val message = error.result.throwable.message
+                    ?: error.result.throwable.javaClass.simpleName
+                    ?: "未知错误"
+                Box(
+                    modifier = placeholderModifier.clickable { retryKey++ },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "加载失败:$message",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
+
+            is AsyncImagePainter.State.Success -> {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = imageModifier,
+                    contentScale = contentScale
+                )
+            }
+
+            else -> Unit
         }
     }
 }
@@ -271,10 +239,6 @@ private class PagerChapterOverscroll(
         available: androidx.compose.ui.geometry.Offset,
         source: NestedScrollSource
     ): androidx.compose.ui.geometry.Offset {
-        Log.d(
-            "ReaderContent",
-            "pager onPreScroll: overscrollAccum=$totalOverscroll threshold=$thresholdPx isRtl=$isRtl available=(${available.x},${available.y}) source=$source"
-        )
         return androidx.compose.ui.geometry.Offset.Zero
     }
 
@@ -286,34 +250,16 @@ private class PagerChapterOverscroll(
         // RTL (reverseLayout) 模式下 pager 内部坐标被翻转，需要对 available.x 取反
         val effectiveDelta = if (isRtl) -available.x else available.x
         totalOverscroll += effectiveDelta
-        Log.d(
-            "ReaderContent",
-            "pager onPostScroll: consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y}) effectiveDelta=$effectiveDelta -> accum=$totalOverscroll"
-        )
         return androidx.compose.ui.geometry.Offset.Zero
     }
 
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
         val overscroll = totalOverscroll
         totalOverscroll = 0f
-        Log.i(
-            "ReaderContent",
-            "pager onPostFling: accum=$overscroll threshold=$thresholdPx consumed=(${consumed.x},${consumed.y}) available=(${available.x},${available.y})"
-        )
         if (overscroll > thresholdPx) {
-            Log.i(
-                "ReaderContent",
-                ">>> TRIGGER prevChapter (pager) accum=$overscroll > threshold=$thresholdPx"
-            )
             coroutineScope.launch { onPrevChapter() }
         } else if (overscroll < -thresholdPx) {
-            Log.i(
-                "ReaderContent",
-                ">>> TRIGGER nextChapter (pager) accum=$overscroll < -$thresholdPx"
-            )
             coroutineScope.launch { onNextChapter() }
-        } else {
-            Log.i("ReaderContent", ">>> NO trigger (pager) accum=$overscroll, below threshold")
         }
         return Velocity.Zero
     }

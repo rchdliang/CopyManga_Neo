@@ -5,8 +5,8 @@ import android.util.Log
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -403,7 +403,7 @@ class DownloadManager @Inject constructor(
     }
 
     private suspend fun downloadChapterContent(
-        chapter: ChapterDto,
+        chapter: ChapterInfo,
         comicPathWord: String
     ): ChapterContent? {
         return mangaRepository.getChapterContent(

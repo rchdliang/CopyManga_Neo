@@ -71,7 +71,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -92,18 +91,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
-import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
-import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailDto
-import com.rchdliang.copymanga_neo.data.remote.dto.DisplayAndValue
-import com.rchdliang.copymanga_neo.data.remote.dto.GroupsDto
-import com.rchdliang.copymanga_neo.data.remote.dto.LastChapterDto
-import com.rchdliang.copymanga_neo.data.remote.dto.ThemeDto
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
+import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
+import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.model.ComicInfo
+import com.rchdliang.copymanga_neo.domain.model.DisplayValue
+import com.rchdliang.copymanga_neo.domain.model.LastChapter
+import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
@@ -119,7 +119,7 @@ fun DetailScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
 
@@ -287,15 +287,15 @@ fun DetailScreen(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun DetailContent(
-    comicDetail: ComicDetailDto,
-    chapters: ImmutableList<ChapterDto>,
-    groups: ImmutableList<GroupsDto>,
+    comicDetail: ComicInfo,
+    chapters: ImmutableList<ChapterInfo>,
+    groups: ImmutableList<ChapterGroup>,
     selectedGroup: String,
     sortAscending: Boolean,
     isLoggedIn: Boolean,
     isInShelf: Boolean,
     isShelfLoading: Boolean,
-    browse: BrowseDto?,
+    browse: BrowseInfo?,
     batchSelection: ChapterBatchSelectionState?,
     chapterDownloadStatuses: Map<String, ChapterDownloadStatus>,
     chapterDownloadProgresses: Map<String, Float>,
@@ -995,7 +995,7 @@ private fun ManageBottomBar(
 private fun DetailContentPreview() {
     CopyManga_NeoTheme {
         val mockDetail = remember {
-            ComicDetailDto(
+            ComicInfo(
                 uuid = "preview-uuid",
                 b404 = false,
                 bHidden = false,
@@ -1005,28 +1005,28 @@ private fun DetailContentPreview() {
                 pathWord = "preview-comic",
                 closeComment = false,
                 closeRoast = false,
-                freeType = DisplayAndValue("免费", 0),
-                restrict = DisplayAndValue("一般向", 0),
-                reclass = DisplayAndValue("热血", 1),
+                freeType = DisplayValue("免费", 0),
+                restrict = DisplayValue("一般向", 0),
+                reclass = DisplayValue("热血", 1),
                 females = listOf("女主A", "女主B"),
                 males = listOf("男主C"),
                 clubs = listOf("汉化社"),
-                region = DisplayAndValue("日本", 1),
-                status = DisplayAndValue("连载中", 0),
+                region = DisplayValue("日本", 1),
+                status = DisplayValue("连载中", 0),
                 author = listOf(
-                    AuthorDto("山田太郎", "yamada-taro"),
-                    AuthorDto("作画助手", "sakuga")
+                    Author("山田太郎", "yamada-taro"),
+                    Author("作画助手", "sakuga")
                 ),
                 theme = listOf(
-                    ThemeDto("冒险", "adventure"),
-                    ThemeDto("奇幻", "fantasy"),
-                    ThemeDto("热血", "hot-blood")
+                    Theme("冒险", "adventure"),
+                    Theme("奇幻", "fantasy"),
+                    Theme("热血", "hot-blood")
                 ),
                 parodies = null,
                 brief = "这是一个关于少年冒险者在大陆上探索未知世界的故事。",
                 lastUpdate = "2025-03-15",
                 cover = "https://example.com/cover_detail.jpg",
-                lastChapter = LastChapterDto("last-ch-id", "第 128 话"),
+                lastChapter = LastChapter("last-ch-id", "第 128 话"),
                 popular = 10000,
                 channel = null
             )
@@ -1034,7 +1034,7 @@ private fun DetailContentPreview() {
 
         val mockChapters = remember {
             persistentListOf(
-                ChapterDto(
+                ChapterInfo(
                     1,
                     "ch-uuid-1",
                     25,
@@ -1051,7 +1051,7 @@ private fun DetailContentPreview() {
                     "prev-ch-127",
                     "next-ch-129"
                 ),
-                ChapterDto(
+                ChapterInfo(
                     2,
                     "ch-uuid-2",
                     25,
@@ -1068,7 +1068,7 @@ private fun DetailContentPreview() {
                     "prev-ch-126",
                     "ch-uuid-1"
                 ),
-                ChapterDto(
+                ChapterInfo(
                     3,
                     "ch-uuid-3",
                     25,
@@ -1090,8 +1090,8 @@ private fun DetailContentPreview() {
 
         val mockGroups = remember {
             persistentListOf(
-                GroupsDto("group-alpha", 128, "Alpha 汉化组"),
-                GroupsDto("group-beta", 85, "Beta 汉化组")
+                ChapterGroup("group-alpha", 128, "Alpha 汉化组"),
+                ChapterGroup("group-beta", 85, "Beta 汉化组")
             )
         }
 
