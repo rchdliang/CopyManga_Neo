@@ -73,6 +73,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -232,6 +233,11 @@ fun DetailScreen(
                         }
                     }
                 }
+                // 计算点击"继续/开始阅读"后跳转的目标章节，用于按钮文案展示
+                val startChapterInfo =
+                    remember(uiState.chapters, uiState.browse, uiState.sortAscending) {
+                        viewModel.getStartChapter()
+                    }
                 val onChapterToggleSelect = remember {
                     { uuid: String -> viewModel.toggleChapterSelection(uuid) }
                 }
@@ -251,6 +257,8 @@ fun DetailScreen(
                     isInShelf = uiState.isInShelf,
                     isShelfLoading = uiState.isShelfLoading,
                     browse = uiState.browse,
+                    startChapterName = startChapterInfo?.name,
+                    startChapterIsContinue = startChapterInfo?.isContinue ?: false,
                     batchSelection = uiState.batchSelection,
                     chapterDownloadStatuses = uiState.chapterDownloadStatuses,
                     chapterDownloadProgresses = uiState.chapterDownloadProgresses,
@@ -296,6 +304,8 @@ private fun DetailContent(
     isInShelf: Boolean,
     isShelfLoading: Boolean,
     browse: BrowseInfo?,
+    startChapterName: String? = null,
+    startChapterIsContinue: Boolean = false,
     batchSelection: ChapterBatchSelectionState?,
     chapterDownloadStatuses: Map<String, ChapterDownloadStatus>,
     chapterDownloadProgresses: Map<String, Float>,
@@ -328,7 +338,7 @@ private fun DetailContent(
     val currentOnChapterToggleSelect by rememberUpdatedState(onChapterToggleSelect)
 
     val gridState = rememberLazyGridState()
-    var scrollToChapterIndex by remember { mutableStateOf(-1) }
+    var scrollToChapterIndex by remember { mutableIntStateOf(-1) }
 
     LaunchedEffect(batchSelection, scrollToChapterIndex) {
         if (batchSelection != null && scrollToChapterIndex >= 0) {
@@ -339,7 +349,6 @@ private fun DetailContent(
 
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
         val isInBatchMode = batchSelection != null
-        val selection = batchSelection
         BackHandler(enabled = isInBatchMode) {
             onExitBatchMode()
         }
@@ -353,7 +362,7 @@ private fun DetailContent(
                 )
         ) {
             if (isInBatchMode) {
-                val selectedCount = selection!!.selectedChapterUuids.size
+                val selectedCount = batchSelection.selectedChapterUuids.size
                 SelectionTopRow(
                     selectedCount = selectedCount,
                     canSelectBetween = canSelectBetween(),
@@ -541,7 +550,7 @@ private fun DetailContent(
                 OutlinedButton(
                     onClick = onToggleShelf,
                     modifier = Modifier.weight(1f),
-                    enabled = !isShelfLoading
+                    enabled = !isShelfLoading && isLoggedIn
                 ) {
                     Text(
                         text = if (isInShelf) "已在书架" else "加入书架",
@@ -553,9 +562,11 @@ private fun DetailContent(
                     modifier = Modifier.weight(1f),
                     enabled = chapters.isNotEmpty()
                 ) {
+                    val prefix = if (startChapterIsContinue) "继续阅读" else "开始阅读"
                     Text(
-                        text = if (browse != null && browse.chapterUuid != null) "继续阅读" else "开始阅读",
-                        maxLines = 1
+                        text = if (!startChapterName.isNullOrEmpty()) "$prefix：$startChapterName" else prefix,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -758,7 +769,7 @@ private fun DetailContent(
         }
 
         if (isInBatchMode) {
-            val sel = selection!!
+            val sel = batchSelection
             val downloadedUuids = chapterDownloadStatuses
                 .filter { it.value == ChapterDownloadStatus.DOWNLOADED }
                 .keys
@@ -1108,6 +1119,8 @@ private fun DetailContentPreview() {
             isInShelf = false,
             isShelfLoading = false,
             browse = null,
+            startChapterName = mockChapters.firstOrNull()?.name,
+            startChapterIsContinue = false,
             batchSelection = null,
             chapterDownloadStatuses = emptyMap(),
             chapterDownloadProgresses = emptyMap(),

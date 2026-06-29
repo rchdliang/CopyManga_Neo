@@ -5,6 +5,11 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -58,7 +63,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 
 @Composable
@@ -246,6 +253,10 @@ fun ReaderSuccessContent(
     var dirStable by remember { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
     var showImageMenu by remember { mutableStateOf(false) }
+    // 底栏（进度条）显示状态与拖动状态
+    var showBottomBar by remember { mutableStateOf(false) }
+    var sliderValue by remember { mutableFloatStateOf(0f) }
+    var sliderDragging by remember { mutableStateOf(false) }
 
     if (dir != prevDir) {
         dirStable = false
@@ -280,6 +291,21 @@ fun ReaderSuccessContent(
         }
     }
 
+    // 非拖动状态下，进度条跟随当前页码同步
+    LaunchedEffect(currentPageIndex) {
+        if (!sliderDragging) {
+            sliderValue = currentPageIndex.toFloat()
+        }
+    }
+
+    // 底栏显示后 5s 自动收回；拖动进度条会重置计时
+    LaunchedEffect(showBottomBar, sliderValue) {
+        if (showBottomBar) {
+            delay(5000.milliseconds)
+            showBottomBar = false
+        }
+    }
+
     // 对话框打开时拦截返回键，避免直接退出阅读器
     BackHandler(enabled = showSettingsMenu || showImageMenu) {
         showSettingsMenu = false
@@ -300,6 +326,14 @@ fun ReaderSuccessContent(
     fun animateToListIndex(target: Int) {
         coroutineScope.launch {
             listState.animateScrollToItem(target.coerceIn(0, (images.size - 1).coerceAtLeast(0)))
+        }
+    }
+
+    // 进度条拖动时即时跳页（无动画，跟随拖动实时跳转）
+    fun scrollToPageInstant(target: Int) {
+        coroutineScope.launch {
+            val safe = target.coerceIn(0, (images.size - 1).coerceAtLeast(0))
+            if (isContinuous) listState.scrollToItem(safe) else pagerState.scrollToPage(safe)
         }
     }
 
@@ -375,7 +409,8 @@ fun ReaderSuccessContent(
             onPrevChapter = onPrevChapterWithSnackbar,
             onNextChapter = onNextChapterWithSnackbar,
             onShowMenu = { showSettingsMenu = true },
-            onLongPress = { showImageMenu = true }
+            onLongPress = { showImageMenu = true },
+            onBottomAreaTap = { showBottomBar = !showBottomBar }
         )
 
         ReaderTopBar(
@@ -391,6 +426,30 @@ fun ReaderSuccessContent(
                 pageText = "$displayedPageNumber/${images.size}",
                 onClick = { showSettingsMenu = true },
                 modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+
+        // 底栏（进度条）——覆盖在图片上方，不挤压图片显示区域；带滑入/滑出动画
+        AnimatedVisibility(
+            visible = showBottomBar && images.isNotEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            ReaderBottomBar(
+                currentPage = currentPageIndex,
+                totalPages = images.size,
+                sliderValue = sliderValue,
+                onSliderValueChange = { value ->
+                    sliderValue = value
+                    sliderDragging = true
+                    scrollToPageInstant(value.toInt())
+                },
+                onSliderValueChangeFinished = {
+                    sliderDragging = false
+                    // 拖动结束后吸附到实际页码位置
+                    sliderValue = sliderValue.toInt().toFloat()
+                }
             )
         }
     }

@@ -22,7 +22,7 @@ data class ComicInfo(
     val bHidden: Boolean,
     val ban: Int,
     val name: String,
-    val comicAlias: String,
+    val comicAlias: String?,
     val pathWord: String,
     val closeComment: Boolean,
     val closeRoast: Boolean,

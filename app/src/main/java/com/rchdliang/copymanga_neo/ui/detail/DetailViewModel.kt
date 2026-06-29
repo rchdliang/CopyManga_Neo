@@ -471,19 +471,20 @@ class DetailViewModel @Inject constructor(
         if (browse != null && browse.chapterUuid != null) {
             val lastReadIndex = chapters.indexOfFirst { it.uuid == browse.chapterUuid }
             if (lastReadIndex >= 0) {
-                val nextIndex = lastReadIndex + 1
-                if (nextIndex < chapters.size) {
-                    val next = chapters[nextIndex]
-                    return StartChapterInfo(
-                        uuid = next.uuid,
-                        name = next.name,
-                        groupPathWord = next.groupPathWord ?: "default",
-                        isContinue = true
-                    )
-                }
+                // 跳到下一章；若已是最后一章，停留在当前章（避免 fallback 回第一章）
+                val targetIndex = (lastReadIndex + 1).coerceAtMost(chapters.lastIndex)
+                val target = chapters[targetIndex]
+                // isContinue 表示目标章节是否被阅读过：仅当已是最后一章、停留当前章时为 true
+                return StartChapterInfo(
+                    uuid = target.uuid,
+                    name = target.name,
+                    groupPathWord = target.groupPathWord ?: "default",
+                    isContinue = targetIndex == lastReadIndex
+                )
             }
         }
 
+        // 无阅读记录或记录章节不在当前列表，从第一章开始
         val first = chapters.firstOrNull() ?: return null
         return StartChapterInfo(
             uuid = first.uuid,
