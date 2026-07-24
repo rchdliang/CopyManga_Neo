@@ -87,6 +87,7 @@ fun HomeScreen(
         ) {
         when {
             (uiState.error != null && uiState.recComicList.isEmpty()) -> {
+                val errorMsg = uiState.error.orEmpty()
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -100,7 +101,7 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = uiState.error!!,
+                        text = errorMsg,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 32.dp),
@@ -252,7 +253,8 @@ private fun ComicGrid(
                 name = comic.name,
                 cover = comic.cover,
                 subtitle = comic.author?.firstOrNull()?.name,
-                onClick = { onComicClick(comic.pathWord) }
+                onClick = { onComicClick(comic.pathWord) },
+                modifier = Modifier.width(120.dp)
             )
         }
     }

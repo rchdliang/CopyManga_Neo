@@ -14,6 +14,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResponse
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import retrofit2.Response
 import retrofit2.http.Field
+import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.HTTP
@@ -212,6 +213,17 @@ interface MangaApiService {
     @HTTP(method = "DELETE", path = "api/v3/member/collect/comics", hasBody = true)
     suspend fun removeFavorite(
         @Field("ids[0]") collectId: Int,
+        @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<SimpleResponse>
+
+    /**
+     * 从书架批量移除漫画（需要登录） ids[0]=...&ids[1]=...
+     * @param collectIds 要删除的收藏 ID 列表，以 [0] -> "ids[0]" 等带方括号索引的 form 字段名提交
+     */
+    @FormUrlEncoded
+    @HTTP(method = "DELETE", path = "api/v3/member/collect/comics", hasBody = true)
+    suspend fun removeFavorites(
+        @FieldMap collectIds: Map<String, Int>,
         @HeaderMap headers: Map<String, String> = apiHeaders()
     ): Response<SimpleResponse>
 }

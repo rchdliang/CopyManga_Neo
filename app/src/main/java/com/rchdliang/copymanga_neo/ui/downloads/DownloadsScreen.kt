@@ -25,7 +25,6 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +39,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadsScreen(
     onComicClick: (String) -> Unit = {},

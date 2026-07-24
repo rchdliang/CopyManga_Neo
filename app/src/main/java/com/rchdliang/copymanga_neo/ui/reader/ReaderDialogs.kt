@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,10 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import androidx.compose.ui.unit.dp
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ReaderSettingsDialog(
     readingDirection: ReadingDirection,

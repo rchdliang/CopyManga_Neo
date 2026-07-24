@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,9 +57,18 @@ class DownloadManager @Inject constructor(
     private val _activeTask = MutableStateFlow<ComicDownloadTask?>(null)
     val activeTask: StateFlow<ComicDownloadTask?> = _activeTask.asStateFlow()
 
-    private var currentTasks = mutableMapOf<String, ComicDownloadTask>()
-    private val pausedComics = mutableSetOf<String>()
-    private val taskInfoMap = mutableMapOf<String, ComicDownloadTask>()
+    // Copy-on-write 快照：所有写操作经 stateMutex 串行化；读操作无锁读取 @Volatile 引用，得到的可能稍旧但安全。
+    @Volatile
+    private var currentTasks: Map<String, ComicDownloadTask> = emptyMap()
+
+    @Volatile
+    private var taskInfoMap: Map<String, ComicDownloadTask> = emptyMap()
+
+    @Volatile
+    private var pausedComics: Set<String> = emptySet()
+
+    /** 对 currentTasks / taskInfoMap / pausedComics 写操作的串行化锁。读不持锁，见上注释。 */
+    private val stateMutex = Mutex()
 
     init {
         scope.launch { processQueue() }
@@ -69,104 +79,134 @@ class DownloadManager @Inject constructor(
     }
 
     fun enqueue(task: ComicDownloadTask) {
-        val existing = currentTasks[task.pathWord]
-        if (existing != null) {
-            // 合并：将新章节追加到已有任务中，避免覆盖正在下载的任务
-            val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
-            val newChapters = task.chapters.filter { it.chapter.uuid !in existingUuids }
-            if (newChapters.isNotEmpty()) {
-                val mergedChapters = existing.chapters + newChapters
-                val mergedTask = existing.copy(chapters = mergedChapters)
-                currentTasks[task.pathWord] = mergedTask
-                taskInfoMap[task.pathWord] = mergedTask
-                updateProgressForTask(mergedTask)
-                Log.d(
-                    TAG,
-                    "enqueue (merged): ${task.name}, added ${newChapters.size} chapters, total ${mergedChapters.size}"
-                )
-            } else {
-                Log.d(TAG, "enqueue: ${task.name} - all chapters already in queue, skipped")
+        scope.launch {
+            stateMutex.withLock {
+                val existing = currentTasks[task.pathWord]
+                if (existing != null) {
+                    // 合并：将新章节追加到已有任务中，避免覆盖正在下载的任务
+                    val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
+                    val newChapters = task.chapters.filter { it.chapter.uuid !in existingUuids }
+                    if (newChapters.isNotEmpty()) {
+                        val mergedChapters = existing.chapters + newChapters
+                        val mergedTask = existing.copy(chapters = mergedChapters)
+                        currentTasks = currentTasks + (task.pathWord to mergedTask)
+                        taskInfoMap = taskInfoMap + (task.pathWord to mergedTask)
+                        updateProgressForTask(mergedTask)
+                        Log.d(
+                            TAG,
+                            "enqueue (merged): ${task.name}, added ${newChapters.size} chapters, total ${mergedChapters.size}"
+                        )
+                    } else {
+                        Log.d(TAG, "enqueue: ${task.name} - all chapters already in queue, skipped")
+                    }
+                } else {
+                    currentTasks = currentTasks + (task.pathWord to task)
+                    taskInfoMap = taskInfoMap + (task.pathWord to task)
+                    Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
+                    launch { queue.send(task) }
+                    updateProgressForTask(task)
+                }
             }
-        } else {
-            currentTasks[task.pathWord] = task
-            taskInfoMap[task.pathWord] = task
-            Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
-            scope.launch { queue.send(task) }
-            updateProgressForTask(task)
         }
     }
 
     fun cancelComic(pathWord: String) {
         scope.launch {
-            pausedComics.remove(pathWord)
-            currentTasks.remove(pathWord)
-            taskInfoMap.remove(pathWord)
-            val updated = _downloadProgress.value.toMutableMap()
-            updated.remove(pathWord)
-            _downloadProgress.value = updated
-            if (_activeTask.value?.pathWord == pathWord) {
-                _activeTask.value = null
+            stateMutex.withLock {
+                pausedComics = pausedComics - pathWord
+                currentTasks = currentTasks - pathWord
+                taskInfoMap = taskInfoMap - pathWord
+                val updated = _downloadProgress.value.toMutableMap()
+                updated.remove(pathWord)
+                _downloadProgress.value = updated
+                if (_activeTask.value?.pathWord == pathWord) {
+                    _activeTask.value = null
+                }
+                Log.d(TAG, "cancelComic: $pathWord (task cancelled, downloaded chapters preserved)")
             }
-            Log.d(TAG, "cancelComic: $pathWord (task cancelled, downloaded chapters preserved)")
         }
     }
 
     fun pauseComic(pathWord: String) {
-        pausedComics.add(pathWord)
-        Log.d(TAG, "pauseComic: $pathWord")
-        updateProgress(
-            comicPathWord = pathWord,
-            status = DownloadTaskStatus.PAUSED,
-            statusText = "已暂停",
-            speedBytesPerSecond = 0L
-        )
+        scope.launch {
+            stateMutex.withLock {
+                pausedComics = pausedComics + pathWord
+                Log.d(TAG, "pauseComic: $pathWord")
+                updateProgress(
+                    comicPathWord = pathWord,
+                    status = DownloadTaskStatus.PAUSED,
+                    statusText = "已暂停",
+                    speedBytesPerSecond = 0L
+                )
+            }
+        }
     }
 
     fun resumeComic(pathWord: String) {
-        pausedComics.remove(pathWord)
-        Log.d(TAG, "resumeComic: $pathWord")
-        updateProgress(
-            comicPathWord = pathWord,
-            status = DownloadTaskStatus.WAITING,
-            statusText = "等待继续下载",
-            errorMessage = null,
-            speedBytesPerSecond = 0L
-        )
-        currentTasks[pathWord]?.let { task ->
-            val resetChapters = task.chapters.map { chapter ->
-                if (chapter.status == ChapterDownloadStatus.ERROR) {
-                    chapter.copy(
-                        status = ChapterDownloadStatus.WAITING,
-                        progress = 0f,
-                        errorMessage = null
-                    )
-                } else {
-                    chapter
+        scope.launch {
+            stateMutex.withLock {
+                pausedComics = pausedComics - pathWord
+                Log.d(TAG, "resumeComic: $pathWord")
+                updateProgress(
+                    comicPathWord = pathWord,
+                    status = DownloadTaskStatus.WAITING,
+                    statusText = "等待继续下载",
+                    errorMessage = null,
+                    speedBytesPerSecond = 0L
+                )
+                currentTasks[pathWord]?.let { task ->
+                    val resetChapters = task.chapters.map { chapter ->
+                        if (chapter.status == ChapterDownloadStatus.ERROR) {
+                            chapter.copy(
+                                status = ChapterDownloadStatus.WAITING,
+                                progress = 0f,
+                                errorMessage = null
+                            )
+                        } else {
+                            chapter
+                        }
+                    }
+                    val resetTask = task.copy(chapters = resetChapters)
+                    currentTasks = currentTasks + (pathWord to resetTask)
+                    taskInfoMap = taskInfoMap + (pathWord to resetTask)
+                    launch { queue.send(resetTask) }
                 }
             }
-            val resetTask = task.copy(chapters = resetChapters)
-            currentTasks[pathWord] = resetTask
-            taskInfoMap[pathWord] = resetTask
-            scope.launch { queue.send(resetTask) }
         }
     }
 
     fun isPaused(pathWord: String): Boolean = pathWord in pausedComics
 
     fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>) {
-        val task = currentTasks[comicPathWord] ?: return
-        val remainingChapters = task.chapters.filter { it.chapter.uuid !in chapterUuids }
-        if (remainingChapters.isEmpty()) {
-            cancelComic(comicPathWord)
-        } else {
-            val updatedTask = task.copy(chapters = remainingChapters)
-            currentTasks[comicPathWord] = updatedTask
-            taskInfoMap[comicPathWord] = updatedTask
-            updateProgressForTask(updatedTask)
-            Log.d(
-                TAG,
-                "removeChaptersFromTask: $comicPathWord, removed ${chapterUuids.size}, remaining ${remainingChapters.size}"
-            )
+        scope.launch {
+            stateMutex.withLock {
+                val task = currentTasks[comicPathWord] ?: return@withLock
+                val remainingChapters = task.chapters.filter { it.chapter.uuid !in chapterUuids }
+                if (remainingChapters.isEmpty()) {
+                    pausedComics = pausedComics - comicPathWord
+                    currentTasks = currentTasks - comicPathWord
+                    taskInfoMap = taskInfoMap - comicPathWord
+                    val updated = _downloadProgress.value.toMutableMap()
+                    updated.remove(comicPathWord)
+                    _downloadProgress.value = updated
+                    if (_activeTask.value?.pathWord == comicPathWord) {
+                        _activeTask.value = null
+                    }
+                    Log.d(
+                        TAG,
+                        "removeChaptersFromTask: $comicPathWord cleared (no remaining chapters)"
+                    )
+                } else {
+                    val updatedTask = task.copy(chapters = remainingChapters)
+                    currentTasks = currentTasks + (comicPathWord to updatedTask)
+                    taskInfoMap = taskInfoMap + (comicPathWord to updatedTask)
+                    updateProgressForTask(updatedTask)
+                    Log.d(
+                        TAG,
+                        "removeChaptersFromTask: $comicPathWord, removed ${chapterUuids.size}, remaining ${remainingChapters.size}"
+                    )
+                }
+            }
         }
     }
 
@@ -188,10 +228,14 @@ class DownloadManager @Inject constructor(
 
     fun cancelAll() {
         scope.launch {
-            currentTasks.clear()
-            _downloadProgress.value = emptyMap()
-            _activeTask.value = null
-            while (queue.tryReceive().isSuccess) {
+            stateMutex.withLock {
+                currentTasks = emptyMap()
+                taskInfoMap = emptyMap()
+                pausedComics = emptySet()
+                _downloadProgress.value = emptyMap()
+                _activeTask.value = null
+                while (queue.tryReceive().isSuccess) {
+                }
             }
         }
     }
@@ -214,7 +258,9 @@ class DownloadManager @Inject constructor(
                 if (remaining == null || remaining.chapters.all {
                         it.status == ChapterDownloadStatus.DOWNLOADED
                     }) {
-                    currentTasks.remove(task.pathWord)
+                    stateMutex.withLock {
+                        currentTasks = currentTasks - task.pathWord
+                    }
                 }
             }
             _activeTask.value = null
@@ -254,8 +300,11 @@ class DownloadManager @Inject constructor(
                 status = ChapterDownloadStatus.DOWNLOADING,
                 progress = 0f
             )
-            currentTasks[comicPathWord] = currentTask.copy(chapters = updatedChapters)
-            updateProgressForTask(currentTasks[comicPathWord]!!)
+            val newTask = currentTask.copy(chapters = updatedChapters)
+            stateMutex.withLock {
+                currentTasks = currentTasks + (comicPathWord to newTask)
+            }
+            updateProgressForTask(newTask)
 
             try {
                 val chapterIndex = idx + 1
@@ -384,7 +433,7 @@ class DownloadManager @Inject constructor(
                 )
             }
 
-            updateProgressForTask(currentTasks[comicPathWord]!!)
+            updateProgressForTask(currentTasks[comicPathWord])
         }
 
         val finalTask = currentTasks[comicPathWord]
@@ -577,12 +626,14 @@ class DownloadManager @Inject constructor(
                 lower.contains("too many requests")
     }
 
-    private fun handleRiskControl(
+    private suspend fun handleRiskControl(
         comicPathWord: String,
         chapterItem: ChapterDownloadItem,
         message: String
     ) {
-        pausedComics.add(comicPathWord)
+        stateMutex.withLock {
+            pausedComics = pausedComics + comicPathWord
+        }
         markChapterError(comicPathWord, chapterItem, message)
         updateProgress(
             comicPathWord = comicPathWord,
@@ -594,53 +645,59 @@ class DownloadManager @Inject constructor(
         Log.w(TAG, "下载触发风控，已暂停：$comicPathWord, $message")
     }
 
-    private fun markChapterError(
+    private suspend fun markChapterError(
         comicPathWord: String,
         chapterItem: ChapterDownloadItem,
         message: String
     ) {
-        val task = currentTasks[comicPathWord] ?: return
-        val chapters = task.chapters.toMutableList()
-        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
-        if (idx >= 0) {
-            chapters[idx] = chapterItem.copy(
-                status = ChapterDownloadStatus.ERROR,
-                errorMessage = message
-            )
+        stateMutex.withLock {
+            val task = currentTasks[comicPathWord] ?: return@withLock
+            val chapters = task.chapters.toMutableList()
+            val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+            if (idx >= 0) {
+                chapters[idx] = chapterItem.copy(
+                    status = ChapterDownloadStatus.ERROR,
+                    errorMessage = message
+                )
+                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+            }
         }
-        currentTasks[comicPathWord] = task.copy(chapters = chapters)
     }
 
-    private fun markChapterCompleted(
+    private suspend fun markChapterCompleted(
         comicPathWord: String,
         chapterItem: ChapterDownloadItem
     ) {
-        val task = currentTasks[comicPathWord] ?: return
-        val chapters = task.chapters.toMutableList()
-        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
-        if (idx >= 0) {
-            chapters[idx] = chapterItem.copy(
-                status = ChapterDownloadStatus.DOWNLOADED,
-                progress = 1f
-            )
+        stateMutex.withLock {
+            val task = currentTasks[comicPathWord] ?: return@withLock
+            val chapters = task.chapters.toMutableList()
+            val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+            if (idx >= 0) {
+                chapters[idx] = chapterItem.copy(
+                    status = ChapterDownloadStatus.DOWNLOADED,
+                    progress = 1f
+                )
+                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+            }
         }
-        currentTasks[comicPathWord] = task.copy(chapters = chapters)
     }
 
-    private fun markChapterWaiting(
+    private suspend fun markChapterWaiting(
         comicPathWord: String,
         chapterItem: ChapterDownloadItem
     ) {
-        val task = currentTasks[comicPathWord] ?: return
-        val chapters = task.chapters.toMutableList()
-        val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
-        if (idx >= 0) {
-            chapters[idx] = chapterItem.copy(
-                status = ChapterDownloadStatus.WAITING,
-                progress = 0f
-            )
+        stateMutex.withLock {
+            val task = currentTasks[comicPathWord] ?: return@withLock
+            val chapters = task.chapters.toMutableList()
+            val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
+            if (idx >= 0) {
+                chapters[idx] = chapterItem.copy(
+                    status = ChapterDownloadStatus.WAITING,
+                    progress = 0f
+                )
+                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+            }
         }
-        currentTasks[comicPathWord] = task.copy(chapters = chapters)
     }
 
     private fun updateProgress(
@@ -714,7 +771,8 @@ class DownloadManager @Inject constructor(
         }
     }
 
-    private fun updateProgressForTask(task: ComicDownloadTask) {
+    private fun updateProgressForTask(task: ComicDownloadTask?) {
+        if (task == null) return
         val currentChapter = task.chapters.firstOrNull {
             it.status == ChapterDownloadStatus.DOWNLOADING
         }

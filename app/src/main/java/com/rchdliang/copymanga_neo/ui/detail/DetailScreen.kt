@@ -179,6 +179,7 @@ fun DetailScreen(
             }
 
             uiState.riskControlReason != null && uiState.comicDetail == null -> {
+                val reason = uiState.riskControlReason.orEmpty()
                 Column(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -197,7 +198,7 @@ fun DetailScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = uiState.riskControlReason!!,
+                        text = reason,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -769,7 +770,6 @@ private fun DetailContent(
         }
 
         if (isInBatchMode) {
-            val sel = batchSelection
             val downloadedUuids = chapterDownloadStatuses
                 .filter { it.value == ChapterDownloadStatus.DOWNLOADED }
                 .keys
@@ -779,7 +779,7 @@ private fun DetailContent(
                             it.value == ChapterDownloadStatus.DOWNLOADING
                 }
                 .keys
-            val currentSelection = sel.selectedChapterUuids
+            val currentSelection = batchSelection.selectedChapterUuids
             val downloadCount = currentSelection.count { uuid ->
                 val status = chapterDownloadStatuses[uuid]
                 status != ChapterDownloadStatus.DOWNLOADED &&
@@ -871,7 +871,7 @@ private fun SelectionTopRow(
                     DropdownMenuGroup(
                         shapes = MenuDefaults.groupShape(0, 2)
                     ) {
-                        MenuDefaults.Label {
+                        MenuDefaults.DropdownMenuGroupLabel {
                             Text(
                                 "选中",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -903,7 +903,7 @@ private fun SelectionTopRow(
                     DropdownMenuGroup(
                         shapes = MenuDefaults.groupShape(1, 2)
                     ) {
-                        MenuDefaults.Label {
+                        MenuDefaults.DropdownMenuGroupLabel {
                             Text(
                                 "取消选中",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

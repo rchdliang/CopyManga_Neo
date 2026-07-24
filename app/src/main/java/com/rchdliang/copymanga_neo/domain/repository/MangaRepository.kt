@@ -91,4 +91,10 @@ interface MangaRepository {
      * @param collectId 收藏的 Int 类型 ID
      */
     suspend fun removeFavorite(collectId: Int): Result<Unit>
+
+    /**
+     * 从书架批量移除漫画
+     * @param collectIds 要移除的收藏 Int 类型 ID 列表
+     */
+    suspend fun removeFavorites(collectIds: List<Int>): Result<Unit>
 }

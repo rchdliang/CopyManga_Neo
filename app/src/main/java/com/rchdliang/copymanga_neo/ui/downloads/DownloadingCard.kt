@@ -18,7 +18,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -41,7 +40,6 @@ import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DownloadingCard(
     name: String,

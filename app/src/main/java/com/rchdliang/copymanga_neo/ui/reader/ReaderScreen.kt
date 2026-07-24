@@ -607,7 +607,7 @@ private fun ReaderSuccessContentPreview() {
             onReadingDirectionChange = {},
             onPageScaleChange = {},
             onScreenOrientationChange = {},
-            pendingInitialPage = remember { mutableStateOf<Int?>(null) }
+            pendingInitialPage = remember { mutableStateOf(null) }
         )
     }
 }

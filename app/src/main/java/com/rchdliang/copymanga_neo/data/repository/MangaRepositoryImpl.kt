@@ -153,8 +153,9 @@ class MangaRepositoryImpl @Inject constructor(
     ): Result<TrialContent> {
         return try {
             val response = apiService.getTrialContent(comicPathWord, chapterUuid)
-            if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()!!.results.toContent())
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.code == 200) {
+                Result.success(body.results.toContent())
             } else {
                 android.util.Log.w(
                     "MangaRepository",
@@ -369,6 +370,25 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 Result.failure(
                     Exception(response.body()?.message ?: "移除收藏失败")
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun removeFavorites(collectIds: List<Int>): Result<Unit> {
+        return try {
+            // 拷貝漫畫 API 期望 ids[0]=xxx&ids[1]=xxx 的索引数组形式
+            val fieldMap = collectIds.mapIndexed { index, id -> "ids[$index]" to id }.toMap()
+            val response = apiService.removeFavorites(fieldMap)
+            if (response.isSuccessful && response.body()?.code == 200) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception(response.body()?.message ?: "批量移除收藏失败")
                 )
             }
         } catch (e: CancellationException) {
