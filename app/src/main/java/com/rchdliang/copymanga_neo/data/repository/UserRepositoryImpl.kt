@@ -138,6 +138,8 @@ class UserRepositoryImpl @Inject constructor(
 
     override fun isLoggedIn(): Flow<Boolean> = authDataStore.isLoggedIn()
 
+    override fun isAuthCacheReady(): Flow<Boolean> = authDataStore.cacheReadyFlow
+
     override fun isLoggedInSync(): Boolean = authDataStore.isLoggedInSync()
 
     override fun getUsername(): Flow<String?> = authDataStore.getUsername()

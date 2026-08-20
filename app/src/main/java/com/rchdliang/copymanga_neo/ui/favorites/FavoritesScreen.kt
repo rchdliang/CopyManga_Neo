@@ -70,7 +70,6 @@ fun FavoritesScreen(
     onNavigateToProfile: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
 
     LaunchedEffect(uiState.toastMessage) {
@@ -80,17 +79,48 @@ fun FavoritesScreen(
         }
     }
 
-    BackHandler(enabled = uiState.isSelectionMode) {
-        viewModel.exitSelectionMode()
-    }
+    FavoritesContent(
+        uiState = uiState,
+        onComicClick = onComicClick,
+        onNavigateToProfile = onNavigateToProfile,
+        onRefresh = viewModel::loadFavorites,
+        onExitSelectionMode = viewModel::exitSelectionMode,
+        onSelectAll = viewModel::selectAll,
+        onInvertSelection = viewModel::invertSelection,
+        onToggleSelection = viewModel::toggleSelection,
+        onEnterSelectionMode = viewModel::enterSelectionMode,
+        onRemoveSelected = viewModel::removeSelected
+    )
+}
+
+/**
+ * 收藏页纯 UI 内容，Preview 可覆盖登录、空态、列表和多选状态。
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun FavoritesContent(
+    uiState: FavoritesUiState,
+    onComicClick: (String) -> Unit,
+    onNavigateToProfile: () -> Unit,
+    onRefresh: () -> Unit,
+    onExitSelectionMode: () -> Unit,
+    onSelectAll: () -> Unit,
+    onInvertSelection: () -> Unit,
+    onToggleSelection: (Int) -> Unit,
+    onEnterSelectionMode: (Int) -> Unit,
+    onRemoveSelected: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val pullToRefreshState = rememberPullToRefreshState()
+    BackHandler(enabled = uiState.isSelectionMode, onBack = onExitSelectionMode)
 
     // 选择模式下底部留出 BottomAppBar 的空间
     val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
 
     PullToRefreshBox(
         isRefreshing = uiState.isLoading,
-        onRefresh = { viewModel.loadFavorites() },
-        modifier = Modifier.fillMaxSize(),
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize(),
         state = pullToRefreshState,
         contentAlignment = Alignment.TopCenter,
         indicator = {
@@ -109,7 +139,7 @@ fun FavoritesScreen(
             uiState.error != null && uiState.favorites.isEmpty() -> {
                 ErrorContent(
                     error = uiState.error.orEmpty(),
-                    onRetry = { viewModel.loadFavorites() }
+                    onRetry = onRefresh
                 )
             }
 
@@ -140,9 +170,9 @@ fun FavoritesScreen(
                             item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
                                 SelectionTopBar(
                                     selectedCount = uiState.selectedIds.size,
-                                    onClose = { viewModel.exitSelectionMode() },
-                                    onSelectAll = { viewModel.selectAll() },
-                                    onInvert = { viewModel.invertSelection() }
+                                    onClose = onExitSelectionMode,
+                                    onSelectAll = onSelectAll,
+                                    onInvert = onInvertSelection
                                 )
                             }
                         }
@@ -163,12 +193,12 @@ fun FavoritesScreen(
                                 isSelected = isSelected,
                                 onClick = {
                                     if (uiState.isSelectionMode) {
-                                        viewModel.toggleSelection(favorite.uuid)
+                                        onToggleSelection(favorite.uuid)
                                     } else {
                                         onComicClick(comic.pathWord)
                                     }
                                 },
-                                onLongClick = { viewModel.enterSelectionMode(favorite.uuid) }
+                                onLongClick = { onEnterSelectionMode(favorite.uuid) }
                             )
                         }
                     }
@@ -189,7 +219,7 @@ fun FavoritesScreen(
                     if (uiState.isSelectionMode) {
                         SelectionBottomBar(
                             selectedCount = uiState.selectedIds.size,
-                            onDelete = { viewModel.removeSelected() },
+                            onDelete = onRemoveSelected,
                             modifier = Modifier.align(Alignment.BottomCenter)
                         )
                     }
@@ -400,7 +430,7 @@ private fun FavoriteCardPreview() {
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Preview(showBackground = true, showSystemUi = true, name = "收藏 - 多卡片网格")
+@Preview(showBackground = true, showSystemUi = true, name = "书架 - 完整列表")
 @Composable
 private fun FavoriteGridPreview() {
     CopyManga_NeoTheme {
@@ -450,26 +480,40 @@ private fun FavoriteGridPreview() {
             }
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(120.dp),
-            contentPadding = PaddingValues(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(mockFavorites, key = { it.comic.pathWord }) { favorite ->
-                val (statusText, statusColor) = rememberReadingStatus(favorite.comic)
-                ComicCard(
-                    name = favorite.comic.name,
-                    cover = favorite.comic.cover,
-                    subtitle = favorite.comic.author?.firstOrNull()?.name,
-                    statusText = statusText,
-                    statusColor = statusColor,
-                    isSelected = false,
-                    onClick = {}
-                )
-            }
-        }
+        FavoritesContent(
+            uiState = FavoritesUiState(
+                favorites = mockFavorites,
+                isLoggedIn = true
+            ),
+            onComicClick = {},
+            onNavigateToProfile = {},
+            onRefresh = {},
+            onExitSelectionMode = {},
+            onSelectAll = {},
+            onInvertSelection = {},
+            onToggleSelection = {},
+            onEnterSelectionMode = {},
+            onRemoveSelected = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "书架 - 未登录")
+@Composable
+private fun FavoritesNotLoggedInPreview() {
+    CopyManga_NeoTheme {
+        FavoritesContent(
+            uiState = FavoritesUiState(isLoggedIn = false),
+            onComicClick = {},
+            onNavigateToProfile = {},
+            onRefresh = {},
+            onExitSelectionMode = {},
+            onSelectAll = {},
+            onInvertSelection = {},
+            onToggleSelection = {},
+            onEnterSelectionMode = {},
+            onRemoveSelected = {}
+        )
     }
 }
 

@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,10 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 private enum class ChapterManageVisualState {
     Normal,
@@ -65,13 +69,13 @@ private fun resolveChapterManageVisualState(
 @Composable
 fun ChapterItem(
     chapter: ChapterInfo,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier,
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     downloadStatus: ChapterDownloadStatus? = null,
-    downloadProgress: Float? = null,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit,
-    modifier: Modifier = Modifier
+    downloadProgress: Float? = null
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = downloadProgress ?: 0f,
@@ -212,6 +216,87 @@ fun ChapterItem(
 
                 else -> {}
             }
+        }
+    }
+}
+
+private val previewChapter = ChapterInfo(
+    index = 128,
+    uuid = "preview-chapter",
+    count = 32,
+    ordered = 128,
+    size = 2048,
+    name = "第 128 话",
+    comicId = "preview-comic-id",
+    comicPathWord = "preview-comic",
+    groupId = "preview-group",
+    groupPathWord = "default",
+    type = 0,
+    news = null,
+    datetimeCreated = "2026-08-20",
+    prevChapter = "chapter-127",
+    nextChapter = "chapter-129"
+)
+
+@Preview(showBackground = true, name = "组件 - 章节下载状态", widthDp = 220)
+@Composable
+private fun ChapterDownloadStatesPreview() {
+    CopyManga_NeoTheme {
+        Column(Modifier.padding(8.dp)) {
+            ChapterItem(
+                chapter = previewChapter,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+            ChapterItem(
+                chapter = previewChapter.copy(name = "第 127 话"),
+                downloadStatus = ChapterDownloadStatus.DOWNLOADING,
+                downloadProgress = 0.62f,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+            ChapterItem(
+                chapter = previewChapter.copy(name = "第 126 话"),
+                downloadStatus = ChapterDownloadStatus.DOWNLOADED,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+            ChapterItem(
+                chapter = previewChapter.copy(name = "第 125 话"),
+                downloadStatus = ChapterDownloadStatus.ERROR,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "组件 - 章节管理状态", widthDp = 220)
+@Composable
+private fun ChapterManageStatesPreview() {
+    CopyManga_NeoTheme {
+        Column(Modifier.padding(8.dp)) {
+            ChapterItem(
+                chapter = previewChapter,
+                isSelectionMode = true,
+                isSelected = true,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+            ChapterItem(
+                chapter = previewChapter.copy(name = "第 127 话"),
+                isSelectionMode = true,
+                isSelected = false,
+                downloadStatus = ChapterDownloadStatus.DOWNLOADED,
+                onClick = {},
+                onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

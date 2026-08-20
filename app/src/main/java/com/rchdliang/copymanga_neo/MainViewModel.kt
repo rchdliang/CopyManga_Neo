@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -50,14 +51,9 @@ class MainViewModel @Inject constructor(
                 _avatar.value = value
             }
         }
-        checkAuthStatus()
-        tryAutoLogin()
-    }
-
-    /** 启动时检查已登录状态并刷新信息 */
-    private fun checkAuthStatus() {
-        if (userRepository.isLoggedInSync()) {
-            viewModelScope.launch { refreshMemberInfo() }
+        viewModelScope.launch {
+            userRepository.isAuthCacheReady().first { it }
+            tryAutoLogin()
         }
     }
 

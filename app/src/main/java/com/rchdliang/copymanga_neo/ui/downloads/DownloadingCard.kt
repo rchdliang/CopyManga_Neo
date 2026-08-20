@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import java.util.Locale
 
@@ -105,7 +106,7 @@ fun DownloadingCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = cover,
+                model = previewImageModel(cover),
                 contentDescription = name,
                 modifier = Modifier
                     .width(96.dp)

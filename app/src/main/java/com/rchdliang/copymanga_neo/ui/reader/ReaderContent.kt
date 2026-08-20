@@ -27,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import com.rchdliang.copymanga_neo.R
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -86,6 +89,9 @@ fun ReaderContent(
             val continuousZoomState = remember { ReaderZoomState() }
             var continuousContainerSize by remember { mutableStateOf(IntSize.Zero) }
             val continuousContainerSizeProvider = remember { { continuousContainerSize } }
+            val activePageIndex by remember(listState) {
+                derivedStateOf { listState.firstVisibleItemIndex }
+            }
 
             // 放大时由 NestedScrollConnection 处理单指拖动：
             // 图片能移动时消费滚动量（阻止 LazyColumn 滚动），到边界后不消费（让 LazyColumn 自动滚动）
@@ -167,7 +173,7 @@ fun ReaderContent(
                         path = path,
                         contentScale = contentScale,
                         isContinuous = true,
-                        isActivePage = index == listState.firstVisibleItemIndex,
+                        isActivePage = index == activePageIndex,
                         enableZoom = false,
                         isRtl = false,
                         onTurnPage = null
@@ -240,10 +246,11 @@ private fun ReaderImageItem(
 ) {
     val context = LocalContext.current
     var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
-    val request = remember(path, retryKey) {
-        val data: Any = if (path.startsWith("http")) path else File(path)
+    val data: Any = if (path.startsWith("http")) path else File(path)
+    val imageData = previewImageModel(data, R.drawable.preview_reader_page)
+    val request = remember(imageData, retryKey) {
         ImageRequest.Builder(context)
-            .data(data)
+            .data(imageData)
             .setParameter("retry_hash", retryKey)
             .build()
     }
@@ -318,8 +325,10 @@ private fun ReaderImageItem(
                         with(density) { 60.dp.toPx() }
                     }
                     val currentOnTurnPage = rememberUpdatedState(onTurnPage)
-                    val stableOnTurnPage = remember {
-                        { isForward: Boolean -> currentOnTurnPage.value?.invoke(isForward) }
+                    val stableOnTurnPage: (Boolean) -> Unit = remember {
+                        { isForward ->
+                            currentOnTurnPage.value?.invoke(isForward) ?: Unit
+                        }
                     }
 
                     Box(
@@ -333,7 +342,7 @@ private fun ReaderImageItem(
                                     isRtl = isRtl,
                                     minScale = 1f,
                                     maxScale = 5f,
-                                    onTurnPage = stableOnTurnPage as ((isForward: Boolean) -> Unit)?,
+                                    onTurnPage = stableOnTurnPage,
                                     turnPageThresholdPx = turnPageThresholdPx
                                 )
                             ),

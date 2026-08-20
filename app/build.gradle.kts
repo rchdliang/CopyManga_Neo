@@ -79,6 +79,10 @@ hilt {
 }
 
 dependencies {
+    val composeBom = platform(libs.androidx.compose.bom)
+
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
     implementation(libs.androidx.compose.runtime)
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
@@ -86,7 +90,6 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     
     // Compose
-    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

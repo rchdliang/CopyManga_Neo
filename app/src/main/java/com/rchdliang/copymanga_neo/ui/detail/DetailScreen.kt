@@ -95,6 +95,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
@@ -414,7 +415,7 @@ private fun DetailContent(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 SubcomposeAsyncImage(
-                    model = comicDetail.cover,
+                    model = previewImageModel(comicDetail.cover),
                     contentDescription = comicDetail.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

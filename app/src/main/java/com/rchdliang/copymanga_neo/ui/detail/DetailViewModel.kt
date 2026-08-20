@@ -705,7 +705,6 @@ class DetailViewModel @Inject constructor(
                 downloadRepository.removeChaptersFromTask(pathWord, toCancelDownloadUuids)
             }
             if (toDeleteLocalUuids.isNotEmpty()) {
-                downloadRepository.removeChaptersFromTask(pathWord, toDeleteLocalUuids)
                 downloadRepository.deleteChapters(pathWord, toDeleteLocalUuids.toList())
             }
             if (toDownloadUuids.isNotEmpty()) {
@@ -776,8 +775,14 @@ class DetailViewModel @Inject constructor(
                     .fold(
                         onSuccess = { result ->
                             total = result.total
+                            if (result.list.isEmpty()) {
+                                android.util.Log.w(
+                                    "DetailViewModel",
+                                    "章节分页提前结束: offset=$offset, total=$total"
+                                )
+                            }
                             allChapters.addAll(result.list)
-                            offset += result.list.size
+                            offset = advanceChapterOffset(offset, total, result.list.size)
                             _uiState.update { it.copy(chapterTotal = total) }
                         },
                         onFailure = { error ->
@@ -803,6 +808,13 @@ class DetailViewModel @Inject constructor(
             refreshDownloadStatus(pathWord)
         }
     }
+}
+
+/**
+ * 推进章节分页游标。服务端返回空页时直接移动到 total，确保调用方终止分页循环。
+ */
+internal fun advanceChapterOffset(currentOffset: Int, total: Int, receivedCount: Int): Int {
+    return if (receivedCount <= 0) total else currentOffset + receivedCount
 }
 
 data class StartChapterInfo(

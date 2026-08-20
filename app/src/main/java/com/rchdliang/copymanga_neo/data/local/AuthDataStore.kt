@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -76,6 +78,9 @@ class AuthDataStore @Inject constructor(
     @Volatile
     private var cacheReady: Boolean = false
 
+    private val _cacheReadyFlow = MutableStateFlow(false)
+    val cacheReadyFlow: Flow<Boolean> = _cacheReadyFlow.asStateFlow()
+
     init {
         // 异步预热缓存：避免 runBlocking 阻塞构造线程（AuthDataStore 持有 @Singleton，构造可能位于关键路径）。
         // 预热期间同步取值返回默认 false/null，可接受；预热完后 UI 通过 isLoggedIn() 等 Flow 自动得到最新值。
@@ -89,6 +94,7 @@ class AuthDataStore @Inject constructor(
             cachedSavedUsername = prefs[KEY_SAVED_USERNAME]
             cachedSavedPassword = prefs[KEY_SAVED_PASSWORD]
             cacheReady = true
+            _cacheReadyFlow.value = true
             android.util.Log.d(
                 "AuthDataStore",
                 "Cache preloaded: token=${if (cachedToken != null) "***" else "null"}, autoLogin=$cachedAutoLogin"

@@ -28,9 +28,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
  * 通用漫画卡片组件，支持标题、副标题、可选状态文本、长按多选
@@ -49,13 +52,13 @@ import coil.request.ImageRequest
 fun ComicCard(
     name: String,
     cover: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     subtitle: String? = null,
     statusText: String? = null,
     statusColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     isSelected: Boolean = false,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onLongClick: (() -> Unit)? = null
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -80,7 +83,7 @@ fun ComicCard(
                 model = ImageRequest
                     .Builder(LocalContext.current)
                     .crossfade(true)
-                    .data(cover)
+                    .data(previewImageModel(cover))
                     .build(),
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
@@ -147,5 +150,35 @@ fun ComicCard(
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true, name = "组件 - 漫画卡片", widthDp = 180)
+@Composable
+private fun ComicCardPreview() {
+    CopyManga_NeoTheme {
+        ComicCard(
+            name = "星海漫游指南",
+            cover = null,
+            subtitle = "示例作者",
+            statusText = "有新内容：第 42 话",
+            onClick = {},
+            modifier = Modifier.padding(8.dp)
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "组件 - 漫画卡片已选中", widthDp = 180)
+@Composable
+private fun SelectedComicCardPreview() {
+    CopyManga_NeoTheme {
+        ComicCard(
+            name = "雨夜侦探社",
+            cover = null,
+            subtitle = "已下载 18/24 章",
+            isSelected = true,
+            onClick = {},
+            modifier = Modifier.padding(8.dp)
+        )
     }
 }

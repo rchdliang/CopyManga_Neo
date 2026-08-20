@@ -72,6 +72,7 @@ import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -329,10 +330,8 @@ private fun SearchResultsList(
     comics: List<ComicSummary>,
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
-    onLoadMore: () -> Unit = {},
-    modifier: Modifier = Modifier
-        .fillMaxSize()
-        .background(MaterialTheme.colorScheme.surfaceBright)
+    modifier: Modifier = Modifier,
+    onLoadMore: () -> Unit = {}
 ) {
     val gridState = rememberLazyGridState()
 
@@ -357,7 +356,9 @@ private fun SearchResultsList(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         state = gridState,
-        modifier = Modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceBright)
     ) {
         items(comics, key = { it.pathWord }) { comic ->
             SearchComicCard(
@@ -396,7 +397,7 @@ private fun SearchComicCard(
 //            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             AsyncImage(
-                model = comic.cover,
+                model = previewImageModel(comic.cover),
                 contentDescription = comic.name,
                 modifier = Modifier.height(80.dp),
                 contentScale = ContentScale.Fit,

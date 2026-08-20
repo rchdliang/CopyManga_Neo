@@ -31,6 +31,7 @@ interface UserRepository {
      * 是否已登录
      */
     fun isLoggedIn(): Flow<Boolean>
+    fun isAuthCacheReady(): Flow<Boolean>
 
     /**
      * 是否已登录（同步，取缓存值，适用于初始化状态）

@@ -63,8 +63,13 @@ class DownloadsViewModel @Inject constructor(
     fun setImageConcurrency(count: Int) = downloadRepository.setImageConcurrency(count)
     fun pauseComic(pathWord: String) = downloadRepository.pauseComic(pathWord)
     fun resumeComic(pathWord: String) = downloadRepository.resumeComic(pathWord)
-    fun cancelComic(pathWord: String) = downloadRepository.cancelComic(pathWord)
-    fun cancelAll() = downloadRepository.cancelAll()
+    fun cancelComic(pathWord: String) {
+        viewModelScope.launch(exceptionHandler) { downloadRepository.cancelComic(pathWord) }
+    }
+
+    fun cancelAll() {
+        viewModelScope.launch(exceptionHandler) { downloadRepository.cancelAll() }
+    }
 
     fun enterSelectionMode(pathWord: String) {
         _uiState.update { it.copy(isSelectionMode = true, selectedPathWords = setOf(pathWord)) }
@@ -105,7 +110,6 @@ class DownloadsViewModel @Inject constructor(
         exitSelectionMode()
         viewModelScope.launch(exceptionHandler) {
             pathWords.forEach { pathWord ->
-                downloadRepository.cancelComic(pathWord)
                 downloadRepository.deleteComicAndChapters(pathWord)
             }
         }

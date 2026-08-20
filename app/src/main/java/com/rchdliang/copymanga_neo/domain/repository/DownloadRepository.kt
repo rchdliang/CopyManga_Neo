@@ -19,15 +19,15 @@ interface DownloadRepository {
     suspend fun deleteChapter(uuid: String)
     suspend fun deleteChapters(comicPathWord: String, uuids: List<String>)
     suspend fun deleteComicAndChapters(pathWord: String)
-    fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>)
+    suspend fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>)
     fun getDownloadProgress(): kotlinx.coroutines.flow.StateFlow<Map<String, DownloadProgressInfo>>
     fun getActiveTask(): kotlinx.coroutines.flow.StateFlow<ComicDownloadTask?>
     fun enqueueDownload(task: ComicDownloadTask)
     fun pauseComic(pathWord: String)
     fun resumeComic(pathWord: String)
     fun isPaused(pathWord: String): Boolean
-    fun cancelComic(pathWord: String)
-    fun cancelAll()
+    suspend fun cancelComic(pathWord: String)
+    suspend fun cancelAll()
     fun setImageConcurrency(count: Int)
     fun getChapterStatus(comicPathWord: String, chapterUuid: String): ChapterDownloadStatus?
 }

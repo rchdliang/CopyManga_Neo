@@ -54,7 +54,6 @@ fun HomeScreen(
     onNavigateToSearch: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
 
     LaunchedEffect(uiState.toastMessage) {
@@ -64,7 +63,29 @@ fun HomeScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    HomeContent(
+        uiState = uiState,
+        onComicClick = onComicClick,
+        onNavigateToSearch = onNavigateToSearch,
+        onRefresh = viewModel::loadComics
+    )
+}
+
+/**
+ * 首页纯 UI 内容，便于 Preview 在不创建 Hilt ViewModel 的情况下展示完整页面。
+ */
+@ExperimentalMaterial3ExpressiveApi
+@Composable
+private fun HomeContent(
+    uiState: HomeUiState,
+    onComicClick: (String) -> Unit,
+    onNavigateToSearch: () -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val pullToRefreshState = rememberPullToRefreshState()
+
+    Column(modifier = modifier.fillMaxSize()) {
         SearchEntryBar(
             onClick = onNavigateToSearch,
             modifier = Modifier
@@ -74,7 +95,7 @@ fun HomeScreen(
 
         PullToRefreshBox(
             isRefreshing = uiState.isLoading,
-            onRefresh = { viewModel.loadComics() },
+            onRefresh = onRefresh,
             state = pullToRefreshState,
             indicator = {
                 PullToRefreshDefaults.LoadingIndicator(
@@ -109,7 +130,7 @@ fun HomeScreen(
                     )
                     Spacer(Modifier.height(16.dp))
                     FilledTonalButton(
-                        onClick = { viewModel.loadComics() },
+                        onClick = onRefresh,
                     ) { Text("重试") }
                 }
             }
@@ -260,9 +281,10 @@ private fun ComicGrid(
     }
 }
 
-@Preview(showBackground = true, name = "首页 - 多分区漫画行")
+@Preview(showBackground = true, showSystemUi = true, name = "首页 - 完整内容")
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HomeSectionsPreview() {
+private fun HomeScreenPreview() {
     CopyManga_NeoTheme {
         val mockComics = remember {
             (1..8).map { index ->
@@ -289,35 +311,30 @@ private fun HomeSectionsPreview() {
             }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp)
-        ) {
-            Text(
-                text = "漫画推荐",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-            )
-            ComicGrid(
-                comics = mockComics.take(5),
-                onComicClick = {},
-                modifier = Modifier.fillMaxWidth()
-            )
+        HomeContent(
+            uiState = HomeUiState(
+                recComicList = mockComics.take(5),
+                hotComics = mockComics.drop(2).take(5),
+                newComics = mockComics.reversed().take(5),
+                finishComics = mockComics.takeLast(5)
+            ),
+            onComicClick = {},
+            onNavigateToSearch = {},
+            onRefresh = {}
+        )
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "最新上架",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-            )
-            ComicGrid(
-                comics = mockComics.reversed(),
-                onComicClick = {},
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+@Preview(showBackground = true, showSystemUi = true, name = "首页 - 加载失败")
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HomeErrorPreview() {
+    CopyManga_NeoTheme {
+        HomeContent(
+            uiState = HomeUiState(error = "网络连接失败，请检查网络后重试"),
+            onComicClick = {},
+            onNavigateToSearch = {},
+            onRefresh = {}
+        )
     }
 }

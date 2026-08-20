@@ -33,11 +33,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
+import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 @Composable
 fun DownloadsScreen(
@@ -46,13 +50,46 @@ fun DownloadsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    DownloadsContent(
+        uiState = uiState,
+        onComicClick = onComicClick,
+        onExitSelectionMode = viewModel::exitSelectionMode,
+        onSelectAll = viewModel::selectAll,
+        onInvertSelection = viewModel::invertSelection,
+        onPause = viewModel::pauseComic,
+        onResume = viewModel::resumeComic,
+        onCancel = viewModel::cancelComic,
+        onToggleSelection = viewModel::toggleSelection,
+        onEnterSelectionMode = viewModel::enterSelectionMode,
+        onDeleteSelected = viewModel::deleteSelected
+    )
+}
+
+/**
+ * 下载页纯 UI 内容，Preview 可直接传入下载状态而无需初始化数据库和 Hilt。
+ */
+@Composable
+private fun DownloadsContent(
+    uiState: DownloadsUiState,
+    onComicClick: (String) -> Unit,
+    onExitSelectionMode: () -> Unit,
+    onSelectAll: () -> Unit,
+    onInvertSelection: () -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onCancel: (String) -> Unit,
+    onToggleSelection: (String) -> Unit,
+    onEnterSelectionMode: (String) -> Unit,
+    onDeleteSelected: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val hasActive = uiState.activeDownloads.isNotEmpty()
     val hasDownloaded = uiState.downloadedComics.isNotEmpty()
     val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         BackHandler(enabled = uiState.isSelectionMode) {
-            viewModel.exitSelectionMode()
+            onExitSelectionMode()
         }
 
         LazyVerticalGrid(
@@ -78,7 +115,7 @@ fun DownloadsScreen(
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { viewModel.exitSelectionMode() }) {
+                        IconButton(onClick = onExitSelectionMode) {
                             Icon(
                                 Icons.Default.Close,
                                 "取消选择",
@@ -91,14 +128,14 @@ fun DownloadsScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { viewModel.selectAll() }) {
+                        IconButton(onClick = onSelectAll) {
                             Icon(
                                 Icons.Default.SelectAll,
                                 "全选",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        IconButton(onClick = { viewModel.invertSelection() }) {
+                        IconButton(onClick = onInvertSelection) {
                             Icon(
                                 Icons.Default.Deselect,
                                 "反选",
@@ -131,12 +168,12 @@ fun DownloadsScreen(
                             progressInfo = progressInfo,
                             isPaused = paused,
                             onPauseResume = {
-                                if (paused) viewModel.resumeComic(pathWord)
-                                else viewModel.pauseComic(pathWord)
+                                if (paused) onResume(pathWord)
+                                else onPause(pathWord)
                             },
-                            onCancel = { viewModel.cancelComic(pathWord) },
+                            onCancel = { onCancel(pathWord) },
                             onRetry = if (isError) {
-                                { viewModel.resumeComic(pathWord) }
+                                { onResume(pathWord) }
                             } else null,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -181,13 +218,13 @@ fun DownloadsScreen(
                         isSelected = comic.pathWord in uiState.selectedPathWords,
                         onClick = {
                             if (uiState.isSelectionMode) {
-                                viewModel.toggleSelection(comic.pathWord)
+                                onToggleSelection(comic.pathWord)
                             } else {
                                 onComicClick(comic.pathWord)
                             }
                         },
                         onLongClick = {
-                            viewModel.enterSelectionMode(comic.pathWord)
+                            onEnterSelectionMode(comic.pathWord)
                         }
                     )
                 }
@@ -210,7 +247,7 @@ fun DownloadsScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 actions = {
                     Button(
-                        onClick = { viewModel.deleteSelected() },
+                        onClick = onDeleteSelected,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
@@ -223,5 +260,96 @@ fun DownloadsScreen(
                 }
             )
         }
+    }
+}
+
+private fun previewDownloadsUiState(selectionMode: Boolean = false): DownloadsUiState {
+    val active = DownloadProgressInfo(
+        comicPathWord = "preview-active",
+        name = "异世界冒险手册",
+        cover = null,
+        completedChapters = 3,
+        totalChapters = 12,
+        overallProgress = 0.32f,
+        currentChapterIndex = 4,
+        currentChapterName = "第 4 话",
+        currentChapterProgress = 0.68f,
+        status = DownloadTaskStatus.DOWNLOADING,
+        statusText = "正在下载图片 21/32",
+        downloadedImages = 21,
+        totalImages = 32,
+        speedBytesPerSecond = 780 * 1024L
+    )
+    val downloaded = (1..6).map { index ->
+        DownloadedComicInfo(
+            pathWord = "preview-downloaded-${index}",
+            name = listOf(
+                "星海漫游指南",
+                "雨夜侦探社",
+                "魔法学院日常",
+                "机械纪元",
+                "山海食堂",
+                "月下旅人"
+            )[index - 1],
+            cover = null,
+            authorNames = "示例作者 ${index}",
+            statusDisplay = if (index % 2 == 0) "已完结" else "连载中",
+            lastUpdate = "2026-08-${10 + index}",
+            lastChapterName = "第 ${40 + index} 话",
+            brief = "用于 Android Studio Preview 的本地示例数据",
+            totalChapters = 48,
+            downloadedChapters = 8 * index,
+            downloadAt = index.toLong()
+        )
+    }
+    return DownloadsUiState(
+        downloadedComics = downloaded,
+        activeDownloads = mapOf(active.comicPathWord to active),
+        isSelectionMode = selectionMode,
+        selectedPathWords = if (selectionMode) {
+            downloaded.take(2).map { it.pathWord }.toSet()
+        } else {
+            emptySet()
+        }
+    )
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "下载 - 任务与本地漫画")
+@Composable
+private fun DownloadsScreenPreview() {
+    CopyManga_NeoTheme {
+        DownloadsContent(
+            uiState = previewDownloadsUiState(),
+            onComicClick = {},
+            onExitSelectionMode = {},
+            onSelectAll = {},
+            onInvertSelection = {},
+            onPause = {},
+            onResume = {},
+            onCancel = {},
+            onToggleSelection = {},
+            onEnterSelectionMode = {},
+            onDeleteSelected = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "下载 - 多选管理")
+@Composable
+private fun DownloadsSelectionPreview() {
+    CopyManga_NeoTheme {
+        DownloadsContent(
+            uiState = previewDownloadsUiState(selectionMode = true),
+            onComicClick = {},
+            onExitSelectionMode = {},
+            onSelectAll = {},
+            onInvertSelection = {},
+            onPause = {},
+            onResume = {},
+            onCancel = {},
+            onToggleSelection = {},
+            onEnterSelectionMode = {},
+            onDeleteSelected = {}
+        )
     }
 }

@@ -61,7 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -95,7 +97,12 @@ fun ProfileScreen(
     when (currentPage) {
         ProfilePage.MAIN -> ProfileMainPage(
             uiState = uiState,
-            viewModel = viewModel,
+            onRefresh = viewModel::refresh,
+            onLogout = viewModel::logout,
+            onLoginClick = viewModel::showLoginDialog,
+            savedPasswordProvider = viewModel::getSavedPasswordSync,
+            onLogin = viewModel::login,
+            onDismissLogin = viewModel::hideLoginDialog,
             onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
             onNavigateToSettings = { currentPage = ProfilePage.SETTINGS }
         )
@@ -114,7 +121,12 @@ fun ProfileScreen(
 @Composable
 private fun ProfileMainPage(
     uiState: ProfileUiState,
-    viewModel: ProfileViewModel,
+    onRefresh: () -> Unit,
+    onLogout: () -> Unit,
+    onLoginClick: () -> Unit,
+    savedPasswordProvider: () -> String?,
+    onLogin: (String, String, Boolean, Boolean) -> Unit,
+    onDismissLogin: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
@@ -123,7 +135,7 @@ private fun ProfileMainPage(
     if (uiState.isLoggedIn) {
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
-            onRefresh = { viewModel.refresh() },
+            onRefresh = onRefresh,
             state = pullToRefreshState,
             indicator = {
                 PullToRefreshDefaults.LoadingIndicator(
@@ -145,8 +157,8 @@ private fun ProfileMainPage(
                         dayDownloads = uiState.dayDownloads,
                         dayDownloadsRefresh = uiState.dayDownloadsRefresh,
                         ticket = uiState.ticket,
-                        onLogout = { viewModel.logout() },
-                        onLoginClick = { viewModel.showLoginDialog() }
+                        onLogout = onLogout,
+                        onLoginClick = onLoginClick
                     )
                 }
                 item {
@@ -184,7 +196,7 @@ private fun ProfileMainPage(
                     dayDownloadsRefresh = null,
                     ticket = null,
                     onLogout = {},
-                    onLoginClick = { viewModel.showLoginDialog() }
+                    onLoginClick = onLoginClick
                 )
             }
             item {
@@ -208,13 +220,13 @@ private fun ProfileMainPage(
             isLoading = uiState.isLoginLoading,
             error = uiState.loginError,
             savedUsername = uiState.savedUsername,
-            savedPasswordProvider = { viewModel.getSavedPasswordSync() },
+            savedPasswordProvider = savedPasswordProvider,
             rememberPassword = uiState.rememberPassword,
             autoLogin = uiState.autoLogin,
             onLogin = { username, password, remember, auto ->
-                viewModel.login(username, password, remember, auto)
+                onLogin(username, password, remember, auto)
             },
-            onDismiss = { viewModel.hideLoginDialog() }
+            onDismiss = onDismissLogin
         )
     }
 }
@@ -240,7 +252,7 @@ private fun AccountCard(
     ) {
         if (isLoggedIn) {
             AsyncImage(
-                model = avatar,
+                model = previewImageModel(avatar, R.drawable.preview_avatar),
                 contentDescription = "用户头像",
                 modifier = Modifier
                     .size(80.dp)
@@ -595,15 +607,24 @@ private object ButtonDefaults {
 @Composable
 private fun ProfileLoggedInPreview() {
     CopyManga_NeoTheme {
-        AccountCard(
-            avatar = null,
-            username = "user123",
-            nickname = "旅行者",
-            dayDownloads = 5,
-            dayDownloadsRefresh = "2025-03-16 00:00:00",
-            ticket = 100.5f,
+        ProfileMainPage(
+            uiState = ProfileUiState(
+                isLoggedIn = true,
+                avatar = "https://example.com/avatar.png",
+                username = "user123",
+                nickname = "旅行者",
+                dayDownloads = 5,
+                dayDownloadsRefresh = "2026-08-21 00:00",
+                ticket = 100.5f
+            ),
+            onRefresh = {},
             onLogout = {},
-            onLoginClick = {}
+            onLoginClick = {},
+            savedPasswordProvider = { null },
+            onLogin = { _, _, _, _ -> },
+            onDismissLogin = {},
+            onNavigateToHistory = {},
+            onNavigateToSettings = {}
         )
     }
 }
@@ -612,15 +633,40 @@ private fun ProfileLoggedInPreview() {
 @Composable
 private fun ProfileNotLoggedInPreview() {
     CopyManga_NeoTheme {
-        AccountCard(
-            avatar = null,
-            username = null,
-            nickname = null,
-            dayDownloads = null,
-            dayDownloadsRefresh = null,
-            ticket = null,
+        ProfileMainPage(
+            uiState = ProfileUiState(isLoggedIn = false),
+            onRefresh = {},
             onLogout = {},
-            onLoginClick = {}
+            onLoginClick = {},
+            savedPasswordProvider = { null },
+            onLogin = { _, _, _, _ -> },
+            onDismissLogin = {},
+            onNavigateToHistory = {},
+            onNavigateToSettings = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "我的 - 登录对话框")
+@Composable
+private fun LoginDialogPreview() {
+    CopyManga_NeoTheme {
+        ProfileMainPage(
+            uiState = ProfileUiState(
+                isLoggedIn = false,
+                showLoginDialog = true,
+                savedUsername = "preview_user",
+                rememberPassword = true,
+                loginError = "示例：账号或密码错误"
+            ),
+            onRefresh = {},
+            onLogout = {},
+            onLoginClick = {},
+            savedPasswordProvider = { "preview_password" },
+            onLogin = { _, _, _, _ -> },
+            onDismissLogin = {},
+            onNavigateToHistory = {},
+            onNavigateToSettings = {}
         )
     }
 }
