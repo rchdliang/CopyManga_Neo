@@ -6,8 +6,14 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -23,9 +29,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
@@ -57,9 +60,9 @@ import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,6 +83,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.ui.components.AppToastHost
+import com.rchdliang.copymanga_neo.ui.components.ComicSharedTransitionProvider
+import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionState
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
@@ -89,9 +94,7 @@ import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
 import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 @ExperimentalMaterial3ExpressiveApi
 @AndroidEntryPoint
@@ -148,6 +151,7 @@ fun CopyManga_NeoApp(
     mainViewModel: MainViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
+    val comicSharedTransitionState = rememberComicSharedTransitionState()
     val density = LocalDensity.current
     val containerSize = LocalWindowInfo.current.containerSize
     val windowWidthDp = with(density) { containerSize.width.toDp() }
@@ -159,36 +163,62 @@ fun CopyManga_NeoApp(
             .background(if (isExpanded) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)
     ) {
         AppToastHost {
-            NavHost(
-                navController = navController,
-                startDestination = Screen.Main.route,
-            ) {
+            SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+                val sharedTransitionScope = this
+                NavHost(
+                    navController = navController,
+                    startDestination = Screen.Main.route,
+                    enterTransition = {
+                        fadeIn(tween(durationMillis = 150, easing = EaseInOut))
+                    },
+                    exitTransition = {
+                        fadeOut(tween(durationMillis = 100, easing = EaseInOut))
+                    },
+                    popEnterTransition = {
+                        fadeIn(tween(durationMillis = 150, easing = EaseInOut))
+                    },
+                    popExitTransition = {
+                        fadeOut(tween(durationMillis = 100, easing = EaseInOut))
+                    },
+                ) {
             // 主界面（包含底部导航栏）
             composable(Screen.Main.route) {
-                Box(modifier = Modifier.statusBarsPadding()) {
-                    val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
-                    val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
-                    MainScreen(
-                        isLoggedIn = isLoggedIn,
-                        avatar = avatar,
-                        onNavigateToDetail = { pathWord ->
-                            navController.navigate(Screen.Detail.createRoute(pathWord))
-                        },
-                        onNavigateToSearch = {
-                            navController.navigate(Screen.Search.route)
-                        }
-                    )
+                ComicSharedTransitionProvider(
+                    sharedTransitionScope,
+                    this,
+                    comicSharedTransitionState
+                ) {
+                    Box(modifier = Modifier.statusBarsPadding()) {
+                        val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
+                        val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
+                        MainScreen(
+                            isLoggedIn = isLoggedIn,
+                            avatar = avatar,
+                            onNavigateToDetail = { pathWord ->
+                                navController.navigate(Screen.Detail.createRoute(pathWord))
+                            },
+                            onNavigateToSearch = {
+                                navController.navigate(Screen.Search.route)
+                            }
+                        )
+                    }
                 }
             }
 
             // 搜索页（全屏覆盖，无底部导航）
             composable(Screen.Search.route) {
-                SearchScreen(
-                    onComicClick = { pathWord ->
-                        navController.navigate(Screen.Detail.createRoute(pathWord))
-                    },
-                    onNavigateBack = { navController.popBackStack() }
-                )
+                ComicSharedTransitionProvider(
+                    sharedTransitionScope,
+                    this,
+                    comicSharedTransitionState
+                ) {
+                    SearchScreen(
+                        onComicClick = { pathWord ->
+                            navController.navigate(Screen.Detail.createRoute(pathWord))
+                        },
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
             }
 
             // 详情页（脱离底部导航栏）
@@ -197,26 +227,32 @@ fun CopyManga_NeoApp(
                 arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
             ) { backStackEntry ->
                 val pathWord = backStackEntry.arguments?.getString("pathWord") ?: return@composable
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface)
+                ComicSharedTransitionProvider(
+                    sharedTransitionScope,
+                    this,
+                    comicSharedTransitionState
                 ) {
-                    DetailScreen(
-                        pathWord = pathWord,
-                        onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
-                            navController.navigate(
-                                Screen.Reader.createRoute(
-                                    comicPathWord,
-                                    chapterPathWord,
-                                    chapterName,
-                                    groupPathWord
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        DetailScreen(
+                            pathWord = pathWord,
+                            onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
+                                navController.navigate(
+                                    Screen.Reader.createRoute(
+                                        comicPathWord,
+                                        chapterPathWord,
+                                        chapterName,
+                                        groupPathWord
+                                    )
                                 )
-                            )
-                        },
-                        onNavigateBack = { navController.popBackStack() },
-                        onNavigateToProfile = { navController.popBackStack() }
-                    )
+                            },
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToProfile = { navController.popBackStack() }
+                        )
+                    }
                 }
             }
 
@@ -245,7 +281,8 @@ fun CopyManga_NeoApp(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
-            } // NavHost
+                } // NavHost
+            } // SharedTransitionLayout
         } // AppToastHost
     }
 }
@@ -259,56 +296,17 @@ fun MainScreen(
     onNavigateToSearch: () -> Unit
 ) {
     android.util.Log.d("MainScreen", "Recompose: isLoggedIn=$isLoggedIn")
-    val pagerState = rememberPagerState(pageCount = { AppDestinations.entries.size })
-    val scope = rememberCoroutineScope()
-    var pageNavigationJob by remember { mutableStateOf<Job?>(null) }
-    val currentIsLoggedIn by rememberUpdatedState(isLoggedIn)
-
-    fun targetPageFor(destination: AppDestinations): Int {
-        return when (destination) {
-            AppDestinations.BOOKSHELF -> {
-                val target =
-                    if (currentIsLoggedIn) AppDestinations.BOOKSHELF.ordinal else AppDestinations.PROFILE.ordinal
-                android.util.Log.d(
-                    "MainScreen",
-                    "targetPageFor(BOOKSHELF): isLoggedIn=$currentIsLoggedIn -> page=$target (BOOKSHELF=${AppDestinations.BOOKSHELF.ordinal}, PROFILE=${AppDestinations.PROFILE.ordinal})"
-                )
-                target
-            }
-
-            else -> destination.ordinal
-        }
-    }
-
-    fun animateToPage(targetPage: Int) {
-        if (targetPage == pagerState.targetPage) return
-
-        pageNavigationJob?.cancel()
-        pageNavigationJob = scope.launch {
-            val distance = abs(targetPage - pagerState.currentPage).coerceAtLeast(2)
-            pagerState.animateScrollToPage(
-                page = targetPage,
-                animationSpec = tween(
-                    durationMillis = 100 * distance + 100,
-                    easing = EaseInOut
-                )
-            )
-        }
-    }
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
 
     fun animateToDestination(destination: AppDestinations) {
-        animateToPage(targetPageFor(destination))
-    }
-
-    val currentDestination = AppDestinations.entries.getOrElse(pagerState.targetPage) {
-        AppDestinations.HOME
+        // 书架自行呈现登录状态；顶层导航不能用冷启动期间的瞬时 false 将用户改道到“我的”。
+        currentDestination = destination
     }
 
     BackHandler(
-        enabled = pagerState.targetPage != AppDestinations.HOME.ordinal ||
-                pagerState.settledPage != AppDestinations.HOME.ordinal
+        enabled = currentDestination != AppDestinations.HOME
     ) {
-        animateToPage(AppDestinations.HOME.ordinal)
+        currentDestination = AppDestinations.HOME
     }
 
     val density = LocalDensity.current
@@ -320,12 +318,11 @@ fun MainScreen(
         WideScreenLayout(
             isLoggedIn = isLoggedIn,
             avatar = avatar,
-            pagerState = pagerState,
             currentDestination = currentDestination,
             onDestinationSelected = ::animateToDestination,
             onNavigateToDetail = onNavigateToDetail,
             onNavigateToSearch = onNavigateToSearch,
-            onNavigateToProfile = { animateToPage(AppDestinations.PROFILE.ordinal) }
+            onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
         )
     } else {
         NavigationSuiteScaffold(
@@ -360,12 +357,12 @@ fun MainScreen(
                     .clip(MaterialTheme.shapes.extraSmall)
                     .background(MaterialTheme.colorScheme.surface)
             ) {
-                MainPagerContent(
-                    pagerState = pagerState,
+                MainDestinationContent(
+                    currentDestination = currentDestination,
                     modifier = Modifier.fillMaxSize(),
                     onNavigateToDetail = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
-                    onNavigateToProfile = { animateToPage(AppDestinations.PROFILE.ordinal) }
+                    onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
                 )
             }
         }
@@ -377,7 +374,6 @@ fun MainScreen(
 private fun WideScreenLayout(
     isLoggedIn: Boolean,
     avatar: String?,
-    pagerState: PagerState,
     currentDestination: AppDestinations,
     onDestinationSelected: (AppDestinations) -> Unit,
     onNavigateToDetail: (String) -> Unit,
@@ -489,8 +485,8 @@ private fun WideScreenLayout(
                 .clip(MaterialTheme.shapes.large)
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            MainPagerContent(
-                pagerState = pagerState,
+            MainDestinationContent(
+                currentDestination = currentDestination,
                 modifier = Modifier.fillMaxSize(),
                 onNavigateToDetail = onNavigateToDetail,
                 onNavigateToSearch = onNavigateToSearch,
@@ -502,32 +498,57 @@ private fun WideScreenLayout(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun MainPagerContent(
-    pagerState: PagerState,
+private fun MainDestinationContent(
+    currentDestination: AppDestinations,
     modifier: Modifier = Modifier,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToProfile: () -> Unit
 ) {
-    HorizontalPager(
-        state = pagerState,
-        userScrollEnabled = false,
-        modifier = modifier
-    ) { page ->
-        when (AppDestinations.entries[page]) {
-            AppDestinations.HOME -> HomeScreen(
-                onComicClick = onNavigateToDetail,
-                onNavigateToSearch = onNavigateToSearch
+    val saveableStateHolder = rememberSaveableStateHolder()
+
+    // 顶层目的地必须直接过渡，避免 Pager 的跨页滚动短暂显示中间页面。
+    AnimatedContent(
+        targetState = currentDestination,
+        modifier = modifier,
+        transitionSpec = {
+            val direction = if (targetState.ordinal > initialState.ordinal) {
+                AnimatedContentTransitionScope.SlideDirection.Left
+            } else {
+                AnimatedContentTransitionScope.SlideDirection.Right
+            }
+            (slideIntoContainer(
+                towards = direction,
+                animationSpec = tween(durationMillis = 300, easing = EaseInOut)
+            ) + fadeIn(
+                animationSpec = tween(durationMillis = 300, easing = EaseInOut)
+            )).togetherWith(
+                slideOutOfContainer(
+                    towards = direction,
+                    animationSpec = tween(durationMillis = 300, easing = EaseInOut)
+                ) + fadeOut(
+                    animationSpec = tween(durationMillis = 300, easing = EaseInOut)
+                )
             )
+        },
+        label = "main destination transition"
+    ) { destination ->
+        saveableStateHolder.SaveableStateProvider(destination.name) {
+            when (destination) {
+                AppDestinations.HOME -> HomeScreen(
+                    onComicClick = onNavigateToDetail,
+                    onNavigateToSearch = onNavigateToSearch
+                )
 
-            AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)
+                AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)
 
-            AppDestinations.BOOKSHELF -> FavoritesScreen(
-                onComicClick = onNavigateToDetail,
-                onNavigateToProfile = onNavigateToProfile
-            )
+                AppDestinations.BOOKSHELF -> FavoritesScreen(
+                    onComicClick = onNavigateToDetail,
+                    onNavigateToProfile = onNavigateToProfile
+                )
 
-            AppDestinations.PROFILE -> ProfileScreen()
+                AppDestinations.PROFILE -> ProfileScreen()
+            }
         }
     }
 }

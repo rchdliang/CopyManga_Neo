@@ -191,6 +191,8 @@ private fun FavoritesContent(
                                 statusText = statusText,
                                 statusColor = statusColor,
                                 isSelected = isSelected,
+                                sharedTransitionKey = "bookshelf:${comic.pathWord}",
+                                comicPathWord = comic.pathWord,
                                 onClick = {
                                     if (uiState.isSelectionMode) {
                                         onToggleSelection(favorite.uuid)

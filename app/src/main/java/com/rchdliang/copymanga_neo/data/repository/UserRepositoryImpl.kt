@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import android.util.Base64
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
+import com.rchdliang.copymanga_neo.data.local.LoginCredentialCodec
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.di.PersistentCookieJar
 import com.rchdliang.copymanga_neo.domain.model.LoginInfo
@@ -82,6 +83,57 @@ class UserRepositoryImpl @Inject constructor(
             throw e
         } catch (e: Exception) {
             android.util.Log.e("UserRepository", "Login exception: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun exportLoginCredential(): Result<String> {
+        return try {
+            val token = authDataStore.getToken().firstOrNull()
+                ?: return Result.failure(Exception("当前未登录，无法导出登录凭据"))
+            val username = authDataStore.getUsername().firstOrNull()
+                ?: return Result.failure(Exception("当前登录信息缺少用户名，无法导出"))
+            Result.success(LoginCredentialCodec.encode(token = token, username = username))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("UserRepository", "Export credential failed: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo> {
+        return try {
+            val credential = LoginCredentialCodec.decode(serializedCredential)
+            val response = apiService.getMemberInfoWithCredential(
+                authorization = "Token ${credential.token}"
+            )
+
+            if (response.code() == 401) {
+                return Result.failure(Exception("登录凭据已失效，请重新导出"))
+            }
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("验证登录凭据失败: ${response.code()}"))
+            }
+
+            val body = response.body()
+                ?: return Result.failure(Exception("验证登录凭据的响应为空"))
+            if (body.code != 200) {
+                return Result.failure(Exception(body.message ?: "登录凭据无效"))
+            }
+
+            val memberInfo = body.results
+                ?: return Result.failure(Exception("登录凭据未返回用户信息"))
+            authDataStore.saveImportedAuth(
+                token = credential.token,
+                username = memberInfo.username ?: memberInfo.nickname ?: credential.username,
+                avatar = memberInfo.avatar
+            )
+            Result.success(memberInfo.toMemberInfo())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("UserRepository", "Import credential failed: ${e.message}")
             Result.failure(e)
         }
     }

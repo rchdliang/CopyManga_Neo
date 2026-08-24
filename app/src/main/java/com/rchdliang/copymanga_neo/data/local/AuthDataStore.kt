@@ -122,6 +122,33 @@ class AuthDataStore @Inject constructor(
     }
 
     /**
+     * 保存从外部凭据验证得到的会话，并清除旧账号的记住密码与自动登录设置。
+     * 认证状态和凭据偏好在同一次 DataStore edit 中更新，避免跨账号自动登录。
+     */
+    suspend fun saveImportedAuth(token: String, username: String, avatar: String?) {
+        cachedToken = token
+        cachedUsername = username
+        cachedAvatar = avatar
+        cachedRememberPassword = false
+        cachedAutoLogin = false
+        cachedSavedUsername = null
+        cachedSavedPassword = null
+        dataStore.edit { prefs ->
+            prefs[KEY_TOKEN] = token
+            prefs[KEY_USERNAME] = username
+            if (avatar != null) {
+                prefs[KEY_AVATAR] = avatar
+            } else {
+                prefs.remove(KEY_AVATAR)
+            }
+            prefs[KEY_REMEMBER_PASSWORD] = false
+            prefs[KEY_AUTO_LOGIN] = false
+            prefs.remove(KEY_SAVED_USERNAME)
+            prefs.remove(KEY_SAVED_PASSWORD)
+        }
+    }
+
+    /**
      * 保存登录凭据偏好
      * @param username 用户名
      * @param password 原始密码（明文存入 DataStore，由 OS 沙箱隔离保护）

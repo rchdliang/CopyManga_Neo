@@ -78,6 +78,7 @@ interface MangaApiService {
         @Query("offset") offset: Int = 0,
         @Query("free_type") freeType: Int?,
     ): Response<ComicListResponse>
+
     /**
      * 获取漫画详情
      * @param pathWord 漫画路径标识
@@ -134,6 +135,16 @@ interface MangaApiService {
     @GET("api/v3/member/info?_update=true")
     suspend fun getMemberInfo(
         @HeaderMap headers: Map<String, String> = apiHeaders()
+    ): Response<MemberInfoResponse>
+
+    /**
+     * 使用待导入的 token 获取用户信息。
+     * X-No-Auth 会阻止拦截器覆盖显式 Authorization，并在请求发出前被移除。
+     */
+    @GET("api/v3/member/info?_update=true")
+    suspend fun getMemberInfoWithCredential(
+        @Header("Authorization") authorization: String,
+        @HeaderMap headers: Map<String, String> = apiHeaders() + ("X-No-Auth" to "1")
     ): Response<MemberInfoResponse>
 
     /**

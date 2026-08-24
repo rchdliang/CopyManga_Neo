@@ -17,6 +17,12 @@ interface UserRepository {
      */
     suspend fun login(username: String, rawPassword: String): Result<LoginInfo>
 
+    /** 将当前会话导出为可复制的版本化登录凭据。 */
+    suspend fun exportLoginCredential(): Result<String>
+
+    /** 验证并导入登录凭据；验证成功后才保存新的登录状态。 */
+    suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo>
+
     /**
      * 获取用户信息
      */

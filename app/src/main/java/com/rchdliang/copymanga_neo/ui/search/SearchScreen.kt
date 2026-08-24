@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.ui.search
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -72,6 +74,9 @@ import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
+import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
+import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionClick
 import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
@@ -387,11 +392,31 @@ private fun SearchComicCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+    val transitionKey = "search:${comic.pathWord}"
+    val transitionSubtitle = comic.author?.joinToString { it.name }
+    val transitionOnClick = rememberComicSharedTransitionClick(
+        transitionKey = transitionKey,
+        pathWord = comic.pathWord,
+        cover = comic.cover,
+        name = comic.name,
+        subtitle = transitionSubtitle,
         onClick = onClick
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .clickable(onClick = transitionOnClick)
     ) {
+        Card(
+            modifier = Modifier
+                .comicContainerSharedBounds(transitionKey)
+                .matchParentSize()
+                .clip(MaterialTheme.shapes.large),
+            shape = MaterialTheme.shapes.large
+        ) {}
+
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
 //            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
@@ -399,8 +424,11 @@ private fun SearchComicCard(
             AsyncImage(
                 model = previewImageModel(comic.cover),
                 contentDescription = comic.name,
-                modifier = Modifier.height(80.dp),
-                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .comicCoverSharedElement(transitionKey)
+                    .height(80.dp)
+                    .aspectRatio(3f / 4f),
+                contentScale = ContentScale.Crop,
             )
             Column(
                 modifier = Modifier

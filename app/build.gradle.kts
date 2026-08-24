@@ -32,8 +32,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 6
+        versionName = "0.8.21"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -72,6 +72,18 @@ android {
         buildConfig = true
     }
     compileSdkMinor = 0
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set(
+                output.versionName.map { versionName ->
+                    "CopyManga_Neo-v$versionName-release.apk"
+                }
+            )
+        }
+    }
 }
 
 hilt {

@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
@@ -90,144 +90,131 @@ fun DownloadingCard(
     }
 
     ElevatedCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.medium,
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            AsyncImage(
-                model = previewImageModel(cover),
-                contentDescription = name,
-                modifier = Modifier
-                    .width(96.dp)
-                    .height(132.dp)
-                    .clip(MaterialTheme.shapes.large),
-                contentScale = ContentScale.Crop
-            )
-
-            Spacer(Modifier.width(20.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 132.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    Spacer(Modifier.width(10.dp))
-
-                    DownloadStatusChip(text = stateText, color = statusColor)
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    text = chapterText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                AsyncImage(
+                    model = previewImageModel(cover),
+                    contentDescription = name,
+                    modifier = Modifier
+                        .width(80.dp)
+                        .height(112.dp)
+                        .clip(MaterialTheme.shapes.large),
+                    contentScale = ContentScale.Crop
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.width(16.dp))
 
-                Row(
-                    verticalAlignment = Alignment.Bottom
+                Column(
+                    modifier = Modifier.weight(1f)
                 ) {
-                    if (!progressInfo.errorMessage.isNullOrBlank()) {
-                        Spacer(Modifier.width(4.dp))
-
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = progressInfo.errorMessage,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = statusColor,
+                            text = name,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
-                    } else {
-                        Text(
-                            text = progressInfo.statusText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Spacer(Modifier.width(8.dp))
+                        DownloadStatusChip(text = stateText, color = statusColor)
                     }
-                    Spacer(Modifier.weight(1f))
-                    if (progressInfo.status != DownloadTaskStatus.COMPLETED) {
-                        Text(
-                            text = "${(progressInfo.overallProgress * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (progressInfo.status == DownloadTaskStatus.DOWNLOADING) {
-                        Spacer(Modifier.width(16.dp))
-                        Text(
-                            text = formatDownloadSpeed(progressInfo.speedBytesPerSecond),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
 
-
-                if (progressInfo.status != DownloadTaskStatus.COMPLETED) {
                     Spacer(Modifier.height(8.dp))
 
-                    if (
-                        progressInfo.status == DownloadTaskStatus.PAUSED ||
-                        progressInfo.status == DownloadTaskStatus.PAUSED_BY_RISK ||
-                        progressInfo.status == DownloadTaskStatus.ERROR
-                    ) {
-                        LinearProgressIndicator(
-                            progress = { progressInfo.overallProgress.coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(MaterialTheme.shapes.small),
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            color = statusColor
-                        )
-                    } else {
-                        LinearWavyProgressIndicator(
-                            progress = { animatedOverallProgress.coerceIn(0f, 1f) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(MaterialTheme.shapes.small),
-                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            color = statusColor
-                        )
-                    }
+                    Text(
+                        text = chapterText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        text = progressInfo.errorMessage?.takeIf { it.isNotBlank() }
+                            ?: progressInfo.statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (progressInfo.errorMessage.isNullOrBlank()) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            statusColor
+                        },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
 
-            Spacer(Modifier.width(16.dp))
+            if (progressInfo.status != DownloadTaskStatus.COMPLETED) {
+                Spacer(Modifier.height(12.dp))
+
+                if (
+                    progressInfo.status == DownloadTaskStatus.PAUSED ||
+                    progressInfo.status == DownloadTaskStatus.PAUSED_BY_RISK ||
+                    progressInfo.status == DownloadTaskStatus.ERROR
+                ) {
+                    LinearProgressIndicator(
+                        progress = { progressInfo.overallProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(MaterialTheme.shapes.small),
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = statusColor
+                    )
+                } else {
+                    LinearWavyProgressIndicator(
+                        progress = { animatedOverallProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(MaterialTheme.shapes.small),
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = statusColor
+                    )
+                }
+            }
 
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (progressInfo.status != DownloadTaskStatus.COMPLETED) {
+                    Text(
+                        text = "${(progressInfo.overallProgress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (progressInfo.status == DownloadTaskStatus.DOWNLOADING) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = formatDownloadSpeed(progressInfo.speedBytesPerSecond),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
                 when (progressInfo.status) {
                     DownloadTaskStatus.ERROR -> {
                         if (onRetry != null) {
@@ -241,7 +228,7 @@ fun DownloadingCard(
                         }
                     }
 
-                    DownloadTaskStatus.COMPLETED -> {}
+                    DownloadTaskStatus.COMPLETED -> Unit
                     DownloadTaskStatus.PAUSED,
                     DownloadTaskStatus.PAUSED_BY_RISK -> {
                         IconButton(onClick = onPauseResume) {
@@ -260,8 +247,8 @@ fun DownloadingCard(
                     else -> {
                         IconButton(onClick = onPauseResume) {
                             Icon(
-                                imageVector = Icons.Filled.Pause,
-                                contentDescription = "暂停",
+                                imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (isPaused) "继续" else "暂停",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -288,7 +275,7 @@ private fun DownloadStatusChip(
 ) {
     Box(
         modifier = modifier
-            .clip(MaterialTheme.shapes.small)
+            .clip(CircleShape)
             .background(color.copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {

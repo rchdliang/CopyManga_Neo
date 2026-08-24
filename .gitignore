@@ -19,3 +19,4 @@ keystore.properties
 /.codegraph
 AGENTS.md
 reasonix.toml
+/.codex/config.toml

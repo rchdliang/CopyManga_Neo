@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -35,8 +38,14 @@ data class ProfileUiState(
     val savedUsername: String? = null,
     val rememberPassword: Boolean = false,
     val autoLogin: Boolean = false,
+    val isCredentialLoading: Boolean = false,
     val toastMessage: String? = null
 )
+
+/** 账号页一次性事件。敏感凭据只通过事件传递，不进入可恢复的 UiState。 */
+sealed interface ProfileEvent {
+    data class CopyLoginCredential(val credential: String) : ProfileEvent
+}
 
 /**
  * 账号页面 ViewModel
@@ -49,12 +58,16 @@ class ProfileViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
+    private val _events = MutableSharedFlow<ProfileEvent>()
+    val events: SharedFlow<ProfileEvent> = _events.asSharedFlow()
+
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("ProfileViewModel", "Unhandled coroutine exception", throwable)
         _uiState.update {
             it.copy(
                 isLoginLoading = false,
                 isRefreshing = false,
+                isCredentialLoading = false,
                 toastMessage = throwable.message ?: "操作失败"
             )
         }
@@ -202,6 +215,65 @@ class ProfileViewModel @Inject constructor(
                         it.copy(
                             isLoginLoading = false,
                             loginError = error.message ?: "登录失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /** 导出当前会话凭据，成功后由界面写入系统剪切板。 */
+    fun exportLoginCredential() {
+        if (_uiState.value.isCredentialLoading) return
+
+        viewModelScope.launch(exceptionHandler) {
+            _uiState.update { it.copy(isCredentialLoading = true) }
+            userRepository.exportLoginCredential().fold(
+                onSuccess = { credential ->
+                    _uiState.update { it.copy(isCredentialLoading = false) }
+                    _events.emit(ProfileEvent.CopyLoginCredential(credential))
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isCredentialLoading = false,
+                            toastMessage = error.message ?: "导出登录凭据失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    /** 从剪切板文本验证并导入会话凭据。 */
+    fun importLoginCredential(serializedCredential: String) {
+        if (_uiState.value.isCredentialLoading) return
+        if (serializedCredential.isBlank()) {
+            _uiState.update { it.copy(toastMessage = "剪切板中没有登录凭据") }
+            return
+        }
+
+        viewModelScope.launch(exceptionHandler) {
+            _uiState.update { it.copy(isCredentialLoading = true) }
+            userRepository.importLoginCredential(serializedCredential).fold(
+                onSuccess = { info ->
+                    _uiState.update {
+                        it.copy(
+                            isCredentialLoading = false,
+                            nickname = info.nickname,
+                            dayDownloads = info.dayDownloads,
+                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
+                            ticket = info.ticket,
+                            rewardTicket = info.rewardTicket,
+                            toastMessage = "登录凭据导入成功"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isCredentialLoading = false,
+                            toastMessage = error.message ?: "导入登录凭据失败"
                         )
                     }
                 }

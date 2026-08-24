@@ -64,6 +64,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -80,22 +81,26 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
@@ -108,9 +113,15 @@ import com.rchdliang.copymanga_neo.domain.model.LastChapter
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
+import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
+import com.rchdliang.copymanga_neo.ui.components.currentComicTransitionData
+import com.rchdliang.copymanga_neo.ui.components.isComicSharedTransitionActive
+import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -124,6 +135,30 @@ fun DetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
+    val transitionData = currentComicTransitionData(pathWord)
+    val sharedTransitionKey = transitionData?.transitionKey ?: pathWord
+    val isSharedTransitionActive = isComicSharedTransitionActive(pathWord)
+    val density = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(density) { containerSize.width.toDp() }
+    val detailCoverWidth = if (windowWidthDp >= 840.dp) 180.dp else 144.dp
+    var keepTransitionCover by remember(pathWord, transitionData) {
+        mutableStateOf(transitionData != null)
+    }
+
+    LaunchedEffect(pathWord, transitionData) {
+        if (transitionData != null) {
+            keepTransitionCover = true
+            delay(700)
+            keepTransitionCover = false
+        }
+    }
+
+    val isWaitingForDetail = uiState.comicDetail == null &&
+            uiState.error == null &&
+            uiState.riskControlReason == null
+    val showTransitionCover = transitionData != null &&
+            (keepTransitionCover || isSharedTransitionActive || isWaitingForDetail)
 
     LaunchedEffect(pathWord) {
         viewModel.loadDetail(pathWord)
@@ -136,7 +171,15 @@ fun DetailScreen(
         }
     }
 
-    PullToRefreshBox(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier
+                .comicContainerSharedBounds(sharedTransitionKey)
+                .matchParentSize()
+        ) {}
+
+        PullToRefreshBox(
         isRefreshing = uiState.isLoading,
         onRefresh = { viewModel.refreshDetail() },
         state = pullToRefreshState,
@@ -147,9 +190,11 @@ fun DetailScreen(
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         },
-        modifier = Modifier.fillMaxSize()
-    ) {
-        when {
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+        ) {
+            when {
             uiState.error != null && uiState.comicDetail == null -> {
                 Column(
                     modifier = Modifier
@@ -287,8 +332,82 @@ fun DetailScreen(
                     onClearSelection = { viewModel.clearSelection() },
                     onEnterManageMode = onEnterManageMode,
                     onConfirmBatchAction = onConfirmBatchAction,
+                    detailCoverWidth = detailCoverWidth,
+                    transitionPathWord = sharedTransitionKey,
+                    hideCoverDuringTransition = showTransitionCover,
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+        }
+        }
+
+        transitionData?.takeIf { showTransitionCover }?.let { coverData ->
+            AsyncImage(
+                model = previewImageModel(coverData.cover),
+                contentDescription = coverData.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 16.dp, top = 48.dp)
+                    .comicCoverSharedElement(sharedTransitionKey)
+                    .width(detailCoverWidth)
+                    .aspectRatio(3f / 4f)
+                    .clip(MaterialTheme.shapes.medium)
+            )
+        }
+
+        transitionData?.takeIf { isWaitingForDetail }?.let { loadingData ->
+            IconButton(
+                onClick = onNavigateBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(
+                        start = detailCoverWidth + 32.dp,
+                        top = 52.dp,
+                        end = 16.dp
+                    )
+            ) {
+                Text(
+                    text = loadingData.name,
+                    style = MaterialTheme.typography.headlineSmallEmphasized,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                loadingData.subtitle?.let { subtitle ->
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LoadingIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "正在加载详情",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -332,12 +451,22 @@ private fun DetailContent(
     onClearSelection: () -> Unit,
     onEnterManageMode: () -> Unit,
     onConfirmBatchAction: () -> Unit,
+    detailCoverWidth: Dp = 120.dp,
+    transitionPathWord: String? = null,
+    hideCoverDuringTransition: Boolean = false,
     modifier: Modifier
 ) {
     val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
     val currentOnChapterClick by rememberUpdatedState(onChapterClick)
     val currentOnChapterLongPress by rememberUpdatedState(onChapterLongPress)
     val currentOnChapterToggleSelect by rememberUpdatedState(onChapterToggleSelect)
+    val coverTransitionModifier = if (
+        transitionPathWord != null && !hideCoverDuringTransition
+    ) {
+        Modifier.comicCoverSharedElement(transitionPathWord)
+    } else {
+        Modifier
+    }
 
     val gridState = rememberLazyGridState()
     var scrollToChapterIndex by remember { mutableIntStateOf(-1) }
@@ -418,10 +547,11 @@ private fun DetailContent(
                     model = previewImageModel(comicDetail.cover),
                     contentDescription = comicDetail.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .width(120.dp)
+                    modifier = coverTransitionModifier
+                        .width(detailCoverWidth)
                         .aspectRatio(3f / 4f)
                         .clip(MaterialTheme.shapes.medium)
+                        .alpha(if (hideCoverDuringTransition) 0f else 1f)
                 ) {
                     when (painter.state) {
                         is AsyncImagePainter.State.Loading -> {

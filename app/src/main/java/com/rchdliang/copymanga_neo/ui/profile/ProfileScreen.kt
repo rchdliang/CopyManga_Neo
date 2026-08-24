@@ -1,5 +1,10 @@
 package com.rchdliang.copymanga_neo.ui.profile
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.Build
+import android.os.PersistableBundle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +29,8 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -47,6 +54,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +62,7 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -86,11 +95,30 @@ fun ProfileScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var currentPage by remember { mutableStateOf(ProfilePage.MAIN) }
     val toastHost = LocalToastHost.current
+    val context = LocalContext.current
+    val clipboardManager = remember(context) {
+        context.getSystemService(ClipboardManager::class.java)
+    }
 
     LaunchedEffect(uiState.toastMessage) {
         uiState.toastMessage?.let {
             toastHost.showToast(it)
             viewModel.clearToastMessage()
+        }
+    }
+
+    LaunchedEffect(viewModel, clipboardManager) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is ProfileEvent.CopyLoginCredential -> {
+                    runCatching {
+                        clipboardManager.primaryClip = createSensitiveCredentialClip(event.credential)
+                    }.fold(
+                        onSuccess = { toastHost.showToast("登录凭据已复制到剪切板") },
+                        onFailure = { toastHost.showToast("无法写入剪切板") }
+                    )
+                }
+            }
         }
     }
 
@@ -103,6 +131,17 @@ fun ProfileScreen(
             savedPasswordProvider = viewModel::getSavedPasswordSync,
             onLogin = viewModel::login,
             onDismissLogin = viewModel::hideLoginDialog,
+            onExportCredential = viewModel::exportLoginCredential,
+            onImportCredential = {
+                val credential = runCatching {
+                    clipboardManager.primaryClip
+                        ?.takeIf { it.itemCount > 0 }
+                        ?.getItemAt(0)
+                        ?.coerceToText(context)
+                        ?.toString()
+                }.getOrNull()
+                viewModel.importLoginCredential(credential.orEmpty())
+            },
             onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
             onNavigateToSettings = { currentPage = ProfilePage.SETTINGS }
         )
@@ -127,10 +166,13 @@ private fun ProfileMainPage(
     savedPasswordProvider: () -> String?,
     onLogin: (String, String, Boolean, Boolean) -> Unit,
     onDismissLogin: () -> Unit,
+    onExportCredential: () -> Unit,
+    onImportCredential: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+    var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
 
     if (uiState.isLoggedIn) {
         PullToRefreshBox(
@@ -176,6 +218,18 @@ private fun ProfileMainPage(
                 }
                 item {
                     ProfileMenuItem(
+                        icon = Icons.Outlined.Key,
+                        label = if (uiState.isCredentialLoading) {
+                            "正在导出登录凭据…"
+                        } else {
+                            "导出登录凭据"
+                        },
+                        enabled = !uiState.isCredentialLoading,
+                        onClick = { showExportCredentialDialog = true }
+                    )
+                }
+                item {
+                    ProfileMenuItem(
                         icon = Icons.Filled.Settings,
                         label = "设置",
                         onClick = onNavigateToSettings
@@ -207,6 +261,18 @@ private fun ProfileMainPage(
             }
             item {
                 ProfileMenuItem(
+                    icon = Icons.Outlined.ContentPaste,
+                    label = if (uiState.isCredentialLoading) {
+                        "正在验证登录凭据…"
+                    } else {
+                        "从剪切板导入登录凭据"
+                    },
+                    enabled = !uiState.isCredentialLoading,
+                    onClick = onImportCredential
+                )
+            }
+            item {
+                ProfileMenuItem(
                     icon = Icons.Filled.Settings,
                     label = "设置",
                     onClick = onNavigateToSettings
@@ -227,6 +293,46 @@ private fun ProfileMainPage(
                 onLogin(username, password, remember, auto)
             },
             onDismiss = onDismissLogin
+        )
+    }
+
+    if (showExportCredentialDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportCredentialDialog = false },
+            title = {
+                Text(
+                    text = "导出登录凭据？",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "登录凭据等同于账号登录权限。复制后请妥善保管，不要发送给不信任的人。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExportCredentialDialog = false
+                        onExportCredential()
+                    }
+                ) {
+                    Text(
+                        text = "复制",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportCredentialDialog = false }) {
+                    Text(
+                        text = "取消",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         )
     }
 }
@@ -351,12 +457,13 @@ private fun AccountCard(
 private fun ProfileMenuItem(
     icon: ImageVector,
     label: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -379,6 +486,20 @@ private fun ProfileMenuItem(
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/** 创建标记为敏感内容的剪切板数据，避免系统在剪切板预览中显示 token。 */
+private fun createSensitiveCredentialClip(credential: String): ClipData {
+    return ClipData.newPlainText("CopyManga Neo 登录凭据", credential).apply {
+        description.extras = PersistableBundle().apply {
+            val sensitiveKey = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ClipDescription.EXTRA_IS_SENSITIVE
+            } else {
+                "android.content.extra.IS_SENSITIVE"
+            }
+            putBoolean(sensitiveKey, true)
+        }
     }
 }
 
@@ -623,6 +744,8 @@ private fun ProfileLoggedInPreview() {
             savedPasswordProvider = { null },
             onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
+            onExportCredential = {},
+            onImportCredential = {},
             onNavigateToHistory = {},
             onNavigateToSettings = {}
         )
@@ -641,6 +764,8 @@ private fun ProfileNotLoggedInPreview() {
             savedPasswordProvider = { null },
             onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
+            onExportCredential = {},
+            onImportCredential = {},
             onNavigateToHistory = {},
             onNavigateToSettings = {}
         )
@@ -665,6 +790,8 @@ private fun LoginDialogPreview() {
             savedPasswordProvider = { "preview_password" },
             onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
+            onExportCredential = {},
+            onImportCredential = {},
             onNavigateToHistory = {},
             onNavigateToSettings = {}
         )

@@ -44,6 +44,8 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
  * @param statusText 可选的状态文本（如阅读进度/最新章节），为 null 时不显示
  * @param statusColor 状态文本颜色，默认使用主题 onSurfaceVariant
  * @param isSelected 是否处于选中状态（右上角显示对勾）
+ * @param sharedTransitionKey 当前卡片实例的唯一共享转场 key
+ * @param comicPathWord 漫画路由 pathWord，用于详情页匹配导航快照
  * @param onClick 点击回调
  * @param onLongClick 长按回调，为 null 时不处理长按
  */
@@ -58,96 +60,124 @@ fun ComicCard(
     statusText: String? = null,
     statusColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     isSelected: Boolean = false,
+    sharedTransitionKey: String? = null,
+    comicPathWord: String? = sharedTransitionKey,
     onLongClick: (() -> Unit)? = null
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.large,
-        tonalElevation = 1.dp,
+    val transitionOnClick = if (sharedTransitionKey != null) {
+        rememberComicSharedTransitionClick(
+            transitionKey = sharedTransitionKey,
+            pathWord = comicPathWord ?: sharedTransitionKey,
+            cover = cover,
+            name = name,
+            subtitle = subtitle,
+            onClick = onClick
+        )
+    } else {
+        onClick
+    }
+    val containerTransitionModifier = if (sharedTransitionKey != null) {
+        Modifier.comicContainerSharedBounds(sharedTransitionKey)
+    } else {
+        Modifier
+    }
+    val coverTransitionModifier = if (sharedTransitionKey != null) {
+        Modifier.comicCoverSharedElement(sharedTransitionKey)
+    } else {
+        Modifier
+    }
+
+    Box(
+        contentAlignment = Alignment.BottomStart,
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(3f / 4f)
             .clip(MaterialTheme.shapes.large)
-    ) {
-        Box(
-            contentAlignment = Alignment.BottomStart,
-            modifier = Modifier
-                .fillMaxSize()
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onClick,
-                    onLongClick = onLongClick
-                )
-        ) {
-            AsyncImage(
-                model = ImageRequest
-                    .Builder(LocalContext.current)
-                    .crossfade(true)
-                    .data(previewImageModel(cover))
-                    .build(),
-                contentDescription = name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = transitionOnClick,
+                onLongClick = onLongClick
             )
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 1.dp,
+            modifier = containerTransitionModifier
+                .matchParentSize()
+                .clip(MaterialTheme.shapes.large)
+        ) {}
 
-            Surface(
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(8.dp)) {
+        AsyncImage(
+            model = ImageRequest
+                .Builder(LocalContext.current)
+                .crossfade(sharedTransitionKey == null)
+                .data(previewImageModel(cover))
+                .build(),
+            contentDescription = name,
+            contentScale = ContentScale.Crop,
+            modifier = coverTransitionModifier
+                .fillMaxSize()
+                .clip(MaterialTheme.shapes.large)
+        )
+
+        Surface(
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(8.dp)) {
+                Text(
+                    text = name,
+                    minLines = 2,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                subtitle?.let { sub ->
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = name,
-                        minLines = 2,
-                        maxLines = 2,
+                        text = sub,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    subtitle?.let { sub ->
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = sub,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    statusText?.let { status ->
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = status,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = statusColor
-                        )
-                    }
+                }
+                statusText?.let { status ->
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = status,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor
+                    )
                 }
             }
+        }
 
-            if (isSelected) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(20.dp)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .combinedClickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onClick
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = "已选择",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(20.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "已选择",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(14.dp)
+                )
             }
         }
     }

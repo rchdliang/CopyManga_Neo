@@ -155,6 +155,7 @@ private fun HomeContent(
                         item(key = "rec_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.recComicList,
+                                transitionGroupKey = "home-recommended",
                                 onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -174,6 +175,7 @@ private fun HomeContent(
                         item(key = "hot_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.hotComics,
+                                transitionGroupKey = "home-hot",
                                 onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -193,6 +195,7 @@ private fun HomeContent(
                         item(key = "new_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.newComics,
+                                transitionGroupKey = "home-new",
                                 onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -212,6 +215,7 @@ private fun HomeContent(
                         item(key = "finish_grid", contentType = "comic_grid") {
                             ComicGrid(
                                 comics = uiState.finishComics,
+                                transitionGroupKey = "home-finished",
                                 onComicClick = onComicClick,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -257,6 +261,7 @@ private fun SearchEntryBar(
 @Composable
 private fun ComicGrid(
     comics: List<ComicSummary>,
+    transitionGroupKey: String,
     onComicClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -274,6 +279,8 @@ private fun ComicGrid(
                 name = comic.name,
                 cover = comic.cover,
                 subtitle = comic.author?.firstOrNull()?.name,
+                sharedTransitionKey = "$transitionGroupKey:${comic.pathWord}",
+                comicPathWord = comic.pathWord,
                 onClick = { onComicClick(comic.pathWord) },
                 modifier = Modifier.width(120.dp)
             )
