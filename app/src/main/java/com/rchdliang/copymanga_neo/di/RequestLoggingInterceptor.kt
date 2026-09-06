@@ -11,8 +11,8 @@ import java.io.IOException
  * 每请求一行摘要：方法 + URL → 请求头关键字段 → 响应状态码 + 耗时
  *
  * 输出示例：
- *   → GET https://api.2026copy.com/api/v3/h5/homeIndex?_t=1716890000000
- *     Headers: [Authorization: Token xxx, version: 2026.04.30, region: 1, platform: 1, Accept: application/json]
+ *   → GET https://api.copy4000.com/api/v3/h5/homeIndex?_t=1716890000000
+ *     Headers: [Authorization: Token xxx, version: 2026.08.24, region: 1, platform: 1, Accept: application/json]
  *   ← 200 (234ms)
  */
 class RequestLoggingInterceptor : Interceptor {

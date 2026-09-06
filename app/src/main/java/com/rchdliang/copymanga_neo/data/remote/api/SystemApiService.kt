@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.remote.api
 
 import com.google.gson.annotations.SerializedName
+import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.HeaderMap
@@ -17,7 +18,7 @@ interface SystemApiService {
          * 标记该请求不需要 Authorization。
          */
         @JvmStatic
-        fun noAuthHeaders(): Map<String, String> = mapOf("X-No-Auth" to "1")
+        fun noAuthHeaders(): Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
     }
 
     /**
@@ -26,14 +27,14 @@ interface SystemApiService {
      */
     @GET("api/v3/system/network21")
     suspend fun getNetworkConfig(
-        @Query("platform") platform: Int = 1,
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @HeaderMap headers: Map<String, String> = noAuthHeaders()
     ): Response<NetworkConfigResponse>
 }
 
 /**
  * WWW API 服务
- * 用于访问 www.2026copy.com 域名，获取 cookies
+ * 用于访问 www.copy3000.com 域名，获取 cookies
  */
 interface WwwApiService {
 

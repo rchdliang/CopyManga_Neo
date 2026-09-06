@@ -112,7 +112,7 @@ fun ProfileScreen(
             when (event) {
                 is ProfileEvent.CopyLoginCredential -> {
                     runCatching {
-                        clipboardManager.primaryClip = createSensitiveCredentialClip(event.credential)
+                        clipboardManager.setPrimaryClip(createSensitiveCredentialClip(event.credential))
                     }.fold(
                         onSuccess = { toastHost.showToast("登录凭据已复制到剪切板") },
                         onFailure = { toastHost.showToast("无法写入剪切板") }

@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.di
 import com.google.gson.GsonBuilder
 import com.google.gson.Strictness
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
+import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.api.SystemApiService
 import dagger.Module
@@ -23,15 +24,8 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-
-    // 主域名（用于网页请求和 Origin）
-    private const val WWW_BASE_URL = "https://www.2026copy.com/"
-
-    // API 域名
-    private const val API_BASE_URL = "https://api.2026copy.com/"
-
     private const val TIMEOUT_SECONDS = 10L
-    
+
     @Provides
     @Singleton
     fun provideOkHttpClient(
@@ -76,7 +70,7 @@ object NetworkModule {
     }
 
     /**
-     * 提供 API 专用的 Retrofit 实例（用于 api.2026copy.com）
+     * 提供 API 专用的 Retrofit 实例（用于 api.copy4000.com）
      * 使用 LENIENT 模式解析 JSON，允许非标准格式
      */
     @Provides
@@ -86,9 +80,9 @@ object NetworkModule {
         val gson = GsonBuilder()
             .setStrictness(Strictness.LENIENT)
             .create()
-        
+
         return Retrofit.Builder()
-            .baseUrl(API_BASE_URL)
+            .baseUrl(CopyMangaNetworkConfig.API_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
@@ -113,14 +107,14 @@ object NetworkModule {
     }
 
     /**
-     * 提供 WWW 专用的 Retrofit 实例（用于 www.2026copy.com）
+     * 提供 WWW 专用的 Retrofit 实例（用于 www.copy3000.com）
      */
     @Provides
     @Singleton
     @WwwRetrofit
     fun provideWwwRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(WWW_BASE_URL)
+            .baseUrl(CopyMangaNetworkConfig.WWW_BASE_URL)
             .client(okHttpClient)
             .build()
     }

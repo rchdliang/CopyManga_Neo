@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.remote.api
 
+import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicListResponse
@@ -35,30 +36,6 @@ import retrofit2.http.Query
  * 需要跳过认证的接口在 @HeaderMap 中携带 "X-No-Auth" = "1" 即可。
  */
 interface MangaApiService {
-
-    companion object {
-        /**
-         * 构建默认的 API 业务请求头。
-         * 返回值可直接用于 @HeaderMap 参数。
-         */
-        @JvmStatic
-        fun apiHeaders(
-            accept: String = "application/json",
-            acceptLanguage: String = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-            version: String = "2026.04.30",
-            platform: String = "1",
-            region: String = "1",
-            webp: String = "1"
-        ): Map<String, String> = mapOf(
-            "Accept" to accept,
-            "Accept-Language" to acceptLanguage,
-            "version" to version,
-            "platform" to platform,
-            "region" to region,
-            "webp" to webp
-        )
-    }
-
     /**
      * 获取首页推荐漫画列表
      * @param timestamp 时间戳，防止缓存
@@ -66,14 +43,12 @@ interface MangaApiService {
     @GET("api/v3/h5/homeIndex")
     suspend fun getHomeComics(
         @Query("_t") timestamp: Long = System.currentTimeMillis(),
-        @HeaderMap headers: Map<String, String> = apiHeaders(),
-        @Header("X-No-Auth") value: Int = 1,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
     ): Response<HomeIndexResponse>
 
     @GET("api/v3/recs?pos=3200102")
     suspend fun getRecComics(
-        @HeaderMap headers: Map<String, String> = apiHeaders(),
-        @Header("X-No-Auth") value: Int = 1,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
         @Query("limit") limit: Int = 10,
         @Query("offset") offset: Int = 0,
         @Query("free_type") freeType: Int?,
@@ -86,8 +61,8 @@ interface MangaApiService {
     @GET("api/v3/comic2/{pathWord}")
     suspend fun getComicDetail(
         @Path("pathWord") pathWord: String,
-        @HeaderMap headers: Map<String, String> = apiHeaders(),
-        @Query("platform") platform: Int = 1,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders(),
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @Query("_update") update: Boolean = true,
     ): Response<ComicDetailResponse>
 
@@ -101,19 +76,19 @@ interface MangaApiService {
         @Path("group") group: String,
         @Query("limit") limit: Int = 100,
         @Query("offset") offset: Int = 0,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<ChapterListResponse>
 
 
     @GET("api/v3/search/comic")
     suspend fun search(
-        @Query("platform") platform: String = "1",
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @Query("q") query: String,
         @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0,
         @Query("q_type") queryType: QueryType?,
         @Query("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SearchResponse>
 
     /**
@@ -126,7 +101,7 @@ interface MangaApiService {
         @Query("offset") offset: Int = 0,
         @Query("_update") update: Boolean = true,
         @Query("ordering") order: OrderType = OrderType.MODIFIER_DESC,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<FavoriteResponse>
 
     /**
@@ -134,7 +109,7 @@ interface MangaApiService {
      */
     @GET("api/v3/member/info?_update=true")
     suspend fun getMemberInfo(
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<MemberInfoResponse>
 
     /**
@@ -144,7 +119,7 @@ interface MangaApiService {
     @GET("api/v3/member/info?_update=true")
     suspend fun getMemberInfoWithCredential(
         @Header("Authorization") authorization: String,
-        @HeaderMap headers: Map<String, String> = apiHeaders() + ("X-No-Auth" to "1")
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
     ): Response<MemberInfoResponse>
 
     /**
@@ -154,13 +129,13 @@ interface MangaApiService {
     suspend fun getTrialContent(
         @Path("comicPathWord") comicPathWord: String,
         @Path("chapterUuid") chapterUuid: String,
-        @Query("platform") platform: Int = 1,
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @Query("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<TrialContentResponse>
 
     /**
-     * 获取章节内容 HTML（需要 www.2026copy.com 域名）
+     * 获取章节内容 HTML（需要 www.copy3000.com 域名）
      * @param comicPathWord 漫画路径标识
      * @param chapterUuid 章节 UUID
      */
@@ -177,7 +152,7 @@ interface MangaApiService {
      * @param password Base64编码的(原始密码-盐)
      * @param salt 随机4位盐
      * @param source 固定值 freeSite
-     * @param version 固定值 2026.04.30
+     * @param version 固定值 2026.08.24
      * @param platform 固定值 1
      */
     @FormUrlEncoded
@@ -187,9 +162,9 @@ interface MangaApiService {
         @Field("password") password: String,
         @Field("salt") salt: String,
         @Field("source") source: String = "freeSite",
-        @Field("version") version: String = "2026.04.30",
-        @Field("platform") platform: String = "1",
-        @Header("X-No-Auth") value: Int = 1,
+        @Field("version") version: String = CopyMangaNetworkConfig.WEB_VERSION,
+        @Field("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
     ): Response<LoginResponse>
 
     /**
@@ -198,9 +173,9 @@ interface MangaApiService {
     @GET("api/v3/comic2/{pathWord}/query")
     suspend fun queryComicStatus(
         @Path("pathWord") pathWord: String,
-        @Query("platform") platform: Int = 1,
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @Query("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<ComicQueryResponse>
 
     /**
@@ -213,7 +188,7 @@ interface MangaApiService {
         @Field("comic_id") comicId: String,
         @Field("is_collect") isCollect: Int = 1,
         @Field("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SimpleResponse>
 
     /**
@@ -224,7 +199,7 @@ interface MangaApiService {
     @HTTP(method = "DELETE", path = "api/v3/member/collect/comics", hasBody = true)
     suspend fun removeFavorite(
         @Field("ids[0]") collectId: Int,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SimpleResponse>
 
     /**
@@ -235,7 +210,7 @@ interface MangaApiService {
     @HTTP(method = "DELETE", path = "api/v3/member/collect/comics", hasBody = true)
     suspend fun removeFavorites(
         @FieldMap collectIds: Map<String, Int>,
-        @HeaderMap headers: Map<String, String> = apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SimpleResponse>
 }
 
