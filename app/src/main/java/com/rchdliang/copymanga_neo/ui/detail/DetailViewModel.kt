@@ -13,8 +13,10 @@ import com.rchdliang.copymanga_neo.domain.model.ComicInfo
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
+import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.ImmutableList
@@ -60,14 +62,18 @@ data class DetailUiState(
     val downloadedChapterUuids: Set<String> = emptySet(),
     val chapterDownloadStatuses: Map<String, ChapterDownloadStatus> = emptyMap(),
     val chapterDownloadProgresses: Map<String, Float> = emptyMap(),
-    val hasLocalCache: Boolean = false
+    val hasLocalCache: Boolean = false,
+    val blockedThemes: List<Theme> = emptyList(),
+    val isBlacklistReady: Boolean = false,
+    val isSavingBlacklist: Boolean = false
 )
 
 @HiltViewModel
 class DetailViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
     private val userRepository: UserRepository,
-    private val downloadRepository: DownloadRepository
+    private val downloadRepository: DownloadRepository,
+    private val themeBlacklistRepository: ThemeBlacklistRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -83,6 +89,39 @@ class DetailViewModel @Inject constructor(
                 isLoadingChapters = false,
                 error = throwable.message,
                 toastMessage = throwable.message ?: "操作失败"
+            )
+        }
+    }
+
+    init {
+        viewModelScope.launch(exceptionHandler) {
+            themeBlacklistRepository.blockedThemes.collect { themes ->
+                _uiState.update { it.copy(blockedThemes = themes, isBlacklistReady = true) }
+            }
+        }
+    }
+
+    fun setThemeBlocked(theme: Theme, blocked: Boolean) {
+        if (_uiState.value.isSavingBlacklist || !_uiState.value.isBlacklistReady) return
+        viewModelScope.launch(exceptionHandler) {
+            _uiState.update { it.copy(isSavingBlacklist = true) }
+            themeBlacklistRepository.setBlocked(theme, blocked).fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(
+                            isSavingBlacklist = false,
+                            toastMessage = if (blocked) "已屏蔽「${theme.name}」" else "已取消屏蔽「${theme.name}」"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isSavingBlacklist = false,
+                            toastMessage = error.message ?: "保存黑名单失败"
+                        )
+                    }
+                }
             )
         }
     }

@@ -2,6 +2,8 @@ package com.rchdliang.copymanga_neo.ui.profile
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.domain.model.Theme
+import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.ZoneId
@@ -39,7 +42,11 @@ data class ProfileUiState(
     val rememberPassword: Boolean = false,
     val autoLogin: Boolean = false,
     val isCredentialLoading: Boolean = false,
-    val toastMessage: String? = null
+    val toastMessage: String? = null,
+    val blockedThemes: List<Theme> = emptyList(),
+    val isBlacklistLoading: Boolean = true,
+    val isBlacklistSaving: Boolean = false,
+    val blacklistError: String? = null
 )
 
 /** 账号页一次性事件。敏感凭据只通过事件传递，不进入可恢复的 UiState。 */
@@ -52,7 +59,8 @@ sealed interface ProfileEvent {
  */
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val themeBlacklistRepository: ThemeBlacklistRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -78,6 +86,27 @@ class ProfileViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch(exceptionHandler) {
+            themeBlacklistRepository.blockedThemes
+                .catch { error ->
+                    _uiState.update {
+                        it.copy(
+                            isBlacklistLoading = false,
+                            blacklistError = error.message ?: "读取黑名单失败"
+                        )
+                    }
+                }
+                .collect { themes ->
+                    _uiState.update {
+                        it.copy(
+                            blockedThemes = themes,
+                            isBlacklistLoading = false,
+                            blacklistError = null
+                        )
+                    }
+                }
+        }
+
         viewModelScope.launch(exceptionHandler) {
             userRepository.isLoggedIn().collect { loggedIn ->
                 _uiState.update { it.copy(isLoggedIn = loggedIn) }
@@ -117,6 +146,32 @@ class ProfileViewModel @Inject constructor(
             }
         }
         // 密码不再通过 Flow 收集到 UiState，避免明文密码驻留内存状态
+    }
+
+    /** 从本机首页黑名单移除题材。 */
+    fun removeBlockedTheme(theme: Theme) {
+        if (_uiState.value.isBlacklistSaving || _uiState.value.isBlacklistLoading) return
+        _uiState.update { it.copy(isBlacklistSaving = true) }
+        viewModelScope.launch(exceptionHandler) {
+            themeBlacklistRepository.setBlocked(theme, false).fold(
+                onSuccess = {
+                    _uiState.update {
+                        it.copy(
+                            isBlacklistSaving = false,
+                            toastMessage = "已取消屏蔽「${theme.name}」"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isBlacklistSaving = false,
+                            toastMessage = error.message ?: "移除失败"
+                        )
+                    }
+                }
+            )
+        }
     }
 
     /** 获取保存的密码（同步，供 LoginDialog 预填充使用，不暴露到 UiState） */

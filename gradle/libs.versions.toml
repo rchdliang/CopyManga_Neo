@@ -19,7 +19,7 @@ kotlin-metadata-jvm = "2.4.10"
 retrofit = "3.0.0"
 okhttp = "5.5.0"
 coil = "2.7.0"
-navigationCompose = "2.9.8"
+navigationCompose = "2.10.1"
 lifecycle = "2.11.0"
 datastore = "1.2.1"
 gson = "2.14.0"
@@ -27,9 +27,9 @@ materialIconsExtended = "1.7.8"
 
 
 composeBom = "2026.08.00"
-material3 = "1.5.0-alpha26"
-kotlinxCollectionsImmutable = "0.5.1"
-room = "2.8.4"
+material3 = "1.5.0-alpha28"
+kotlinxCollectionsImmutable = "0.5.2"
+room = "2.8.5"
 
 [libraries]
 

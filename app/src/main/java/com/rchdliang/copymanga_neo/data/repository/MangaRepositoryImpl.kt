@@ -8,6 +8,7 @@ import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
+import com.rchdliang.copymanga_neo.domain.model.ComicPage
 import com.rchdliang.copymanga_neo.domain.model.ComicStatus
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
@@ -255,6 +256,32 @@ class MangaRepositoryImpl @Inject constructor(
                     ?: emptyList())
             } else {
                 Result.failure(Exception(response.body()?.message ?: "获取推荐失败"))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getThemeComics(theme: String, offset: Int): Result<ComicPage> {
+        return try {
+            val response = apiService.getThemeComics(theme = theme, offset = offset)
+            val body = response.body()
+            if (response.isSuccessful && body?.code == 200) {
+                val result = body.results
+                // 抓包中 limit=21 但实际只有 20 项，不能用列表长度判断末页。
+                val nextOffset = result.offset + result.limit
+                Result.success(
+                    ComicPage(
+                        comics = result.list.map { it.toSummary() },
+                        nextOffset = nextOffset.takeIf {
+                            result.list.isNotEmpty() && it > offset && it < result.total
+                        }
+                    )
+                )
+            } else {
+                Result.failure(Exception(body?.message ?: "获取题材漫画失败"))
             }
         } catch (e: CancellationException) {
             throw e

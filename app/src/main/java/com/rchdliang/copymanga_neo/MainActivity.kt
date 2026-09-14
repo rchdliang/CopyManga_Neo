@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -82,6 +83,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.SubcomposeAsyncImage
+import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.ui.components.AppToastHost
 import com.rchdliang.copymanga_neo.ui.components.ComicSharedTransitionProvider
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionState
@@ -139,7 +141,11 @@ sealed class Screen(val route: String) {
             "reader/$comicPathWord/$chapterPathWord/${chapterName.replace("/", "_")}/$groupPathWord"
     }
 
-    object Search : Screen("search")
+    object Search : Screen("search?themePathWord={themePathWord}&themeName={themeName}") {
+        fun createRoute(theme: Theme? = null): String = if (theme == null) "search" else
+            "search?themePathWord=${Uri.encode(theme.pathWord.orEmpty())}" +
+                    "&themeName=${Uri.encode(theme.name)}"
+    }
     object Favorites : Screen("favorites")
     object Downloads : Screen("downloads")
     object Profile : Screen("profile")
@@ -198,7 +204,7 @@ fun CopyManga_NeoApp(
                                 navController.navigate(Screen.Detail.createRoute(pathWord))
                             },
                             onNavigateToSearch = {
-                                navController.navigate(Screen.Search.route)
+                                navController.navigate(Screen.Search.createRoute())
                             }
                         )
                     }
@@ -206,7 +212,17 @@ fun CopyManga_NeoApp(
             }
 
             // 搜索页（全屏覆盖，无底部导航）
-            composable(Screen.Search.route) {
+                    composable(
+                        route = Screen.Search.route,
+                        arguments = listOf(
+                            navArgument("themePathWord") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("themeName") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            }
+                        )
+                    ) {
                 ComicSharedTransitionProvider(
                     sharedTransitionScope,
                     this,
@@ -250,7 +266,10 @@ fun CopyManga_NeoApp(
                                 )
                             },
                             onNavigateBack = { navController.popBackStack() },
-                            onNavigateToProfile = { navController.popBackStack() }
+                            onNavigateToProfile = { navController.popBackStack() },
+                            onThemeClick = { theme ->
+                                navController.navigate(Screen.Search.createRoute(theme))
+                            }
                         )
                     }
                 }

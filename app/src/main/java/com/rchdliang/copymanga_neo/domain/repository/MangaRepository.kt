@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.domain.repository
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
+import com.rchdliang.copymanga_neo.domain.model.ComicPage
 import com.rchdliang.copymanga_neo.domain.model.ComicStatus
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
@@ -69,6 +70,9 @@ interface MangaRepository {
      * 获取推荐漫画
      */
     suspend fun getRecComics(limit: Int = 10, offset: Int = 0): Result<List<ComicSummary>>
+
+    /** 按题材标识筛选漫画。 */
+    suspend fun getThemeComics(theme: String, offset: Int = 0): Result<ComicPage>
 
     /**
      * 获取书架漫画

@@ -5,6 +5,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
@@ -29,7 +30,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +67,7 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
@@ -111,6 +113,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicInfo
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
 import com.rchdliang.copymanga_neo.domain.model.Theme
+import com.rchdliang.copymanga_neo.domain.model.blocks
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
@@ -130,11 +133,13 @@ fun DetailScreen(
     viewModel: DetailViewModel = hiltViewModel(),
     onChapterClick: (String, String, String, String) -> Unit,
     onNavigateBack: () -> Unit = {},
-    onNavigateToProfile: () -> Unit = {}
+    onNavigateToProfile: () -> Unit = {},
+    onThemeClick: (Theme) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
+    var pendingTheme by remember(pathWord) { mutableStateOf<Theme?>(null) }
     val transitionData = currentComicTransitionData(pathWord)
     val sharedTransitionKey = transitionData?.transitionKey ?: pathWord
     val isSharedTransitionActive = isComicSharedTransitionActive(pathWord)
@@ -169,6 +174,42 @@ fun DetailScreen(
             toastHost.showToast(message)
             viewModel.clearToastMessage()
         }
+    }
+
+    pendingTheme?.let { theme ->
+        val isBlocked = uiState.blockedThemes.blocks(theme)
+        AlertDialog(
+            onDismissRequest = { pendingTheme = null },
+            title = {
+                Text(
+                    text = if (isBlocked) "移出标签黑名单" else "加入标签黑名单",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = if (isBlocked) "是否取消屏蔽「${theme.name}」？首页将恢复显示包含此标签的漫画。"
+                    else "是否将「${theme.name}」加入黑名单？首页将自动隐藏包含此标签的漫画。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setThemeBlocked(theme, !isBlocked)
+                    pendingTheme = null
+                }) {
+                    Text(
+                        text = if (isBlocked) "取消屏蔽" else "加入黑名单",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTheme = null }) {
+                    Text("取消", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -296,6 +337,21 @@ fun DetailScreen(
                 }
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
+                    blockedThemes = uiState.blockedThemes,
+                    onThemeClick = { theme ->
+                        if (theme.pathWord.isNullOrBlank()) {
+                            toastHost.showToast("此标签缺少标识，暂时无法跳转")
+                        } else {
+                            onThemeClick(theme)
+                        }
+                    },
+                    onThemeLongClick = { theme ->
+                        if (uiState.isBlacklistReady && !uiState.isSavingBlacklist) {
+                            pendingTheme = theme
+                        } else {
+                            toastHost.showToast("标签黑名单尚未就绪，请稍后重试")
+                        }
+                    },
                     chapters = uiState.chapters,
                     groups = uiState.groups,
                     selectedGroup = uiState.selectedGroup,
@@ -417,6 +473,9 @@ fun DetailScreen(
 @Composable
 private fun DetailContent(
     comicDetail: ComicInfo,
+    blockedThemes: List<Theme> = emptyList(),
+    onThemeClick: (Theme) -> Unit = {},
+    onThemeLongClick: (Theme) -> Unit = {},
     chapters: ImmutableList<ChapterInfo>,
     groups: ImmutableList<ChapterGroup>,
     selectedGroup: String,
@@ -713,16 +772,30 @@ private fun DetailContent(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         themes.forEach { theme ->
+                            val isBlocked = blockedThemes.blocks(theme)
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                                    .clip(MaterialTheme.shapes.large)
+                                    .background(
+                                        if (isBlocked) MaterialTheme.colorScheme.errorContainer
+                                        else MaterialTheme.colorScheme.secondaryContainer
+                                    )
+                                    .combinedClickable(
+                                        role = Role.Button,
+                                        onClickLabel = "查看${theme.name}漫画",
+                                        onLongClickLabel = if (isBlocked) "取消屏蔽此标签" else "屏蔽此标签",
+                                        onClick = { onThemeClick(theme) },
+                                        onLongClick = { onThemeLongClick(theme) }
+                                    )
+                                    //.minimumInteractiveComponentSize()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = theme.name,
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    color = if (isBlocked) MaterialTheme.colorScheme.onErrorContainer
+                                    else MaterialTheme.colorScheme.onSecondaryContainer,
                                     maxLines = 1
                                 )
                             }
@@ -850,7 +923,7 @@ private fun DetailContent(
                 if (sortAscending) chapters else chapters.reversed()
             }
 
-            val bottomPadding = if (isInBatchMode) 80.dp else 4.dp
+            val bottomPadding = if (isInBatchMode) 80.dp else 16.dp
 
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 90.dp),
@@ -930,7 +1003,6 @@ private fun DetailContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectionTopRow(
     selectedCount: Int,
@@ -1080,7 +1152,7 @@ private fun SelectionTopRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 @Composable
 private fun ManageBottomBar(
     downloadCount: Int,
@@ -1131,7 +1203,6 @@ private fun ManageBottomBar(
 }
 
 // region Previews
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @PreviewScreenSizes
 @Composable
 private fun DetailContentPreview() {

@@ -80,6 +80,17 @@ interface MangaApiService {
     ): Response<ChapterListResponse>
 
 
+    /** 根据题材筛选漫画，响应结构与搜索结果一致。 */
+    @GET("api/v3/comics")
+    suspend fun getThemeComics(
+        @Query("theme") theme: String,
+        @Query("offset") offset: Int = 0,
+        @Query("limit") limit: Int = 21,
+        @Query("free_type") freeType: Int = 1,
+        @Query("ordering") ordering: OrderType = OrderType.UPDATED_DESC,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
+    ): Response<SearchResponse>
+
     @GET("api/v3/search/comic")
     suspend fun search(
         @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,

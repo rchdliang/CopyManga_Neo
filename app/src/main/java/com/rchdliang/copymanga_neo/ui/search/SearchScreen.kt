@@ -40,7 +40,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
@@ -52,7 +54,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,7 +110,7 @@ fun SearchScreen(
         onQueryTypeChange = { viewModel.updateQueryType(it) },
         onComicClick = onComicClick,
         onNavigateBack = onNavigateBack,
-        onRefresh = { viewModel.search(viewModel.uiState.value.query) },
+        onRefresh = viewModel::refresh,
         pullToRefreshState = pullToRefreshState
     )
 }
@@ -129,8 +130,7 @@ fun SearchScreen(
     pullToRefreshState: PullToRefreshState = rememberPullToRefreshState()
 ) {
     val searchBarState = rememberSearchBarState()
-    val textFieldState = rememberTextFieldState()
-    val scope = rememberCoroutineScope()
+    val textFieldState = rememberTextFieldState(uiState.query)
     var expanded by remember { mutableStateOf(false) }
 
     BackHandler(enabled = expanded) {
@@ -194,20 +194,43 @@ fun SearchScreen(
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp)
     ) {
-        SearchBar(
-            inputField = inputField,
-            expanded = expanded,
-            onExpandedChange = { newExpanded ->
-                expanded = newExpanded
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {}
+        if (uiState.theme != null) {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "题材：${uiState.theme.name}",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = onClear) {
+                        Text("关键词搜索", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            )
+        } else {
+            SearchBar(
+                inputField = inputField,
+                expanded = expanded,
+                onExpandedChange = { newExpanded ->
+                    expanded = newExpanded
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {}
 
-        SearchCategorySelector(
-            selectedType = uiState.queryType,
-            onTypeSelected = onQueryTypeChange,
-            modifier = Modifier.fillMaxWidth()
-        )
+            SearchCategorySelector(
+                selectedType = uiState.queryType,
+                onTypeSelected = onQueryTypeChange,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         PullToRefreshBox(
             isRefreshing = uiState.isLoading,
@@ -228,7 +251,7 @@ fun SearchScreen(
                 uiState = uiState,
                 onComicClick = onComicClick,
                 onLoadMore = onLoadMore,
-                onRetry = { onSearch(uiState.query) }
+                onRetry = onRefresh
             )
         }
     }
@@ -313,12 +336,13 @@ private fun SearchScreenContent(
                 SearchResultsList(
                     comics = uiState.searchResults,
                     isLoadingMore = uiState.isLoadingMore,
+                    hasMore = uiState.hasMore,
                     onComicClick = onComicClick,
                     onLoadMore = onLoadMore
                 )
             }
 
-            uiState.query.isNotEmpty() && !uiState.isLoading -> {
+            (uiState.query.isNotEmpty() || uiState.theme != null) && !uiState.isLoading -> {
                 Text(
                     text = "没有找到相关结果",
                     modifier = Modifier.align(Alignment.Center),
@@ -335,6 +359,7 @@ private fun SearchResultsList(
     comics: List<ComicSummary>,
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
+    hasMore: Boolean = false,
     modifier: Modifier = Modifier,
     onLoadMore: () -> Unit = {}
 ) {
@@ -349,8 +374,8 @@ private fun SearchResultsList(
         }
     }
 
-    LaunchedEffect(shouldLoadMore.value) {
-        if (shouldLoadMore.value) {
+    LaunchedEffect(shouldLoadMore.value, comics.size) {
+        if (shouldLoadMore.value && hasMore) {
             onLoadMore()
         }
     }
@@ -380,6 +405,12 @@ private fun SearchResultsList(
                     contentAlignment = Alignment.Center
                 ) {
                     LoadingIndicator()
+                }
+            }
+        } else if (hasMore) {
+            item {
+                TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
+                    Text("加载更多", color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

@@ -5,6 +5,7 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,13 +23,13 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.AlertDialog
@@ -36,7 +37,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -81,19 +81,19 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 private enum class ProfilePage {
     MAIN,
     HISTORY,
-    SETTINGS
+    SETTINGS,
+    BLACKLIST
 }
 
 /**
  * 我的页面
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var currentPage by remember { mutableStateOf(ProfilePage.MAIN) }
+    var currentPage by rememberSaveable { mutableStateOf(ProfilePage.MAIN) }
     val toastHost = LocalToastHost.current
     val context = LocalContext.current
     val clipboardManager = remember(context) {
@@ -113,6 +113,7 @@ fun ProfileScreen(
                 is ProfileEvent.CopyLoginCredential -> {
                     runCatching {
                         clipboardManager.setPrimaryClip(createSensitiveCredentialClip(event.credential))
+                        //这里改用“clipboardManager.primaryClip = createSensitiveCredentialClip(event.credential)”会报错提示val不能更改！
                     }.fold(
                         onSuccess = { toastHost.showToast("登录凭据已复制到剪切板") },
                         onFailure = { toastHost.showToast("无法写入剪切板") }
@@ -120,6 +121,10 @@ fun ProfileScreen(
                 }
             }
         }
+    }
+
+    BackHandler(enabled = currentPage != ProfilePage.MAIN) {
+        currentPage = ProfilePage.MAIN
     }
 
     when (currentPage) {
@@ -143,7 +148,8 @@ fun ProfileScreen(
                 viewModel.importLoginCredential(credential.orEmpty())
             },
             onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
-            onNavigateToSettings = { currentPage = ProfilePage.SETTINGS }
+            onNavigateToSettings = { currentPage = ProfilePage.SETTINGS },
+            onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST }
         )
 
         ProfilePage.HISTORY -> HistoryPage(
@@ -153,12 +159,18 @@ fun ProfileScreen(
         ProfilePage.SETTINGS -> SettingsPage(
             onNavigateBack = { currentPage = ProfilePage.MAIN }
         )
+
+        ProfilePage.BLACKLIST -> ThemeBlacklistPage(
+            uiState = uiState,
+            onRemove = viewModel::removeBlockedTheme,
+            onNavigateBack = { currentPage = ProfilePage.MAIN }
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ProfileMainPage(
+internal fun ProfileMainPage(
     uiState: ProfileUiState,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
@@ -169,7 +181,8 @@ private fun ProfileMainPage(
     onExportCredential: () -> Unit,
     onImportCredential: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToBlacklist: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
@@ -204,35 +217,12 @@ private fun ProfileMainPage(
                     )
                 }
                 item {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                }
-                item {
-                    ProfileMenuItem(
-                        icon = Icons.Filled.History,
-                        label = "浏览记录",
-                        onClick = onNavigateToHistory
-                    )
-                }
-                item {
-                    ProfileMenuItem(
-                        icon = Icons.Outlined.Key,
-                        label = if (uiState.isCredentialLoading) {
-                            "正在导出登录凭据…"
-                        } else {
-                            "导出登录凭据"
-                        },
-                        enabled = !uiState.isCredentialLoading,
-                        onClick = { showExportCredentialDialog = true }
-                    )
-                }
-                item {
-                    ProfileMenuItem(
-                        icon = Icons.Filled.Settings,
-                        label = "设置",
-                        onClick = onNavigateToSettings
+                    ProfileMenuGroup(
+                        uiState = uiState,
+                        onNavigateToHistory = onNavigateToHistory,
+                        onCredentialClick = { showExportCredentialDialog = true },
+                        onNavigateToSettings = onNavigateToSettings,
+                        onNavigateToBlacklist = onNavigateToBlacklist
                     )
                 }
             }
@@ -254,28 +244,12 @@ private fun ProfileMainPage(
                 )
             }
             item {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-            }
-            item {
-                ProfileMenuItem(
-                    icon = Icons.Outlined.ContentPaste,
-                    label = if (uiState.isCredentialLoading) {
-                        "正在验证登录凭据…"
-                    } else {
-                        "从剪切板导入登录凭据"
-                    },
-                    enabled = !uiState.isCredentialLoading,
-                    onClick = onImportCredential
-                )
-            }
-            item {
-                ProfileMenuItem(
-                    icon = Icons.Filled.Settings,
-                    label = "设置",
-                    onClick = onNavigateToSettings
+                ProfileMenuGroup(
+                    uiState = uiState,
+                    onNavigateToHistory = onNavigateToHistory,
+                    onCredentialClick = onImportCredential,
+                    onNavigateToSettings = onNavigateToSettings,
+                    onNavigateToBlacklist = onNavigateToBlacklist
                 )
             }
         }
@@ -453,41 +427,84 @@ private fun AccountCard(
     }
 }
 
+/** 登录前后的菜单共用分组样式，黑名单不依赖账号。 */
 @Composable
-private fun ProfileMenuItem(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
+private fun ProfileMenuGroup(
+    uiState: ProfileUiState,
+    onNavigateToHistory: () -> Unit,
+    onCredentialClick: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    onNavigateToBlacklist: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+    val entries = buildList {
+        if (uiState.isLoggedIn) {
+            add(
+                ProfileMenuEntry(
+                    Icons.Filled.History,
+                    "浏览记录",
+                    "查看最近阅读的漫画",
+                    onClick = onNavigateToHistory
+                )
+            )
+        }
+        add(
+            ProfileMenuEntry(
+                icon = if (uiState.isLoggedIn) Icons.Outlined.Key else Icons.Outlined.ContentPaste,
+                label = if (uiState.isLoggedIn) "导出登录凭据" else "导入登录凭据",
+                supportingText = if (uiState.isCredentialLoading) "正在处理，请稍候"
+                else if (uiState.isLoggedIn) "复制当前账号的登录凭据" else "从剪切板导入并验证账号",
+                enabled = !uiState.isCredentialLoading,
+                onClick = onCredentialClick
+            )
         )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
+        add(
+            ProfileMenuEntry(
+                Icons.Outlined.Block,
+                "标签黑名单",
+                when {
+                    uiState.isBlacklistLoading -> "正在读取标签"
+                    uiState.blacklistError != null -> "读取失败，点击查看"
+                    else -> "已屏蔽 ${uiState.blockedThemes.size} 个标签 · 仅影响首页"
+                },
+                onClick = onNavigateToBlacklist
+            )
         )
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        add(
+            ProfileMenuEntry(
+                Icons.Filled.Settings,
+                "设置",
+                "应用偏好设置",
+                onClick = onNavigateToSettings
+            )
         )
     }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
+    ) {
+        entries.forEachIndexed { index, entry ->
+            ProfileListItem(
+                icon = entry.icon,
+                label = entry.label,
+                supportingText = entry.supportingText,
+                index = index,
+                count = entries.size,
+                enabled = entry.enabled,
+                onClick = entry.onClick
+            )
+        }
+    }
 }
+
+private data class ProfileMenuEntry(
+    val icon: ImageVector,
+    val label: String,
+    val supportingText: String,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit
+)
 
 /** 创建标记为敏感内容的剪切板数据，避免系统在剪切板预览中显示 token。 */
 private fun createSensitiveCredentialClip(credential: String): ClipData {
