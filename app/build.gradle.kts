@@ -64,8 +64,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures {
         compose = true
@@ -94,7 +94,7 @@ dependencies {
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)
-    androidTestImplementation(composeBom)
+//    androidTestImplementation(composeBom)
     implementation(libs.androidx.compose.runtime)
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
