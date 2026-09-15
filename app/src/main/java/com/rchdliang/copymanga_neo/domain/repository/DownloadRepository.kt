@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.domain.repository
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +15,12 @@ interface DownloadRepository {
     suspend fun getDownloadedChapter(uuid: String): DownloadedChapterInfo?
     suspend fun getDownloadedChapterUuids(comicPathWord: String): Set<String>
     suspend fun saveComicCache(info: DownloadedComicInfo)
+    suspend fun updateChapterMetadata(
+        comicPathWord: String,
+        group: String,
+        chapters: List<ChapterInfo>
+    )
+
     suspend fun isComicDownloaded(pathWord: String): Boolean
     suspend fun deleteComic(pathWord: String)
     suspend fun deleteChapter(uuid: String)

@@ -10,6 +10,19 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DownloadedChapterDao {
 
+    @Query("SELECT * FROM downloaded_chapters")
+    fun getAllChapters(): Flow<List<DownloadedChapterEntity>>
+
+    @Query(
+        """UPDATE downloaded_chapters SET name = :name, `index` = :index,
+        groupPathWord = :group, prevChapter = :prev, nextChapter = :next
+        WHERE comicPathWord = :comicPathWord AND uuid = :uuid"""
+    )
+    suspend fun updateMetadata(
+        comicPathWord: String, uuid: String, name: String, index: Int,
+        group: String, prev: String?, next: String?
+    )
+
     @Query("SELECT * FROM downloaded_chapters WHERE comicPathWord = :comicPathWord ORDER BY `index` ASC")
     fun getChapters(comicPathWord: String): Flow<List<DownloadedChapterEntity>>
 

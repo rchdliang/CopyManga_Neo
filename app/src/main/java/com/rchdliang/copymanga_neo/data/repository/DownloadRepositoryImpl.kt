@@ -4,15 +4,20 @@ import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.data.download.DownloadManager
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.data.download.hasCompleteFiles
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,27 +29,41 @@ class DownloadRepositoryImpl @Inject constructor(
 ) : DownloadRepository {
 
     override fun getAllDownloadedComics(): Flow<List<DownloadedComicInfo>> {
-        return comicDao.getAllComics().map { entities -> entities.map { it.toInfo() } }
+        return combine(comicDao.getAllComics(), chapterDao.getAllChapters()) { comics, chapters ->
+            val counts = chapters.filter { it.hasCompleteFiles() }
+                .groupingBy { it.comicPathWord }.eachCount()
+            comics.mapNotNull { comic ->
+                val count = counts[comic.pathWord] ?: return@mapNotNull null
+                comic.toInfo().copy(downloadedChapters = count, totalChapters = count)
+            }
+        }.flowOn(Dispatchers.IO)
     }
 
     override suspend fun getDownloadedComic(pathWord: String): DownloadedComicInfo? {
-        return comicDao.getComic(pathWord)?.toInfo()
+        val comic = comicDao.getComic(pathWord) ?: return null
+        val count = getDownloadedChapters(pathWord).size
+        return comic.toInfo().copy(downloadedChapters = count, totalChapters = count)
     }
 
     override suspend fun getDownloadedChapters(comicPathWord: String): List<DownloadedChapterInfo> {
-        return chapterDao.getChaptersOnce(comicPathWord).map { it.toInfo() }
+        return withContext(Dispatchers.IO) {
+            chapterDao.getChaptersOnce(comicPathWord)
+                .filter { it.hasCompleteFiles() }.map { it.toInfo() }
+        }
     }
 
     override suspend fun getDownloadedChapter(uuid: String): DownloadedChapterInfo? {
-        return chapterDao.getChapter(uuid)?.toInfo()
+        return withContext(Dispatchers.IO) {
+            chapterDao.getChapter(uuid)?.takeIf { it.hasCompleteFiles() }?.toInfo()
+        }
     }
 
     override suspend fun getDownloadedChapterUuids(comicPathWord: String): Set<String> {
-        return chapterDao.getChapterUuids(comicPathWord).toSet()
+        return getDownloadedChapters(comicPathWord).map { it.uuid }.toSet()
     }
 
     override suspend fun isComicDownloaded(pathWord: String): Boolean {
-        return comicDao.getComic(pathWord) != null
+        return getDownloadedChapters(pathWord).isNotEmpty()
     }
 
     override suspend fun saveComicCache(info: DownloadedComicInfo) {
@@ -61,11 +80,18 @@ class DownloadRepositoryImpl @Inject constructor(
             downloadedChapters = info.downloadedChapters,
             downloadAt = info.downloadAt
         )
-        val existing = comicDao.getComic(entity.pathWord)
-        if (existing != null) {
-            comicDao.updateComic(entity)
-        } else {
-            comicDao.insertComic(entity)
+        comicDao.insertComic(entity)
+    }
+
+    override suspend fun updateChapterMetadata(
+        comicPathWord: String, group: String, chapters: List<ChapterInfo>
+    ) {
+        val downloaded = chapterDao.getChapterUuids(comicPathWord).toSet()
+        chapters.filter { it.uuid in downloaded }.forEach { chapter ->
+            chapterDao.updateMetadata(
+                comicPathWord, chapter.uuid, chapter.name, chapter.index,
+                chapter.groupPathWord ?: group, chapter.prevChapter, chapter.nextChapter
+            )
         }
     }
 
@@ -95,7 +121,8 @@ class DownloadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteChapter(uuid: String) {
-        chapterDao.deleteChapter(uuid)
+        val chapter = chapterDao.getChapter(uuid) ?: return
+        deleteChapters(chapter.comicPathWord, listOf(uuid))
     }
 
     override fun getDownloadProgress(): StateFlow<Map<String, DownloadProgressInfo>> {

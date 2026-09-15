@@ -32,8 +32,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.9.15"
+        versionCode = 10
+        versionName = "0.9.15.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

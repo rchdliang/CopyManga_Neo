@@ -25,5 +25,9 @@ data class DownloadedChapterEntity(
     val imageCount: Int,
     val imagePaths: String,
     val status: String,
-    val downloadAt: Long
+    val downloadAt: Long,
+    // 旧版本没有保存分组及上下章关系；未知时保持 null，不能由下载子集推算。
+    val groupPathWord: String? = null,
+    val prevChapter: String? = null,
+    val nextChapter: String? = null
 )

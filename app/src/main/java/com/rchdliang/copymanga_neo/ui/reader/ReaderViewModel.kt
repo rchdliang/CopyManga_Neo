@@ -4,12 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.data.local.ReaderPreferencesStore
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.offlineContent
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -84,20 +86,37 @@ class ReaderViewModel @Inject constructor(
 
             try {
                 val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
-                if (downloadedChapter != null) {
+                if (downloadedChapter != null && downloadedChapter.comicPathWord == comicPathWord) {
                     val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
-                    val currentIndex = allChapters.indexOfFirst { it.uuid == chapterUuid }
-                    val prevUuid = if (currentIndex > 0) allChapters[currentIndex - 1].uuid else null
-                    val nextUuid =
-                        if (currentIndex >= 0 && currentIndex < allChapters.lastIndex) allChapters[currentIndex + 1].uuid else null
-
-                    _uiState.value = ReaderUiState.Success(
-                        ChapterContent(
-                            imageUrls = downloadedChapter.imagePaths,
-                            prevUuid = prevUuid,
-                            nextUuid = nextUuid,
-                            chapterName = downloadedChapter.name
-                        )
+                    val localContent = downloadedChapter.offlineContent(allChapters)
+                    _uiState.value = ReaderUiState.Success(localContent)
+                    val resolvedGroup = downloadedChapter.groupPathWord ?: group
+                    currentGroup = resolvedGroup
+                    // 图片立即离线展示；目录刷新失败不影响当前章节阅读。
+                    repository.getChapterInfo(comicPathWord, chapterUuid, resolvedGroup).fold(
+                        onSuccess = { chapter ->
+                            ensureActive()
+                            _uiState.value = ReaderUiState.Success(
+                                localContent.copy(
+                                    prevUuid = chapter.prevChapter,
+                                    nextUuid = chapter.nextChapter,
+                                    chapterName = chapter.name
+                                )
+                            )
+                            try {
+                                downloadRepository.updateChapterMetadata(
+                                    comicPathWord, resolvedGroup, listOf(chapter)
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                android.util.Log.w("ReaderViewModel", "保存章节导航失败", e)
+                            }
+                        },
+                        onFailure = { error ->
+                            if (error is CancellationException) throw error
+                            android.util.Log.d("ReaderViewModel", "目录刷新失败，使用离线导航")
+                        }
                     )
                     return@launch
                 }

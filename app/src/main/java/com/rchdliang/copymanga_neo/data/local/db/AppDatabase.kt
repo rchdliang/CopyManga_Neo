@@ -10,7 +10,7 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
         DownloadedComicEntity::class,
         DownloadedChapterEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

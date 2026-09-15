@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.domain.repository
 
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
 import com.rchdliang.copymanga_neo.domain.model.ComicPage
@@ -21,7 +22,7 @@ interface MangaRepository {
      * 获取首页漫画数据
      */
     suspend fun getHomeComics(): Result<HomeComicsData>
-    
+
     /**
      * 获取漫画详情
      */
@@ -29,7 +30,7 @@ interface MangaRepository {
 
     /** 获取完整题材信息，复用详情标签缓存；空列表表示详情确认没有题材。 */
     suspend fun getComicThemes(pathWord: String): Result<List<Theme>>
-    
+
     /**
      * 获取章节列表（单页）
      * @param pathWord 漫画路径标识
@@ -44,6 +45,11 @@ interface MangaRepository {
         limit: Int = 20
     ): Result<ChapterList>
 
+    /** 分页查找最新章节元数据，不下载图片或请求章节 HTML。 */
+    suspend fun getChapterInfo(
+        comicPathWord: String, chapterUuid: String, group: String = "default"
+    ): Result<ChapterInfo>
+
     /**
      * 获取漫画前五页（用于记录阅读进度）
      *
@@ -52,6 +58,7 @@ interface MangaRepository {
         comicPathWord: String,
         chapterUuid: String,
     ): Result<TrialContent>
+
     /**
      * 获取章节具体内容（图片列表）
      * @param group 汉化组 pathWord

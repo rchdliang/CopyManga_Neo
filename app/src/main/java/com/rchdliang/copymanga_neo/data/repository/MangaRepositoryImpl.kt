@@ -101,7 +101,7 @@ class MangaRepositoryImpl @Inject constructor(
             } else {
                 body.results.recComics?.list?.map { it.comic } ?: emptyList()
             }
-            
+
             val hotComics = body.results.hotComics?.map { it.comic } ?: emptyList()
             val newComics = body.results.newComics?.map { it.comic } ?: emptyList()
             val finishComics = body.results.finishComics?.list ?: emptyList()
@@ -193,6 +193,25 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getChapterInfo(
+        comicPathWord: String, chapterUuid: String, group: String
+    ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterInfo> {
+        var offset = 0
+        val seen = mutableSetOf<String>()
+        do {
+            val result = getChapters(comicPathWord, group, offset = offset, limit = 100)
+            val page = result.fold({ it }, { return Result.failure(it) })
+            page.list.firstOrNull { it.uuid == chapterUuid }?.let {
+                return Result.success(it)
+            }
+            // 使用实际返回数量翻页，并防止服务端重复页导致无限循环。
+            val newCount = page.list.count { seen.add(it.uuid) }
+            if (page.list.isEmpty() || newCount == 0) break
+            offset += page.list.size
+        } while (offset < page.total)
+        return Result.failure(NoSuchElementException("章节不在当前分组中"))
+    }
+
     override suspend fun trialChapterContent(
         comicPathWord: String,
         chapterUuid: String
@@ -229,21 +248,10 @@ class MangaRepositoryImpl @Inject constructor(
             var prevUuid: String? = null
             var nextUuid: String? = null
             var chapterName: String? = null
-            try {
-                val chaptersResult = getChapters(comicPathWord, group = group, limit = 500)
-                chaptersResult.onSuccess { chapterList ->
-                    val currentChapter = chapterList.list.find { it.uuid == chapterUuid }
-                    if (currentChapter != null) {
-                        prevUuid = currentChapter.prevChapter
-                        nextUuid = currentChapter.nextChapter
-                        chapterName = currentChapter.name
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w(
-                    "MangaRepository",
-                    "获取章节列表失败，上下章跳转将不可用: ${e.message}"
-                )
+            getChapterInfo(comicPathWord, chapterUuid, group).onSuccess { chapter ->
+                prevUuid = chapter.prevChapter
+                nextUuid = chapter.nextChapter
+                chapterName = chapter.name
             }
 
             val response = wwwApiService.getChapterHtml(comicPathWord, chapterUuid)

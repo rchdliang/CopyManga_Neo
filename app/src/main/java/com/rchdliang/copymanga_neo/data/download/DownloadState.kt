@@ -25,7 +25,8 @@ data class ComicDownloadTask(
     val authorNames: String,
     val statusDisplay: String,
     val lastUpdate: String?,
-    val brief: String?
+    val brief: String?,
+    val taskId: String = java.util.UUID.randomUUID().toString()
 ) {
     val totalChapters: Int get() = chapters.size
     val completedChapters: Int get() = chapters.count { it.status == ChapterDownloadStatus.DOWNLOADED }

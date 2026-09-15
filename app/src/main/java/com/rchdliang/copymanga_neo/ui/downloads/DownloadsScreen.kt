@@ -192,7 +192,7 @@ private fun DownloadsContent(
                                     { onResume(pathWord) }
                                 } else null,
                                 modifier = Modifier
-                                    .widthIn(max = 840.dp)
+//                                    .widthIn(max = 840.dp)
                                     .fillMaxWidth()
                             )
                         }
@@ -223,7 +223,7 @@ private fun DownloadsContent(
                     ComicCard(
                         name = comic.name,
                         cover = comic.cover,
-                        subtitle = "${comic.downloadedChapters}/${comic.totalChapters} 章",
+                        subtitle = "本地 ${comic.downloadedChapters} 章",
                         isSelected = comic.pathWord in uiState.selectedPathWords,
                         sharedTransitionKey = "downloads:${comic.pathWord}",
                         comicPathWord = comic.pathWord,

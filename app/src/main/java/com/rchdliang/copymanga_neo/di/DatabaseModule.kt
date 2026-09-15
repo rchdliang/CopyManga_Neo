@@ -24,7 +24,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "copymanga_downloads.db"
         )
-            // 下载缓存数据库结构变更时重建（数据可重新下载，可接受破坏性迁移）
+            // 未发布版本的下载缓存允许随结构变更重建。
             .fallbackToDestructiveMigration(true)
             .build()
     }

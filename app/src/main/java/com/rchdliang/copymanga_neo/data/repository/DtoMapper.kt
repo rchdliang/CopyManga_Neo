@@ -65,7 +65,10 @@ fun DownloadedChapterEntity.toInfo() = DownloadedChapterInfo(
     name = name,
     index = index,
     imageCount = imageCount,
-    imagePaths = imagePaths.split(",").filter { it.isNotBlank() }
+    imagePaths = imagePaths.split(",").filter { it.isNotBlank() },
+    groupPathWord = groupPathWord,
+    prevChapter = prevChapter,
+    nextChapter = nextChapter
 )
 
 // endregion

@@ -52,7 +52,9 @@ class DownloadsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         downloadedComics = comics,
-                        activeDownloads = progress,
+                        activeDownloads = progress.filterValues { info ->
+                            info.status != DownloadTaskStatus.COMPLETED
+                        },
                         pausedComics = paused
                     )
                 }

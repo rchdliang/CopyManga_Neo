@@ -88,18 +88,40 @@ class DownloadManager @Inject constructor(
 
     fun enqueue(task: ComicDownloadTask) {
         scope.launch {
+            val stoppingDownloads = stateMutex.withLock {
+                val existing = currentTasks[task.pathWord]
+                if (existing == null) {
+                    listOfNotNull(activeTaskCompletions[task.pathWord])
+                } else {
+                    val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
+                    task.chapters.filter { it.chapter.uuid !in existingUuids }
+                        .mapNotNull { activeChapterCompletions[it.chapter.uuid] }
+                }
+            }
+            stoppingDownloads.forEach { it.await() }
             stateMutex.withLock {
                 val existing = currentTasks[task.pathWord]
                 if (existing != null) {
                     // 合并：将新章节追加到已有任务中，避免覆盖正在下载的任务
                     val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
                     val newChapters = task.chapters.filter { it.chapter.uuid !in existingUuids }
-                    if (newChapters.isNotEmpty()) {
-                        val mergedChapters = existing.chapters + newChapters
+                    val requestedUuids = task.chapters.map { it.chapter.uuid }.toSet()
+                    val retried = existing.chapters.map { item ->
+                        if (item.chapter.uuid in requestedUuids && item.status == ChapterDownloadStatus.ERROR) {
+                            item.copy(
+                                status = ChapterDownloadStatus.WAITING,
+                                progress = 0f,
+                                errorMessage = null
+                            )
+                        } else item
+                    }
+                    if (newChapters.isNotEmpty() || retried != existing.chapters) {
+                        val mergedChapters = retried + newChapters
                         val mergedTask = existing.copy(chapters = mergedChapters)
                         currentTasks = currentTasks + (task.pathWord to mergedTask)
                         taskInfoMap = taskInfoMap + (task.pathWord to mergedTask)
                         updateProgressForTask(mergedTask)
+                        launch { queue.send(mergedTask) }
                         Log.d(
                             TAG,
                             "enqueue (merged): ${task.name}, added ${newChapters.size} chapters, total ${mergedChapters.size}"
@@ -260,7 +282,7 @@ class DownloadManager @Inject constructor(
         for (task in queue) {
             val completion = CompletableDeferred<Unit>()
             val shouldProcess = stateMutex.withLock {
-                if (!currentTasks.containsKey(task.pathWord) || task.pathWord in pausedComics) {
+                if (currentTasks[task.pathWord]?.taskId != task.taskId || task.pathWord in pausedComics) {
                     false
                 } else {
                     activeTaskCompletions[task.pathWord] = completion
@@ -284,11 +306,11 @@ class DownloadManager @Inject constructor(
                     scope.launch { queue.send(updatedTask) }
                 }
             } else {
-                val remaining = currentTasks[task.pathWord]
-                if (remaining == null || remaining.chapters.all {
-                        it.status == ChapterDownloadStatus.DOWNLOADED
-                    }) {
-                    stateMutex.withLock {
+                stateMutex.withLock {
+                    val remaining = currentTasks[task.pathWord]
+                    if (remaining?.taskId == task.taskId && remaining.chapters.all {
+                            it.status == ChapterDownloadStatus.DOWNLOADED
+                        }) {
                         currentTasks = currentTasks - task.pathWord
                     }
                 }
@@ -311,35 +333,26 @@ class DownloadManager @Inject constructor(
                 return
             }
 
-            val currentTask = currentTasks[comicPathWord] ?: return
-            val chapters = currentTask.chapters
-            val chapterItem = chapters.firstOrNull {
-                it.status == ChapterDownloadStatus.WAITING
-            } ?: break  // 没有待处理的章节，退出循环
-
-            if (comicPathWord in pausedComics) {
-                Log.d(TAG, "Task paused for $comicPathWord (before chapter start)")
-                return
-            }
-
-            val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
-
-            // 标记为 DOWNLOADING
-            val updatedChapters = chapters.toMutableList()
-            updatedChapters[idx] = chapterItem.copy(
-                status = ChapterDownloadStatus.DOWNLOADING,
-                progress = 0f
-            )
-            val newTask = currentTask.copy(chapters = updatedChapters)
-            stateMutex.withLock {
+            // 选择章节、登记 I/O 完成信号和状态变更必须原子化，避免取消后旧快照复活任务。
+            val pending = stateMutex.withLock {
+                val currentTask = currentTasks[comicPathWord]
+                    ?.takeIf { it.taskId == task.taskId } ?: return@withLock null
+                if (comicPathWord in pausedComics) return@withLock null
+                val chapters = currentTask.chapters
+                val idx = chapters.indexOfFirst { it.status == ChapterDownloadStatus.WAITING }
+                if (idx < 0) return@withLock null
+                val chapterItem = chapters[idx]
+                val updatedChapters = chapters.toMutableList()
+                updatedChapters[idx] =
+                    chapterItem.copy(status = ChapterDownloadStatus.DOWNLOADING, progress = 0f)
+                val newTask = currentTask.copy(chapters = updatedChapters)
                 currentTasks = currentTasks + (comicPathWord to newTask)
-            }
-            updateProgressForTask(newTask)
-
-            val chapterCompletion = CompletableDeferred<Unit>()
-            stateMutex.withLock {
-                activeChapterCompletions[chapterItem.chapter.uuid] = chapterCompletion
-            }
+                val completion = CompletableDeferred<Unit>()
+                activeChapterCompletions[chapterItem.chapter.uuid] = completion
+                updateProgressForTask(newTask)
+                Triple(chapterItem, idx, completion)
+            } ?: break
+            val (chapterItem, idx, chapterCompletion) = pending
 
             try {
                 val chapterIndex = idx + 1
@@ -407,11 +420,8 @@ class DownloadManager @Inject constructor(
                         return
                     }
 
-                    if (imagePaths.size < imageUrls.size) {
-                        Log.w(
-                            TAG,
-                            "Chapter ${chapterItem.chapter.name} incomplete: ${imagePaths.size}/${imageUrls.size}"
-                        )
+                    if (imageUrls.isEmpty() || imagePaths.size != imageUrls.size) {
+                        throw IOException("章节图片不完整：${imagePaths.size}/${imageUrls.size}")
                     }
 
                     val taskBeforeCommit = currentTasks[comicPathWord] ?: return
@@ -426,12 +436,24 @@ class DownloadManager @Inject constructor(
                         comicPathWord = comicPathWord,
                         name = chapterItem.chapter.name,
                         index = chapterItem.chapter.index,
-                        imageCount = imagePaths.size,
+                        imageCount = imageUrls.size,
                         imagePaths = imagePaths.joinToString(","),
                         status = "downloaded",
-                        downloadAt = System.currentTimeMillis()
+                        downloadAt = System.currentTimeMillis(),
+                        groupPathWord = chapterItem.chapter.groupPathWord ?: "default",
+                        prevChapter = chapterContent.prevUuid,
+                        nextChapter = chapterContent.nextUuid
                     )
-                    chapterDao.insertChapter(entity)
+                    val committed = stateMutex.withLock {
+                        val latest = currentTasks[comicPathWord]
+                        if (latest?.taskId == task.taskId && latest.chapters.any {
+                                it.chapter.uuid == chapterItem.chapter.uuid
+                            }) {
+                            chapterDao.insertChapter(entity)
+                            true
+                        } else false
+                    }
+                    if (!committed) continue
 
                     markChapterCompleted(comicPathWord, chapterItem)
                     val roomChapterCount = chapterDao.getChapterUuids(comicPathWord).size
@@ -490,18 +512,20 @@ class DownloadManager @Inject constructor(
             updateProgressForTask(currentTasks[comicPathWord])
         }
 
-        val finalTask = currentTasks[comicPathWord]
-        if (finalTask != null && finalTask.chapters.all {
-                it.status == ChapterDownloadStatus.DOWNLOADED
-            }) {
-            updateProgress(
-                comicPathWord = comicPathWord,
-                status = DownloadTaskStatus.COMPLETED,
-                statusText = "下载完成",
-                currentChapterProgress = 1f,
-                speedBytesPerSecond = 0L,
-                errorMessage = null
-            )
+        stateMutex.withLock {
+            val finalTask = currentTasks[comicPathWord]
+            if (finalTask?.taskId == task.taskId && finalTask.chapters.all {
+                    it.status == ChapterDownloadStatus.DOWNLOADED
+                }) {
+                updateProgress(
+                    comicPathWord = comicPathWord,
+                    status = DownloadTaskStatus.COMPLETED,
+                    statusText = "下载完成",
+                    currentChapterProgress = 1f,
+                    speedBytesPerSecond = 0L,
+                    errorMessage = null
+                )
+            }
         }
     }
 
@@ -533,113 +557,95 @@ class DownloadManager @Inject constructor(
         var lastTick = System.currentTimeMillis()
 
         for ((i, url) in imageUrls.withIndex()) {
+            if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                throw IOException("下载已取消")
+            }
             if (comicPathWord in pausedComics) {
                 Log.d(TAG, "Paused during image download for $chapterUuid")
                 break
             }
-            imageConcurrency.acquire()
+            val semaphore = imageConcurrency
+            semaphore.acquire()
             try {
                 val ext = url.substringAfterLast('.').substringBefore('?').ifEmpty { "jpg" }
                 val file = File(dir, "${i.toString().padStart(3, '0')}.$ext")
 
-                if (file.exists() && file.length() > 0) {
-                    paths.add(file.absolutePath)
-                    val chapterProgress = (i + 1).toFloat() / totalImages.coerceAtLeast(1)
-                    updateProgress(
-                        comicPathWord = comicPathWord,
-                        status = DownloadTaskStatus.DOWNLOADING,
-                        statusText = "正在下载图片 ${i + 1}/$totalImages",
-                        currentChapterIndex = chapterIndex,
-                        currentChapterName = chapterName,
-                        currentChapterProgress = chapterProgress,
-                        downloadedImages = i + 1,
-                        totalImages = totalImages
-                    )
-                    continue
-                }
-
+                // 未提交章节的旧文件可能来自历史版本的中断写入，重试时重新获取。
                 val request = Request.Builder().url(url).build()
                 val call = okHttpClient.newCall(request)
                 activeCalls[comicPathWord] = call
-                val response = try {
-                    call.execute()
-                } finally {
-                    activeCalls.remove(comicPathWord, call)
-                }
-
-                if (isRiskResponseCode(response.code)) {
-                    response.close()
-                    throw RiskControlException("服务器返回 ${response.code}，可能触发风控")
-                }
-
-                if (!response.isSuccessful) {
-                    val code = response.code
-                    response.close()
-                    throw IOException("图片下载失败，HTTP $code")
-                }
-
-                val body = response.body
-
-                val contentType = response.header("Content-Type").orEmpty()
-                if (contentType.isNotBlank() &&
-                    !contentType.startsWith("image/") &&
-                    !contentType.contains("octet-stream")
-                ) {
-                    val preview = try {
-                        body.source().peek().readUtf8(512)
-                    } catch (_: Throwable) {
-                        ""
+                try {
+                    if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                        call.cancel()
                     }
-                    response.close()
-                    if (isRiskHtml(preview)) {
-                        throw RiskControlException("图片地址返回风控页面")
-                    } else {
-                        throw IOException("图片地址返回了非图片内容：$contentType")
-                    }
-                }
+                    call.execute().use { response ->
 
-                file.parentFile?.mkdirs()
+                        if (isRiskResponseCode(response.code)) {
+                            response.close()
+                            throw RiskControlException("服务器返回 ${response.code}，可能触发风控")
+                        }
 
-                val buffer = ByteArray(8192)
-                var totalRead = 0L
+                        if (!response.isSuccessful) {
+                            val code = response.code
+                            response.close()
+                            throw IOException("图片下载失败，HTTP $code")
+                        }
 
-                body.byteStream().use { input ->
-                    file.outputStream().use { output ->
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read == -1) break
-                            output.write(buffer, 0, read)
-                            totalRead += read
-                            bytesSinceLastTick += read
+                        val body = response.body
 
-                            val now = System.currentTimeMillis()
-                            val elapsed = now - lastTick
-                            if (elapsed >= 500L) {
-                                val speed = bytesSinceLastTick * 1000L / elapsed
-                                bytesSinceLastTick = 0L
-                                lastTick = now
-
-                                val imageProgress = i.toFloat() / totalImages.coerceAtLeast(1)
-                                updateProgress(
-                                    comicPathWord = comicPathWord,
-                                    status = DownloadTaskStatus.DOWNLOADING,
-                                    statusText = "正在下载图片 ${i + 1}/$totalImages",
-                                    currentChapterIndex = chapterIndex,
-                                    currentChapterName = chapterName,
-                                    currentChapterProgress = imageProgress,
-                                    downloadedImages = i,
-                                    totalImages = totalImages,
-                                    speedBytesPerSecond = speed
-                                )
+                        val contentType = response.header("Content-Type").orEmpty()
+                        if (contentType.isNotBlank() &&
+                            !contentType.startsWith("image/") &&
+                            !contentType.contains("octet-stream")
+                        ) {
+                            val preview = try {
+                                body.source().peek().readUtf8(512)
+                            } catch (_: Throwable) {
+                                ""
+                            }
+                            response.close()
+                            if (isRiskHtml(preview)) {
+                                throw RiskControlException("图片地址返回风控页面")
+                            } else {
+                                throw IOException("图片地址返回了非图片内容：$contentType")
                             }
                         }
+
+                        file.parentFile?.mkdirs()
+
+                        body.byteStream().use { input ->
+                            writeDownloadedImage(file, input, body.contentLength()) { read ->
+                                if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                                    throw IOException("下载已取消")
+                                }
+                                bytesSinceLastTick += read
+
+                                val now = System.currentTimeMillis()
+                                val elapsed = now - lastTick
+                                if (elapsed >= 500L) {
+                                    val speed = bytesSinceLastTick * 1000L / elapsed
+                                    bytesSinceLastTick = 0L
+                                    lastTick = now
+
+                                    val imageProgress = i.toFloat() / totalImages.coerceAtLeast(1)
+                                    updateProgress(
+                                        comicPathWord = comicPathWord,
+                                        status = DownloadTaskStatus.DOWNLOADING,
+                                        statusText = "正在下载图片 ${i + 1}/$totalImages",
+                                        currentChapterIndex = chapterIndex,
+                                        currentChapterName = chapterName,
+                                        currentChapterProgress = imageProgress,
+                                        downloadedImages = i,
+                                        totalImages = totalImages,
+                                        speedBytesPerSecond = speed
+                                    )
+                                }
+                            }
+                        }
+                        paths.add(file.absolutePath)
                     }
-                }
-
-                response.close()
-
-                if (file.exists() && file.length() > 0) {
-                    paths.add(file.absolutePath)
+                } finally {
+                    activeCalls.remove(comicPathWord, call)
                 }
 
                 val chapterProgress = (i + 1).toFloat() / totalImages.coerceAtLeast(1)
@@ -660,7 +666,7 @@ class DownloadManager @Inject constructor(
                 Log.e(TAG, "下载图片失败: $url", e)
                 throw e
             } finally {
-                imageConcurrency.release()
+                semaphore.release()
             }
         }
         paths
@@ -788,14 +794,12 @@ class DownloadManager @Inject constructor(
         val overall = if (totalChapters <= 0) {
             0f
         } else {
-            val newStatus = status ?: old?.status ?: DownloadTaskStatus.IDLE
-            if (newChapterIndex > 0 && newStatus != DownloadTaskStatus.COMPLETED) {
-                val dynamicProgress =
-                    ((newChapterIndex - 1).coerceAtLeast(0) + newChapterProgress) / totalChapters
-                dynamicProgress.coerceIn(0f, 1f)
-            } else {
-                task.overallProgress.coerceIn(0f, 1f)
-            }
+            // 已尝试的章节序号包含失败项，只能累加已完成章节和当前下载章节的进度。
+            val inFlight =
+                if (task.chapters.any { it.status == ChapterDownloadStatus.DOWNLOADING }) {
+                    newChapterProgress
+                } else 0f
+            ((completedChapters + inFlight) / totalChapters).coerceIn(0f, 1f)
         }
 
         val info = DownloadProgressInfo(
@@ -850,7 +854,7 @@ class DownloadManager @Inject constructor(
         val old = _downloadProgress.value[task.pathWord]
         val statusText = when (status) {
             DownloadTaskStatus.COMPLETED -> "下载完成"
-            DownloadTaskStatus.ERROR -> old?.statusText ?: "下载出错"
+            DownloadTaskStatus.ERROR -> "已完成 ${task.completedChapters}/${task.totalChapters} 章，${task.errorCount} 章失败"
             DownloadTaskStatus.PAUSED_BY_RISK -> old?.statusText ?: "触发风控，已暂停下载"
             DownloadTaskStatus.PAUSED -> "已暂停"
             else -> old?.statusText
