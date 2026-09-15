@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
+import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
@@ -9,6 +10,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.TrialContent
 
 /**
@@ -24,6 +26,9 @@ interface MangaRepository {
      * 获取漫画详情
      */
     suspend fun getComicDetail(pathWord: String): Result<ComicDetail>
+
+    /** 获取完整题材信息，复用详情标签缓存；空列表表示详情确认没有题材。 */
+    suspend fun getComicThemes(pathWord: String): Result<List<Theme>>
     
     /**
      * 获取章节列表（单页）
@@ -75,9 +80,15 @@ interface MangaRepository {
     suspend fun getThemeComics(theme: String, offset: Int = 0): Result<ComicPage>
 
     /**
-     * 获取书架漫画
+     * 分页获取完整书架，供列表和更新角标共用。
      */
-    suspend fun getFavoriteComics(offset: Int = 0, limit: Int = 21): Result<List<FavoriteItem>>
+    suspend fun getFavoriteComics(): Result<List<FavoriteItem>>
+
+    /** 获取一页云端浏览记录。 */
+    suspend fun getBrowseHistory(offset: Int = 0): Result<BrowseHistoryPage>
+
+    /** 清空当前账号的全部漫画浏览记录。 */
+    suspend fun clearBrowseHistory(): Result<Unit>
 
     /**
      * 查询漫画收藏状态和阅读进度

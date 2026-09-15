@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
 import com.rchdliang.copymanga_neo.data.remote.dto.AuthorDto
 import com.rchdliang.copymanga_neo.data.remote.dto.BrowseDto
+import com.rchdliang.copymanga_neo.data.remote.dto.BrowseHistoryDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterDto
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.dto.CharacterDto
@@ -21,6 +22,7 @@ import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResult
 import com.rchdliang.copymanga_neo.data.remote.dto.ThemeDto
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResult
 import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryItem
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
@@ -77,6 +79,18 @@ fun DisplayAndValue.toDisplayValue() = DisplayValue(display, value)
 fun LastChapterDto.toLastChapter() = LastChapter(lastChapterId, lastChapterName)
 fun GroupsDto.toGroup() = ChapterGroup(pathWord, total, name)
 fun BrowseDto.toBrowseInfo() = BrowseInfo(comicUuid, pathWord, chapterUuid, chapterName)
+
+fun BrowseHistoryDto.toHistoryItem() = BrowseHistoryItem(
+    id = id,
+    name = comic.name,
+    pathWord = comic.pathWord,
+    cover = comic.cover,
+    authors = comic.authors.orEmpty().map { it.toAuthor() },
+    lastReadChapterId = lastReadChapterId,
+    lastReadChapterName = lastReadChapterName,
+    latestChapterId = comic.latestChapterId,
+    latestChapterName = comic.latestChapterName
+)
 
 fun ComicDto.toSummary() = ComicSummary(
     name = name,

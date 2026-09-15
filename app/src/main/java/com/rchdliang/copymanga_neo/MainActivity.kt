@@ -43,6 +43,8 @@ import androidx.compose.material.icons.outlined.AccountBox
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -76,6 +78,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -90,6 +94,7 @@ import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionSt
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
+import com.rchdliang.copymanga_neo.ui.favorites.FavoritesViewModel
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
 import com.rchdliang.copymanga_neo.ui.profile.ProfileScreen
 import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
@@ -312,8 +317,14 @@ fun MainScreen(
     isLoggedIn: Boolean,
     avatar: String?,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
+    favoritesViewModel: FavoritesViewModel = hiltViewModel()
 ) {
+    // 主界面创建共享书架状态，登录后即可在导航栏提示更新。
+    val favoritesState by favoritesViewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        favoritesViewModel.onMainScreenResumed()
+    }
     android.util.Log.d("MainScreen", "Recompose: isLoggedIn=$isLoggedIn")
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
 
@@ -337,6 +348,8 @@ fun MainScreen(
         WideScreenLayout(
             isLoggedIn = isLoggedIn,
             avatar = avatar,
+            favoritesViewModel = favoritesViewModel,
+            updatedComicCount = favoritesState.updatedComicCount,
             currentDestination = currentDestination,
             onDestinationSelected = ::animateToDestination,
             onNavigateToDetail = onNavigateToDetail,
@@ -350,9 +363,10 @@ fun MainScreen(
                 AppDestinations.entries.forEach { destination ->
                     item(
                         icon = {
-                            Icon(
-                                imageVector = if (currentDestination == destination) destination.selectedIcon else destination.unselectedIcon,
-                                contentDescription = destination.label
+                            DestinationIcon(
+                                destination = destination,
+                                selected = currentDestination == destination,
+                                updatedComicCount = favoritesState.updatedComicCount
                             )
                         },
                         label = { Text(destination.label) },
@@ -378,6 +392,7 @@ fun MainScreen(
             ) {
                 MainDestinationContent(
                     currentDestination = currentDestination,
+                    favoritesViewModel = favoritesViewModel,
                     modifier = Modifier.fillMaxSize(),
                     onNavigateToDetail = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
@@ -393,6 +408,8 @@ fun MainScreen(
 private fun WideScreenLayout(
     isLoggedIn: Boolean,
     avatar: String?,
+    favoritesViewModel: FavoritesViewModel,
+    updatedComicCount: Int,
     currentDestination: AppDestinations,
     onDestinationSelected: (AppDestinations) -> Unit,
     onNavigateToDetail: (String) -> Unit,
@@ -486,10 +503,10 @@ private fun WideScreenLayout(
                         onDestinationSelected(destination)
                     },
                     icon = {
-                        Icon(
-                            imageVector = if (currentDestination == destination)
-                                destination.selectedIcon else destination.unselectedIcon,
-                            contentDescription = destination.label
+                        DestinationIcon(
+                            destination = destination,
+                            selected = currentDestination == destination,
+                            updatedComicCount = updatedComicCount
                         )
                     },
                     label = { Text(destination.label) }
@@ -506,6 +523,7 @@ private fun WideScreenLayout(
         ) {
             MainDestinationContent(
                 currentDestination = currentDestination,
+                favoritesViewModel = favoritesViewModel,
                 modifier = Modifier.fillMaxSize(),
                 onNavigateToDetail = onNavigateToDetail,
                 onNavigateToSearch = onNavigateToSearch,
@@ -519,6 +537,7 @@ private fun WideScreenLayout(
 @Composable
 private fun MainDestinationContent(
     currentDestination: AppDestinations,
+    favoritesViewModel: FavoritesViewModel,
     modifier: Modifier = Modifier,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
@@ -562,13 +581,47 @@ private fun MainDestinationContent(
                 AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)
 
                 AppDestinations.BOOKSHELF -> FavoritesScreen(
+                    viewModel = favoritesViewModel,
                     onComicClick = onNavigateToDetail,
                     onNavigateToProfile = onNavigateToProfile
                 )
 
-                AppDestinations.PROFILE -> ProfileScreen()
+                AppDestinations.PROFILE -> ProfileScreen(
+                    onComicClick = onNavigateToDetail,
+                    onHistoryCleared = favoritesViewModel::loadFavorites
+                )
             }
         }
+    }
+}
+
+/** 手机底栏和宽屏侧栏共用书架更新角标。 */
+@Composable
+private fun DestinationIcon(
+    destination: AppDestinations,
+    selected: Boolean,
+    updatedComicCount: Int
+) {
+    val showBadge = destination == AppDestinations.BOOKSHELF && updatedComicCount > 0
+    BadgedBox(
+        badge = {
+            if (showBadge) {
+                Badge(containerColor = MaterialTheme.colorScheme.error) {
+                    Text(
+                        text = if (updatedComicCount > 99) "99+" else updatedComicCount.toString(),
+                        color = MaterialTheme.colorScheme.onError
+                    )
+                }
+            }
+        },
+        modifier = Modifier.semantics {
+            if (showBadge) stateDescription = "$updatedComicCount 部漫画有新内容"
+        }
+    ) {
+        Icon(
+            imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
+            contentDescription = destination.label
+        )
     }
 }
 

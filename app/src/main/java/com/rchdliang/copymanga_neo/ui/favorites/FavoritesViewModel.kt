@@ -7,9 +7,14 @@ import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -23,7 +28,11 @@ data class FavoritesUiState(
     val isSelectionMode: Boolean = false,
     val selectedIds: Set<Int> = emptySet(),
     val isDeleting: Boolean = false
-)
+) {
+    /** 角标按漫画计数，与卡片上的“有新内容”共用判定。 */
+    val updatedComicCount: Int
+        get() = if (isLoggedIn) favorites.count { it.comic.hasUnreadUpdate } else 0
+}
 
 @HiltViewModel
 class FavoritesViewModel @Inject constructor(
@@ -33,6 +42,9 @@ class FavoritesViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
+    private var loadJob: Job? = null
+    private var deleteJob: Job? = null
+    private var hasResumedMainScreen = false
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("FavoritesViewModel", "Unhandled coroutine exception", throwable)
@@ -52,33 +64,42 @@ class FavoritesViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
-            userRepository.isLoggedIn().collect { loggedIn ->
-                _uiState.update { state ->
-                    state.copy(
-                        isLoggedIn = loggedIn,
-                        // 登出时退出选择模式并清空选中
-                        isSelectionMode = if (loggedIn) state.isSelectionMode else false,
-                        selectedIds = if (loggedIn) state.selectedIds else emptySet(),
-                        error = if (!loggedIn) null else state.error
-                    )
-                }
-                if (loggedIn && _uiState.value.favorites.isEmpty() && !_uiState.value.isLoading) {
-                    loadFavorites()
-                } else if (!loggedIn) {
-                    // 登出时清空收藏列表，避免重新登录后显示过时数据
-                    _uiState.update { it.copy(favorites = emptyList(), error = null) }
+            combine(
+                userRepository.isLoggedIn(),
+                userRepository.getUsername()
+            ) { loggedIn, username ->
+                loggedIn to username
+            }.distinctUntilChanged().collect { (loggedIn, _) ->
+                // 取消旧会话请求，防止登出后旧结果恢复书架和角标。
+                loadJob?.cancel()
+                deleteJob?.cancel()
+                _uiState.value = FavoritesUiState(isLoggedIn = loggedIn)
+                if (loggedIn) {
+                    refreshFavorites(showError = false)
                 }
             }
         }
     }
 
     fun loadFavorites() {
-        if (!_uiState.value.isLoggedIn) return
+        refreshFavorites(showError = true)
+    }
 
-        viewModelScope.launch(exceptionHandler) {
+    /** 首次加载由登录状态触发；回到主界面或从后台恢复时再同步。 */
+    fun onMainScreenResumed() {
+        if (hasResumedMainScreen) refreshFavorites(showError = false)
+        hasResumedMainScreen = true
+    }
+
+    private fun refreshFavorites(showError: Boolean) {
+        if (!_uiState.value.isLoggedIn || loadJob?.isActive == true) return
+
+        loadJob = viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            mangaRepository.getFavoriteComics()
-                .onSuccess { favorites ->
+            val result = mangaRepository.getFavoriteComics()
+            currentCoroutineContext().ensureActive()
+            result.fold(
+                onSuccess = { favorites ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
@@ -87,16 +108,17 @@ class FavoritesViewModel @Inject constructor(
                             error = null
                         )
                     }
-                }
-                .onFailure { error ->
+                },
+                onFailure = { error ->
                     _uiState.update {
                         it.copy(
                             isLoading = false,
                             error = error.message,
-                            toastMessage = error.message ?: "加载失败"
+                            toastMessage = if (showError) error.message ?: "加载失败" else null
                         )
                     }
                 }
+            )
         }
     }
 
@@ -147,20 +169,24 @@ class FavoritesViewModel @Inject constructor(
         // 先退出选择模式并标记删除中，避免重复触发
         _uiState.update { it.copy(isSelectionMode = false, isDeleting = true) }
 
-        viewModelScope.launch(exceptionHandler) {
-            mangaRepository.removeFavorites(ids)
-                .onSuccess {
+        deleteJob = viewModelScope.launch(exceptionHandler) {
+            val result = mangaRepository.removeFavorites(ids)
+            currentCoroutineContext().ensureActive()
+            result.fold(
+                onSuccess = {
                     _uiState.update {
                         it.copy(
                             isDeleting = false,
+                            favorites = it.favorites.filterNot { favorite -> favorite.uuid in ids },
                             selectedIds = emptySet(),
                             toastMessage = "已移除 ${ids.size} 部"
                         )
                     }
                     // 移除成功后刷新书架
+                    loadJob?.cancel()
                     loadFavorites()
-                }
-                .onFailure { error ->
+                },
+                onFailure = { error ->
                     _uiState.update {
                         it.copy(
                             isDeleting = false,
@@ -171,8 +197,10 @@ class FavoritesViewModel @Inject constructor(
                         )
                     }
                     // 失败后也刷新一次，确保 UI 与服务端一致
+                    loadJob?.cancel()
                     loadFavorites()
                 }
+            )
         }
     }
 

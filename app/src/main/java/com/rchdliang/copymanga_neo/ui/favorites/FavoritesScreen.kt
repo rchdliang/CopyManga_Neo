@@ -368,16 +368,16 @@ private fun SelectionBottomBar(
 @Composable
 private fun rememberReadingStatus(comic: FavoriteComic): Pair<String, Color> {
     return when {
-        comic.browse == null || comic.browse.chapterUuid.isNullOrEmpty() -> {
+        comic.browse == null || comic.browse.chapterUuid.isNullOrBlank() -> {
             "还未读过" to MaterialTheme.colorScheme.primary
         }
 
-        comic.browse.chapterUuid == comic.lastChapterId -> {
-            "上次读到：${comic.browse.chapterName ?: ""}" to MaterialTheme.colorScheme.onSurfaceVariant
+        comic.hasUnreadUpdate -> {
+            "有新内容：${comic.lastChapterName}" to MaterialTheme.colorScheme.primary
         }
 
         else -> {
-            "有新内容：${comic.lastChapterName}" to MaterialTheme.colorScheme.primary
+            "上次读到：${comic.browse.chapterName ?: ""}" to MaterialTheme.colorScheme.onSurfaceVariant
         }
     }
 }

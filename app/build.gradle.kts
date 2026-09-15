@@ -32,8 +32,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.9.14"
+        versionCode = 9
+        versionName = "0.9.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -94,7 +94,7 @@ dependencies {
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)
-//    androidTestImplementation(composeBom)
+    androidTestImplementation(composeBom)
     implementation(libs.androidx.compose.runtime)
     // AndroidX Core
     implementation(libs.androidx.core.ktx)

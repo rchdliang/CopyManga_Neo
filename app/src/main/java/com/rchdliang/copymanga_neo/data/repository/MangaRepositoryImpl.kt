@@ -5,6 +5,7 @@ import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
 import com.rchdliang.copymanga_neo.di.WwwRetrofit
+import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
@@ -14,11 +15,13 @@ import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.TrialContent
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +33,46 @@ class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
     @param:WwwRetrofit private val wwwApiService: MangaApiService
 ) : MangaRepository {
+
+    private data class CachedThemes(val themes: List<Theme>, val expiresAt: Long)
+
+    private val themeCache = object : LinkedHashMap<String, CachedThemes>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedThemes>?): Boolean =
+            size > 256
+    }
+
+    private fun cacheThemes(pathWord: String, themes: List<Theme>) {
+        synchronized(themeCache) {
+            themeCache[pathWord] = CachedThemes(
+                themes.toList(),
+                System.nanoTime() + TimeUnit.MINUTES.toNanos(30)
+            )
+        }
+    }
+
+    override suspend fun getComicThemes(pathWord: String): Result<List<Theme>> {
+        synchronized(themeCache) {
+            themeCache[pathWord]?.takeIf { it.expiresAt > System.nanoTime() }?.let {
+                return Result.success(it.themes)
+            }
+        }
+        return try {
+            val response = apiService.getComicDetail(pathWord)
+            val body = response.body()
+            if (response.isSuccessful && body?.code == 200) {
+                val themes = body.results.comicDetail.theme?.map { it.toTheme() }
+                    ?: return Result.failure(Exception("漫画详情未返回标签信息"))
+                cacheThemes(pathWord, themes)
+                Result.success(themes)
+            } else {
+                Result.failure(Exception(body?.message ?: "读取漫画标签失败"))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     override suspend fun getHomeComics(): Result<HomeComicsData> = supervisorScope {
         try {
@@ -102,7 +145,9 @@ class MangaRepositoryImpl @Inject constructor(
             }
 
             if (response.isSuccessful && body?.code == 200) {
-                Result.success(body.results.toDetail())
+                val detail = body.results.toDetail()
+                detail.comic.theme?.let { cacheThemes(pathWord, it) }
+                Result.success(detail)
             } else {
                 val errorCode = body?.code ?: response.code()
                 val errorMessage = body?.message ?: response.message()
@@ -317,26 +362,45 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getFavoriteComics(
-        offset: Int,
-        limit: Int
-    ): Result<List<FavoriteItem>> {
+    override suspend fun getFavoriteComics(): Result<List<FavoriteItem>> {
         return try {
-            val response = apiService.getFavoriteComics(offset = offset, limit = limit)
-            if (response.isSuccessful && response.body()?.code == 200) {
-                Result.success(response.body()?.results?.list?.map { it.toFavoriteItem() }
-                    ?: emptyList())
-            } else {
-                val message = when (val code = response.code()) {
-                    401 -> "401 未登录，请先登录账号"
-                    210 -> "210 触发风控，请稍后再试"
-                    502 -> "502 服务器错误，请稍后重试"
-                    503 -> "503 服务不可用，请稍后重试"
-                    504 -> "504 服务器响应超时"
-                    else -> response.body()?.message ?: "获取书架失败 (HTTP $code)"
+            val favorites = linkedMapOf<String, FavoriteItem>()
+            var offset = 0
+            while (true) {
+                val response = apiService.getFavoriteComics(offset = offset, limit = 21)
+                val body = response.body()
+                if (!response.isSuccessful || body?.code != 200) {
+                    val message = when (val code = response.code()) {
+                        401 -> "401 未登录，请先登录账号"
+                        210 -> "210 触发风控，请稍后再试"
+                        502 -> "502 服务器错误，请稍后重试"
+                        503 -> "503 服务不可用，请稍后重试"
+                        504 -> "504 服务器响应超时"
+                        else -> body?.message ?: "获取书架失败 (HTTP $code)"
+                    }
+                    return Result.failure(Exception(message))
                 }
-                Result.failure(Exception(message))
+                val page = body.results
+                if (page.list.isEmpty()) {
+                    if (offset < page.total) {
+                        return Result.failure(Exception("书架分页数据不完整，请重试"))
+                    }
+                    break
+                }
+                val previousSize = favorites.size
+                page.list.forEach { item ->
+                    val favorite = item.toFavoriteItem()
+                    favorites[favorite.comic.pathWord] = favorite
+                }
+                // 服务端可能过滤条目，按返回的分页跨度推进，不能按 list.size 判断结束。
+                val nextOffset = page.offset + page.limit
+                if (page.offset != offset || nextOffset <= offset || favorites.size == previousSize) {
+                    return Result.failure(Exception("书架分页未前进，请重试"))
+                }
+                if (nextOffset >= page.total) break
+                offset = nextOffset
             }
+            Result.success(favorites.values.toList())
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.net.SocketTimeoutException) {
@@ -347,6 +411,56 @@ class MangaRepositoryImpl @Inject constructor(
             Result.failure(Exception("网络连接异常 (SSL)，请检查网络"))
         } catch (e: Exception) {
             Result.failure(Exception("获取书架失败：${e.message}"))
+        }
+    }
+
+    override suspend fun getBrowseHistory(offset: Int): Result<BrowseHistoryPage> {
+        return try {
+            val response = apiService.getBrowseHistory(offset = offset)
+            val body = response.body()
+            val page = body?.results
+            if (response.isSuccessful && body?.code == 200 && page != null) {
+                val nextOffset = page.offset + page.limit
+                Result.success(
+                    BrowseHistoryPage(
+                        items = page.list.map { it.toHistoryItem() },
+                        nextOffset = nextOffset.takeIf {
+                            page.list.isNotEmpty() && page.offset == offset &&
+                                    it > offset && it < page.total
+                        }
+                    )
+                )
+            } else {
+                Result.failure(
+                    Exception(
+                        body?.message ?: "获取浏览记录失败 (HTTP ${response.code()})"
+                    )
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun clearBrowseHistory(): Result<Unit> {
+        return try {
+            val response = apiService.clearBrowseHistory()
+            val body = response.body()
+            if (response.isSuccessful && body?.code == 200) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception(
+                        body?.message ?: "清空浏览记录失败 (HTTP ${response.code()})"
+                    )
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

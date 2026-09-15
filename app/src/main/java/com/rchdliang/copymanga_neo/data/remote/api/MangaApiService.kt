@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.remote.api
 
 import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
+import com.rchdliang.copymanga_neo.data.remote.dto.BrowseHistoryResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicListResponse
@@ -114,6 +115,25 @@ interface MangaApiService {
         @Query("ordering") order: OrderType = OrderType.MODIFIER_DESC,
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<FavoriteResponse>
+
+    /** 获取当前账号的云端浏览记录。 */
+    @GET("api/v3/member/browse/comics")
+    suspend fun getBrowseHistory(
+        @Query("offset") offset: Int = 0,
+        @Query("limit") limit: Int = 20,
+        @Query("free_type") freeType: Int = 1,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<BrowseHistoryResponse>
+
+    /** 抓包中的清空操作使用带表单请求体的 DELETE。 */
+    @FormUrlEncoded
+    @HTTP(method = "DELETE", path = "api/v3/member/browse/comics", hasBody = true)
+    suspend fun clearBrowseHistory(
+        @Field("free_type") freeType: Int = 1,
+        @Field("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<SimpleResponse>
 
     /**
      * 获取用户信息（需要登录）

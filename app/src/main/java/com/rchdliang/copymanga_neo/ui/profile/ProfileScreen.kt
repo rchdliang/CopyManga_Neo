@@ -35,7 +35,6 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,6 +71,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.history.HistoryScreen
 import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
@@ -90,7 +90,9 @@ private enum class ProfilePage {
  */
 @Composable
 fun ProfileScreen(
-    viewModel: ProfileViewModel = hiltViewModel()
+    viewModel: ProfileViewModel = hiltViewModel(),
+    onComicClick: (String) -> Unit = {},
+    onHistoryCleared: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var currentPage by rememberSaveable { mutableStateOf(ProfilePage.MAIN) }
@@ -152,8 +154,14 @@ fun ProfileScreen(
             onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST }
         )
 
-        ProfilePage.HISTORY -> HistoryPage(
-            onNavigateBack = { currentPage = ProfilePage.MAIN }
+        ProfilePage.HISTORY -> HistoryScreen(
+            onNavigateBack = { currentPage = ProfilePage.MAIN },
+            onComicClick = onComicClick,
+            onHistoryCleared = onHistoryCleared,
+            onLoginClick = {
+                currentPage = ProfilePage.MAIN
+                viewModel.showLoginDialog()
+            }
         )
 
         ProfilePage.SETTINGS -> SettingsPage(
@@ -168,7 +176,7 @@ fun ProfileScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ProfileMainPage(
     uiState: ProfileUiState,
@@ -464,7 +472,7 @@ private fun ProfileMenuGroup(
                 when {
                     uiState.isBlacklistLoading -> "正在读取标签"
                     uiState.blacklistError != null -> "读取失败，点击查看"
-                    else -> "已屏蔽 ${uiState.blockedThemes.size} 个标签 · 仅影响首页"
+                    else -> "已屏蔽 ${uiState.blockedThemes.size} 个标签"
                 },
                 onClick = onNavigateToBlacklist
             )
@@ -516,45 +524,6 @@ private fun createSensitiveCredentialClip(credential: String): ClipData {
                 "android.content.extra.IS_SENSITIVE"
             }
             putBoolean(sensitiveKey, true)
-        }
-    }
-}
-
-/**
- * 浏览记录页面
- */
-@Composable
-private fun HistoryPage(
-    onNavigateBack: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Filled.History,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "暂无浏览记录",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "您阅览过的漫画将显示在这里",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        OutlinedButton(onClick = onNavigateBack) {
-            Text("返回")
         }
     }
 }
@@ -812,14 +781,6 @@ private fun LoginDialogPreview() {
             onNavigateToHistory = {},
             onNavigateToSettings = {}
         )
-    }
-}
-
-@Preview(showBackground = true, showSystemUi = true, name = "我的 - 浏览记录")
-@Composable
-private fun HistoryPagePreview() {
-    CopyManga_NeoTheme {
-        HistoryPage(onNavigateBack = {})
     }
 }
 

@@ -107,7 +107,8 @@ private fun HomeContent(
             modifier = Modifier.fillMaxSize()
         ) {
         when {
-            (uiState.error != null && uiState.recComicList.isEmpty()) -> {
+            (uiState.error != null && uiState.recComicList.isEmpty() &&
+                    uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty()) -> {
                 val errorMsg = uiState.error.orEmpty()
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -142,6 +143,16 @@ private fun HomeContent(
                         .padding(horizontal = 8.dp),
 //                    contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
+                    uiState.filterWarning?.let { warning ->
+                        item(key = "filter_warning") {
+                            Text(
+                                text = warning,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
                     // 推荐漫画
                     if (uiState.recComicList.isNotEmpty()) {
                         item(key = "rec_title", contentType = "section_title") {
