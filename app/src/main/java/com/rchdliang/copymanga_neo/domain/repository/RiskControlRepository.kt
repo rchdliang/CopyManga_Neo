@@ -10,6 +10,12 @@ class RiskControlException(val reason: String) : IOException("code 210: $reason"
 interface RiskControlRepository {
     val notice: StateFlow<RiskControlNotice?>
 
-    /** 只能由用户明确点击重试恢复，不因刷新列表、切页或重启自动解除。 */
+    /** 新进程或重新打开主界面时解除旧暂停，由后续请求重新判断是否仍受限制。 */
+    fun resetForAppLaunch(isFreshActivity: Boolean)
+
+    /** 回到前台时，距离最近一次风控满一小时才解除暂停。 */
+    fun resumeIfExpired(): Boolean
+
+    /** 用户主动重试。 */
     fun resumeByUser()
 }

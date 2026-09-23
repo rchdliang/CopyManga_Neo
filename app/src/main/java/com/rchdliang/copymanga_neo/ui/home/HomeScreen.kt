@@ -1,6 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.home
 
-import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -97,10 +96,10 @@ private fun HomeRiskControlDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text("已触发官方风控", color = MaterialTheme.colorScheme.onSurface) },
+        title = { Text("已触发风控", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "当前网络被官方暂时限制访问，已停止标签补全及站点请求。请等待限制解除后再手动重试，期间仍可阅读本地下载。\n\n$reason",
+                "当前ip被官方暂时限制访问，已停止网络请求。请等待限制解除后再试。\n如果近期频繁无故触发风控，请等待开发者更新。\n\n$reason",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
@@ -109,12 +108,12 @@ private fun HomeRiskControlDialog(
                 Text("知道了", color = MaterialTheme.colorScheme.primary)
             }
         },
-        dismissButton = {
-            TextButton(onClick = {
-                onDismiss()
-                onNavigateToDownloads()
-            }) { Text("查看本地下载", color = MaterialTheme.colorScheme.primary) }
-        }
+//        dismissButton = {
+//            TextButton(onClick = {
+//                onDismiss()
+//                onNavigateToDownloads()
+//            }) { Text("查看本地下载", color = MaterialTheme.colorScheme.primary) }
+//        }
     )
 }
 
@@ -175,7 +174,7 @@ private fun HomeContent(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "已暂停网络请求，请等待官方解除限制。\n本地下载仍可正常阅读。",
+                        "已暂停网络请求，请更换代理节点或等待官方解除限制。\n本地下载仍可正常阅读。",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -185,7 +184,7 @@ private fun HomeContent(
                         Text("查看本地下载", color = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
                     TextButton(onClick = onRetryAfterRisk) {
-                        Text("解除后重试", color = MaterialTheme.colorScheme.primary)
+                        Text("重试", color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -463,10 +462,6 @@ private fun HomePreviewContent(uiState: HomeUiState) {
     widthDp = 411,
     heightDp = 891
 )
-@Preview(
-    showBackground = true, showSystemUi = true, name = "首页 - 完整内容（深色）",
-    widthDp = 411, heightDp = 891, uiMode = Configuration.UI_MODE_NIGHT_YES
-)
 @Composable
 private fun HomeScreenPreview() {
     HomePreviewContent(rememberHomePreviewState())
@@ -503,10 +498,7 @@ private fun HomeErrorPreview() {
     widthDp = 411,
     heightDp = 891
 )
-@Preview(
-    showBackground = true, showSystemUi = true, name = "首页 - 标签暂不可用（深色）",
-    widthDp = 411, heightDp = 891, uiMode = Configuration.UI_MODE_NIGHT_YES
-)
+
 @Composable
 private fun HomeTagWarningPreview() {
     HomePreviewContent(
@@ -528,10 +520,7 @@ private fun homeRiskPreviewState(showDialog: Boolean = false) = HomeUiState(
     widthDp = 411,
     heightDp = 891
 )
-@Preview(
-    showBackground = true, showSystemUi = true, name = "首页 - 风控暂停（深色）",
-    widthDp = 411, heightDp = 891, uiMode = Configuration.UI_MODE_NIGHT_YES
-)
+
 @Composable
 private fun HomeRiskControlPreview() {
     HomePreviewContent(homeRiskPreviewState())
@@ -544,10 +533,7 @@ private fun HomeRiskControlPreview() {
     widthDp = 411,
     heightDp = 891
 )
-@Preview(
-    showBackground = true, showSystemUi = true, name = "首页 - 风控弹窗（深色）",
-    widthDp = 411, heightDp = 891, uiMode = Configuration.UI_MODE_NIGHT_YES
-)
+
 @Composable
 private fun HomeRiskDialogPreview() {
     HomePreviewContent(homeRiskPreviewState(showDialog = true))

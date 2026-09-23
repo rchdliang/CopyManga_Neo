@@ -41,6 +41,7 @@ internal object CopyMangaNetworkConfig {
         "Accept" to "*/*",
         "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
         "X-Requested-With" to WEB_REQUESTED_WITH,
+        "dnts" to "3",
         "Referer" to "$WWW_ORIGIN/comic/$pathWord",
         "X-No-Auth" to "1"
     )

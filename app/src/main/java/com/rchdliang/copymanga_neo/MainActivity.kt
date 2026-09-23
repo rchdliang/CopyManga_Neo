@@ -94,6 +94,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
 import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import com.rchdliang.copymanga_neo.domain.model.Theme
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
 import com.rchdliang.copymanga_neo.ui.components.AppToastHost
 import com.rchdliang.copymanga_neo.ui.components.ComicSharedTransitionProvider
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionState
@@ -109,14 +110,18 @@ import com.rchdliang.copymanga_neo.ui.search.SearchScreen
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject
+    lateinit var riskControl: RiskControlRepository
     private var openDownloads by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        riskControl.resetForAppLaunch(isFreshActivity = savedInstanceState == null)
         openDownloads = savedInstanceState?.getBoolean("openDownloads")
             ?: (intent.action == DownloadNotifications.OPEN_DOWNLOADS)
         val isDarkTheme =
@@ -148,6 +153,11 @@ class MainActivity : ComponentActivity() {
                     onDownloadsOpened = { openDownloads = false })
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        riskControl.resumeIfExpired()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -88,7 +88,7 @@ class HomeViewModel @Inject constructor(
         state.withComics(if (risk == null) result.comics else HomeComicsData()).copy(
             isLoading = risk == null && (state.isLoading || result.isResolving),
             filterWarning = if (risk == null && result.showUnresolvedWarning)
-                "部分漫画的标签暂时无法获取，已先展示漫画。标签加载完成后会自动应用黑名单。" else null,
+                "漫画标签未加载完成，某些漫画可能未按黑名单设置屏蔽" else null,
             riskControl = risk,
             showRiskDialog = risk != null && risk.detectedAt != dismissed
         )
@@ -114,15 +114,21 @@ class HomeViewModel @Inject constructor(
     }
 
     fun retryAfterRiskControl() {
-        // 先停止旧列表的补全，再解除闸门并由用户发起一次首页加载。
+        // 先停止旧列表的补全；闸门解除后统一由 notice 观察者加载一次首页。
         _uiState.value = HomeUiState(isLoading = true)
         riskControl.resumeByUser()
-        loadComics()
     }
 
     private var loadJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            var wasBlocked = false
+            riskControl.notice.collect { notice ->
+                if (wasBlocked && notice == null) loadComics()
+                wasBlocked = notice != null
+            }
+        }
         loadComics()
     }
 

@@ -201,6 +201,16 @@ class DetailViewModel @Inject constructor(
     private var loadDetailJob: kotlinx.coroutines.Job? = null
     private var loadChaptersJob: kotlinx.coroutines.Job? = null
     private var queryStatusJob: kotlinx.coroutines.Job? = null
+    private var hasResumedScreen = false
+
+    /** 首次进入由 loadDetail 查询；后续从阅读页返回或应用恢复时再同步。 */
+    fun onScreenResumed() {
+        if (!hasResumedScreen) {
+            hasResumedScreen = true
+            return
+        }
+        refreshReadingStatus()
+    }
 
     fun loadDetail(pathWord: String) {
         if (currentPathWord == pathWord && _uiState.value.comicDetail != null) {

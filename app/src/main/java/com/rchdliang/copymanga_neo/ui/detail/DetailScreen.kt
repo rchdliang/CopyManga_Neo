@@ -193,7 +193,7 @@ fun DetailScreen(
         viewModel.loadDetail(pathWord)
     }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshReadingStatus() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onScreenResumed() }
 
     LaunchedEffect(uiState.toastMessage) {
         uiState.toastMessage?.let { message ->
