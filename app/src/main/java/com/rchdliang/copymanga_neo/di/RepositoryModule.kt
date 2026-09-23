@@ -17,6 +17,30 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindRiskControlRepository(
+        implementation: com.rchdliang.copymanga_neo.data.remote.RiskControlGate
+    ): com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReadingProgressRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.ReadingProgressRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindStorageRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.StorageRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.StorageRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAppSettingsRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.AppSettingsRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
+
+    @Binds
+    @Singleton
     abstract fun bindThemeBlacklistRepository(
         implementation: ThemeBlacklistRepositoryImpl
     ): ThemeBlacklistRepository

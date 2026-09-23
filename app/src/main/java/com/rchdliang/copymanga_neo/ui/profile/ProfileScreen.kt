@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -62,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
@@ -151,7 +153,8 @@ fun ProfileScreen(
             },
             onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
             onNavigateToSettings = { currentPage = ProfilePage.SETTINGS },
-            onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST }
+            onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
+            onBlacklistEnabledChange = viewModel::setBlacklistEnabled
         )
 
         ProfilePage.HISTORY -> HistoryScreen(
@@ -164,7 +167,7 @@ fun ProfileScreen(
             }
         )
 
-        ProfilePage.SETTINGS -> SettingsPage(
+        ProfilePage.SETTINGS -> SettingsScreen(
             onNavigateBack = { currentPage = ProfilePage.MAIN }
         )
 
@@ -190,7 +193,8 @@ internal fun ProfileMainPage(
     onImportCredential: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToBlacklist: () -> Unit = {}
+    onNavigateToBlacklist: () -> Unit = {},
+    onBlacklistEnabledChange: (Boolean) -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
@@ -230,7 +234,8 @@ internal fun ProfileMainPage(
                         onNavigateToHistory = onNavigateToHistory,
                         onCredentialClick = { showExportCredentialDialog = true },
                         onNavigateToSettings = onNavigateToSettings,
-                        onNavigateToBlacklist = onNavigateToBlacklist
+                        onNavigateToBlacklist = onNavigateToBlacklist,
+                        onBlacklistEnabledChange = onBlacklistEnabledChange
                     )
                 }
             }
@@ -257,7 +262,8 @@ internal fun ProfileMainPage(
                     onNavigateToHistory = onNavigateToHistory,
                     onCredentialClick = onImportCredential,
                     onNavigateToSettings = onNavigateToSettings,
-                    onNavigateToBlacklist = onNavigateToBlacklist
+                    onNavigateToBlacklist = onNavigateToBlacklist,
+                    onBlacklistEnabledChange = onBlacklistEnabledChange
                 )
             }
         }
@@ -442,7 +448,8 @@ private fun ProfileMenuGroup(
     onNavigateToHistory: () -> Unit,
     onCredentialClick: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToBlacklist: () -> Unit
+    onNavigateToBlacklist: () -> Unit,
+    onBlacklistEnabledChange: (Boolean) -> Unit
 ) {
     val entries = buildList {
         if (uiState.isLoggedIn) {
@@ -468,13 +475,23 @@ private fun ProfileMenuGroup(
         add(
             ProfileMenuEntry(
                 Icons.Outlined.Block,
-                "标签黑名单",
+                "标签黑名单（实验性功能）",
                 when {
                     uiState.isBlacklistLoading -> "正在读取标签"
                     uiState.blacklistError != null -> "读取失败，点击查看"
+                    !uiState.isBlacklistEnabled -> "已停用，保留 ${uiState.blockedThemes.size} 个标签"
                     else -> "已屏蔽 ${uiState.blockedThemes.size} 个标签"
                 },
-                onClick = onNavigateToBlacklist
+                onClick = onNavigateToBlacklist,
+                trailingContent = {
+                    Switch(
+                        checked = uiState.isBlacklistEnabled,
+                        onCheckedChange = onBlacklistEnabledChange,
+                        enabled = !uiState.isBlacklistLoading && !uiState.isBlacklistSaving &&
+                                uiState.blacklistError == null,
+                        modifier = Modifier.semantics { contentDescription = "启用标签黑名单" }
+                    )
+                }
             )
         )
         add(
@@ -500,7 +517,8 @@ private fun ProfileMenuGroup(
                 index = index,
                 count = entries.size,
                 enabled = entry.enabled,
-                onClick = entry.onClick
+                onClick = entry.onClick,
+                trailingContent = entry.trailingContent
             )
         }
     }
@@ -511,7 +529,8 @@ private data class ProfileMenuEntry(
     val label: String,
     val supportingText: String,
     val enabled: Boolean = true,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    val trailingContent: (@Composable () -> Unit)? = null
 )
 
 /** 创建标记为敏感内容的剪切板数据，避免系统在剪切板预览中显示 token。 */
@@ -524,45 +543,6 @@ private fun createSensitiveCredentialClip(credential: String): ClipData {
                 "android.content.extra.IS_SENSITIVE"
             }
             putBoolean(sensitiveKey, true)
-        }
-    }
-}
-
-/**
- * 设置页面
- */
-@Composable
-private fun SettingsPage(
-    onNavigateBack: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Settings,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "设置",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "更多设置选项即将推出",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        OutlinedButton(onClick = onNavigateBack) {
-            Text("返回")
         }
     }
 }

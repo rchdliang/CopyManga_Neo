@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -17,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,6 +63,8 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -87,11 +91,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.SubcomposeAsyncImage
+import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
+import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.ui.components.AppToastHost
 import com.rchdliang.copymanga_neo.ui.components.ComicSharedTransitionProvider
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionState
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
+import com.rchdliang.copymanga_neo.ui.downloads.DownloadNotificationPermission
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesViewModel
@@ -103,11 +110,15 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
-@ExperimentalMaterial3ExpressiveApi
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private var openDownloads by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openDownloads = savedInstanceState?.getBoolean("openDownloads")
+            ?: (intent.action == DownloadNotifications.OPEN_DOWNLOADS)
         val isDarkTheme =
             (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         enableEdgeToEdge(
@@ -118,10 +129,36 @@ class MainActivity : ComponentActivity() {
             }
         )
         setContent {
-            CopyManga_NeoTheme {
-                CopyManga_NeoApp()
+            val mainViewModel: MainViewModel = hiltViewModel()
+            val settings by mainViewModel.appSettings.collectAsStateWithLifecycle()
+            val preferences = settings ?: return@setContent
+            val darkTheme = when (preferences.themeMode) {
+                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            SideEffect {
+                val style = if (darkTheme) SystemBarStyle.dark(Color.Transparent.toArgb())
+                else SystemBarStyle.light(Color.Transparent.toArgb(), Color.Transparent.toArgb())
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
+            CopyManga_NeoTheme(darkTheme = darkTheme) {
+                CopyManga_NeoApp(
+                    mainViewModel = mainViewModel, openDownloads = openDownloads,
+                    onDownloadsOpened = { openDownloads = false })
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == DownloadNotifications.OPEN_DOWNLOADS) openDownloads = true
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("openDownloads", openDownloads)
+        super.onSaveInstanceState(outState)
     }
 }
 
@@ -159,9 +196,16 @@ sealed class Screen(val route: String) {
 @ExperimentalMaterial3ExpressiveApi
 @Composable
 fun CopyManga_NeoApp(
-    mainViewModel: MainViewModel = hiltViewModel()
+    mainViewModel: MainViewModel = hiltViewModel(),
+    openDownloads: Boolean = false,
+    onDownloadsOpened: () -> Unit = {}
 ) {
     val navController = rememberNavController()
+    val downloads by mainViewModel.downloadProgress.collectAsStateWithLifecycle()
+    DownloadNotificationPermission(hasDownloads = downloads.isNotEmpty())
+    LaunchedEffect(openDownloads) {
+        if (openDownloads) navController.popBackStack(Screen.Main.route, inclusive = false)
+    }
     val comicSharedTransitionState = rememberComicSharedTransitionState()
     val density = LocalDensity.current
     val containerSize = LocalWindowInfo.current.containerSize
@@ -189,7 +233,11 @@ fun CopyManga_NeoApp(
                         fadeIn(tween(durationMillis = 150, easing = EaseInOut))
                     },
                     popExitTransition = {
-                        fadeOut(tween(durationMillis = 100, easing = EaseInOut))
+                        fadeOut(tween(durationMillis = 0))
+                    },
+                    predictivePopExitTransition = {
+                        // 所有页面返回时立即退场；封面仍由共享元素浮层独立绘制。
+                        fadeOut(tween(durationMillis = 0))
                     },
                 ) {
             // 主界面（包含底部导航栏）
@@ -203,6 +251,8 @@ fun CopyManga_NeoApp(
                         val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
                         val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
                         MainScreen(
+                            openDownloads = openDownloads,
+                            onDownloadsOpened = onDownloadsOpened,
                             isLoggedIn = isLoggedIn,
                             avatar = avatar,
                             onNavigateToDetail = { pathWord ->
@@ -245,6 +295,7 @@ fun CopyManga_NeoApp(
             // 详情页（脱离底部导航栏）
             composable(
                 route = Screen.Detail.route,
+                popExitTransition = { fadeOut(tween(durationMillis = 0)) },
                 arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
             ) { backStackEntry ->
                 val pathWord = backStackEntry.arguments?.getString("pathWord") ?: return@composable
@@ -318,7 +369,9 @@ fun MainScreen(
     avatar: String?,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
-    favoritesViewModel: FavoritesViewModel = hiltViewModel()
+    favoritesViewModel: FavoritesViewModel = hiltViewModel(),
+    openDownloads: Boolean = false,
+    onDownloadsOpened: () -> Unit = {}
 ) {
     // 主界面创建共享书架状态，登录后即可在导航栏提示更新。
     val favoritesState by favoritesViewModel.uiState.collectAsStateWithLifecycle()
@@ -327,6 +380,12 @@ fun MainScreen(
     }
     android.util.Log.d("MainScreen", "Recompose: isLoggedIn=$isLoggedIn")
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
+    LaunchedEffect(openDownloads) {
+        if (openDownloads) {
+            currentDestination = AppDestinations.DOWNLOADS
+            onDownloadsOpened()
+        }
+    }
 
     fun animateToDestination(destination: AppDestinations) {
         // 书架自行呈现登录状态；顶层导航不能用冷启动期间的瞬时 false 将用户改道到“我的”。
@@ -396,7 +455,8 @@ fun MainScreen(
                     modifier = Modifier.fillMaxSize(),
                     onNavigateToDetail = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
-                    onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
+                    onNavigateToProfile = { currentDestination = AppDestinations.PROFILE },
+                    onNavigateToDownloads = { currentDestination = AppDestinations.DOWNLOADS }
                 )
             }
         }
@@ -527,7 +587,8 @@ private fun WideScreenLayout(
                 modifier = Modifier.fillMaxSize(),
                 onNavigateToDetail = onNavigateToDetail,
                 onNavigateToSearch = onNavigateToSearch,
-                onNavigateToProfile = onNavigateToProfile
+                onNavigateToProfile = onNavigateToProfile,
+                onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
             )
         }
     }
@@ -541,7 +602,8 @@ private fun MainDestinationContent(
     modifier: Modifier = Modifier,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
-    onNavigateToProfile: () -> Unit
+    onNavigateToProfile: () -> Unit,
+    onNavigateToDownloads: () -> Unit
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
 
@@ -575,7 +637,8 @@ private fun MainDestinationContent(
             when (destination) {
                 AppDestinations.HOME -> HomeScreen(
                     onComicClick = onNavigateToDetail,
-                    onNavigateToSearch = onNavigateToSearch
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToDownloads = onNavigateToDownloads
                 )
 
                 AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)

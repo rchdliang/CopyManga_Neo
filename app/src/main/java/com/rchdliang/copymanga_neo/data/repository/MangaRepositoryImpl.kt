@@ -1,11 +1,18 @@
 package com.rchdliang.copymanga_neo.data.repository
 
+import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.rchdliang.copymanga_neo.data.local.ComicThemeCache
+import com.rchdliang.copymanga_neo.data.local.MemoryComicThemeCache
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.data.remote.dto.ChapterCatalogResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
+import com.rchdliang.copymanga_neo.data.remote.util.ChapterCatalogDecryptor
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
 import com.rchdliang.copymanga_neo.di.WwwRetrofit
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
+import com.rchdliang.copymanga_neo.domain.model.CachedComicThemes
+import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
@@ -18,12 +25,21 @@ import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.TrialContent
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 /**
  * 漫画数据仓库实现
@@ -31,34 +47,127 @@ import javax.inject.Singleton
 @Singleton
 class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
-    @param:WwwRetrofit private val wwwApiService: MangaApiService
+    @param:WwwRetrofit private val wwwApiService: MangaApiService,
+    private val themeCache: ComicThemeCache = MemoryComicThemeCache()
 ) : MangaRepository {
 
-    private data class CachedThemes(val themes: List<Theme>, val expiresAt: Long)
+    private data class CachedCatalog(val result: Result<ChapterCatalog>, val expiresAt: Long)
 
-    private val themeCache = object : LinkedHashMap<String, CachedThemes>(16, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedThemes>?): Boolean =
-            size > 256
+    private val catalogMutex = Mutex()
+    private val catalogCache = object : LinkedHashMap<String, CachedCatalog>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedCatalog>?): Boolean =
+            size > 8
     }
 
-    private fun cacheThemes(pathWord: String, themes: List<Theme>) {
-        synchronized(themeCache) {
-            themeCache[pathWord] = CachedThemes(
-                themes.toList(),
-                System.nanoTime() + TimeUnit.MINUTES.toNanos(30)
-            )
+    override suspend fun getChapterCatalog(
+        pathWord: String,
+        forceRefresh: Boolean
+    ): Result<ChapterCatalog> =
+        withContext(Dispatchers.IO) {
+            catalogMutex.withLock {
+                if (!forceRefresh) {
+                    catalogCache[pathWord]?.takeIf { it.expiresAt > System.nanoTime() }?.let {
+                        return@withLock it.result
+                    }
+                }
+                val result = try {
+                    val response = wwwApiService.getChapterCatalog(pathWord)
+                    if (!response.isSuccessful) {
+                        response.errorBody()?.close()
+                        error("获取 WWW 章节目录失败：HTTP ${response.code()}")
+                    }
+                    val json = response.body()?.use { it.string() } ?: error("WWW 章节目录为空")
+                    val body = Gson().fromJson(json, ChapterCatalogResponse::class.java)
+                    check(body?.code == 200) { body?.message ?: "WWW 章节目录响应异常" }
+                    Result.success(
+                        ChapterCatalogDecryptor.decrypt(
+                        requireNotNull(body.results) { "WWW 章节目录缺少密文" }, pathWord
+                    )
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w(
+                        "MangaRepository",
+                        "WWW 章节目录不可用，将回退 API：${e.message}"
+                    )
+                    Result.failure(e)
+                }
+                // 失败短暂缓存，避免连续阅读或下载时反复等待同一个失败请求；手动刷新不受影响。
+                val lifetime = if (result.isSuccess) 300L else 30L
+                catalogCache[pathWord] = CachedCatalog(
+                    result,
+                    System.nanoTime() + TimeUnit.SECONDS.toNanos(lifetime)
+                )
+                result
+            }
         }
+
+    override val cachedComicThemes = themeCache.entries
+    private val themeRefreshMutex = Mutex()
+    private var nextThemeRequestAtNanos = 0L
+    private val themeRetryAfter = mutableMapOf<String, Long>()
+
+    private suspend fun cacheThemes(pathWord: String, themes: List<Theme>) {
+        themeCache.save(
+            pathWord, CachedComicThemes(
+                themes.toList(),
+                System.currentTimeMillis() + TimeUnit.DAYS.toMillis(7) +
+                        Random.nextLong(TimeUnit.DAYS.toMillis(2))
+            )
+        )
     }
 
     override suspend fun getComicThemes(pathWord: String): Result<List<Theme>> {
-        synchronized(themeCache) {
-            themeCache[pathWord]?.takeIf { it.expiresAt > System.nanoTime() }?.let {
-                return Result.success(it.themes)
+        // 标签过期只影响后台刷新计划，离线或风控时仍可使用旧值。
+        cachedComicThemes.first()[pathWord]?.let { return Result.success(it.themes) }
+        return refreshComicThemes(pathWord)
+    }
+
+    override suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>> =
+        themeRefreshMutex.withLock {
+            if (pathWord.isBlank()) return@withLock Result.failure(IllegalArgumentException("漫画标识为空"))
+            suspend fun freshThemes(): List<Theme>? = cachedComicThemes.first()[pathWord]
+                ?.takeIf { it.refreshAfterMillis > System.currentTimeMillis() }?.themes
+            freshThemes()?.let { return@withLock Result.success(it) }
+            val retryAt = themeRetryAfter[pathWord] ?: 0L
+            if (retryAt > System.nanoTime()) {
+                return@withLock Result.failure(Exception("标签请求暂缓，稍后重试"))
             }
+            delay(
+                TimeUnit.NANOSECONDS.toMillis(
+                    (nextThemeRequestAtNanos - System.nanoTime()).coerceAtLeast(
+                        0
+                    )
+                )
+            )
+            // 等待期间用户可能打开详情并写入了新标签，重新检查以避免重复请求。
+            freshThemes()?.let { return@withLock Result.success(it) }
+            try {
+                val result = withTimeoutOrNull(8_000) { fetchComicThemes(pathWord) }
+                    ?: Result.failure(Exception("标签请求超时"))
+                if (result.isFailure) {
+                    themeRetryAfter[pathWord] = System.nanoTime() + TimeUnit.MINUTES.toNanos(15)
+                } else themeRetryAfter.remove(pathWord)
+                result
+            } finally {
+                // 即使任务在请求中取消，下一个后台请求也必须等待；并发始终为 1。
+                nextThemeRequestAtNanos =
+                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Random.nextLong(5_000, 8_001))
         }
+        }
+
+    private suspend fun fetchComicThemes(pathWord: String): Result<List<Theme>> {
         return try {
             val response = apiService.getComicDetail(pathWord)
             val body = response.body()
+            if (response.code() == 210 || body?.code == 210) {
+                return Result.failure(
+                    RiskControlException(
+                        body?.message ?: "官方暂时限制了当前网络的访问"
+                    )
+                )
+            }
             if (response.isSuccessful && body?.code == 200) {
                 val themes = body.results.comicDetail.theme?.map { it.toTheme() }
                     ?: return Result.failure(Exception("漫画详情未返回标签信息"))
@@ -196,6 +305,12 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun getChapterInfo(
         comicPathWord: String, chapterUuid: String, group: String
     ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterInfo> {
+        getChapterCatalog(comicPathWord).getOrNull()?.let { catalog ->
+            val resolvedGroup = catalog.findGroup(chapterUuid) ?: group
+            catalog.chaptersByGroup[resolvedGroup]?.firstOrNull { it.uuid == chapterUuid }?.let {
+                return Result.success(it)
+            }
+        }
         var offset = 0
         val seen = mutableSetOf<String>()
         do {

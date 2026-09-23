@@ -78,9 +78,10 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val readingDirectionPref by viewModel.readingDirection.collectAsStateWithLifecycle()
-    val pageScalePref by viewModel.pageScale.collectAsStateWithLifecycle()
-    val screenOrientationPref by viewModel.screenOrientation.collectAsStateWithLifecycle()
+    val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
+    val readingDirectionPref = preferences?.readingDirection ?: "RIGHT_TO_LEFT"
+    val pageScalePref = preferences?.pageScale ?: "FIT_SCREEN"
+    val screenOrientationPref = preferences?.screenOrientation ?: "SYSTEM_DEFAULT"
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
     val context = LocalContext.current
@@ -90,8 +91,8 @@ fun ReaderScreen(
     val screenOrient = remember(screenOrientationPref) {
         ScreenOrientationSetting.fromName(screenOrientationPref)
     }
-    LaunchedEffect(activity, screenOrient) {
-        activity?.requestedOrientation = screenOrient.activityOrientation
+    LaunchedEffect(activity, screenOrient, preferences != null) {
+        if (preferences != null) activity?.requestedOrientation = screenOrient.activityOrientation
     }
     DisposableEffect(Unit) {
         onDispose {
@@ -173,6 +174,7 @@ fun ReaderScreen(
                 onReadingDirectionChange = { viewModel.setReadingDirection(it) },
                 onPageScaleChange = { viewModel.setPageScale(it) },
                 onScreenOrientationChange = { viewModel.setScreenOrientation(it) },
+                onResetPreferences = viewModel::resetComicPreferences,
                 pendingInitialPage = pendingInitialPage
             )
         }
@@ -197,7 +199,8 @@ fun ReaderSuccessContent(
     onPageScaleChange: (String) -> Unit,
     onScreenOrientationChange: (String) -> Unit,
     pendingInitialPage: MutableState<Int?>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onResetPreferences: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val locale = LocalLocale.current.platformLocale
@@ -462,6 +465,7 @@ fun ReaderSuccessContent(
             onReadingDirectionChange = { onReadingDirectionChange(it.name) },
             onPageScaleChange = { onPageScaleChange(it.name) },
             onScreenOrientationChange = { onScreenOrientationChange(it.name) },
+            onResetPreferences = onResetPreferences,
             onDismiss = { showSettingsMenu = false }
         )
     }

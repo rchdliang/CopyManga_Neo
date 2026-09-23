@@ -30,10 +30,12 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         authInterceptor: AuthInterceptor,
-        cookieJar: PersistentCookieJar
+        cookieJar: PersistentCookieJar,
+        riskControlInterceptor: com.rchdliang.copymanga_neo.data.remote.RiskControlInterceptor
     ): OkHttpClient {
 
         return OkHttpClient.Builder()
+            .addInterceptor(riskControlInterceptor)
             // 1. 添加请求头拦截器（模拟真实浏览器）
             .addInterceptor(HeadersInterceptor())
 

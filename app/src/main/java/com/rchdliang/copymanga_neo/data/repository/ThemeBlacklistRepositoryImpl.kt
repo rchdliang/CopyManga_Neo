@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.data.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -29,6 +30,20 @@ class ThemeBlacklistRepositoryImpl internal constructor(
     constructor(@ApplicationContext context: Context) : this(context.themeBlacklistDataStore)
 
     private val themesKey = stringPreferencesKey("blocked_themes")
+    private val enabledKey = booleanPreferencesKey("enabled")
+
+    // 未设置时沿用旧版本的启用状态；关闭开关不会删除保存的标签。
+    override val isEnabled = dataStore.data.map { it[enabledKey] ?: true }
+        .distinctUntilChanged()
+
+    override suspend fun setEnabled(enabled: Boolean): Result<Unit> = try {
+        dataStore.edit { it[enabledKey] = enabled }
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 
     override val blockedThemes = dataStore.data.map { preferences ->
         decode(preferences[themesKey])

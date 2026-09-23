@@ -15,6 +15,11 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object ReaderPreferencesModule {
+    @Provides
+    @Singleton
+    fun provideReaderPreferencesRepository(store: ReaderPreferencesStore):
+            com.rchdliang.copymanga_neo.domain.repository.ReaderPreferencesRepository = store
+
 
     private val Context.readerPreferencesDataStore: DataStore<Preferences> by preferencesDataStore(
         name = "reader_prefs"

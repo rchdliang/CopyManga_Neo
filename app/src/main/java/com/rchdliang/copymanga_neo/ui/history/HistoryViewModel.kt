@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryItem
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -37,7 +38,8 @@ data class HistoryUiState(
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val readingProgress: ReadingProgressRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HistoryUiState())
     val uiState = _uiState.asStateFlow()
@@ -163,7 +165,7 @@ class HistoryViewModel @Inject constructor(
             )
         }
         clearJob = viewModelScope.launch(exceptionHandler) {
-            val result = mangaRepository.clearBrowseHistory()
+            val result = readingProgress.clearHistory()
             currentCoroutineContext().ensureActive()
             result.fold(
                 onSuccess = {

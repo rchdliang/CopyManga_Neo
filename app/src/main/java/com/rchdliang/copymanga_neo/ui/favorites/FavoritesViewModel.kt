@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -11,10 +12,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,11 +40,24 @@ data class FavoritesUiState(
 @HiltViewModel
 class FavoritesViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val readingProgress: ReadingProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
-    val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
+    val uiState: StateFlow<FavoritesUiState> =
+        combine(_uiState, readingProgress.progress) { state, progress ->
+            if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) state else state.copy(
+                favorites = state.favorites.map { item ->
+                    val local = progress.records[item.comic.pathWord]
+                    if (local == null) item else item.copy(
+                        comic = item.comic.copy(
+                            browse = local.toBrowseInfo(item.comic.pathWord)
+                        )
+                    )
+                }
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, FavoritesUiState())
     private var loadJob: Job? = null
     private var deleteJob: Job? = null
     private var hasResumedMainScreen = false
@@ -64,6 +80,7 @@ class FavoritesViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
+            userRepository.isAuthCacheReady().first { it }
             combine(
                 userRepository.isLoggedIn(),
                 userRepository.getUsername()
@@ -87,6 +104,7 @@ class FavoritesViewModel @Inject constructor(
 
     /** 首次加载由登录状态触发；回到主界面或从后台恢复时再同步。 */
     fun onMainScreenResumed() {
+        readingProgress.retryPending()
         if (hasResumedMainScreen) refreshFavorites(showError = false)
         hasResumedMainScreen = true
     }
@@ -95,11 +113,20 @@ class FavoritesViewModel @Inject constructor(
         if (!_uiState.value.isLoggedIn || loadJob?.isActive == true) return
 
         loadJob = viewModelScope.launch(exceptionHandler) {
+            val owner = readingProgress.awaitOwner()
+            val requestVersion = readingProgress.requestVersion()
+            readingProgress.retryPending()
             _uiState.update { it.copy(isLoading = true, error = null) }
             val result = mangaRepository.getFavoriteComics()
             currentCoroutineContext().ensureActive()
             result.fold(
                 onSuccess = { favorites ->
+                    readingProgress.acceptRemote(
+                        owner,
+                        favorites.associate { it.comic.pathWord to it.comic.browse },
+                        requestVersion
+                    )
+                    currentCoroutineContext().ensureActive()
                     _uiState.update {
                         it.copy(
                             isLoading = false,

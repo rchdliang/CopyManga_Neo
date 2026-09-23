@@ -2,29 +2,30 @@ package com.rchdliang.copymanga_neo.ui.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rchdliang.copymanga_neo.data.local.ReaderPreferencesStore
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
 import com.rchdliang.copymanga_neo.domain.model.offlineContent
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReaderPreferencesRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     private val repository: MangaRepository,
-    private val prefs: ReaderPreferencesStore,
-    private val downloadRepository: DownloadRepository
+    private val prefs: ReaderPreferencesRepository,
+    private val downloadRepository: DownloadRepository,
+    private val readingProgress: ReadingProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -43,14 +44,10 @@ class ReaderViewModel @Inject constructor(
         _toastMessage.value = null
     }
 
-    val readingDirection: StateFlow<String> = prefs.readingDirection
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "RIGHT_TO_LEFT")
-
-    val pageScale: StateFlow<String> = prefs.pageScale
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "FIT_SCREEN")
-
-    val screenOrientation: StateFlow<String> = prefs.screenOrientation
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "SYSTEM_DEFAULT")
+    private val mutablePreferences = MutableStateFlow<ReaderPreferences?>(null)
+    val readerPreferences = mutablePreferences.asStateFlow()
+    private var preferencesJob: Job? = null
+    private var preferencesComic: String? = null
 
     private var initialized = false
     private var loadJob: Job? = null
@@ -76,6 +73,12 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
+        if (preferencesComic != comicPathWord) {
+            preferencesJob?.cancel()
+            preferencesJob = null
+            preferencesComic = null
+            mutablePreferences.value = null
+        }
         currentComicPathWord = comicPathWord
         currentChapterUuid = chapterUuid
         currentGroup = group
@@ -85,6 +88,24 @@ class ReaderViewModel @Inject constructor(
             _uiState.value = ReaderUiState.Loading
 
             try {
+                val progressOwner = readingProgress.awaitOwner()
+                // 先加载漫画的完整设置，再展示图片，避免方向或缩放先闪回全局值。
+                prefs.initializeComic(comicPathWord).fold(
+                    onSuccess = { ensureActive(); mutablePreferences.value = it },
+                    onFailure = {
+                        _uiState.value = ReaderUiState.Error("无法读取阅读设置：${it.message}")
+                        return@launch
+                    }
+                )
+                ensureActive()
+                if (preferencesComic != comicPathWord) {
+                    preferencesComic = comicPathWord
+                    preferencesJob = viewModelScope.launch(exceptionHandler) {
+                        prefs.comicPreferences(comicPathWord).collect {
+                            if (currentComicPathWord == comicPathWord) mutablePreferences.value = it
+                        }
+                    }
+                }
                 val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
                 if (downloadedChapter != null && downloadedChapter.comicPathWord == comicPathWord) {
                     val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
@@ -92,6 +113,10 @@ class ReaderViewModel @Inject constructor(
                     _uiState.value = ReaderUiState.Success(localContent)
                     val resolvedGroup = downloadedChapter.groupPathWord ?: group
                     currentGroup = resolvedGroup
+                    readingProgress.recordRead(
+                        progressOwner, comicPathWord, chapterUuid,
+                        localContent.chapterName, resolvedGroup
+                    )
                     // 图片立即离线展示；目录刷新失败不影响当前章节阅读。
                     repository.getChapterInfo(comicPathWord, chapterUuid, resolvedGroup).fold(
                         onSuccess = { chapter ->
@@ -121,17 +146,14 @@ class ReaderViewModel @Inject constructor(
                     return@launch
                 }
 
-                repository.trialChapterContent(comicPathWord, chapterUuid)
-                    .onFailure { error ->
-                        android.util.Log.w(
-                            "ReaderViewModel",
-                            "trialChapterContent failed: ${error.message}"
-                        )
-                    }
-
                 repository.getChapterContent(comicPathWord, chapterUuid, group)
                     .onSuccess { content ->
+                        ensureActive()
                         _uiState.value = ReaderUiState.Success(content)
+                        if (content.imageUrls.isNotEmpty()) readingProgress.recordRead(
+                            progressOwner,
+                            comicPathWord, chapterUuid, content.chapterName, group
+                        )
                     }
                     .onFailure { error ->
                         val message = error.message ?: "未知错误"
@@ -179,15 +201,35 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun setReadingDirection(value: String) {
-        viewModelScope.launch(exceptionHandler) { prefs.setReadingDirection(value) }
+        updatePreferences { it.copy(readingDirection = value) }
     }
 
     fun setPageScale(value: String) {
-        viewModelScope.launch(exceptionHandler) { prefs.setPageScale(value) }
+        updatePreferences { it.copy(pageScale = value) }
     }
 
     fun setScreenOrientation(value: String) {
-        viewModelScope.launch(exceptionHandler) { prefs.setScreenOrientation(value) }
+        updatePreferences { it.copy(screenOrientation = value) }
+    }
+
+    private fun updatePreferences(transform: (ReaderPreferences) -> ReaderPreferences) {
+        val comic = currentComicPathWord.takeIf { it.isNotBlank() } ?: return
+        viewModelScope.launch(exceptionHandler) {
+            prefs.updateComic(comic, transform).fold(
+                onSuccess = {},
+                onFailure = { _toastMessage.value = "阅读设置保存失败，请重试" }
+            )
+        }
+    }
+
+    fun resetComicPreferences() {
+        val comic = currentComicPathWord.takeIf { it.isNotBlank() } ?: return
+        viewModelScope.launch(exceptionHandler) {
+            prefs.resetComic(comic).fold(
+                onSuccess = { _toastMessage.value = "本漫画已恢复为当前全局默认值" },
+                onFailure = { _toastMessage.value = "恢复失败，请重试" }
+            )
+        }
     }
 }
 

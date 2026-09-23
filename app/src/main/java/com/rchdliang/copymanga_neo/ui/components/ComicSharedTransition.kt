@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.components
 
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 
 private val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
 private val LocalAnimatedVisibilityScope =
@@ -71,9 +73,14 @@ fun ComicSharedTransitionProvider(
  * Preview 或不在共享转场作用域中时自动退化为普通 Modifier。
  */
 @Composable
-fun Modifier.comicContainerSharedBounds(pathWord: String): Modifier {
+fun Modifier.comicContainerSharedBounds(pathWord: String, hideOnExit: Boolean = false): Modifier {
     val sharedTransitionScope = LocalSharedTransitionScope.current ?: return this
     val animatedVisibilityScope = LocalAnimatedVisibilityScope.current ?: return this
+
+    // 详情退场时立即移除背景的共享边界；封面仍使用独立的 sharedElement。
+    if (hideOnExit && animatedVisibilityScope.transition.targetState == EnterExitState.PostExit) {
+        return graphicsLayer { alpha = 0f }
+    }
 
     return with(sharedTransitionScope) {
         sharedBounds(

@@ -106,7 +106,10 @@ class HistoryViewModelTest {
         withTimeout(10_000) {
             val store = ViewModelStore()
             val vm = withContext(Dispatchers.Main) {
-                HistoryViewModel(repository, user).also { store.put("history", it) }
+                HistoryViewModel(
+                    repository, user,
+                    com.rchdliang.copymanga_neo.testing.InMemoryReadingProgressRepository(repository)
+                ).also { store.put("history", it) }
             }
             try {
                 block(vm)

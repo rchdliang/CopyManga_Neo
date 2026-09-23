@@ -7,15 +7,19 @@ import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
+import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.model.ComicDetail
 import com.rchdliang.copymanga_neo.domain.model.ComicInfo
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
+import com.rchdliang.copymanga_neo.domain.model.ReadingProgressSnapshot
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,12 +28,17 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import javax.inject.Inject
 
 sealed interface ChapterBatchAction {
@@ -46,6 +55,8 @@ data class DetailUiState(
     val chapters: ImmutableList<ChapterInfo> = persistentListOf(),
     val isLoading: Boolean = false,
     val isLoadingChapters: Boolean = false,
+    val isChapterCatalogReady: Boolean = false,
+    val chapterCatalog: ChapterCatalog? = null,
     val chapterTotal: Int = 0,
     val error: String? = null,
     val riskControlReason: String? = null,
@@ -56,6 +67,8 @@ data class DetailUiState(
     val isInShelf: Boolean = false,
     val shelfCollectId: Int? = null,
     val browse: BrowseInfo? = null,
+    val browseGroup: String? = null,
+    val isProgressLoading: Boolean = true,
     val isShelfLoading: Boolean = false,
     val toastMessage: String? = null,
     val batchSelection: ChapterBatchSelectionState? = null,
@@ -73,13 +86,58 @@ class DetailViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
     private val userRepository: UserRepository,
     private val downloadRepository: DownloadRepository,
-    private val themeBlacklistRepository: ThemeBlacklistRepository
+    private val themeBlacklistRepository: ThemeBlacklistRepository,
+    private val readingProgress: ReadingProgressRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
-    val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
-
     private var currentPathWord: String? = null
+    private var hasManuallySelectedGroup = false
+    val uiState: StateFlow<DetailUiState> =
+        combine(_uiState, readingProgress.progress) { state, progress ->
+            withReadingProgress(state, progress)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, DetailUiState())
+
+    private fun withReadingProgress(
+        state: DetailUiState,
+        progress: ReadingProgressSnapshot
+    ): DetailUiState {
+        val path = currentPathWord
+        val local =
+            if (progress.owner == readingProgress.currentOwner) progress.records[path] else null
+        val browse = if (local != null && path != null) local.toBrowseInfo(path) else state.browse
+        return state.copy(
+            browse = browse,
+            browseGroup = state.chapterCatalog?.findGroup(browse?.chapterUuid)
+                ?: local?.groupPathWord ?: local?.lastReadGroupPathWord,
+            isProgressLoading = local == null && (state.isProgressLoading || !progress.isReady)
+        )
+    }
+
+    /** 云端章节优先从完整目录定位；本地待同步的较新进度仍由进度仓库保护。 */
+    private fun chooseGroup(
+        groups: Collection<ChapterGroup>,
+        catalog: ChapterCatalog?,
+        preferred: String? = null
+    ): String {
+        val state = withReadingProgress(
+            _uiState.value.copy(chapterCatalog = catalog),
+            readingProgress.progress.value
+        )
+        val candidates = listOfNotNull(
+            _uiState.value.selectedGroup.takeIf { hasManuallySelectedGroup },
+            state.browseGroup, preferred, "default", groups.firstOrNull()?.pathWord
+        )
+        return candidates.firstOrNull { candidate -> groups.any { it.pathWord == candidate } }
+            ?: "default"
+    }
+
+    private suspend fun loadRemoteDetail(pathWord: String): Pair<Result<ComicDetail>, ChapterCatalog?> =
+        supervisorScope {
+            val catalog = async { mangaRepository.getChapterCatalog(pathWord, forceRefresh = true) }
+            val detail = async { mangaRepository.getComicDetail(pathWord) }
+            detail.await() to catalog.await().getOrNull()
+        }
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("DetailViewModel", "Unhandled coroutine exception", throwable)
@@ -97,6 +155,18 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch(exceptionHandler) {
             themeBlacklistRepository.blockedThemes.collect { themes ->
                 _uiState.update { it.copy(blockedThemes = themes, isBlacklistReady = true) }
+            }
+        }
+        viewModelScope.launch(exceptionHandler) {
+            uiState.collect { state ->
+                // 网络进度迟到时可以纠正初始分组，但不能抢走用户已经手动选择的组。
+                if (hasManuallySelectedGroup || _uiState.value.isLoading ||
+                    _uiState.value.isProgressLoading || state.batchSelection != null
+                ) return@collect
+                val group = state.browseGroup ?: return@collect
+                if (state.groups.any { it.pathWord == group } && group != _uiState.value.selectedGroup) {
+                    changeGroup(group)
+                }
             }
         }
     }
@@ -130,6 +200,7 @@ class DetailViewModel @Inject constructor(
 
     private var loadDetailJob: kotlinx.coroutines.Job? = null
     private var loadChaptersJob: kotlinx.coroutines.Job? = null
+    private var queryStatusJob: kotlinx.coroutines.Job? = null
 
     fun loadDetail(pathWord: String) {
         if (currentPathWord == pathWord && _uiState.value.comicDetail != null) {
@@ -137,13 +208,16 @@ class DetailViewModel @Inject constructor(
         }
 
         val preferredGroup = _uiState.value.selectedGroup.takeIf { currentPathWord == pathWord }
+        if (currentPathWord != pathWord) hasManuallySelectedGroup = false
         currentPathWord = pathWord
+        queryStatusJob?.cancel()
         loadChaptersJob?.cancel()
         observeDownloadJob?.cancel()
         observeDownloadJob = viewModelScope.launch(exceptionHandler) { observeDownload(pathWord) }
 
         loadDetailJob?.cancel()
         loadDetailJob = viewModelScope.launch(exceptionHandler) {
+            userRepository.isAuthCacheReady().first { it }
             val isLoggedIn = userRepository.isLoggedIn().first()
 
             _uiState.update {
@@ -156,32 +230,35 @@ class DetailViewModel @Inject constructor(
                     riskControlReason = null,
                     chapters = persistentListOf(),
                     chapterTotal = 0,
+                    isChapterCatalogReady = false,
+                    chapterCatalog = null,
                     groups = persistentListOf(),
                     selectedGroup = "",
                     isLoggedIn = isLoggedIn,
                     isInShelf = false,
                     shelfCollectId = null,
                     browse = null,
+                    browseGroup = null,
+                    isProgressLoading = isLoggedIn,
                     batchSelection = null
                 )
             }
 
+            refreshReadingStatus()
             val hasLocal = loadLocalCache(pathWord)
             refreshDownloadStatus(pathWord)
 
-            mangaRepository.getComicDetail(pathWord).fold(
+            val (detailResult, catalog) = loadRemoteDetail(pathWord)
+            detailResult.fold(
                 onSuccess = { detail ->
-                    val groupsMap = detail.groups
-                    val defaultGroup = groupsMap["default"]
-                    val selectedGroup =
-                        groupsMap.values.firstOrNull { it.pathWord == preferredGroup }?.pathWord
-                            ?: defaultGroup?.pathWord ?: groupsMap.values.firstOrNull()?.pathWord
-                            ?: "default"
+                    val groups = catalog?.groups ?: detail.groups.values.toList()
+                    val selectedGroup = chooseGroup(groups, catalog, preferredGroup)
 
                     _uiState.update {
                         it.copy(
                             comicDetail = detail.comic,
-                            groups = groupsMap.values.toImmutableList(),
+                            groups = groups.toImmutableList(),
+                            chapterCatalog = catalog,
                             selectedGroup = selectedGroup,
                             chapters = persistentListOf(),
                             chapterTotal = 0,
@@ -190,8 +267,7 @@ class DetailViewModel @Inject constructor(
                         )
                     }
                     saveLocalCache(detail.comic)
-                    loadAllChapters(pathWord, selectedGroup)
-                    loadQueryStatus(pathWord)
+                    loadAllChapters(pathWord, _uiState.value.selectedGroup)
                 },
                 onFailure = { error ->
                     if (hasLocal) {
@@ -199,6 +275,7 @@ class DetailViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
+                                isChapterCatalogReady = true,
                                 toastMessage = "网络加载失败，显示本地缓存"
                             )
                         }
@@ -228,6 +305,7 @@ class DetailViewModel @Inject constructor(
 
     fun refreshDetail() {
         val pathWord = currentPathWord ?: return
+        refreshReadingStatus()
         loadDetailJob?.cancel()
         loadChaptersJob?.cancel()
         loadDetailJob = viewModelScope.launch(exceptionHandler) {
@@ -239,17 +317,16 @@ class DetailViewModel @Inject constructor(
                     riskControlReason = null
                 )
             }
-            mangaRepository.getComicDetail(pathWord).fold(
+            val (detailResult, catalog) = loadRemoteDetail(pathWord)
+            detailResult.fold(
                 onSuccess = { detail ->
-                    val groups = detail.groups.values
-                    val selectedGroup = groups.firstOrNull {
-                        it.pathWord == _uiState.value.selectedGroup
-                    }?.pathWord ?: detail.groups["default"]?.pathWord
-                    ?: groups.firstOrNull()?.pathWord ?: "default"
+                    val groups = catalog?.groups ?: detail.groups.values.toList()
+                    val selectedGroup = chooseGroup(groups, catalog, _uiState.value.selectedGroup)
                     _uiState.update { state ->
                         state.copy(
                             comicDetail = detail.comic,
                             groups = groups.toImmutableList(),
+                            chapterCatalog = catalog,
                             selectedGroup = selectedGroup,
                             chapters = state.chapters.filter {
                                 (it.groupPathWord ?: "default") == selectedGroup
@@ -260,8 +337,7 @@ class DetailViewModel @Inject constructor(
                         )
                     }
                     saveLocalCache(detail.comic)
-                    loadAllChapters(pathWord, selectedGroup)
-                    loadQueryStatus(pathWord)
+                    loadAllChapters(pathWord, _uiState.value.selectedGroup)
                 },
                 onFailure = { error ->
                     _uiState.update {
@@ -323,15 +399,15 @@ class DetailViewModel @Inject constructor(
         val chapters = cachedChapters.map { it.toChapterInfo() }.toImmutableList()
 
         val localGroups = chapters.groupBy { it.groupPathWord ?: "default" }
-        val selectedGroup =
-            if ("default" in localGroups) "default" else localGroups.keys.firstOrNull() ?: "default"
+        val groups = localGroups.map { (group, items) ->
+            ChapterGroup(group, items.size, if (group == "default") "本地章节" else group)
+        }
+        val selectedGroup = chooseGroup(groups, catalog = null)
         _uiState.update {
             it.copy(
                 hasLocalCache = true,
                 selectedGroup = selectedGroup,
-                groups = localGroups.map { (group, items) ->
-                    ChapterGroup(group, items.size, if (group == "default") "本地章节" else group)
-                }.toImmutableList(),
+                groups = groups.toImmutableList(),
                 comicDetail = detail,
                 chapters = (localGroups[selectedGroup] ?: emptyList()).toImmutableList(),
                 chapterTotal = localGroups[selectedGroup]?.size ?: 0,
@@ -418,23 +494,47 @@ class DetailViewModel @Inject constructor(
     }
 
     private suspend fun loadQueryStatus(pathWord: String) {
-        if (!_uiState.value.isLoggedIn) return
-
-        mangaRepository.queryComicStatus(pathWord).fold(
+        if (!_uiState.value.isLoggedIn) {
+            _uiState.update { it.copy(isProgressLoading = false) }
+            return
+        }
+        val owner = readingProgress.awaitOwner()
+        val version = readingProgress.requestVersion()
+        _uiState.update { it.copy(isProgressLoading = true) }
+        val result = mangaRepository.queryComicStatus(pathWord)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (pathWord != currentPathWord) return
+        result.fold(
             onSuccess = { result ->
+                readingProgress.acceptRemote(owner, mapOf(pathWord to result.browse), version)
                 _uiState.update {
                     it.copy(
                         isInShelf = result.collect != null,
                         shelfCollectId = result.collect,
-                        browse = result.browse
+                        browse = result.browse,
+                        isProgressLoading = false
                     )
                 }
             },
-            onFailure = { /* 静默失败 */ }
+            onFailure = { _uiState.update { it.copy(isProgressLoading = false) } }
         )
     }
 
+    /** 阅读后返回只更新阅读状态，不重载整份章节目录。 */
+    fun refreshReadingStatus() {
+        val path = currentPathWord ?: return
+        readingProgress.retryPending()
+        queryStatusJob?.cancel()
+        queryStatusJob = viewModelScope.launch(exceptionHandler) { loadQueryStatus(path) }
+    }
+
     fun selectGroup(groupPathWord: String) {
+        if (_uiState.value.groups.none { it.pathWord == groupPathWord }) return
+        hasManuallySelectedGroup = true
+        changeGroup(groupPathWord)
+    }
+
+    private fun changeGroup(groupPathWord: String) {
         val pathWord = currentPathWord ?: return
         if (_uiState.value.selectedGroup == groupPathWord) return
 
@@ -522,7 +622,7 @@ class DetailViewModel @Inject constructor(
     }
 
     fun getStartChapter(): StartChapterInfo? {
-        val state = _uiState.value
+        val state = uiState.value
         val chapters = state.chapters.sortedBy { it.index }
 
         val browse = state.browse
@@ -543,7 +643,15 @@ class DetailViewModel @Inject constructor(
             }
         }
 
-        // 无阅读记录或记录章节不在当前列表，从第一章开始
+        // 记录不在尚未加载完整的目录中，也不能退回本地第一章。
+        if (!browse?.chapterUuid.isNullOrBlank()) {
+            return StartChapterInfo(
+                browse.chapterUuid,
+                browse.chapterName?.takeIf { it.isNotBlank() } ?: "上次阅读章节",
+                state.browseGroup ?: "default", isContinue = true)
+        }
+        if (state.isProgressLoading || state.isLoading || state.isLoadingChapters || !state.isChapterCatalogReady) return null
+        // 确认无阅读记录、且目录加载结束后，才从首章开始。
         val first = chapters.firstOrNull() ?: return null
         return StartChapterInfo(
             uuid = first.uuid,
@@ -828,7 +936,19 @@ class DetailViewModel @Inject constructor(
     private fun loadAllChapters(pathWord: String, group: String = "default") {
         loadChaptersJob?.cancel()
         loadChaptersJob = viewModelScope.launch(exceptionHandler) {
-            _uiState.update { it.copy(isLoadingChapters = true) }
+            _uiState.update { it.copy(isLoadingChapters = true, isChapterCatalogReady = false) }
+
+            _uiState.value.chapterCatalog?.chaptersByGroup?.get(group)?.let { chapters ->
+                _uiState.update {
+                    it.copy(
+                        chapters = chapters.toImmutableList(), chapterTotal = chapters.size,
+                        isChapterCatalogReady = true, isLoadingChapters = false
+                    )
+                }
+                downloadRepository.updateChapterMetadata(pathWord, group, chapters)
+                refreshDownloadStatus(pathWord)
+                return@launch
+            }
 
             val cached = downloadRepository.getDownloadedChapters(pathWord)
                 .filter { (it.groupPathWord ?: "default") == group }
@@ -860,6 +980,7 @@ class DetailViewModel @Inject constructor(
                                 _uiState.update {
                                     it.copy(
                                         isLoadingChapters = false,
+                                        isChapterCatalogReady = true,
                                         toastMessage = "章节分页未推进，请重试"
                                     )
                                 }
@@ -873,6 +994,7 @@ class DetailViewModel @Inject constructor(
                             _uiState.update {
                                 it.copy(
                                     isLoadingChapters = false,
+                                    isChapterCatalogReady = true,
                                     toastMessage = error.message ?: "章节加载失败"
                                 )
                             }
@@ -884,6 +1006,7 @@ class DetailViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     chapters = allChapters.toImmutableList(),
+                    isChapterCatalogReady = true,
                     isLoadingChapters = false
                 )
             }

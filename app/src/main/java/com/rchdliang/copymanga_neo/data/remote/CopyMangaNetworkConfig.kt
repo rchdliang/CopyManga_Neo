@@ -35,4 +35,13 @@ internal object CopyMangaNetworkConfig {
 
     /** API 业务头加仅供本地认证拦截器识别的免认证标记。 */
     fun noAuthApiHeaders(): Map<String, String> = apiHeaders() + ("X-No-Auth" to "1")
+
+    /** 章节目录沿用网页请求头；不向 WWW 站点附加 API Token。 */
+    fun chapterCatalogHeaders(pathWord: String): Map<String, String> = mapOf(
+        "Accept" to "*/*",
+        "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
+        "X-Requested-With" to WEB_REQUESTED_WITH,
+        "Referer" to "$WWW_ORIGIN/comic/$pathWord",
+        "X-No-Auth" to "1"
+    )
 }

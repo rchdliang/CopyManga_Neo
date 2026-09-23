@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -42,9 +40,7 @@ internal fun ProfileListItem(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
-    trailingContent: @Composable () -> Unit = {
-        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
-    }
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     val outer = MaterialTheme.shapes.extraLarge
     val inner = MaterialTheme.shapes.small

@@ -5,9 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
 import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics
+import com.rchdliang.copymanga_neo.domain.usecase.FilteredHomeComics
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -16,8 +20,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,7 +40,9 @@ data class HomeUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val toastMessage: String? = null,
-    val filterWarning: String? = null
+    val filterWarning: String? = null,
+    val riskControl: RiskControlNotice? = null,
+    val showRiskDialog: Boolean = false
 )
 
 /**
@@ -44,39 +53,46 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
     themeBlacklistRepository: ThemeBlacklistRepository,
-    private val filterHomeComics: FilterHomeComics
+    private val filterHomeComics: FilterHomeComics,
+    private val riskControl: RiskControlRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
+    private val dismissedRisk = MutableStateFlow<Long?>(null)
 
-    // 保留原始列表；黑名单变化会取消旧过滤任务，重新核对缺失的题材。
-    // 补取完成前不展示未知条目，避免将空 theme 当作已通过过滤。
+    private val blockedThemes = combine(
+        themeBlacklistRepository.blockedThemes,
+        themeBlacklistRepository.isEnabled
+    ) { themes, enabled -> if (enabled) themes else emptyList() }
+
+    // 弹窗确认、Toast 等无关状态变化不能重建标签请求队列或重新开始超时计时。
+    private val source = _uiState.map { it.toComics() to it.isLoading }.distinctUntilChanged()
+    private val filtered =
+        combine(source, blockedThemes, riskControl.notice) { source, blocked, risk ->
+            Triple(source, blocked, risk)
+        }.flatMapLatest { (source, blocked, risk) ->
+            if (risk != null) flowOf(FilteredHomeComics(HomeComicsData()))
+            else filterHomeComics.observe(source.first, blocked, refresh = !source.second)
+                .catch { error ->
+                    if (error is CancellationException) throw error
+                    android.util.Log.w("HomeViewModel", "标签后台补全已停止", error)
+                    emit(FilteredHomeComics(source.first, showUnresolvedWarning = true))
+            }
+        }
     val uiState: StateFlow<HomeUiState> = combine(
         _uiState,
-        themeBlacklistRepository.blockedThemes
-    ) { state, blockedThemes -> state to blockedThemes }
-        .transformLatest { (state, blockedThemes) ->
-            if (blockedThemes.isEmpty()) {
-                emit(state)
-                return@transformLatest
-            }
-            val source = HomeComicsData(
-                state.recComicList, state.hotComics, state.newComics, state.finishComics
-            )
-            val preview = filterHomeComics.verifiedPreview(source, blockedThemes)
-            emit(state.withComics(preview).copy(isLoading = true))
-            val result = filterHomeComics.filter(source, blockedThemes)
-            emit(
-                state.withComics(result.comics).copy(
-                    filterWarning = if (result.unresolvedCount > 0)
-                        "${result.unresolvedCount} 部漫画的标签暂时无法读取，已暂时隐藏，可下拉刷新重试。"
-                    else null
-                )
-            )
-        }.catch { error ->
-            android.util.Log.e("HomeViewModel", "读取题材黑名单失败", error)
-            emit(HomeUiState(error = "读取标签黑名单失败，请重启应用后重试"))
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, HomeUiState(isLoading = true))
+        filtered,
+        riskControl.notice,
+        dismissedRisk
+    ) { state, result, risk, dismissed ->
+        state.withComics(if (risk == null) result.comics else HomeComicsData()).copy(
+            isLoading = risk == null && (state.isLoading || result.isResolving),
+            filterWarning = if (risk == null && result.showUnresolvedWarning)
+                "部分漫画的标签暂时无法获取，已先展示漫画。标签加载完成后会自动应用黑名单。" else null,
+            riskControl = risk,
+            showRiskDialog = risk != null && risk.detectedAt != dismissed
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState(isLoading = true))
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("HomeViewModel", "Unhandled coroutine exception", throwable)
@@ -93,6 +109,17 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
+    fun dismissRiskDialog() {
+        dismissedRisk.value = riskControl.notice.value?.detectedAt
+    }
+
+    fun retryAfterRiskControl() {
+        // 先停止旧列表的补全，再解除闸门并由用户发起一次首页加载。
+        _uiState.value = HomeUiState(isLoading = true)
+        riskControl.resumeByUser()
+        loadComics()
+    }
+
     private var loadJob: Job? = null
 
     init {
@@ -100,6 +127,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun loadComics() {
+        if (riskControl.notice.value != null) return
         loadJob?.cancel()
         loadJob = viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -141,3 +169,6 @@ private fun HomeUiState.withComics(data: HomeComicsData): HomeUiState = copy(
     newComics = data.newComics,
     finishComics = data.finishComics
 )
+
+private fun HomeUiState.toComics() =
+    HomeComicsData(recComicList, hotComics, newComics, finishComics)

@@ -68,6 +68,7 @@ fun DownloadingCard(
     val stateText = when (progressInfo.status) {
         DownloadTaskStatus.IDLE -> "空闲"
         DownloadTaskStatus.WAITING -> "等待中"
+        DownloadTaskStatus.WAITING_FOR_WIFI -> "等待 Wi-Fi"
         DownloadTaskStatus.REQUESTING_PAGE -> "下载中"
         DownloadTaskStatus.DOWNLOADING -> "下载中"
         DownloadTaskStatus.PAUSED -> "已暂停"

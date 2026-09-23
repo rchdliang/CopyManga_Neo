@@ -42,18 +42,36 @@ fun ReaderSettingsDialog(
     onReadingDirectionChange: (ReadingDirection) -> Unit,
     onPageScaleChange: (PageScale) -> Unit,
     onScreenOrientationChange: (ScreenOrientationSetting) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onResetPreferences: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("阅读设置", style = MaterialTheme.typography.titleLarge) },
+        title = {
+            Text(
+                "本漫画的阅读设置",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
         text = {
             Column {
+                Text(
+                    "修改只作用于这部漫画。恢复默认值会采用当前全局阅读设置。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(12.dp))
                 PreferenceSection("屏幕方向") {
                     ScreenOrientationSetting.entries.forEach { option ->
                         FilterChip(
                             onClick = { onScreenOrientationChange(option) },
-                            label = { Text(option.label) },
+                            label = {
+                                Text(
+                                    option.label,
+                                    color = if (screenOrientation == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             selected = screenOrientation == option
                         )
                     }
@@ -62,7 +80,12 @@ fun ReaderSettingsDialog(
                     ReadingDirection.entries.forEach { option ->
                         FilterChip(
                             onClick = { onReadingDirectionChange(option) },
-                            label = { Text(option.label) },
+                            label = {
+                                Text(
+                                    option.label,
+                                    color = if (readingDirection == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             selected = readingDirection == option
                         )
                     }
@@ -71,14 +94,34 @@ fun ReaderSettingsDialog(
                     PageScale.entries.forEach { option ->
                         FilterChip(
                             onClick = { onPageScaleChange(option) },
-                            label = { Text(option.label) },
+                            label = {
+                                Text(
+                                    option.label,
+                                    color = if (pageScale == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
                             selected = pageScale == option,
                         )
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("确定") } }
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "确定",
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onResetPreferences) {
+                Text(
+                    "恢复默认值",
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
     )
 }
 

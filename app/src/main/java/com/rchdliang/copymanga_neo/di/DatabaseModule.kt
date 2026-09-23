@@ -24,10 +24,26 @@ object DatabaseModule {
             AppDatabase::class.java,
             "copymanga_downloads.db"
         )
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             // 未发布版本的下载缓存允许随结构变更重建。
             .fallbackToDestructiveMigration(true)
             .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideComicThemeCacheDao(db: AppDatabase): com.rchdliang.copymanga_neo.data.local.db.ComicThemeCacheDao =
+        db.comicThemeCacheDao()
+
+    @Provides
+    @Singleton
+    fun provideComicThemeCache(cache: com.rchdliang.copymanga_neo.data.local.PersistentComicThemeCache):
+            com.rchdliang.copymanga_neo.data.local.ComicThemeCache = cache
+
+    @Provides
+    @Singleton
+    fun provideDownloadQueueDao(db: AppDatabase): com.rchdliang.copymanga_neo.data.local.db.DownloadQueueDao =
+        db.downloadQueueDao()
 
     @Provides
     @Singleton

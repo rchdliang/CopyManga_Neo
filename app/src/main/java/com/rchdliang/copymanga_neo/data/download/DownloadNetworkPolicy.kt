@@ -1,0 +1,96 @@
+package com.rchdliang.copymanga_neo.data.download
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Singleton
+
+internal data class DownloadNetworkState(
+    val allowed: Boolean = false,
+    val wifiOnly: Boolean = true,
+    val network: Network? = null
+)
+
+/** 监控实际默认网络；同时具有蜂窝传输的 VPN 不视为纯 Wi-Fi。 */
+@Singleton
+class DownloadNetworkPolicy @Inject constructor(
+    @ApplicationContext context: Context,
+    settings: AppSettingsRepository
+) {
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private val mutableState = MutableStateFlow(DownloadNetworkState())
+    internal val state = mutableState.asStateFlow()
+    internal val ready = CompletableDeferred<Unit>()
+    private val scope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+            android.util.Log.e("DownloadNetworkPolicy", "读取下载网络策略失败", error)
+            // 读取失败时保持禁止传输，避免意外使用移动数据。
+            mutableState.value = DownloadNetworkState()
+            ready.complete(Unit)
+        })
+
+    init {
+        scope.launch {
+            combine(settings.settings, networks()) { preferences, connection ->
+                DownloadNetworkState(
+                    allowed = !preferences.wifiOnlyDownloads || connection.second,
+                    wifiOnly = preferences.wifiOnlyDownloads,
+                    network = connection.first
+                )
+            }.distinctUntilChanged().collect {
+                mutableState.value = it
+                ready.complete(Unit)
+            }
+        }
+    }
+
+    private fun networks() = callbackFlow<Pair<Network?, Boolean>> {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            private var current: Network? = null
+            override fun onAvailable(network: Network) {
+                current = network
+                trySend(network to false)
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                capabilities: NetworkCapabilities
+            ) {
+                if (current == network) trySend(network to capabilities.isWifiOnly())
+            }
+
+            override fun onLost(network: Network) {
+                if (current == network) {
+                    current = null
+                    trySend(null to false)
+                }
+            }
+        }
+        // 先提供初值，再由注册后的能力回调覆盖；不在 onAvailable 中同步查询。
+        val initial = connectivity.activeNetwork
+        trySend(initial to (connectivity.getNetworkCapabilities(initial)?.isWifiOnly() == true))
+        connectivity.registerDefaultNetworkCallback(callback)
+        awaitClose { connectivity.unregisterNetworkCallback(callback) }
+    }
+
+    private fun NetworkCapabilities.isWifiOnly(): Boolean =
+        hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}

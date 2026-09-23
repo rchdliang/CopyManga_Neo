@@ -2,13 +2,12 @@ package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.rememberScrollableState
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +16,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
@@ -43,25 +50,25 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroupDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenuPopup
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
@@ -74,31 +81,42 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
@@ -137,6 +155,7 @@ fun DetailScreen(
     onThemeClick: (Theme) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val detailGridState = rememberLazyGridState()
     val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
     var pendingTheme by remember(pathWord) { mutableStateOf<Theme?>(null) }
@@ -162,12 +181,19 @@ fun DetailScreen(
     val isWaitingForDetail = uiState.comicDetail == null &&
             uiState.error == null &&
             uiState.riskControlReason == null
+    val headerVisible by remember(detailGridState) {
+        derivedStateOf {
+            !detailGridState.canScrollBackward || detailGridState.layoutInfo.visibleItemsInfo.any { it.key == "comic_header" }
+        }
+    }
     val showTransitionCover = transitionData != null &&
-            (keepTransitionCover || isSharedTransitionActive || isWaitingForDetail)
+            (isWaitingForDetail || ((keepTransitionCover || isSharedTransitionActive) && headerVisible))
 
     LaunchedEffect(pathWord) {
         viewModel.loadDetail(pathWord)
     }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshReadingStatus() }
 
     LaunchedEffect(uiState.toastMessage) {
         uiState.toastMessage?.let { message ->
@@ -216,7 +242,7 @@ fun DetailScreen(
         Surface(
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
-                .comicContainerSharedBounds(sharedTransitionKey)
+                .comicContainerSharedBounds(sharedTransitionKey, hideOnExit = true)
                 .matchParentSize()
         ) {}
 
@@ -323,7 +349,16 @@ fun DetailScreen(
                 }
                 // 计算点击"继续/开始阅读"后跳转的目标章节，用于按钮文案展示
                 val startChapterInfo =
-                    remember(uiState.chapters, uiState.browse, uiState.sortAscending) {
+                    remember(
+                        uiState.chapters,
+                        uiState.browse,
+                        uiState.browseGroup,
+                        uiState.sortAscending,
+                        uiState.isProgressLoading,
+                        uiState.isLoading,
+                        uiState.isLoadingChapters,
+                        uiState.isChapterCatalogReady
+                    ) {
                         viewModel.getStartChapter()
                     }
                 val onChapterToggleSelect = remember {
@@ -391,6 +426,7 @@ fun DetailScreen(
                     detailCoverWidth = detailCoverWidth,
                     transitionPathWord = sharedTransitionKey,
                     hideCoverDuringTransition = showTransitionCover,
+                    gridState = detailGridState,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -398,19 +434,31 @@ fun DetailScreen(
         }
 
         transitionData?.takeIf { showTransitionCover }?.let { coverData ->
-            AsyncImage(
-                model = previewImageModel(coverData.cover),
-                contentDescription = coverData.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
+            // 共享封面跟随头部的滚动位置，不能在滚动后仍固定绘制在页面顶端。
+            Box(
+                Modifier
+                    .matchParentSize()
                     .statusBarsPadding()
-                    .padding(start = 16.dp, top = 48.dp)
-                    .comicCoverSharedElement(sharedTransitionKey)
-                    .width(detailCoverWidth)
-                    .aspectRatio(3f / 4f)
-                    .clip(MaterialTheme.shapes.medium)
-            )
+                    .padding(top = 48.dp)
+                    .clipToBounds()
+            ) {
+                AsyncImage(
+                    model = previewImageModel(coverData.cover),
+                    contentDescription = coverData.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .offset {
+                            val header =
+                                detailGridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "comic_header" }
+                            IntOffset(0, header?.offset?.y ?: 0)
+                        }
+                        .padding(start = 16.dp)
+                        .comicCoverSharedElement(sharedTransitionKey)
+                        .width(detailCoverWidth)
+                        .aspectRatio(3f / 4f)
+                        .clip(MaterialTheme.shapes.medium)
+                )
+            }
         }
 
         transitionData?.takeIf { isWaitingForDetail }?.let { loadingData ->
@@ -469,7 +517,7 @@ fun DetailScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun DetailContent(
     comicDetail: ComicInfo,
@@ -513,46 +561,69 @@ private fun DetailContent(
     detailCoverWidth: Dp = 120.dp,
     transitionPathWord: String? = null,
     hideCoverDuringTransition: Boolean = false,
-    modifier: Modifier
+    modifier: Modifier,
+    gridState: LazyGridState = rememberLazyGridState()
 ) {
-    val currentPathWord = remember(comicDetail.pathWord) { comicDetail.pathWord }
+
+    val currentPathWord = comicDetail.pathWord
     val currentOnChapterClick by rememberUpdatedState(onChapterClick)
     val currentOnChapterLongPress by rememberUpdatedState(onChapterLongPress)
     val currentOnChapterToggleSelect by rememberUpdatedState(onChapterToggleSelect)
-    val coverTransitionModifier = if (
-        transitionPathWord != null && !hideCoverDuringTransition
-    ) {
+    val coverTransitionModifier = if (transitionPathWord != null && !hideCoverDuringTransition) {
         Modifier.comicCoverSharedElement(transitionPathWord)
-    } else {
-        Modifier
-    }
-
-    val gridState = rememberLazyGridState()
-    var scrollToChapterIndex by remember { mutableIntStateOf(-1) }
-
-    LaunchedEffect(batchSelection, scrollToChapterIndex) {
-        if (batchSelection != null && scrollToChapterIndex >= 0) {
-            gridState.animateScrollToItem(scrollToChapterIndex)
-            scrollToChapterIndex = -1
+    } else Modifier
+    val isInBatchMode = batchSelection != null
+    val density = LocalDensity.current
+    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var titleHeight by remember(currentPathWord) { mutableIntStateOf(1) }
+    var bottomBarHeight by remember { mutableIntStateOf(0) }
+    var expandReadingButton by rememberSaveable(currentPathWord) { mutableStateOf(true) }
+    val showAppBarTitle by remember(gridState) {
+        derivedStateOf {
+            val header =
+                gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "comic_header" }
+            if (header == null) gridState.firstVisibleItemIndex > 0
+            else -header.offset.y >= titleHeight.coerceAtLeast(1)
         }
     }
+    val atTop by remember(gridState) { derivedStateOf { !gridState.canScrollBackward } }
+    val scrollDirection = remember(density) {
+        object : NestedScrollConnection {
+            var distance = 0f
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                    if (distance * available.y < 0f) distance = 0f
+                    distance += available.y
+                    if (kotlin.math.abs(distance) >= with(density) { 8.dp.toPx() }) {
+                        expandReadingButton = distance > 0f
+                        distance = 0f
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    val displayedChapters = remember(chapters, sortAscending) {
+        if (sortAscending) chapters else chapters.reversed()
+    }
+    val hasReadingTarget = !startChapterName.isNullOrBlank()
+    val readingAction = if (startChapterIsContinue) "继续阅读" else "开始阅读"
+    val readingLabel = if (hasReadingTarget) "$readingAction：$startChapterName" else readingAction
+    val bottomPadding = when {
+        isInBatchMode -> with(density) { bottomBarHeight.toDp() } + 16.dp
+        hasReadingTarget -> 104.dp + navigationBottom
+        else -> 16.dp + navigationBottom
+    }
 
+    BackHandler(enabled = isInBatchMode, onBack = onExitBatchMode)
     Box(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
-        val isInBatchMode = batchSelection != null
-        BackHandler(enabled = isInBatchMode) {
-            onExitBatchMode()
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .scrollable(
-                    state = rememberScrollableState { 0f },
-                    orientation = Orientation.Vertical
-                )
-        ) {
-            if (isInBatchMode) {
-                val selectedCount = batchSelection.selectedChapterUuids.size
+        Column(Modifier.fillMaxSize()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = if (atTop) 0.dp else 3.dp
+            ) {
+                if (isInBatchMode) {
+                    val selectedCount = batchSelection.selectedChapterUuids.size
                 SelectionTopRow(
                     selectedCount = selectedCount,
                     canSelectBetween = canSelectBetween(),
@@ -567,38 +638,67 @@ private fun DetailContent(
                     onUnselectBetween = onUnselectBetween,
                     onClearSelection = onClearSelection
                 )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    if (chapters.isNotEmpty()) {
-                        IconButton(onClick = onEnterManageMode) {
+                } else {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .heightIn(min = 48.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onNavigateBack) {
                             Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "管理下载",
+                                Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = showAppBarTitle,
+                                enter = fadeIn(),
+                                exit = fadeOut()
+                            ) {
+                                Text(
+                                    comicDetail.name, color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleLarge, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (chapters.isNotEmpty()) {
+                            IconButton(onClick = onEnterManageMode) {
+                                Icon(
+                                    Icons.Default.Download, contentDescription = "管理下载",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }
             }
 
+            // 漫画信息与章节共用一个滚动容器，避免嵌套纵向滚动挤压目录。
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 90.dp),
+                state = gridState,
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .nestedScroll(scrollDirection)
+            ) {
+                item(
+                    key = "comic_header",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "comic_header"
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 0.dp)
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -662,6 +762,7 @@ private fun DetailContent(
                 ) {
                     Text(
                         text = comicDetail.name,
+                        modifier = Modifier.onSizeChanged { titleHeight = it.height },
                         style = MaterialTheme.typography.headlineSmallEmphasized,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 4,
@@ -735,7 +836,7 @@ private fun DetailContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
@@ -744,20 +845,18 @@ private fun DetailContent(
                     enabled = !isShelfLoading && isLoggedIn
                 ) {
                     Text(
-                        text = if (isInShelf) "已在书架" else "加入书架",
-                        maxLines = 1
+                        if (isInShelf) "已在书架" else "加入书架",
+                        color = LocalContentColor.current, maxLines = 1
                     )
                 }
                 Button(
                     onClick = onStartReading,
                     modifier = Modifier.weight(1f),
-                    enabled = chapters.isNotEmpty()
+                    enabled = hasReadingTarget
                 ) {
-                    val prefix = if (startChapterIsContinue) "继续阅读" else "开始阅读"
                     Text(
-                        text = if (!startChapterName.isNullOrEmpty()) "$prefix：$startChapterName" else prefix,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        readingLabel, color = LocalContentColor.current,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -768,7 +867,7 @@ private fun DetailContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                            .padding(horizontal = 0.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         themes.forEach { theme ->
@@ -814,7 +913,7 @@ private fun DetailContent(
                             indication = null
                         ) { expanded = !expanded }
                         .animateContentSize()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .padding(horizontal = 0.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = brief,
@@ -831,7 +930,7 @@ private fun DetailContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 0.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                 ) {
                     groups.forEachIndexed { index, group ->
@@ -846,72 +945,10 @@ private fun DetailContent(
                                 },
                                 modifier = Modifier.semantics { role = Role.RadioButton }
                             ) {
-                                Text(text = group.name, style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "章节列表",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (groups.isNotEmpty()) {
-                    val currentGroup =
-                        remember(
-                            groups,
-                            selectedGroup
-                        ) { groups.find { it.pathWord == selectedGroup } }
-                    if (currentGroup != null) {
-                        var sortMenuExpanded by remember { mutableStateOf(false) }
-                        Box {
-                            Button(
-                                onClick = { sortMenuExpanded = true },
-                                modifier = Modifier.defaultMinSize(
-                                    minWidth = 0.dp,
-                                    minHeight = 0.dp
-                                ),
-                                shape = MaterialTheme.shapes.extraSmall,
-                                colors = ButtonDefaults.buttonColors(Color.Transparent),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
                                 Text(
-                                    text = "共${currentGroup.total}话",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.UnfoldMore,
-                                    contentDescription = "排序菜单",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = sortMenuExpanded,
-                                onDismissRequest = { sortMenuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("正序") },
-                                    onClick = {
-                                        if (!sortAscending) onToggleSortOrder()
-                                        sortMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("倒序") },
-                                    onClick = {
-                                        if (sortAscending) onToggleSortOrder()
-                                        sortMenuExpanded = false
-                                    }
+                                    text = group.name,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = LocalContentColor.current
                                 )
                             }
                         }
@@ -919,85 +956,114 @@ private fun DetailContent(
                 }
             }
 
-            val displayedChapters = remember(chapters, sortAscending) {
-                if (sortAscending) chapters else chapters.reversed()
-            }
 
-            val bottomPadding = if (isInBatchMode) 80.dp else 16.dp
-
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 90.dp),
-                state = gridState,
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    top = 4.dp,
-                    end = 16.dp,
-                    bottom = bottomPadding
-                ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f)
-            ) {
+                    }
+                }
+                item(
+                    key = "chapter_controls",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "chapter_controls"
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "章节列表", color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        TextButton(
+                            onClick = onToggleSortOrder,
+                            modifier = Modifier.semantics {
+                                stateDescription = if (sortAscending) "正序" else "倒序"
+                            }
+                        ) {
+                            val total = groups.firstOrNull { it.pathWord == selectedGroup }?.total
+                                ?: chapters.size
+                            Text(
+                                "共 $total 话 · ${if (sortAscending) "正序" else "倒序"}",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.SwapVert, contentDescription = null)
+                        }
+                    }
+                }
                 items(
                     count = displayedChapters.size,
                     key = { displayedChapters[it].uuid },
-                    contentType = { "chapter" }
-                ) { index ->
+                    contentType = { "chapter" }) { index ->
                     val chapter = displayedChapters[index]
-                    val status = chapterDownloadStatuses[chapter.uuid]
-                    val progress = chapterDownloadProgresses[chapter.uuid]
                     ChapterItem(
                         chapter = chapter,
                         isSelected = batchSelection?.selectedChapterUuids?.contains(chapter.uuid) == true,
                         isSelectionMode = isInBatchMode,
-                        downloadStatus = status,
-                        downloadProgress = progress,
+                        downloadStatus = chapterDownloadStatuses[chapter.uuid],
+                        downloadProgress = chapterDownloadProgresses[chapter.uuid],
                         onClick = {
-                            if (isInBatchMode) {
-                                currentOnChapterToggleSelect(chapter.uuid)
-                            } else {
-                                currentOnChapterClick(
-                                    chapter.uuid,
-                                    currentPathWord,
-                                    chapter.name,
-                                    chapter.groupPathWord ?: "default"
-                                )
-                            }
+                            if (isInBatchMode) currentOnChapterToggleSelect(chapter.uuid)
+                            else currentOnChapterClick(
+                                chapter.uuid, currentPathWord, chapter.name,
+                                chapter.groupPathWord ?: "default"
+                            )
                         },
-                        onLongPress = {
-                            scrollToChapterIndex = index
-                            currentOnChapterLongPress(chapter.uuid)
-                        }
+                        onLongPress = { currentOnChapterLongPress(chapter.uuid) }
                     )
                 }
             }
         }
 
         if (isInBatchMode) {
-            val downloadedUuids = chapterDownloadStatuses
-                .filter { it.value == ChapterDownloadStatus.DOWNLOADED }
-                .keys
-            val activeDownloadUuids = chapterDownloadStatuses
-                .filter {
-                    it.value == ChapterDownloadStatus.WAITING ||
-                            it.value == ChapterDownloadStatus.DOWNLOADING
-                }
-                .keys
             val currentSelection = batchSelection.selectedChapterUuids
             val downloadCount = currentSelection.count { uuid ->
-                val status = chapterDownloadStatuses[uuid]
-                status != ChapterDownloadStatus.DOWNLOADED &&
-                        status != ChapterDownloadStatus.WAITING &&
-                        status != ChapterDownloadStatus.DOWNLOADING
+                chapterDownloadStatuses[uuid] !in setOf(
+                    ChapterDownloadStatus.DOWNLOADED,
+                    ChapterDownloadStatus.WAITING, ChapterDownloadStatus.DOWNLOADING
+                )
             }
-            val deleteCount = downloadedUuids.count { it !in currentSelection }
-            val cancelCount = activeDownloadUuids.count { it !in currentSelection }
+            val deleteCount = chapterDownloadStatuses.count { (uuid, status) ->
+                status == ChapterDownloadStatus.DOWNLOADED && uuid !in currentSelection
+            }
+            val cancelCount = chapterDownloadStatuses.count { (uuid, status) ->
+                status in setOf(
+                    ChapterDownloadStatus.WAITING,
+                    ChapterDownloadStatus.DOWNLOADING
+                ) && uuid !in currentSelection
+            }
             ManageBottomBar(
-                downloadCount = downloadCount,
-                deleteCount = deleteCount,
-                cancelCount = cancelCount,
-                onApply = onConfirmBatchAction,
-                modifier = Modifier.align(Alignment.BottomCenter)
+                downloadCount, deleteCount, cancelCount, onConfirmBatchAction,
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { bottomBarHeight = it.height })
+        } else if (hasReadingTarget) {
+            val expanded = atTop || expandReadingButton
+            ExtendedFloatingActionButton(
+                onClick = onStartReading,
+                expanded = expanded,
+                icon = {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = if (expanded) null else readingLabel
+                    )
+                },
+                text = {
+                    Text(
+                        startChapterName.orEmpty(),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+                    .widthIn(max = 280.dp)
             )
         }
     }
@@ -1164,27 +1230,38 @@ private fun ManageBottomBar(
     val hasChanges = downloadCount > 0 || deleteCount > 0 || cancelCount > 0
     val parts = buildList {
         if (downloadCount > 0) add("下载 $downloadCount 章")
-        if (cancelCount > 0) add("取消下载 $cancelCount 章")
+        if (cancelCount > 0) add("取消任务 $cancelCount 章")
         if (deleteCount > 0) add("删除本地 $deleteCount 章")
     }
-    val label = if (parts.isEmpty()) "没有变更" else parts.joinToString(", ")
-    BottomAppBar(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        actions = {
+    val label = when {
+        parts.isEmpty() -> "没有变更"
+        parts.size > 1 -> "应用下载更改"
+        downloadCount > 0 -> "下载所选 $downloadCount 章"
+        deleteCount > 0 -> "删除未选中的 $deleteCount 章"
+        else -> "取消未选中的 $cancelCount 章下载"
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp
+    ) {
+        Column(
+            Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (parts.size > 1) {
+                Text(
+                    parts.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
             Button(
                 onClick = onApply,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth(),
                 enabled = hasChanges,
-                colors = if (deleteCount > 0) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    ButtonDefaults.buttonColors()
-                }
+                colors = if (deleteCount > 0) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                else ButtonDefaults.buttonColors()
             ) {
                 Icon(
                     imageVector = when {
@@ -1196,10 +1273,10 @@ private fun ManageBottomBar(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(label)
+                Text(label, color = LocalContentColor.current)
             }
         }
-    )
+    }
 }
 
 // region Previews

@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -36,8 +37,12 @@ class ThemeBlacklistRepositoryTest {
         val renamed = Theme("校園", "xiaoyuan")
         try {
             assertTrue(repository.blockedThemes.first().isEmpty())
+            assertTrue(repository.isEnabled.first())
             repository.setBlocked(original, true).fold({}, { throw AssertionError("保存失败", it) })
             repository.setBlocked(renamed, true).fold({}, { throw AssertionError("更新失败", it) })
+            assertEquals(listOf(renamed), repository.blockedThemes.first())
+            repository.setEnabled(false).fold({}, { throw AssertionError("停用失败", it) })
+            assertFalse(repository.isEnabled.first())
             assertEquals(listOf(renamed), repository.blockedThemes.first())
         } finally {
             job.cancelAndJoin()
@@ -49,6 +54,10 @@ class ThemeBlacklistRepositoryTest {
         ) { file }
         val reopened = ThemeBlacklistRepositoryImpl(reopenedStore)
         try {
+            assertFalse(reopened.isEnabled.first())
+            assertEquals(listOf(renamed), reopened.blockedThemes.first())
+            reopened.setEnabled(true).fold({}, { throw AssertionError("启用失败", it) })
+            assertTrue(reopened.isEnabled.first())
             assertEquals(listOf(renamed), reopened.blockedThemes.first())
             reopened.setBlocked(original, false).fold({}, { throw AssertionError("移除失败", it) })
             assertTrue(reopened.blockedThemes.first().isEmpty())

@@ -2,19 +2,32 @@ package com.rchdliang.copymanga_neo
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.domain.model.AppSettings
+import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
+import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    downloadRepository: DownloadRepository,
+    appSettingsRepository: AppSettingsRepository
 ) : ViewModel() {
+    val downloadProgress = downloadRepository.getDownloadProgress()
+    val appSettings = appSettingsRepository.settings.catch {
+        android.util.Log.e("MainViewModel", "应用设置读取失败", it)
+        emit(AppSettings())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _isLoggedIn = MutableStateFlow(userRepository.isLoggedInSync())
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn.asStateFlow()

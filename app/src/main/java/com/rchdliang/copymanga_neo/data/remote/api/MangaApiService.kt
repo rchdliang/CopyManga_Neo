@@ -81,6 +81,15 @@ interface MangaApiService {
     ): Response<ChapterListResponse>
 
 
+    /** WWW 加密完整目录，包含全部汉化组；原有 API 分页接口保留作回退。 */
+    @GET("comicdetail/{pathWord}/chapters")
+    suspend fun getChapterCatalog(
+        @Path("pathWord") pathWord: String,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.chapterCatalogHeaders(
+            pathWord
+        )
+    ): Response<okhttp3.ResponseBody>
+
     /** 根据题材筛选漫画，响应结构与搜索结果一致。 */
     @GET("api/v3/comics")
     suspend fun getThemeComics(

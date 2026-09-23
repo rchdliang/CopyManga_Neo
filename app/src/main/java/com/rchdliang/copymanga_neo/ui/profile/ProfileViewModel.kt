@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.ZoneId
@@ -44,6 +45,7 @@ data class ProfileUiState(
     val isCredentialLoading: Boolean = false,
     val toastMessage: String? = null,
     val blockedThemes: List<Theme> = emptyList(),
+    val isBlacklistEnabled: Boolean = true,
     val isBlacklistLoading: Boolean = true,
     val isBlacklistSaving: Boolean = false,
     val blacklistError: String? = null
@@ -87,7 +89,9 @@ class ProfileViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
-            themeBlacklistRepository.blockedThemes
+            combine(themeBlacklistRepository.blockedThemes, themeBlacklistRepository.isEnabled) {
+                themes, enabled -> themes to enabled
+            }
                 .catch { error ->
                     _uiState.update {
                         it.copy(
@@ -96,10 +100,11 @@ class ProfileViewModel @Inject constructor(
                         )
                     }
                 }
-                .collect { themes ->
+                .collect { (themes, enabled) ->
                     _uiState.update {
                         it.copy(
                             blockedThemes = themes,
+                            isBlacklistEnabled = enabled,
                             isBlacklistLoading = false,
                             blacklistError = null
                         )
@@ -168,6 +173,22 @@ class ProfileViewModel @Inject constructor(
                             isBlacklistSaving = false,
                             toastMessage = error.message ?: "移除失败"
                         )
+                    }
+                }
+            )
+        }
+    }
+
+    /** 只切换过滤状态，保留标签列表以便再次启用。 */
+    fun setBlacklistEnabled(enabled: Boolean) {
+        if (_uiState.value.isBlacklistLoading || _uiState.value.isBlacklistSaving) return
+        _uiState.update { it.copy(isBlacklistSaving = true) }
+        viewModelScope.launch(exceptionHandler) {
+            themeBlacklistRepository.setEnabled(enabled).fold(
+                onSuccess = { _uiState.update { it.copy(isBlacklistSaving = false) } },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(isBlacklistSaving = false, toastMessage = error.message ?: "保存开关失败")
                     }
                 }
             )

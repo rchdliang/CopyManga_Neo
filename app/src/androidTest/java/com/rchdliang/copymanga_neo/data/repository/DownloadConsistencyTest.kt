@@ -57,6 +57,7 @@ import java.io.File
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 @RunWith(AndroidJUnit4::class)
 class DownloadConsistencyTest {
@@ -73,6 +74,7 @@ class DownloadConsistencyTest {
         Result.success(chapter(uuid).copy(groupPathWord = group))
     }
     private var requestedImages = 0
+    private var foregroundAllowed = true
     private val client = OkHttpClient.Builder().addInterceptor { chain ->
         requestedImages++
         Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
@@ -107,7 +109,8 @@ class DownloadConsistencyTest {
             remote,
             db.downloadedComicDao(),
             db.downloadedChapterDao(),
-            client
+            client,
+            startForegroundDownload = { check(foregroundAllowed) { "foreground start denied" } }
         )
         downloads =
             DownloadRepositoryImpl(db.downloadedComicDao(), db.downloadedChapterDao(), manager)
@@ -120,6 +123,44 @@ class DownloadConsistencyTest {
         manager.cancelAll()
         db.close()
         File(context.filesDir, "downloads/$comic").deleteRecursively()
+    }
+
+    @Test
+    fun foregroundStartFailurePausesQueueBeforeAnyNetworkRequest() = runBlocking {
+        foregroundAllowed = false
+        downloads.enqueueDownload(task("one"))
+        awaitStatus(DownloadTaskStatus.PAUSED)
+        assertEquals(0, requestedImages)
+        assertNotNull(manager.getTask(comic))
+        foregroundAllowed = true
+        downloads.resumeComic(comic)
+        awaitStatus(DownloadTaskStatus.COMPLETED)
+        assertEquals(1, downloads.getDownloadedChapters(comic).size)
+    }
+
+    @Test
+    fun immediateResumeWaitsForPausedChapterRequestToExit() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var requests = 0
+        content = {
+            if (++requests == 1) {
+                started.complete(Unit)
+                release.await()
+            }
+            Result.success(ChapterContent(listOf("https://example.com/page.jpg"), null, null, it))
+        }
+        downloads.enqueueDownload(task("one"))
+        withTimeout(5000) { started.await() }
+        manager.pauseAll().join()
+        val resume = manager.resumeComic(comic)
+        assertTrue(manager.isPaused(comic))
+        release.complete(Unit)
+        withTimeout(5000) { resume.join() }
+        awaitStatus(DownloadTaskStatus.COMPLETED)
+        assertEquals(2, requests)
+        assertEquals(1, requestedImages)
+        assertEquals(1, downloads.getDownloadedChapters(comic).size)
     }
 
     @Test
@@ -311,15 +352,24 @@ class DownloadConsistencyTest {
             UserRepository::class.java.classLoader,
             arrayOf(UserRepository::class.java)
         ) { _, method, _ ->
-            if (method.name == "isLoggedIn") flowOf(false) else error("Unexpected user call: ${method.name}")
+            when (method.name) {
+                "isLoggedIn" -> flowOf(false)
+                "isAuthCacheReady" -> flowOf(true)
+                else -> error("Unexpected user call: ${method.name}")
+            }
         } as UserRepository
         val blacklist = object : ThemeBlacklistRepository {
             override val blockedThemes = flowOf(emptyList<Theme>())
+            override val isEnabled = flowOf(true)
+            override suspend fun setEnabled(enabled: Boolean) = Result.success(Unit)
             override suspend fun setBlocked(theme: Theme, blocked: Boolean) = Result.success(Unit)
         }
         lateinit var viewModel: DetailViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            viewModel = DetailViewModel(remote, user, downloads, blacklist)
+            viewModel = DetailViewModel(
+                remote, user, downloads, blacklist,
+                com.rchdliang.copymanga_neo.testing.InMemoryReadingProgressRepository()
+            )
             store.put("detail", viewModel)
             viewModel.loadDetail(comic)
         }
@@ -327,7 +377,9 @@ class DownloadConsistencyTest {
     }
 
     private suspend fun awaitStatus(status: DownloadTaskStatus) {
-        withTimeout(10000) { downloads.getDownloadProgress().first { it[comic]?.status == status } }
+        withTimeout(10000.milliseconds) {
+            downloads.getDownloadProgress().first { it[comic]?.status == status }
+        }
     }
 
     private fun reader(): ReaderViewModel {
@@ -338,7 +390,10 @@ class DownloadConsistencyTest {
         })
         lateinit var reader: ReaderViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            reader = ReaderViewModel(remote, prefs, downloads)
+            reader = ReaderViewModel(
+                remote, prefs, downloads,
+                com.rchdliang.copymanga_neo.testing.InMemoryReadingProgressRepository()
+            )
             store.put("reader", reader)
         }
         return reader

@@ -66,12 +66,15 @@ data class DownloadProgressInfo(
     /** 当前章节总图片数 */
     val totalImages: Int = 0,
     /** 下载速度，单位 bytes/s */
-    val speedBytesPerSecond: Long = 0L
+    val speedBytesPerSecond: Long = 0L,
+    /** 标识本次下载，避免历史完成记录反复触发通知。 */
+    val taskId: String = ""
 )
 
 enum class DownloadTaskStatus {
     IDLE,
     WAITING,
+    WAITING_FOR_WIFI,
     REQUESTING_PAGE,
     DOWNLOADING,
     PAUSED,

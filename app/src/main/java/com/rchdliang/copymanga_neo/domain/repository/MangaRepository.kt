@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.domain.repository
 
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
+import com.rchdliang.copymanga_neo.domain.model.CachedComicThemes
+import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ChapterList
@@ -13,6 +15,7 @@ import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.TrialContent
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 漫画数据仓库接口
@@ -31,6 +34,17 @@ interface MangaRepository {
     /** 获取完整题材信息，复用详情标签缓存；空列表表示详情确认没有题材。 */
     suspend fun getComicThemes(pathWord: String): Result<List<Theme>>
 
+    val cachedComicThemes: Flow<Map<String, CachedComicThemes>>
+
+    /** 仅后台标签补全使用：低速串行刷新，未到期缓存不产生网络请求。 */
+    suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>>
+
+    /** 获取 WWW 完整章节目录；刷新详情时强制更新，阅读和下载共用短期缓存。 */
+    suspend fun getChapterCatalog(
+        pathWord: String,
+        forceRefresh: Boolean = false
+    ): Result<ChapterCatalog>
+
     /**
      * 获取章节列表（单页）
      * @param pathWord 漫画路径标识
@@ -45,7 +59,7 @@ interface MangaRepository {
         limit: Int = 20
     ): Result<ChapterList>
 
-    /** 分页查找最新章节元数据，不下载图片或请求章节 HTML。 */
+    /** 优先查找完整目录，失败后使用原 API 分页；不下载图片或请求章节 HTML。 */
     suspend fun getChapterInfo(
         comicPathWord: String, chapterUuid: String, group: String = "default"
     ): Result<ChapterInfo>
