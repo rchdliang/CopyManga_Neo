@@ -28,6 +28,7 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun login(username: String, rawPassword: String): Result<LoginInfo> {
         return try {
+            val authGeneration = authDataStore.getAuthGeneration()
             // 1. 生成随机4位盐
             val salt = Random.nextInt(1000, 10000).toString()
 
@@ -67,16 +68,18 @@ class UserRepositoryImpl @Inject constructor(
             }
 
             // 5. 保存 token、用户名和头像到 AuthDataStore
-            authDataStore.saveAuth(
+            val saved = authDataStore.saveAuthIfCurrent(
+                generation = authGeneration,
                 token = token,
                 username = loginResult.username ?: username,
                 avatar = loginResult.avatar
             )
+            if (!saved) {
+                if (!authDataStore.isLoggedInSync()) cookieJar.clearAll()
+                return Result.failure(Exception("登录期间会话已退出"))
+            }
 
-            android.util.Log.d(
-                "UserRepository",
-                "Login success: username=${loginResult.username}, token=$token"
-            )
+            android.util.Log.d("UserRepository", "Login success: username=${loginResult.username}")
 
             Result.success(loginResult.toLoginInfo())
         } catch (e: CancellationException) {
@@ -104,6 +107,7 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo> {
         return try {
+            val authGeneration = authDataStore.getAuthGeneration()
             val credential = LoginCredentialCodec.decode(serializedCredential)
             val response = apiService.getMemberInfoWithCredential(
                 authorization = "Token ${credential.token}"
@@ -124,11 +128,13 @@ class UserRepositoryImpl @Inject constructor(
 
             val memberInfo = body.results
                 ?: return Result.failure(Exception("登录凭据未返回用户信息"))
-            authDataStore.saveImportedAuth(
+            val saved = authDataStore.saveImportedAuth(
+                generation = authGeneration,
                 token = credential.token,
                 username = memberInfo.username ?: memberInfo.nickname ?: credential.username,
                 avatar = memberInfo.avatar
             )
+            if (!saved) return Result.failure(Exception("导入期间会话已退出"))
             Result.success(memberInfo.toMemberInfo())
         } catch (e: CancellationException) {
             throw e
@@ -140,10 +146,12 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun getMemberInfo(): Result<MemberInfo> {
         return try {
+            val authGeneration = authDataStore.getAuthGeneration()
+            val token = authDataStore.getTokenSync()
+                ?: return Result.failure(Exception("当前未登录"))
             val response = apiService.getMemberInfo()
             if (response.code() == 401) {
-                android.util.Log.w("UserRepository", "Session expired (401), clearing auth")
-                logout()
+                // AuthInterceptor 已按请求所用 token 清除过期会话；不能把稍后登录的新会话退出。
                 return Result.failure(Exception("会话已过期，请重新登录"))
             }
 
@@ -158,13 +166,13 @@ class UserRepositoryImpl @Inject constructor(
 
             val memberInfo = body.results ?: return Result.failure(Exception("用户信息为空"))
 
-            // 更新 AuthDataStore 中的信息，保持 token 不变
-            val currentToken = authDataStore.getToken().firstOrNull() ?: ""
-            authDataStore.saveAuth(
-                token = currentToken,
+            val updated = authDataStore.updateMemberInfoIfCurrent(
+                generation = authGeneration,
+                token = token,
                 username = memberInfo.username ?: memberInfo.nickname ?: "",
                 avatar = memberInfo.avatar
             )
+            if (!updated) return Result.failure(Exception("会话已改变，忽略旧的用户信息"))
 
             Result.success(memberInfo.toMemberInfo())
         } catch (e: CancellationException) {
@@ -177,7 +185,7 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun logout(): Result<Unit> {
         return try {
-            authDataStore.clearAuth()
+            authDataStore.clearAuth(manualLogout = true)
             cookieJar.clearAll()
             android.util.Log.d("UserRepository", "Logout success")
             Result.success(Unit)

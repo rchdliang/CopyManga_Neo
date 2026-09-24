@@ -44,9 +44,10 @@ class AuthInterceptor(
         val response = chain.proceed(request)
 
         // 如果收到 401 且本地记录为已登录，说明 Token 已失效
-        if (response.code == 401 && token != null) {
+        if (response.code == 401 && token != null &&
+            authDataStore.clearAuthSyncIfTokenMatches(token)
+        ) {
             android.util.Log.w("AuthInterceptor", "Received 401, clearing auth and cookies")
-            authDataStore.clearAuthSync()
             cookieJar.clearAll()
         }
 

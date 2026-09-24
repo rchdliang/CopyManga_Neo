@@ -71,6 +71,10 @@ class AuthDataStore @Inject constructor(
     @Volatile
     private var cachedSavedPassword: String? = null
 
+    /** 登出代数，用于拒绝登出前仍在进行的登录请求。 */
+    private val authStateLock = Any()
+    private var authGeneration: Long = 0
+
     /** 内部协程作用域，用于异步执行 DataStore 读写操作（避免在主线程 / Interceptor 中阻塞） */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -86,13 +90,17 @@ class AuthDataStore @Inject constructor(
         // 预热期间同步取值返回默认 false/null，可接受；预热完后 UI 通过 isLoggedIn() 等 Flow 自动得到最新值。
         scope.launch {
             val prefs = dataStore.data.first()
-            cachedToken = prefs[KEY_TOKEN]
-            cachedUsername = prefs[KEY_USERNAME]
-            cachedAvatar = prefs[KEY_AVATAR]
-            cachedRememberPassword = prefs[KEY_REMEMBER_PASSWORD] ?: false
-            cachedAutoLogin = prefs[KEY_AUTO_LOGIN] ?: false
-            cachedSavedUsername = prefs[KEY_SAVED_USERNAME]
-            cachedSavedPassword = prefs[KEY_SAVED_PASSWORD]
+            synchronized(authStateLock) {
+                if (authGeneration == 0L) {
+                    cachedToken = prefs[KEY_TOKEN]
+                    cachedUsername = prefs[KEY_USERNAME]
+                    cachedAvatar = prefs[KEY_AVATAR]
+                    cachedRememberPassword = prefs[KEY_REMEMBER_PASSWORD] ?: false
+                    cachedAutoLogin = prefs[KEY_AUTO_LOGIN] ?: false
+                    cachedSavedUsername = prefs[KEY_SAVED_USERNAME]
+                    cachedSavedPassword = prefs[KEY_SAVED_PASSWORD]
+                }
+            }
             cacheReady = true
             _cacheReadyFlow.value = true
             android.util.Log.d(
@@ -105,47 +113,89 @@ class AuthDataStore @Inject constructor(
     /** 缓存是否已预热完成。仅供测试或诊断使用，业务代码应通过 Flow 观察 UI 状态。 */
     fun isCacheReady(): Boolean = cacheReady
 
-    /** 保存 token、用户名和头像 */
-    suspend fun saveAuth(token: String, username: String, avatar: String?) {
-        cachedToken = token
-        cachedUsername = username
-        cachedAvatar = avatar
+    fun getAuthGeneration(): Long = synchronized(authStateLock) { authGeneration }
+
+    /** 只接受当前会话发起的登录，避免退出后旧请求重新写入 token。 */
+    suspend fun saveAuthIfCurrent(
+        generation: Long,
+        token: String,
+        username: String,
+        avatar: String?
+    ): Boolean {
+        var saved = false
         dataStore.edit { prefs ->
-            prefs[KEY_TOKEN] = token
-            prefs[KEY_USERNAME] = username
-            if (avatar != null) {
-                prefs[KEY_AVATAR] = avatar
-            } else {
-                prefs.remove(KEY_AVATAR)
+            synchronized(authStateLock) {
+                if (authGeneration == generation) {
+                    prefs[KEY_TOKEN] = token
+                    prefs[KEY_USERNAME] = username
+                    if (avatar != null) prefs[KEY_AVATAR] = avatar else prefs.remove(KEY_AVATAR)
+                    cachedToken = token
+                    cachedUsername = username
+                    cachedAvatar = avatar
+                    authGeneration++
+                    saved = true
+                }
             }
         }
+        return saved
+    }
+
+    /** 用户信息请求只能更新其发出时所属的会话。 */
+    suspend fun updateMemberInfoIfCurrent(
+        generation: Long,
+        token: String,
+        username: String,
+        avatar: String?
+    ): Boolean {
+        var updated = false
+        dataStore.edit { prefs ->
+            synchronized(authStateLock) {
+                if (authGeneration == generation && prefs[KEY_TOKEN] == token) {
+                    prefs[KEY_USERNAME] = username
+                    if (avatar != null) prefs[KEY_AVATAR] = avatar else prefs.remove(KEY_AVATAR)
+                    cachedUsername = username
+                    cachedAvatar = avatar
+                    updated = true
+                }
+            }
+        }
+        return updated
     }
 
     /**
      * 保存从外部凭据验证得到的会话，并清除旧账号的记住密码与自动登录设置。
      * 认证状态和凭据偏好在同一次 DataStore edit 中更新，避免跨账号自动登录。
      */
-    suspend fun saveImportedAuth(token: String, username: String, avatar: String?) {
-        cachedToken = token
-        cachedUsername = username
-        cachedAvatar = avatar
-        cachedRememberPassword = false
-        cachedAutoLogin = false
-        cachedSavedUsername = null
-        cachedSavedPassword = null
+    suspend fun saveImportedAuth(
+        generation: Long,
+        token: String,
+        username: String,
+        avatar: String?
+    ): Boolean {
+        var saved = false
         dataStore.edit { prefs ->
-            prefs[KEY_TOKEN] = token
-            prefs[KEY_USERNAME] = username
-            if (avatar != null) {
-                prefs[KEY_AVATAR] = avatar
-            } else {
-                prefs.remove(KEY_AVATAR)
+            synchronized(authStateLock) {
+                if (authGeneration == generation) {
+                    prefs[KEY_TOKEN] = token
+                    prefs[KEY_USERNAME] = username
+                    if (avatar != null) prefs[KEY_AVATAR] = avatar else prefs.remove(KEY_AVATAR)
+                    prefs[KEY_REMEMBER_PASSWORD] = false
+                    prefs[KEY_AUTO_LOGIN] = false
+                    prefs.remove(KEY_SAVED_USERNAME)
+                    prefs.remove(KEY_SAVED_PASSWORD)
+                    cachedToken = token
+                    cachedUsername = username
+                    cachedAvatar = avatar
+                    cachedRememberPassword = false
+                    cachedAutoLogin = false
+                    cachedSavedUsername = null
+                    cachedSavedPassword = null
+                    authGeneration++
+                    saved = true
+                }
             }
-            prefs[KEY_REMEMBER_PASSWORD] = false
-            prefs[KEY_AUTO_LOGIN] = false
-            prefs.remove(KEY_SAVED_USERNAME)
-            prefs.remove(KEY_SAVED_PASSWORD)
         }
+        return saved
     }
 
     /**
@@ -228,31 +278,50 @@ class AuthDataStore @Inject constructor(
     /** 获取保存的密码（同步，从 DataStore 缓存读取） */
     fun getSavedPasswordSync(): String? = cachedSavedPassword
 
-    /** 清除认证数据（登出） */
-    suspend fun clearAuth() {
-        cachedToken = null
-        cachedUsername = null
-        cachedAvatar = null
-        dataStore.edit { prefs ->
-            prefs.remove(KEY_TOKEN)
-            prefs.remove(KEY_USERNAME)
-            prefs.remove(KEY_AVATAR)
+    /** 清除认证数据。手动退出时一并关闭自动登录，保留记住的账号密码。 */
+    suspend fun clearAuth(manualLogout: Boolean = false) {
+        val generation = synchronized(authStateLock) {
+            authGeneration++
+            cachedToken = null
+            cachedUsername = null
+            cachedAvatar = null
+            if (manualLogout) cachedAutoLogin = false
+            authGeneration
         }
-        // 登出时不清除记住密码/自动登录偏好，保留凭据
-    }
-
-    /** 同步清除认证缓存（供 OkHttp Interceptor 调用，避免 runBlocking） */
-    fun clearAuthSync() {
-        cachedToken = null
-        cachedUsername = null
-        cachedAvatar = null
-        scope.launch {
-            dataStore.edit { prefs ->
-                prefs.remove(KEY_TOKEN)
-                prefs.remove(KEY_USERNAME)
-                prefs.remove(KEY_AVATAR)
+        dataStore.edit { prefs ->
+            synchronized(authStateLock) {
+                if (authGeneration == generation) {
+                    prefs.remove(KEY_TOKEN)
+                    prefs.remove(KEY_USERNAME)
+                    prefs.remove(KEY_AVATAR)
+                    if (manualLogout) prefs[KEY_AUTO_LOGIN] = false
+                }
             }
         }
+    }
+
+    /** 仅在收到 401 的请求仍属于当前会话时清除认证状态。 */
+    fun clearAuthSyncIfTokenMatches(token: String): Boolean {
+        val generation = synchronized(authStateLock) {
+            if (cachedToken != token) return false
+            authGeneration++
+            cachedToken = null
+            cachedUsername = null
+            cachedAvatar = null
+            authGeneration
+        }
+        scope.launch {
+            dataStore.edit { prefs ->
+                synchronized(authStateLock) {
+                    if (authGeneration == generation && prefs[KEY_TOKEN] == token) {
+                        prefs.remove(KEY_TOKEN)
+                        prefs.remove(KEY_USERNAME)
+                        prefs.remove(KEY_AVATAR)
+                    }
+                }
+            }
+        }
+        return true
     }
 
     /** 是否已登录（Flow） */
