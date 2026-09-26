@@ -1,6 +1,9 @@
 package com.rchdliang.copymanga_neo.di
 
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
+import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
+import com.rchdliang.copymanga_neo.data.remote.NetworkRequestContext
+import com.rchdliang.copymanga_neo.data.remote.isCopyApi
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -12,7 +15,8 @@ import okhttp3.Response
  */
 class AuthInterceptor(
     private val authDataStore: AuthDataStore,
-    private val cookieJar: PersistentCookieJar
+    private val cookieJar: PersistentCookieJar,
+    private val networkSettings: NetworkSettingsStore? = null
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -24,6 +28,8 @@ class AuthInterceptor(
         val skipAuth = originalRequest.header("X-No-Auth") != null
 
         val request = when {
+            !originalRequest.isCopyApi() -> originalRequest.newBuilder()
+                .removeHeader("Authorization").removeHeader("X-No-Auth").build()
             token != null && !skipAuth -> {
                 originalRequest.newBuilder()
                     .header("Authorization", "Token $token")
@@ -44,11 +50,15 @@ class AuthInterceptor(
         val response = chain.proceed(request)
 
         // 如果收到 401 且本地记录为已登录，说明 Token 已失效
-        if (response.code == 401 && token != null &&
-            authDataStore.clearAuthSyncIfTokenMatches(token)
-        ) {
-            android.util.Log.w("AuthInterceptor", "Received 401, clearing auth and cookies")
-            cookieJar.clearAll()
+        if (response.code == 401 && token != null && !skipAuth && originalRequest.isCopyApi()) {
+            val clear = {
+                if (authDataStore.clearAuthSyncIfTokenMatches(token)) {
+                    android.util.Log.w("AuthInterceptor", "Received 401, clearing auth and cookies")
+                    cookieJar.clearAll()
+                }
+            }
+            if (networkSettings == null) clear()
+            else networkSettings.ifCurrent(originalRequest.tag(NetworkRequestContext::class.java)?.generation, clear)
         }
 
         return response

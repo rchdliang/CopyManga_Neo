@@ -1,21 +1,23 @@
 package com.rchdliang.copymanga_neo.data.remote
 
+import com.rchdliang.copymanga_neo.domain.model.NetworkDefaults
+
 /**
  * 拷貝漫畫当前网络端点与网页端请求标识。
  *
  * 域名和 platform 集中维护，避免 Retrofit 与请求头判断各自保留旧值。
  */
 internal object CopyMangaNetworkConfig {
-    const val WWW_HOST = "www.copy3000.com"
-    const val WWW_BASE_URL = "https://www.copy3000.com/"
-    const val WWW_ORIGIN = "https://www.copy3000.com"
+    const val WWW_HOST = NetworkDefaults.WWW_HOST
+    const val WWW_BASE_URL = "https://$WWW_HOST/"
+    const val WWW_ORIGIN = "https://$WWW_HOST"
 
-    const val API_HOST = "api.copy4000.com"
-    const val API_BASE_URL = "https://api.copy4000.com/"
+    const val API_HOST = NetworkDefaults.API_HOST
+    const val API_BASE_URL = "https://$API_HOST/"
 
     const val WEB_PLATFORM = 1
     const val WEB_PLATFORM_HEADER = "1"
-    const val WEB_VERSION = "2026.08.24"
+    const val WEB_VERSION = NetworkDefaults.WEB_VERSION
 
     private const val REGION = "1"
     private const val WEBP = "1"

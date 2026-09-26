@@ -6,6 +6,13 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
+import okhttp3.OkHttpClient
+import com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Application类，用于初始化Hilt依赖注入框架
@@ -13,8 +20,19 @@ import dagger.hilt.android.HiltAndroidApp
  */
 @HiltAndroidApp
 class CopyMangaApplication : Application(), ImageLoaderFactory {
+    @Inject lateinit var networkClient: OkHttpClient
+    @Inject lateinit var networkSettings: NetworkSettingsRepository
+
+    override fun onCreate() {
+        super.onCreate()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            networkSettings.refreshIfNeeded()
+        }
+    }
+
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .okHttpClient(networkClient)
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(0.25) // 使用可用内存的 25% 作为内存缓存

@@ -44,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.rchdliang.copymanga_neo.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,6 +65,7 @@ import com.rchdliang.copymanga_neo.ui.reader.ScreenOrientationSetting
 @Composable
 internal fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToNetwork: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -81,6 +84,7 @@ internal fun SettingsScreen(
         onThemeChange = viewModel::setThemeMode,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
         onNavigateBack = onNavigateBack,
+        onNavigateToNetwork = onNavigateToNetwork,
         onDirectionChange = viewModel::setReadingDirection,
         onScaleChange = viewModel::setPageScale,
         onOrientationChange = viewModel::setScreenOrientation,
@@ -112,6 +116,7 @@ internal fun SettingsPage(
     onThemeChange: (AppThemeMode) -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
     onNavigateBack: () -> Unit,
+    onNavigateToNetwork: () -> Unit = {},
     onDirectionChange: (String) -> Unit = {},
     onScaleChange: (String) -> Unit = {},
     onOrientationChange: (String) -> Unit = {},
@@ -147,6 +152,13 @@ internal fun SettingsPage(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
         ) {
+            SettingsSectionTitle(stringResource(R.string.network_title))
+            ProfileListItem(
+                Icons.Outlined.Wifi,
+                stringResource(R.string.network_title),
+                stringResource(R.string.network_entry_summary),
+                index = 0, count = 1, onClick = onNavigateToNetwork
+            )
             SettingsSectionTitle("外观与下载")
             ProfileListItem(
                 Icons.Outlined.Palette,

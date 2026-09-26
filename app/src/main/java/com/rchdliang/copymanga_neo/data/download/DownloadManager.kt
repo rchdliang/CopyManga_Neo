@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.download
 
 import android.content.Context
 import android.util.Log
+import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
@@ -50,7 +51,8 @@ class DownloadManager internal constructor(
     private val okHttpClient: OkHttpClient,
     private val startForegroundDownload: () -> Unit,
     private val queueStore: DownloadQueueStore? = null,
-    private val networkPolicy: DownloadNetworkPolicy? = null
+    private val networkPolicy: DownloadNetworkPolicy? = null,
+    private val networkSettings: NetworkSettingsStore? = null
 ) {
     @Inject
     constructor(
@@ -60,10 +62,11 @@ class DownloadManager internal constructor(
         chapterDao: DownloadedChapterDao,
         okHttpClient: OkHttpClient,
         queueStore: DownloadQueueStore,
-        networkPolicy: DownloadNetworkPolicy
+        networkPolicy: DownloadNetworkPolicy,
+        networkSettings: NetworkSettingsStore
     ) : this(context, mangaRepository, comicDao, chapterDao, okHttpClient, {
         DownloadService.start(context)
-    }, queueStore, networkPolicy)
+    }, queueStore, networkPolicy, networkSettings)
 
     companion object {
         private const val TAG = "DownloadManager"
@@ -108,6 +111,14 @@ class DownloadManager internal constructor(
     /** 当前图片请求；取消漫画或章节时会主动终止对应的 OkHttp Call。 */
     private val activeCalls = ConcurrentHashMap<String, okhttp3.Call>()
     private var wifiClient: Pair<android.net.Network, OkHttpClient>? = null
+    init {
+        networkSettings?.onChange {
+            synchronized(this) {
+                wifiClient?.second?.connectionPool?.evictAll()
+                wifiClient = null
+            }
+        }
+    }
 
     private val restoration = scope.async { restoreQueue() }
 

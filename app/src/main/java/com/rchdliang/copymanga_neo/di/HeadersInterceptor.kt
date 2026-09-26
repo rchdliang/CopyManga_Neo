@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.di
 
-import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
+import com.rchdliang.copymanga_neo.data.remote.isCopyApi
+import com.rchdliang.copymanga_neo.data.remote.isCopyWww
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -27,13 +28,12 @@ class HeadersInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val host = original.url.host
         val path = original.url.encodedPath
 
         // 识别请求类型
-        val isApi = host == CopyMangaNetworkConfig.API_HOST
+        val isApi = original.isCopyApi()
         // 识别章节 HTML 页面请求 (加载图片前置请求)
-        val isChapterHtml = host == CopyMangaNetworkConfig.WWW_HOST &&
+        val isChapterHtml = original.isCopyWww() &&
                 path.startsWith("/comic/") && path.contains("/chapter/")
 
         val requestBuilder = original.newBuilder()
@@ -68,7 +68,7 @@ class HeadersInterceptor : Interceptor {
         }
 
         // Cookie 处理：非 API 域名（www 等）的 Cookie 中确保 webp=1
-        if (host == CopyMangaNetworkConfig.WWW_HOST) {
+        if (original.isCopyWww()) {
             val existingCookie = original.header("Cookie") ?: ""
             val newCookie = when {
                 existingCookie.isBlank() -> "webp=1"

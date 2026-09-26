@@ -17,6 +17,11 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindNetworkSettingsRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.NetworkSettingsRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
+    @Binds
+    @Singleton
     abstract fun bindRiskControlRepository(
         implementation: com.rchdliang.copymanga_neo.data.remote.RiskControlGate
     ): com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository

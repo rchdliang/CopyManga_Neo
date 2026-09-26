@@ -3,6 +3,11 @@ package com.rchdliang.copymanga_neo.di
 import com.google.gson.GsonBuilder
 import com.google.gson.Strictness
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
+import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
+import com.rchdliang.copymanga_neo.data.remote.NetworkRoutingInterceptor
+import com.rchdliang.copymanga_neo.data.remote.NetworkGenerationInterceptor
+import com.rchdliang.copymanga_neo.data.remote.NetworkBoundaryInterceptor
+import com.rchdliang.copymanga_neo.data.remote.SettingsProxySelector
 import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.api.SystemApiService
@@ -31,16 +36,24 @@ object NetworkModule {
     fun provideOkHttpClient(
         authInterceptor: AuthInterceptor,
         cookieJar: PersistentCookieJar,
-        riskControlInterceptor: com.rchdliang.copymanga_neo.data.remote.RiskControlInterceptor
+        riskControlInterceptor: com.rchdliang.copymanga_neo.data.remote.RiskControlInterceptor,
+        networkSettings: NetworkSettingsStore,
+        routing: NetworkRoutingInterceptor,
+        generation: NetworkGenerationInterceptor,
+        boundary: NetworkBoundaryInterceptor
     ): OkHttpClient {
 
         return OkHttpClient.Builder()
+            .proxySelector(SettingsProxySelector({ networkSettings.settings.value }))
+            .addInterceptor(routing)
             .addInterceptor(riskControlInterceptor)
             // 1. 添加请求头拦截器（模拟真实浏览器）
             .addInterceptor(HeadersInterceptor())
 
             // 2. 添加认证拦截器（已登录时自动附加 Token header）
             .addInterceptor(authInterceptor)
+            .addInterceptor(generation)
+            .addNetworkInterceptor(boundary)
 
             // 3. 添加 Cookie 管理（持久化存储）
             .cookieJar(cookieJar)
@@ -59,16 +72,22 @@ object NetworkModule {
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-            .build()
+            .build().also { client ->
+                networkSettings.onChange {
+                    client.dispatcher.cancelAll()
+                    client.connectionPool.evictAll()
+                }
+            }
     }
 
     @Provides
     @Singleton
     fun provideAuthInterceptor(
         authDataStore: AuthDataStore,
-        cookieJar: PersistentCookieJar
+        cookieJar: PersistentCookieJar,
+        networkSettings: NetworkSettingsStore
     ): AuthInterceptor {
-        return AuthInterceptor(authDataStore, cookieJar)
+        return AuthInterceptor(authDataStore, cookieJar, networkSettings)
     }
 
     /**
