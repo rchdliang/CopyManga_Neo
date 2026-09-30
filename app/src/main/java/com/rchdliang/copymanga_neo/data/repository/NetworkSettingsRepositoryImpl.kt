@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.repository
 
+import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import com.rchdliang.copymanga_neo.data.remote.NetworkSettingsCodec
@@ -10,7 +11,6 @@ import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
-import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -31,34 +31,64 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resumeWithException
 
 @Singleton
 class NetworkSettingsRepositoryImpl @Inject constructor(
     private val store: NetworkSettingsStore,
-    private val gate: RiskControlGate
+    private val gate: RiskControlGate,
+    private val identity: com.rchdliang.copymanga_neo.data.local.OfficialAppIdentity,
+    private val auth: com.rchdliang.copymanga_neo.data.local.AuthDataStore,
+    private val cookies: com.rchdliang.copymanga_neo.di.PersistentCookieJar,
+    private val diagnostics: com.rchdliang.copymanga_neo.data.remote.OfficialAppDiagnostics,
+    private val localCalls: com.rchdliang.copymanga_neo.data.remote.LocalNetworkCallInterceptor,
+    private val localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor
 ) : NetworkSettingsRepository {
+    override val officialAppDefaults get() = identity.defaults
     override val settings = store.settings
     private val mutation = Mutex()
+
+    override suspend fun diagnoseOfficialApp(): Result<String> = result { diagnostics.report() }
 
     override suspend fun save(settings: NetworkSettings): Result<Unit> = result {
         mutation.withLock {
             val value = NetworkSettingsCodec.normalize(settings)
             val old = store.settings.value
             // 更换发现入口后，旧线路不能继续覆盖新 API 域名。
-            store.save(if (value.apiHost != old.apiHost || value.wwwHost != old.wwwHost) {
+            saveConfiguration(
+                if (value.apiHost != old.apiHost || value.wwwHost != old.wwwHost) {
                 value.copy(routes = emptyList(), discoveredAt = 0, selection = NetworkSelection.DEFAULT, fixedHost = "", routeIndex = 0)
             } else value)
         }
     }
-    override suspend fun reset(): Result<Unit> = result { mutation.withLock { store.save(NetworkSettings()) } }
-    override suspend fun rollback(): Result<Unit> = result { mutation.withLock { store.rollback() } }
+
+    override suspend fun reset(): Result<Unit> =
+        result { mutation.withLock { saveConfiguration(NetworkSettings()) } }
+
+    override suspend fun rollback(): Result<Unit> =
+        result { mutation.withLock { saveConfiguration(store.previousSettings()) } }
+
+    private suspend fun saveConfiguration(value: NetworkSettings) {
+        val old = store.settings.value
+        val identityChanged = old.requestMode != value.requestMode ||
+                (old.officialApp != value.officialApp && (old.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP ||
+                        value.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP))
+        if (identityChanged) {
+            // 先推进会话代次，使切换期间返回的旧登录结果无法重新写入。
+            auth.clearAuth(manualLogout = true)
+            cookies.clearAll()
+        }
+        store.save(value)
+        if (identityChanged) gate.resumeByUser()
+    }
 
     override suspend fun discover(): Result<Unit> = result {
         mutation.withLock {
             val start = store.settings.value
+            require(start.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB) {
+                "App 模式请直接设置 API 和登录域名；网页线路发现仅用于网页模式"
+            }
             val client = diagnosticClient(start)
             var lastError: Exception? = null
             try {
@@ -106,7 +136,10 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     override suspend fun test(settings: NetworkSettings): Result<List<NetworkProbe>> = result {
         val value = NetworkSettingsCodec.normalize(settings)
         val client = diagnosticClient(value)
-        val hosts = (listOf(value.apiHost, value.wwwHost, value.loginHost) + value.routes.flatten())
+        val hosts =
+            (if (value.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP)
+                listOf(value.officialApp.apiHost, value.officialApp.loginHost)
+            else listOf(value.apiHost, value.wwwHost, value.loginHost) + value.routes.flatten())
             .filter { it.isNotBlank() }.distinct().take(60)
         val limit = Semaphore(3)
         try {
@@ -128,10 +161,14 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun refreshIfNeeded() {
         val value = settings.value
-        if (value.autoDiscover && System.currentTimeMillis() - value.discoveredAt >= TimeUnit.DAYS.toMillis(1)) discover()
+        if (value.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB && value.autoDiscover && System.currentTimeMillis() - value.discoveredAt >= TimeUnit.DAYS.toMillis(
+                1
+            )
+        ) discover()
     }
 
     private fun diagnosticClient(value: NetworkSettings) = OkHttpClient.Builder()
+        .addInterceptor(localCalls).addNetworkInterceptor(localExchanges)
         .proxySelector(SettingsProxySelector({ value }))
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
         .connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS).build()

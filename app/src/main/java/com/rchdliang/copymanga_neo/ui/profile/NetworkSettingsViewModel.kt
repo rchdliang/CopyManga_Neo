@@ -20,11 +20,13 @@ data class NetworkSettingsUiState(
     val draft: NetworkSettings = NetworkSettings(),
     val busy: Boolean = false,
     val probes: List<NetworkProbe> = emptyList(),
-    val message: String? = null
+    val message: String? = null,
+    val diagnosticReport: String? = null
 ) { val dirty: Boolean get() = saved != draft }
 
 @HiltViewModel
 class NetworkSettingsViewModel @Inject constructor(private val repository: NetworkSettingsRepository) : ViewModel() {
+    val officialAppDefaults = repository.officialAppDefaults
     private val state = MutableStateFlow(NetworkSettingsUiState(repository.settings.value, repository.settings.value))
     val uiState = state.asStateFlow()
     private var operation: Job? = null
@@ -42,12 +44,22 @@ class NetworkSettingsViewModel @Inject constructor(private val repository: Netwo
     fun edit(transform: (NetworkSettings) -> NetworkSettings) {
         if (!state.value.busy) state.update { it.copy(draft = transform(it.draft), probes = emptyList(), message = null) }
     }
+    fun inspectDevice() = operate {
+        repository.diagnoseOfficialApp().fold(
+            { report -> state.update { it.copy(diagnosticReport = report) } },
+            { failure(it) }
+        )
+    }
+
+    fun closeDiagnosticReport() {
+        state.update { it.copy(diagnosticReport = null) }
+    }
     fun clearMessage() { state.update { it.copy(message = null) } }
     fun cancelWork() { operation?.cancel() }
     fun discard() { state.update { it.copy(draft = it.saved, probes = emptyList()) } }
     fun save() = operate {
         repository.save(state.value.draft).fold(
-            { sync("网络设置已保存；请刷新页面，未完成的下载可手动继续") },
+            { sync("网络设置已保存；请刷新页面。若更改了请求模式或 App 身份，请重新登录") },
             { state.update { s -> s.copy(message = it.message ?: "保存失败") } }
         )
     }

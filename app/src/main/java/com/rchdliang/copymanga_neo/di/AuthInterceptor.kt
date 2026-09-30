@@ -4,8 +4,10 @@ import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.remote.NetworkRequestContext
 import com.rchdliang.copymanga_neo.data.remote.isCopyApi
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import okhttp3.Interceptor
 import okhttp3.Response
+import java.io.IOException
 
 /**
  * 认证拦截器
@@ -45,6 +47,16 @@ class AuthInterceptor(
             else -> {
                 originalRequest
             }
+        }
+
+        // Web 会员接口与阅读进度上报需要登录；无凭据时直接停止，不发送匿名请求。
+        val context = originalRequest.tag(NetworkRequestContext::class.java)
+        val path = request.url.encodedPath
+        if (originalRequest.isCopyApi() && context?.settings?.requestMode == RequestMode.WEB &&
+            (path.startsWith("/api/v3/member/") || path.contains("/chapter2/")) &&
+            request.header("Authorization").isNullOrBlank()
+        ) {
+            throw IOException("请先登录")
         }
 
         val response = chain.proceed(request)

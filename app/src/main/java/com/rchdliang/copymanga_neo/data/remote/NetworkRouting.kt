@@ -17,7 +17,13 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 /** 请求角色在改写前确定，外部图片不会因共享客户端而携带账号信息。 */
-internal data class NetworkRequestContext(val generation: Long, val api: Boolean, val www: Boolean, val targetHost: String)
+internal data class NetworkRequestContext(
+    val generation: Long,
+    val api: Boolean,
+    val www: Boolean,
+    val targetHost: String,
+    val settings: NetworkSettings? = null
+)
 
 internal fun Request.isCopyApi(): Boolean = tag(NetworkRequestContext::class.java)?.api
     ?: (url.host == CopyMangaNetworkConfig.API_HOST && url.encodedPath.startsWith("/api/"))
@@ -36,7 +42,17 @@ class NetworkRoutingInterceptor @Inject constructor(private val store: NetworkSe
         val builder = original.newBuilder()
         if (api || www) {
             val login = api && original.url.encodedPath == "/api/v3/login"
-            val target = if (www) settings.wwwHost else if (login && settings.loginHost.isNotBlank()) settings.loginHost
+            val appMode =
+                settings.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP &&
+                        original.header("X-Copy-Comment") == null
+            if (www && appMode && (original.url.encodedPath.startsWith("/comicdetail/") ||
+                        original.url.encodedPath.startsWith("/comic/"))
+            ) {
+                throw IOException("当前为 App 模式，请刷新页面以通过 API 加载章节")
+            }
+            val target = if (api && appMode) {
+                if (login) settings.officialApp.loginHost else settings.officialApp.apiHost
+            } else if (www) settings.wwwHost else if (login && settings.loginHost.isNotBlank()) settings.loginHost
                 else selectedApiHost(settings, counter.getAndIncrement())
             builder.url(original.url.newBuilder().host(target).build())
             if (api) {
@@ -59,7 +75,9 @@ class NetworkRoutingInterceptor @Inject constructor(private val store: NetworkSe
         }
         val routed = builder.build()
         return chain.proceed(routed.newBuilder().tag(NetworkRequestContext::class.java,
-            NetworkRequestContext(generation, api, www, routed.url.host)).build())
+            NetworkRequestContext(generation, api, www, routed.url.host, settings)
+        ).build()
+        )
     }
 }
 

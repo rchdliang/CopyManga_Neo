@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.testing.webRepositoryFixture
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -23,6 +24,16 @@ class ChapterMetadataRepositoryTest {
     private val service = Retrofit.Builder().baseUrl("https://example.com/").client(
         OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
+            // WWW 目录无目标章节时仍需验证分页查找，响应夹具避免访问真实站点。
+            if (request.url.encodedPath in setOf("/comic/comic", "/comicdetail/comic/chapters")) {
+                val body = if (request.url.encodedPath == "/comic/comic")
+                    """<script>var ccz = 'abcdefghijklmnop';</script><input id="dnt" value="9">"""
+                else """{"build":{"path_word":"comic"},"groups":{}}"""
+                return@addInterceptor Response.Builder().request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200).message("test").body(body.toResponseBody("text/plain".toMediaType()))
+                    .build()
+            }
             assertTrue(request.url.encodedPath.contains("/group/extra/chapters"))
             val requestedOffset = request.url.queryParameter("offset")!!.toInt()
             offsets += requestedOffset
@@ -44,7 +55,7 @@ class ChapterMetadataRepositoryTest {
                 .build()
         }.build()
     ).addConverterFactory(GsonConverterFactory.create()).build().create(MangaApiService::class.java)
-    private val repository = MangaRepositoryImpl(service, service)
+    private val repository = webRepositoryFixture(service)
 
     @Test
     fun findsChaptersBeyondTheFormerFiveHundredLimit() = runBlocking {

@@ -5,7 +5,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
+import com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
 import com.rchdliang.copymanga_neo.domain.model.ProxyMode
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -41,7 +43,18 @@ internal object NetworkSettingsCodec {
         if (value.proxyMode == ProxyMode.MANUAL) proxy(value.proxyAddress)
         require(value.selection != NetworkSelection.ROUTE || value.routeIndex in routes.indices) { "请先获取并选择线路" }
         require(value.selection != NetworkSelection.FIXED || fixed in routes.flatten()) { "请选择已发现的节点" }
-        return value.copy(apiHost = host(value.apiHost), wwwHost = host(value.wwwHost),
+        val app = value.officialApp
+        require(app.version.matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "App 请求版本格式无效" }
+        require(
+            app.versionCode.toIntOrNull()
+                ?.let { it > 0 } == true) { "App versionCode 必须为正整数" }
+        listOf(app.pseudoId, app.umString, app.device, app.deviceInfo, app.buildTime).forEach {
+            require(it.length <= 256 && it.all { c -> c.code in 32..126 }) { "App 身份字段仅支持最多 256 位可打印 ASCII 字符" }
+        }
+        return value.copy(
+            officialApp = app.copy(apiHost = host(app.apiHost), loginHost = host(app.loginHost)),
+            apiHost = host(value.apiHost),
+            wwwHost = host(value.wwwHost),
             loginHost = value.loginHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty(),
             version = value.version.trim(), routes = routes, fixedHost = fixed,
             proxyAddress = value.proxyAddress.trim())
@@ -49,6 +62,19 @@ internal object NetworkSettingsCodec {
 
     /** 固定持久化字段名，避免正式版混淆后无法恢复配置。 */
     fun encode(value: NetworkSettings): String = JsonObject().apply {
+        addProperty("requestMode", value.requestMode.name)
+        add("officialApp", JsonObject().apply {
+            val a = value.officialApp
+            addProperty("apiHost", a.apiHost)
+            addProperty("loginHost", a.loginHost)
+            addProperty("version", a.version)
+            addProperty("versionCode", a.versionCode)
+            addProperty("pseudoId", a.pseudoId)
+            addProperty("umString", a.umString)
+            addProperty("device", a.device)
+            addProperty("deviceInfo", a.deviceInfo)
+            addProperty("buildTime", a.buildTime)
+        })
         addProperty("apiHost", value.apiHost)
         addProperty("wwwHost", value.wwwHost)
         addProperty("loginHost", value.loginHost)
@@ -71,7 +97,23 @@ internal object NetworkSettingsCodec {
             val json = JsonParser.parseString(raw).asJsonObject
             val defaults = NetworkSettings()
             fun str(key: String, fallback: String) = json.get(key)?.takeUnless { it.isJsonNull }?.asString ?: fallback
+            val app = json.getAsJsonObject("officialApp")
+            val appDefaults = OfficialAppSettings()
+            fun appStr(key: String, fallback: String = "") =
+                app?.get(key)?.takeUnless { it.isJsonNull }?.asString ?: fallback
             normalize(NetworkSettings(
+                requestMode = RequestMode.valueOf(str("requestMode", "WEB")),
+                officialApp = OfficialAppSettings(
+                    apiHost = appStr("apiHost", appDefaults.apiHost),
+                    loginHost = appStr("loginHost", appDefaults.loginHost),
+                    version = appStr("version", appDefaults.version),
+                    versionCode = appStr("versionCode", appDefaults.versionCode),
+                    pseudoId = appStr("pseudoId"),
+                    umString = appStr("umString"),
+                    device = appStr("device"),
+                    deviceInfo = appStr("deviceInfo"),
+                    buildTime = appStr("buildTime")
+                ),
                 apiHost = str("apiHost", defaults.apiHost), wwwHost = str("wwwHost", defaults.wwwHost),
                 loginHost = str("loginHost", ""), version = str("version", defaults.version),
                 selection = NetworkSelection.valueOf(str("selection", "DEFAULT")),

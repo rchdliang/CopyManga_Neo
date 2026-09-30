@@ -21,7 +21,8 @@ data class FilteredHomeComics(
     val comics: HomeComicsData,
     val unresolvedCount: Int = 0,
     val isResolving: Boolean = false,
-    val showUnresolvedWarning: Boolean = false
+    val showUnresolvedWarning: Boolean = false,
+    val enrichmentComplete: Boolean = true
 )
 
 /** 仅用于首页：优先复用持久标签，未知标签超时后放行，确认命中黑名单才隐藏。 */
@@ -41,13 +42,19 @@ class FilterHomeComics @Inject constructor(private val mangaRepository: MangaRep
             return@channelFlow
         }
         val allowUnknown = MutableStateFlow(false)
+        val enrichmentComplete = MutableStateFlow(!refresh)
         launch {
             delay(3_000)
             allowUnknown.value = true
         }
         launch {
-            combine(mangaRepository.cachedComicThemes, allowUnknown) { cache, allow ->
+            combine(
+                mangaRepository.cachedComicThemes,
+                allowUnknown,
+                enrichmentComplete
+            ) { cache, allow, complete ->
                 resolve(data, blocked, cache.mapValues { it.value.themes }, allow)
+                    .copy(enrichmentComplete = complete)
             }.collect { send(it) }
         }
         if (refresh) launch {
@@ -71,6 +78,7 @@ class FilterHomeComics @Inject constructor(private val mangaRepository: MangaRep
                 // 普通断网连续失败也不遍历整个首页反复请求，旧标签与漫画继续显示。
                 if (failures >= 3) break
             }
+            enrichmentComplete.value = true
         }
     }
 
@@ -118,12 +126,14 @@ class FilterHomeComics @Inject constructor(private val mangaRepository: MangaRep
     }
 }
 
-private fun HomeComicsData.allComics() = recComics + hotComics + newComics + finishComics
+private fun HomeComicsData.allComics() =
+    recComics + hotComics + newComics + finishComics + rankComics
 
 private fun HomeComicsData.mapComics(transform: (ComicSummary) -> ComicSummary?): HomeComicsData =
     copy(
         recComics = recComics.mapNotNull(transform),
         hotComics = hotComics.mapNotNull(transform),
         newComics = newComics.mapNotNull(transform),
-        finishComics = finishComics.mapNotNull(transform)
+        finishComics = finishComics.mapNotNull(transform),
+        rankComics = rankComics.mapNotNull(transform)
     )

@@ -84,7 +84,22 @@ class DownloadConsistencyTest {
     private val service = Retrofit.Builder().baseUrl("https://example.com/")
         .addConverterFactory(GsonConverterFactory.create()).build()
         .create(MangaApiService::class.java)
-    private val remote = object : MangaRepository by MangaRepositoryImpl(service, service) {
+    private val networkSettings =
+        com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore(context)
+    private val remote = object : MangaRepository by MangaRepositoryImpl(
+        service, service, networkSettings = networkSettings,
+        officialContent = OfficialAppContentSource(service, networkSettings)
+    ) {
+        override suspend fun getChapterCatalog(
+            pathWord: String, forceRefresh: Boolean
+        ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterCatalog> =
+            Result.failure(IOException("offline"))
+
+        override suspend fun getChapters(
+            pathWord: String, group: String, offset: Int, limit: Int
+        ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterList> =
+            Result.failure(IOException("offline"))
+
         override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> =
             Result.failure(IOException("offline"))
 
@@ -319,7 +334,7 @@ class DownloadConsistencyTest {
         withTimeout(5000) { viewModel.uiState.first { it.chapterDownloadStatuses.size == 2 && it.chapters.size == 1 } }
         withContext(Dispatchers.Main) {
             viewModel.enterManageMode()
-            assertEquals(setOf("one"), viewModel.getSelectedChapterUuids())
+            assertEquals(setOf("one", "two"), viewModel.getSelectedChapterUuids())
             viewModel.toggleChapterSelection("one")
             viewModel.confirmBatchAction()
         }

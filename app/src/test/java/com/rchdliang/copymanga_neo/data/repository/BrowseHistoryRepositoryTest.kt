@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.testing.webRepositoryFixture
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,7 +31,7 @@ class BrowseHistoryRepositoryTest {
         }.build())
         .addConverterFactory(GsonConverterFactory.create()).build()
         .create(MangaApiService::class.java)
-    private val repository = MangaRepositoryImpl(service, service)
+    private val repository = webRepositoryFixture(service)
 
     @Test
     fun capturedListContractKeepsReadChapterSeparateFromLatestChapter() = runBlocking {

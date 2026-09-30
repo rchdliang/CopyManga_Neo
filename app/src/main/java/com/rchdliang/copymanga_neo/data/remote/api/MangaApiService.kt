@@ -4,14 +4,19 @@ import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
 import com.rchdliang.copymanga_neo.data.remote.dto.BrowseHistoryResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicDetailResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.ComicFilterTagsResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicListResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ComicQueryResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.FavoriteResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.HomeIndexResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.LoginResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.MemberInfoResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.NewestResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.RankingResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SearchResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.SimpleResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.TopicDetailResponse
+import com.rchdliang.copymanga_neo.data.remote.dto.TopicsResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.TrialContentResponse
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import retrofit2.Response
@@ -37,6 +42,88 @@ import retrofit2.http.Query
  * 需要跳过认证的接口在 @HeaderMap 中携带 "X-No-Auth" = "1" 即可。
  */
 interface MangaApiService {
+    /** 漫画排行榜；只声明 HAR 已观察到的查询字段。 */
+    @GET("api/v3/ranks")
+    suspend fun getComicRankings(
+        @Query("type") type: Int = 1,
+        @Query("date_type") period: String,
+        @Query("audience_type") audience: String,
+        @Query("offset") offset: Int = 0,
+        @Query("limit") limit: Int = 21,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<RankingResponse>
+
+    @GET("api/v3/update/newest")
+    suspend fun getNewestComics(
+        @Query("limit") limit: Int = 21,
+        @Query("offset") offset: Int = 0,
+        @Query("_update") update: Boolean? = null,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<NewestResponse>
+
+    @GET("api/v3/topics")
+    suspend fun getComicTopics(
+        @Query("type") type: Int = 1,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<TopicsResponse>
+
+    @GET("api/v3/topic/{pathWord}")
+    suspend fun getComicTopic(
+        @Path("pathWord") pathWord: String,
+        @Query("limit") limit: String = "",
+        @Query("offset") offset: String = "",
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<TopicDetailResponse>
+
+    @GET("api/v3/topic/{pathWord}/contents")
+    suspend fun getComicTopicContents(
+        @Path("pathWord") pathWord: String,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<SearchResponse>
+
+    @GET("api/v3/h5/filter/comic/tags")
+    suspend fun getComicFilterTags(
+        @Query("type") type: Int = 1,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<ComicFilterTagsResponse>
+
+    @GET("api/v3/comics")
+    suspend fun browseComics(
+        @Query("free_type") freeType: Int = 1,
+        @Query("top") top: String?,
+        @Query("theme") theme: String?,
+        @Query("ordering") ordering: String,
+        @Query("limit") limit: Int = 21,
+        @Query("offset") offset: Int = 0,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<SearchResponse>
+
+    /** 按最近更新时间分页获取完结漫画；参数与完结入口的请求保持一致。 */
+    @GET("api/v3/comics")
+    suspend fun getFinishedComics(
+        @Query("free_type") freeType: Int = 1,
+        @Query("top") top: String = "finish",
+        @Query("offset") offset: Int = 0,
+        @Query("limit") limit: Int = 21,
+        @Query("ordering") ordering: String = "-datetime_updated",
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<SearchResponse>
+
+    /** App 阅读路径，不经过 WWW HTML 解密。 */
+    @GET("api/v3/comic/{pathWord}/chapter2/{chapterUuid}")
+    suspend fun getOfficialChapter(
+        @Path("pathWord") pathWord: String,
+        @Path("chapterUuid") chapterUuid: String,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<com.rchdliang.copymanga_neo.data.remote.dto.OfficialChapterResponse>
+
     /**
      * 获取首页推荐漫画列表
      * @param timestamp 时间戳，防止缓存
@@ -44,12 +131,12 @@ interface MangaApiService {
     @GET("api/v3/h5/homeIndex")
     suspend fun getHomeComics(
         @Query("_t") timestamp: Long = System.currentTimeMillis(),
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders(),
     ): Response<HomeIndexResponse>
 
     @GET("api/v3/recs?pos=3200102")
     suspend fun getRecComics(
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders(),
         @Query("limit") limit: Int = 10,
         @Query("offset") offset: Int = 0,
         @Query("free_type") freeType: Int?,
@@ -85,9 +172,15 @@ interface MangaApiService {
     @GET("comicdetail/{pathWord}/chapters")
     suspend fun getChapterCatalog(
         @Path("pathWord") pathWord: String,
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.chapterCatalogHeaders(
-            pathWord
-        )
+        @HeaderMap headers: Map<String, String>,
+        @retrofit2.http.Tag protocol: com.rchdliang.copymanga_neo.data.remote.util.WwwCatalogProtocol
+    ): Response<okhttp3.ResponseBody>
+
+    /** 漫画 HTML 提供本次目录请求的密钥和 dnts；无需 API 登录。 */
+    @GET("comic/{pathWord}")
+    suspend fun getComicHtml(
+        @Path("pathWord") pathWord: String,
+        @Header("X-No-Auth") value: Int = 1
     ): Response<okhttp3.ResponseBody>
 
     /** 根据题材筛选漫画，响应结构与搜索结果一致。 */
@@ -98,7 +191,7 @@ interface MangaApiService {
         @Query("limit") limit: Int = 21,
         @Query("free_type") freeType: Int = 1,
         @Query("ordering") ordering: OrderType = OrderType.UPDATED_DESC,
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SearchResponse>
 
     @GET("api/v3/search/comic")

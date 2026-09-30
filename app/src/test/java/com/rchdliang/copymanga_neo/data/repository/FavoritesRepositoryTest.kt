@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.testing.webRepositoryFixture
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesUiState
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
@@ -35,7 +36,7 @@ class FavoritesRepositoryTest {
         )
         .addConverterFactory(GsonConverterFactory.create()).build()
         .create(MangaApiService::class.java)
-    private val repository = MangaRepositoryImpl(service, service)
+    private val repository = webRepositoryFixture(service)
 
     @Test
     fun updateOnLaterPageIsIncludedEvenWhenFirstPageIsShort() = runBlocking {

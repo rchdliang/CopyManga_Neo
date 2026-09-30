@@ -4,11 +4,11 @@ import com.google.gson.GsonBuilder
 import com.google.gson.Strictness
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
-import com.rchdliang.copymanga_neo.data.remote.NetworkRoutingInterceptor
-import com.rchdliang.copymanga_neo.data.remote.NetworkGenerationInterceptor
-import com.rchdliang.copymanga_neo.data.remote.NetworkBoundaryInterceptor
-import com.rchdliang.copymanga_neo.data.remote.SettingsProxySelector
 import com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig
+import com.rchdliang.copymanga_neo.data.remote.NetworkBoundaryInterceptor
+import com.rchdliang.copymanga_neo.data.remote.NetworkGenerationInterceptor
+import com.rchdliang.copymanga_neo.data.remote.NetworkRoutingInterceptor
+import com.rchdliang.copymanga_neo.data.remote.SettingsProxySelector
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.api.SystemApiService
 import dagger.Module
@@ -31,6 +31,24 @@ import javax.inject.Singleton
 object NetworkModule {
     private const val TIMEOUT_SECONDS = 10L
 
+    /** 发表评论不能因连接重试或重定向而重复发送；其余网络策略与主客户端一致。 */
+    @Provides
+    @Singleton
+    fun provideCommentApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
+            com.rchdliang.copymanga_neo.data.remote.api.CommentApiService = retrofit.newBuilder()
+        .client(
+            client.newBuilder().retryOnConnectionFailure(false).followRedirects(false)
+            .followSslRedirects(false)
+            .addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                // OkHttp 仍可能按 503 + Retry-After: 0 重放请求；发表操作明确禁止这种重试。
+                if (chain.request().method == "POST" && response.code == 503) {
+                    response.newBuilder().removeHeader("Retry-After").build()
+                } else response
+            }.build()
+        )
+        .build().create(com.rchdliang.copymanga_neo.data.remote.api.CommentApiService::class.java)
+
     @Provides
     @Singleton
     fun provideOkHttpClient(
@@ -40,23 +58,29 @@ object NetworkModule {
         networkSettings: NetworkSettingsStore,
         routing: NetworkRoutingInterceptor,
         generation: NetworkGenerationInterceptor,
-        boundary: NetworkBoundaryInterceptor
+        boundary: NetworkBoundaryInterceptor,
+        officialApp: com.rchdliang.copymanga_neo.data.remote.OfficialAppInterceptor,
+        localCalls: com.rchdliang.copymanga_neo.data.remote.LocalNetworkCallInterceptor,
+        localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor
     ): OkHttpClient {
 
         return OkHttpClient.Builder()
+            .addInterceptor(localCalls)
             .proxySelector(SettingsProxySelector({ networkSettings.settings.value }))
             .addInterceptor(routing)
             .addInterceptor(riskControlInterceptor)
             // 1. 添加请求头拦截器（模拟真实浏览器）
             .addInterceptor(HeadersInterceptor())
+            .addInterceptor(officialApp)
 
             // 2. 添加认证拦截器（已登录时自动附加 Token header）
             .addInterceptor(authInterceptor)
             .addInterceptor(generation)
             .addNetworkInterceptor(boundary)
+            .addNetworkInterceptor(localExchanges)
 
-            // 3. 添加 Cookie 管理（持久化存储）
-            .cookieJar(cookieJar)
+            // 3. 仅 WWW 请求使用持久化 Cookie
+            .cookieJar(WwwCookieJar(cookieJar, networkSettings))
 
             // 4. 添加请求日志拦截器（记录 URL / 请求头 / 状态码 / 耗时）
             .addInterceptor(RequestLoggingInterceptor())

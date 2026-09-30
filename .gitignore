@@ -21,3 +21,5 @@ AGENTS.md
 reasonix.toml
 /.codex/config.toml
 /work
+/docs/
+/app/src/main/assets/official_app_identity_har.json

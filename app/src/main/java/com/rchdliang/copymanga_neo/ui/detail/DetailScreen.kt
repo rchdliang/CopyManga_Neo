@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
@@ -128,10 +129,13 @@ import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ComicInfo
+import com.rchdliang.copymanga_neo.domain.model.CommentKind
+import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.blocks
+import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
@@ -159,6 +163,16 @@ fun DetailScreen(
     val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
     var pendingTheme by remember(pathWord) { mutableStateOf<Theme?>(null) }
+    var showComments by remember(pathWord) { mutableStateOf(false) }
+    if (showComments) uiState.comicDetail?.let { comic ->
+        CommentsDialog(
+            target = CommentTarget(CommentKind.COMIC, comic.uuid),
+            title = comic.name,
+            postingAllowed = !comic.closeComment,
+            onDismiss = { showComments = false },
+            onLogin = onNavigateToProfile
+        )
+    }
     val transitionData = currentComicTransitionData(pathWord)
     val sharedTransitionKey = transitionData?.transitionKey ?: pathWord
     val isSharedTransitionActive = isComicSharedTransitionActive(pathWord)
@@ -372,6 +386,7 @@ fun DetailScreen(
                 }
                 DetailContent(
                     comicDetail = uiState.comicDetail!!,
+                    onComments = { showComments = true },
                     blockedThemes = uiState.blockedThemes,
                     onThemeClick = { theme ->
                         if (theme.pathWord.isNullOrBlank()) {
@@ -521,6 +536,7 @@ fun DetailScreen(
 @Composable
 private fun DetailContent(
     comicDetail: ComicInfo,
+    onComments: () -> Unit = {},
     blockedThemes: List<Theme> = emptyList(),
     onThemeClick: (Theme) -> Unit = {},
     onThemeLongClick: (Theme) -> Unit = {},
@@ -573,6 +589,7 @@ private fun DetailContent(
         Modifier.comicCoverSharedElement(transitionPathWord)
     } else Modifier
     val isInBatchMode = batchSelection != null
+    val managedChapterUuids = batchSelection?.managedChapters(chapters)?.keys.orEmpty()
     val density = LocalDensity.current
     val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var titleHeight by remember(currentPathWord) { mutableIntStateOf(1) }
@@ -623,7 +640,8 @@ private fun DetailContent(
                 tonalElevation = if (atTop) 0.dp else 3.dp
             ) {
                 if (isInBatchMode) {
-                    val selectedCount = batchSelection.selectedChapterUuids.size
+                    val selectedCount =
+                        managedChapterUuids.count { it in batchSelection.selectedChapterUuids }
                 SelectionTopRow(
                     selectedCount = selectedCount,
                     canSelectBetween = canSelectBetween(),
@@ -665,6 +683,13 @@ private fun DetailContent(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                        }
+                        IconButton(onClick = onComments, enabled = comicDetail.uuid.isNotBlank()) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.Comment,
+                                contentDescription = "漫画评论",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                         if (chapters.isNotEmpty()) {
                             IconButton(onClick = onEnterManageMode) {
@@ -1017,24 +1042,16 @@ private fun DetailContent(
         }
 
         if (isInBatchMode) {
-            val currentSelection = batchSelection.selectedChapterUuids
-            val downloadCount = currentSelection.count { uuid ->
-                chapterDownloadStatuses[uuid] !in setOf(
-                    ChapterDownloadStatus.DOWNLOADED,
-                    ChapterDownloadStatus.WAITING, ChapterDownloadStatus.DOWNLOADING
-                )
-            }
-            val deleteCount = chapterDownloadStatuses.count { (uuid, status) ->
-                status == ChapterDownloadStatus.DOWNLOADED && uuid !in currentSelection
-            }
-            val cancelCount = chapterDownloadStatuses.count { (uuid, status) ->
-                status in setOf(
-                    ChapterDownloadStatus.WAITING,
-                    ChapterDownloadStatus.DOWNLOADING
-                ) && uuid !in currentSelection
-            }
+            val changes = chapterDownloadChanges(
+                managedChapterUuids,
+                batchSelection.selectedChapterUuids,
+                chapterDownloadStatuses
+            )
             ManageBottomBar(
-                downloadCount, deleteCount, cancelCount, onConfirmBatchAction,
+                changes.download.size,
+                changes.delete.size,
+                changes.cancel.size,
+                onConfirmBatchAction,
                 Modifier
                     .align(Alignment.BottomCenter)
                     .onSizeChanged { bottomBarHeight = it.height })

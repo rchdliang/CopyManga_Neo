@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.di
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import com.rchdliang.copymanga_neo.BuildConfig
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -27,43 +26,38 @@ class PersistentCookieJar(context: Context) : CookieJar {
         loadAllCookiesFromPrefs()
     }
 
+    @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        // 合并新旧 Cookie：新 Cookie 优先，旧 Cookie 中不在新列表里的也保留
-        val existing = cookieStore[url.host] ?: emptyList()
-        val merged =
-            (existing.filter { old -> cookies.none { new -> new.name == old.name } } + cookies)
-                .filter { it.expiresAt >= System.currentTimeMillis() || it.expiresAt == -1L }
-
-        cookieStore[url.host] = merged
-        saveCookiesToPrefs(url.host, merged)
-
-        if (BuildConfig.DEBUG) {
-            cookies.forEach {
-                android.util.Log.v("CookieJar", "Save from ${url.host}: ${it.name}")
+        // Cookie 身份包含 name/domain/path；服务端过期值会删除对应旧值。
+        val incoming = cookies.associateBy { Triple(it.name, it.domain, it.path) }
+        val now = System.currentTimeMillis()
+        val merged = (cookieStore.values.flatten().filter {
+            Triple(it.name, it.domain, it.path) !in incoming
+        } + cookies).filter { it.expiresAt > now }
+            .distinctBy { Triple(it.name, it.domain, it.path) }
+        cookieStore.clear()
+        cookieStore.putAll(merged.groupBy { it.domain })
+        prefs.edit {
+            clear()
+            cookieStore.forEach { (domain, items) ->
+                putString(
+                    domain,
+                    items.joinToString("|") { serializeCookie(it) })
             }
         }
     }
 
-    override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val cookies = cookieStore[url.host] ?: emptyList()
-        if (cookies.isNotEmpty() && BuildConfig.DEBUG) {
-            android.util.Log.v(
-                "CookieJar",
-                "Load for ${url.host}: ${cookies.joinToString("; ") { it.name }}"
-            )
-        }
-        return cookies
-    }
+    @Synchronized
+    override fun loadForRequest(url: HttpUrl): List<Cookie> = cookieStore.values.flatten()
+        .filter { it.expiresAt > System.currentTimeMillis() && it.matches(url) }
+        .distinctBy { Triple(it.name, it.domain, it.path) }
+        .sortedByDescending { it.path.length }
 
     /** 清除所有 Cookie（登出时调用） */
+    @Synchronized
     fun clearAll() {
         cookieStore.clear()
         prefs.edit { clear() }
-    }
-
-    private fun saveCookiesToPrefs(host: String, cookies: List<Cookie>) {
-        val serialized = cookies.joinToString("|") { serializeCookie(it) }
-        prefs.edit { putString(host, serialized) }
     }
 
     private fun loadAllCookiesFromPrefs() {
@@ -79,8 +73,8 @@ class PersistentCookieJar(context: Context) : CookieJar {
     }
 
     private fun serializeCookie(cookie: Cookie): String {
-        // 格式：name;value;domain;path;expiresAt;secure;httpOnly
-        return "${cookie.name}\t${cookie.value}\t${cookie.domain}\t${cookie.path}\t${cookie.expiresAt}\t${cookie.secure}\t${cookie.httpOnly}"
+        // 字段以制表符分隔，末尾保存 hostOnly；旧格式按仅当前主机恢复。
+        return "${cookie.name}\t${cookie.value}\t${cookie.domain}\t${cookie.path}\t${cookie.expiresAt}\t${cookie.secure}\t${cookie.httpOnly}\t${cookie.hostOnly}"
     }
 
     private fun deserializeCookie(raw: String): Cookie? {
@@ -93,13 +87,18 @@ class PersistentCookieJar(context: Context) : CookieJar {
                 .path(parts[3])
                 .expiresAt(parts[4].toLong())
 
-            if (parts[2].isNotBlank()) builder.domain(parts[2])
+            if (parts[2].isNotBlank()) {
+                if (parts.getOrNull(7)?.toBooleanStrictOrNull() != false) builder.hostOnlyDomain(
+                    parts[2]
+                )
+                else builder.domain(parts[2])
+            }
             if (parts[5] == "true") builder.secure()
             if (parts[6] == "true") builder.httpOnly()
 
             return builder.build()
         } catch (e: Exception) {
-            android.util.Log.w("CookieJar", "Failed to deserialize cookie: $raw", e)
+            android.util.Log.w("CookieJar", "Failed to deserialize stored cookie", e)
             return null
         }
     }

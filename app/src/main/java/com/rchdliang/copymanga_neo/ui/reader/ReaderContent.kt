@@ -21,7 +21,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -476,7 +480,8 @@ fun ReaderBottomBar(
     sliderValue: Float,
     onSliderValueChange: (Float) -> Unit,
     onSliderValueChangeFinished: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onComments: () -> Unit = {}
 ) {
     Row(
         modifier = modifier
@@ -507,5 +512,8 @@ fun ReaderBottomBar(
             color = Color.White,
             style = MaterialTheme.typography.titleMedium
         )
+        IconButton(onClick = onComments) {
+            Icon(Icons.AutoMirrored.Outlined.Comment, "章节评论", tint = Color.White)
+        }
     }
 }

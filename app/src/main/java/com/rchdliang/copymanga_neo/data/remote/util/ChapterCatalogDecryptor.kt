@@ -1,19 +1,48 @@
 package com.rchdliang.copymanga_neo.data.remote.util
 
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterCatalogDto
 import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-/** WWW 目录：16 字符 IV + Hex 密文，固定 128 位密钥，CBC / PKCS7。 */
+/** WWW 目录：16 字符 IV + Hex 密文，网页提供 128 位密钥，CBC / PKCS7。 */
 internal object ChapterCatalogDecryptor {
     private val gson = Gson()
 
-    fun decrypt(results: String, pathWord: String): ChapterCatalog {
+    /** 兼容加密 results 和风控时返回的明文目录；HTTP 成功不等于目录可用。 */
+    fun parseResponse(json: String, pathWord: String, key: String): ChapterCatalog {
+        val root = JsonParser.parseString(json).asJsonObject
+        if (root.has("build") && root.has("groups")) return parseCatalog(root.toString(), pathWord)
+        if (root.get("code")?.asInt == 210) {
+            throw RiskControlException(
+                root.get("message")?.takeUnless { it.isJsonNull }?.asString
+                    ?: "官方暂时限制了当前网络的访问"
+            )
+        }
+        check(root.get("code")?.asInt == 200) {
+            root.get("message")?.takeUnless { it.isJsonNull }?.asString ?: "WWW 章节目录响应异常"
+        }
+        val results = requireNotNull(
+            root.get("results")?.takeUnless { it.isJsonNull }) { "WWW 章节目录缺少内容" }
+        return if (results.isJsonObject) parseCatalog(results.toString(), pathWord)
+        else {
+            val value = results.asString
+            if (value.trimStart().startsWith("{")) parseCatalog(value, pathWord) else decrypt(
+                value,
+                pathWord,
+                key
+            )
+        }
+    }
+
+    fun decrypt(results: String, pathWord: String, key: String): ChapterCatalog {
+        require(key.toByteArray(Charsets.UTF_8).size == 16) { "章节目录密钥长度无效" }
         require(results.length > 16) { "章节目录密文为空或缺少 IV" }
         val iv = results.take(16).toByteArray(Charsets.UTF_8)
         val hex = results.drop(16)
@@ -28,14 +57,21 @@ internal object ChapterCatalogDecryptor {
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
         cipher.init(
             Cipher.DECRYPT_MODE,
-            SecretKeySpec("op0zzpvv.nmn.00p".toByteArray(Charsets.UTF_8), "AES"),
+            SecretKeySpec(key.toByteArray(Charsets.UTF_8), "AES"),
             IvParameterSpec(iv)
         )
         val json = cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
+        return parseCatalog(json, pathWord)
+    }
+
+    private fun parseCatalog(json: String, pathWord: String): ChapterCatalog {
         // Gson 在解析 JSON 时处理 Unicode 转义，不能再手动二次反转义。
         val dto = requireNotNull(gson.fromJson(json, ChapterCatalogDto::class.java))
         require(dto.build?.pathWord == pathWord) { "章节目录与当前漫画不匹配" }
         val sourceGroups = requireNotNull(dto.groups) { "章节目录缺少分组" }
+        if (sourceGroups.isNotEmpty() && sourceGroups.values.all { it.count == 0 && it.chapters?.isEmpty() == true }) {
+            throw RiskControlException("WWW 章节目录返回所有分组均为 0 章，疑似受到访问限制")
+        }
         val groups = mutableListOf<ChapterGroup>()
         val chaptersByGroup = linkedMapOf<String, List<ChapterInfo>>()
         sourceGroups.forEach { (key, group) ->

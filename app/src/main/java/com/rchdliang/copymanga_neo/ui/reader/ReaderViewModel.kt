@@ -110,7 +110,7 @@ class ReaderViewModel @Inject constructor(
                 if (downloadedChapter != null && downloadedChapter.comicPathWord == comicPathWord) {
                     val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
                     val localContent = downloadedChapter.offlineContent(allChapters)
-                    _uiState.value = ReaderUiState.Success(localContent)
+                    _uiState.value = ReaderUiState.Success(localContent, chapterUuid)
                     val resolvedGroup = downloadedChapter.groupPathWord ?: group
                     currentGroup = resolvedGroup
                     readingProgress.recordRead(
@@ -126,7 +126,7 @@ class ReaderViewModel @Inject constructor(
                                     prevUuid = chapter.prevChapter,
                                     nextUuid = chapter.nextChapter,
                                     chapterName = chapter.name
-                                )
+                                ), chapterUuid
                             )
                             try {
                                 downloadRepository.updateChapterMetadata(
@@ -149,7 +149,7 @@ class ReaderViewModel @Inject constructor(
                 repository.getChapterContent(comicPathWord, chapterUuid, group)
                     .onSuccess { content ->
                         ensureActive()
-                        _uiState.value = ReaderUiState.Success(content)
+                        _uiState.value = ReaderUiState.Success(content, chapterUuid)
                         if (content.imageUrls.isNotEmpty()) readingProgress.recordRead(
                             progressOwner,
                             comicPathWord, chapterUuid, content.chapterName, group
@@ -235,7 +235,7 @@ class ReaderViewModel @Inject constructor(
 
 sealed class ReaderUiState {
     object Loading : ReaderUiState()
-    data class Success(val content: ChapterContent) : ReaderUiState()
+    data class Success(val content: ChapterContent, val chapterUuid: String = "") : ReaderUiState()
     data class Error(val message: String) : ReaderUiState()
     data class RiskControl(val reason: String) : ReaderUiState()
 }

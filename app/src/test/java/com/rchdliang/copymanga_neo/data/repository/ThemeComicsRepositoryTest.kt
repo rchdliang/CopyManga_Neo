@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.testing.webRepositoryFixture
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -34,7 +35,7 @@ class ThemeComicsRepositoryTest {
         )
         .addConverterFactory(GsonConverterFactory.create()).build()
         .create(MangaApiService::class.java)
-    private val repository = MangaRepositoryImpl(service, service)
+    private val repository = webRepositoryFixture(service)
 
     @Test
     fun themeUsesCapturedEndpointAndContinuesAfterShortPage() = runBlocking {
@@ -48,7 +49,7 @@ class ThemeComicsRepositoryTest {
         assertEquals("21", request.url.queryParameter("limit"))
         assertEquals("-datetime_updated", request.url.queryParameter("ordering"))
         assertEquals("1", request.header("platform"))
-        assertEquals("1", request.header("X-No-Auth"))
+        assertNull(request.header("X-No-Auth"))
         assertNull(request.url.queryParameter("q"))
         assertEquals(20, result.comics.size)
         assertEquals(21, result.nextOffset)

@@ -47,8 +47,13 @@ sealed interface ChapterBatchAction {
 
 data class ChapterBatchSelectionState(
     val action: ChapterBatchAction,
-    val selectedChapterUuids: Set<String> = emptySet()
-)
+    val selectedChapterUuids: Set<String> = emptySet(),
+    val visitedChapters: Map<String, ChapterInfo> = emptyMap()
+) {
+    /** 保留已访问组的章节资料，以便切组后仍能统一入队。 */
+    fun managedChapters(currentChapters: List<ChapterInfo>): Map<String, ChapterInfo> =
+        visitedChapters + currentChapters.associateBy { it.uuid }
+}
 
 data class DetailUiState(
     val comicDetail: ComicInfo? = null,
@@ -136,7 +141,12 @@ class DetailViewModel @Inject constructor(
         supervisorScope {
             val catalog = async { mangaRepository.getChapterCatalog(pathWord, forceRefresh = true) }
             val detail = async { mangaRepository.getComicDetail(pathWord) }
-            detail.await() to catalog.await().getOrNull()
+            val detailResult = detail.await()
+            val catalogResult = catalog.await()
+            val risk =
+                catalogResult.exceptionOrNull() as? com.rchdliang.copymanga_neo.domain.repository.RiskControlException
+            if (risk != null) Result.failure<ComicDetail>(risk) to null
+            else detailResult to catalogResult.getOrNull()
         }
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
@@ -553,7 +563,9 @@ class DetailViewModel @Inject constructor(
                 selectedGroup = groupPathWord,
                 chapters = persistentListOf(),
                 chapterTotal = 0,
-                batchSelection = null
+                batchSelection = it.batchSelection?.let { batch ->
+                    batch.copy(visitedChapters = batch.managedChapters(it.chapters))
+                }
             )
         }
         loadAllChapters(pathWord, groupPathWord)
@@ -675,9 +687,8 @@ class DetailViewModel @Inject constructor(
 
     fun enterManageMode(chapterUuid: String? = null) {
         _uiState.update { state ->
-            val visibleUuids = state.chapters.map { it.uuid }.toSet()
+            // 已有下载默认保持勾选，跨组操作不会把未操作的下载误判为删除。
             val downloadableUuids = state.chapterDownloadStatuses
-                .filterKeys { it in visibleUuids }
                 .filter {
                     it.value == ChapterDownloadStatus.DOWNLOADED ||
                             it.value == ChapterDownloadStatus.WAITING ||
@@ -692,7 +703,8 @@ class DetailViewModel @Inject constructor(
             state.copy(
                 batchSelection = ChapterBatchSelectionState(
                     action = ChapterBatchAction.ManageDownloads,
-                    selectedChapterUuids = initialSelection
+                    selectedChapterUuids = initialSelection,
+                    visitedChapters = state.chapters.associateBy { it.uuid }
                 )
             )
         }
@@ -720,7 +732,7 @@ class DetailViewModel @Inject constructor(
             val batch = state.batchSelection ?: return@update state
             state.copy(
                 batchSelection = batch.copy(
-                    selectedChapterUuids = state.chapters.map { it.uuid }.toSet()
+                    selectedChapterUuids = batch.selectedChapterUuids + state.chapters.map { it.uuid }
                 )
             )
         }
@@ -730,7 +742,9 @@ class DetailViewModel @Inject constructor(
         _uiState.update { state ->
             val batch = state.batchSelection ?: return@update state
             val allUuids = state.chapters.map { it.uuid }.toSet()
-            val inverted = allUuids - batch.selectedChapterUuids
+            val inverted = replaceVisibleSelection(
+                batch.selectedChapterUuids, allUuids, allUuids - batch.selectedChapterUuids
+            )
             state.copy(batchSelection = batch.copy(selectedChapterUuids = inverted))
         }
     }
@@ -790,6 +804,7 @@ class DetailViewModel @Inject constructor(
             else state.chapters.reversed()
             if (chapters.isEmpty() || batch.selectedChapterUuids.isEmpty()) return@update state
             val sortedSelected = chapters.filter { it.uuid in batch.selectedChapterUuids }
+            if (sortedSelected.isEmpty()) return@update state
 
             val startIndex: Int
             val endIndex: Int
@@ -822,16 +837,25 @@ class DetailViewModel @Inject constructor(
         val chapters = if (state.sortAscending) state.chapters
         else state.chapters.reversed()
         val sortedSelected = chapters.filter { it.uuid in selected }
+        if (sortedSelected.size < 2) return false
         val firstIndex = chapters.indexOf(sortedSelected.first())
         val lastIndex = chapters.indexOf(sortedSelected.last())
         val rangeSize = lastIndex - firstIndex + 1
-        return rangeSize > selected.size
+        return rangeSize > sortedSelected.size
     }
 
     fun clearSelection() {
         _uiState.update { state ->
             val batch = state.batchSelection ?: return@update state
-            state.copy(batchSelection = batch.copy(selectedChapterUuids = emptySet()))
+            state.copy(
+                batchSelection = batch.copy(
+                    selectedChapterUuids = replaceVisibleSelection(
+                        batch.selectedChapterUuids,
+                        state.chapters.map { it.uuid }.toSet(),
+                        emptySet()
+                    )
+                )
+            )
         }
     }
 
@@ -851,31 +875,15 @@ class DetailViewModel @Inject constructor(
         val state = _uiState.value
         val pathWord = currentPathWord ?: return
         val detail = state.comicDetail ?: return
-        val visibleUuids = state.chapters.map { it.uuid }.toSet()
-        val selected = (state.batchSelection?.selectedChapterUuids ?: return) intersect visibleUuids
-
-        val downloadedUuids = state.chapterDownloadStatuses
-            .filterKeys { it in visibleUuids }
-            .filter { it.value == ChapterDownloadStatus.DOWNLOADED }
-            .keys
-
-        val activeDownloadUuids = state.chapterDownloadStatuses
-            .filterKeys { it in visibleUuids }
-            .filter {
-                it.value == ChapterDownloadStatus.WAITING ||
-                        it.value == ChapterDownloadStatus.DOWNLOADING
-            }
-            .keys
-
-        val toDownloadUuids = selected.filter { uuid ->
-            val status = state.chapterDownloadStatuses[uuid]
-            status != ChapterDownloadStatus.DOWNLOADED &&
-                    status != ChapterDownloadStatus.WAITING &&
-                    status != ChapterDownloadStatus.DOWNLOADING
-        }.toSet()
-
-        val toDeleteLocalUuids = downloadedUuids - selected
-        val toCancelDownloadUuids = activeDownloadUuids - selected
+        val batch = state.batchSelection ?: return
+        val managedChapters = batch.managedChapters(state.chapters)
+        val changes = chapterDownloadChanges(
+            managedChapters.keys, batch.selectedChapterUuids,
+            state.chapterDownloadStatuses
+        )
+        val toDownloadUuids = changes.download
+        val toDeleteLocalUuids = changes.delete
+        val toCancelDownloadUuids = changes.cancel
 
         if (toDownloadUuids.isEmpty() && toDeleteLocalUuids.isEmpty() && toCancelDownloadUuids.isEmpty()) {
             exitBatchMode()
@@ -890,7 +898,8 @@ class DetailViewModel @Inject constructor(
                 downloadRepository.deleteChapters(pathWord, toDeleteLocalUuids.toList())
             }
             if (toDownloadUuids.isNotEmpty()) {
-                val chaptersToDownload = state.chapters.filter { it.uuid in toDownloadUuids }
+                val chaptersToDownload =
+                    managedChapters.values.filter { it.uuid in toDownloadUuids }
                 enqueueChaptersDownload(detail, chaptersToDownload)
             }
             exitBatchMode()

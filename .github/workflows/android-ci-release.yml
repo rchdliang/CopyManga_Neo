@@ -33,7 +33,11 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: |
+          test -n "$COPYMANGA_TAP_STRING" || { echo "Missing debug configuration" >&2; exit 1; }
+          ./gradlew assembleDebug
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v6
@@ -95,7 +99,11 @@ jobs:
           EOF
 
       - name: Build release APK
-        run: ./gradlew assembleRelease
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: |
+          test -n "$COPYMANGA_TAP_STRING" || { echo "Missing release configuration" >&2; exit 1; }
+          ./gradlew assembleRelease
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v6

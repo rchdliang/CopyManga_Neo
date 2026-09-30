@@ -44,8 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import com.rchdliang.copymanga_neo.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -152,11 +150,11 @@ internal fun SettingsPage(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
         ) {
-            SettingsSectionTitle(stringResource(R.string.network_title))
+            SettingsSectionTitle("网络设置")
             ProfileListItem(
                 Icons.Outlined.Wifi,
-                stringResource(R.string.network_title),
-                stringResource(R.string.network_entry_summary),
+                "网络设置",
+                "线路、域名与代理",
                 index = 0, count = 1, onClick = onNavigateToNetwork
             )
             SettingsSectionTitle("外观与下载")

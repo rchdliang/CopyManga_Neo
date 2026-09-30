@@ -101,6 +101,7 @@ import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionSt
 import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadNotificationPermission
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
+import com.rchdliang.copymanga_neo.ui.explore.ComicExploreScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesViewModel
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
@@ -198,6 +199,20 @@ sealed class Screen(val route: String) {
             "search?themePathWord=${Uri.encode(theme.pathWord.orEmpty())}" +
                     "&themeName=${Uri.encode(theme.name)}"
     }
+
+    object Explore :
+        Screen("explore/{section}?theme={theme}&top={top}&audience={audience}&period={period}") {
+        fun createRoute(section: String, theme: String? = null, top: String? = null): String {
+            val filters = listOfNotNull(
+                theme?.let { "theme=${Uri.encode(it)}" },
+                top?.let { "top=${Uri.encode(it)}" })
+            return "explore/$section" + if (filters.isEmpty()) "" else filters.joinToString(
+                "&",
+                prefix = "?"
+            )
+        }
+    }
+
     object Favorites : Screen("favorites")
     object Downloads : Screen("downloads")
     object Profile : Screen("profile")
@@ -250,33 +265,36 @@ fun CopyManga_NeoApp(
                         fadeOut(tween(durationMillis = 0))
                     },
                 ) {
-            // 主界面（包含底部导航栏）
-            composable(Screen.Main.route) {
-                ComicSharedTransitionProvider(
-                    sharedTransitionScope,
-                    this,
-                    comicSharedTransitionState
-                ) {
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
-                        val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
-                        MainScreen(
-                            openDownloads = openDownloads,
-                            onDownloadsOpened = onDownloadsOpened,
-                            isLoggedIn = isLoggedIn,
-                            avatar = avatar,
-                            onNavigateToDetail = { pathWord ->
-                                navController.navigate(Screen.Detail.createRoute(pathWord))
-                            },
-                            onNavigateToSearch = {
-                                navController.navigate(Screen.Search.createRoute())
+                    // 主界面（包含底部导航栏）
+                    composable(Screen.Main.route) {
+                        ComicSharedTransitionProvider(
+                            sharedTransitionScope,
+                            this,
+                            comicSharedTransitionState
+                        ) {
+                            Box(modifier = Modifier.statusBarsPadding()) {
+                                val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
+                                val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
+                                MainScreen(
+                                    openDownloads = openDownloads,
+                                    onDownloadsOpened = onDownloadsOpened,
+                                    isLoggedIn = isLoggedIn,
+                                    avatar = avatar,
+                                    onNavigateToDetail = { pathWord ->
+                                        navController.navigate(Screen.Detail.createRoute(pathWord))
+                                    },
+                                    onNavigateToSearch = {
+                                        navController.navigate(Screen.Search.createRoute())
+                                    },
+                                    onNavigateToExplore = { section ->
+                                        navController.navigate(Screen.Explore.createRoute(section))
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
-                }
-            }
 
-            // 搜索页（全屏覆盖，无底部导航）
+                    // 搜索页（全屏覆盖，无底部导航）
                     composable(
                         route = Screen.Search.route,
                         arguments = listOf(
@@ -288,84 +306,132 @@ fun CopyManga_NeoApp(
                             }
                         )
                     ) {
-                ComicSharedTransitionProvider(
-                    sharedTransitionScope,
-                    this,
-                    comicSharedTransitionState
-                ) {
-                    SearchScreen(
-                        onComicClick = { pathWord ->
-                            navController.navigate(Screen.Detail.createRoute(pathWord))
-                        },
-                        onNavigateBack = { navController.popBackStack() }
-                    )
-                }
-            }
-
-            // 详情页（脱离底部导航栏）
-            composable(
-                route = Screen.Detail.route,
-                popExitTransition = { fadeOut(tween(durationMillis = 0)) },
-                arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val pathWord = backStackEntry.arguments?.getString("pathWord") ?: return@composable
-                ComicSharedTransitionProvider(
-                    sharedTransitionScope,
-                    this,
-                    comicSharedTransitionState
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        DetailScreen(
-                            pathWord = pathWord,
-                            onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
-                                navController.navigate(
-                                    Screen.Reader.createRoute(
-                                        comicPathWord,
-                                        chapterPathWord,
-                                        chapterName,
-                                        groupPathWord
+                        ComicSharedTransitionProvider(
+                            sharedTransitionScope,
+                            this,
+                            comicSharedTransitionState
+                        ) {
+                            SearchScreen(
+                                onComicClick = { pathWord ->
+                                    navController.navigate(Screen.Detail.createRoute(pathWord))
+                                },
+                                onNavigateToExplore = { theme, top ->
+                                    navController.navigate(
+                                        Screen.Explore.createRoute(
+                                            "filter",
+                                            theme,
+                                            top
+                                        )
                                     )
-                                )
+                                },
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+                    }
+
+                    composable(
+                        route = Screen.Explore.route,
+                        arguments = listOf(
+                            navArgument("section") { type = NavType.StringType },
+                            navArgument("theme") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
                             },
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToProfile = { navController.popBackStack() },
-                            onThemeClick = { theme ->
-                                navController.navigate(Screen.Search.createRoute(theme))
+                            navArgument("top") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("audience") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("period") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
                             }
                         )
+                    ) {
+                        ComicSharedTransitionProvider(
+                            sharedTransitionScope,
+                            this,
+                            comicSharedTransitionState
+                        ) {
+                            ComicExploreScreen(
+                                onComicClick = { pathWord ->
+                                    navController.navigate(
+                                        Screen.Detail.createRoute(
+                                            pathWord
+                                        )
+                                    )
+                                },
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
-                }
-            }
 
-            // 阅读器（全屏，无状态栏Padding，由 ReaderScreen 自己控制系统UI）
-            composable(
-                route = Screen.Reader.route,
-                arguments = listOf(
-                    navArgument("comicPathWord") { type = NavType.StringType },
-                    navArgument("chapterPathWord") { type = NavType.StringType },
-                    navArgument("chapterName") { type = NavType.StringType },
-                    navArgument("groupPathWord") {
-                        type = NavType.StringType; defaultValue = "default"
+                    // 详情页（脱离底部导航栏）
+                    composable(
+                        route = Screen.Detail.route,
+                        popExitTransition = { fadeOut(tween(durationMillis = 0)) },
+                        arguments = listOf(navArgument("pathWord") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val pathWord =
+                            backStackEntry.arguments?.getString("pathWord") ?: return@composable
+                        ComicSharedTransitionProvider(
+                            sharedTransitionScope,
+                            this,
+                            comicSharedTransitionState
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.surface)
+                            ) {
+                                DetailScreen(
+                                    pathWord = pathWord,
+                                    onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
+                                        navController.navigate(
+                                            Screen.Reader.createRoute(
+                                                comicPathWord,
+                                                chapterPathWord,
+                                                chapterName,
+                                                groupPathWord
+                                            )
+                                        )
+                                    },
+                                    onNavigateBack = { navController.popBackStack() },
+                                    onNavigateToProfile = { navController.popBackStack() },
+                                    onThemeClick = { theme ->
+                                        navController.navigate(Screen.Search.createRoute(theme))
+                                    }
+                                )
+                            }
+                        }
                     }
-                )
-            ) { backStackEntry ->
-                val comicPathWord = backStackEntry.arguments?.getString("comicPathWord") ?: ""
-                val chapterPathWord = backStackEntry.arguments?.getString("chapterPathWord") ?: ""
-                val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
-                val groupPathWord =
-                    backStackEntry.arguments?.getString("groupPathWord") ?: "default"
-                ReaderScreen(
-                    chapterPathWord = chapterPathWord,
-                    comicPathWord = comicPathWord,
-                    chapterName = chapterName,
-                    groupPathWord = groupPathWord,
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
+
+                    // 阅读器（全屏，无状态栏Padding，由 ReaderScreen 自己控制系统UI）
+                    composable(
+                        route = Screen.Reader.route,
+                        arguments = listOf(
+                            navArgument("comicPathWord") { type = NavType.StringType },
+                            navArgument("chapterPathWord") { type = NavType.StringType },
+                            navArgument("chapterName") { type = NavType.StringType },
+                            navArgument("groupPathWord") {
+                                type = NavType.StringType; defaultValue = "default"
+                            }
+                        )
+                    ) { backStackEntry ->
+                        val comicPathWord =
+                            backStackEntry.arguments?.getString("comicPathWord") ?: ""
+                        val chapterPathWord =
+                            backStackEntry.arguments?.getString("chapterPathWord") ?: ""
+                        val chapterName = backStackEntry.arguments?.getString("chapterName") ?: ""
+                        val groupPathWord =
+                            backStackEntry.arguments?.getString("groupPathWord") ?: "default"
+                        ReaderScreen(
+                            chapterPathWord = chapterPathWord,
+                            comicPathWord = comicPathWord,
+                            chapterName = chapterName,
+                            groupPathWord = groupPathWord,
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
                 } // NavHost
             } // SharedTransitionLayout
         } // AppToastHost
@@ -379,6 +445,7 @@ fun MainScreen(
     avatar: String?,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToExplore: (String) -> Unit,
     favoritesViewModel: FavoritesViewModel = hiltViewModel(),
     openDownloads: Boolean = false,
     onDownloadsOpened: () -> Unit = {}
@@ -423,6 +490,7 @@ fun MainScreen(
             onDestinationSelected = ::animateToDestination,
             onNavigateToDetail = onNavigateToDetail,
             onNavigateToSearch = onNavigateToSearch,
+            onNavigateToExplore = onNavigateToExplore,
             onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
         )
     } else {
@@ -465,6 +533,7 @@ fun MainScreen(
                     modifier = Modifier.fillMaxSize(),
                     onNavigateToDetail = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToExplore = onNavigateToExplore,
                     onNavigateToProfile = { currentDestination = AppDestinations.PROFILE },
                     onNavigateToDownloads = { currentDestination = AppDestinations.DOWNLOADS }
                 )
@@ -484,6 +553,7 @@ private fun WideScreenLayout(
     onDestinationSelected: (AppDestinations) -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToExplore: (String) -> Unit,
     onNavigateToProfile: () -> Unit
 ) {
     val railState = rememberWideNavigationRailState(
@@ -597,6 +667,7 @@ private fun WideScreenLayout(
                 modifier = Modifier.fillMaxSize(),
                 onNavigateToDetail = onNavigateToDetail,
                 onNavigateToSearch = onNavigateToSearch,
+                onNavigateToExplore = onNavigateToExplore,
                 onNavigateToProfile = onNavigateToProfile,
                 onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
             )
@@ -612,6 +683,7 @@ private fun MainDestinationContent(
     modifier: Modifier = Modifier,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToExplore: (String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToDownloads: () -> Unit
 ) {
@@ -648,6 +720,7 @@ private fun MainDestinationContent(
                 AppDestinations.HOME -> HomeScreen(
                     onComicClick = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToExplore = onNavigateToExplore,
                     onNavigateToDownloads = onNavigateToDownloads
                 )
 

@@ -1,9 +1,10 @@
 package com.rchdliang.copymanga_neo.data.local
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.rchdliang.copymanga_neo.data.remote.NetworkSettingsCodec
-import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
+import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.ProxyMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,8 +15,10 @@ import javax.inject.Singleton
 
 /** 同步恢复网络快照，首个请求不会先使用默认代理；写入由仓库在 I/O 线程执行。 */
 @Singleton
-class NetworkSettingsStore @Inject constructor(@ApplicationContext context: Context) {
-    private val prefs = context.getSharedPreferences("network_settings", Context.MODE_PRIVATE)
+class NetworkSettingsStore internal constructor(private val prefs: SharedPreferences) {
+    @Inject
+    constructor(@ApplicationContext context: Context) :
+            this(context.getSharedPreferences("network_settings", Context.MODE_PRIVATE))
     private val state = MutableStateFlow(NetworkSettingsCodec.decode(prefs.getString("current", null)))
     val settings = state.asStateFlow()
     private val onChange = mutableListOf<() -> Unit>()
@@ -48,13 +51,25 @@ class NetworkSettingsStore @Inject constructor(@ApplicationContext context: Cont
     }
 
     private fun connectionKey(value: NetworkSettings): List<Any> = listOf(
-        value.apiHost, value.wwwHost, value.loginHost, value.version, value.selection,
+        value.requestMode,
+        value.officialApp,
+        value.apiHost,
+        value.wwwHost,
+        value.loginHost,
+        value.version,
+        value.selection,
         when (value.selection) {
             NetworkSelection.DEFAULT -> listOf(value.apiHost)
             NetworkSelection.FIXED -> listOf(value.fixedHost)
             NetworkSelection.ROUTE -> value.routes.getOrNull(value.routeIndex).orEmpty()
         }, value.proxyMode, if (value.proxyMode == ProxyMode.MANUAL) value.proxyAddress else ""
     )
+
+    @Synchronized
+    fun previousSettings(): NetworkSettings {
+        val raw = prefs.getString("previous", null) ?: throw IOException("没有可恢复的上次配置")
+        return NetworkSettingsCodec.decode(raw)
+    }
 
     @Synchronized
     fun rollback() {

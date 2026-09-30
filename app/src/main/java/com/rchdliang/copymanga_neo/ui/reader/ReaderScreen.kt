@@ -60,6 +60,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.domain.model.CommentKind
+import com.rchdliang.copymanga_neo.domain.model.CommentTarget
+import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +81,15 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val currentChapter = uiState as? ReaderUiState.Success
+    var showComments by remember(currentChapter?.chapterUuid) { mutableStateOf(false) }
+    if (showComments && currentChapter != null && currentChapter.chapterUuid.isNotBlank()) {
+        CommentsDialog(
+            target = CommentTarget(CommentKind.CHAPTER, currentChapter.chapterUuid),
+            title = currentChapter.content.chapterName.ifBlank { chapterName },
+            onDismiss = { showComments = false }
+        )
+    }
     val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
     val readingDirectionPref = preferences?.readingDirection ?: "RIGHT_TO_LEFT"
     val pageScalePref = preferences?.pageScale ?: "FIT_SCREEN"
@@ -175,6 +187,7 @@ fun ReaderScreen(
                 onPageScaleChange = { viewModel.setPageScale(it) },
                 onScreenOrientationChange = { viewModel.setScreenOrientation(it) },
                 onResetPreferences = viewModel::resetComicPreferences,
+                onComments = { showComments = true },
                 pendingInitialPage = pendingInitialPage
             )
         }
@@ -200,7 +213,8 @@ fun ReaderSuccessContent(
     onScreenOrientationChange: (String) -> Unit,
     pendingInitialPage: MutableState<Int?>,
     modifier: Modifier = Modifier,
-    onResetPreferences: () -> Unit = {}
+    onResetPreferences: () -> Unit = {},
+    onComments: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
     val locale = LocalLocale.current.platformLocale
@@ -440,6 +454,7 @@ fun ReaderSuccessContent(
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             ReaderBottomBar(
+                onComments = onComments,
                 currentPage = currentPageIndex,
                 totalPages = images.size,
                 sliderValue = sliderValue,

@@ -1,0 +1,31 @@
+package com.rchdliang.copymanga_neo.data.remote.dto
+
+import com.google.gson.JsonElement
+import com.google.gson.annotations.SerializedName
+
+data class CommentResponseDto(
+    @SerializedName("code") val code: Int?,
+    @SerializedName("message") val message: String?,
+    @SerializedName("results") val results: CommentListDto?
+)
+
+data class CommentListDto(
+    @SerializedName("list") val list: List<CommentDto?>?,
+    @SerializedName("total") val total: JsonElement?,
+    @SerializedName("offset") val offset: Int?
+)
+
+data class CommentDto(
+    @SerializedName("id") val id: JsonElement?,
+    @SerializedName("user_name") val username: String?,
+    @SerializedName("user_avatar") val avatar: String?,
+    @SerializedName("comment") val comment: String?,
+    @SerializedName("create_at") val createdAt: String?,
+    @SerializedName("count") val replyCount: JsonElement?,
+    @SerializedName("parent_user_name") val parentUsername: String?
+)
+
+data class CommentPostResponseDto(
+    @SerializedName("code") val code: Int?,
+    @SerializedName("message") val message: String?
+)

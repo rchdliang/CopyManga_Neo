@@ -24,6 +24,12 @@ val hasReleaseSigning =
         !keystoreProperties.getProperty(key).isNullOrBlank()
     }
 
+val officialAppTapString =
+    providers.environmentVariable("COPYMANGA_TAP_STRING").orNull?.trim().orEmpty()
+require(officialAppTapString.isEmpty() || officialAppTapString.matches(Regex("[0-9a-fA-F]{32}"))) {
+    "COPYMANGA_TAP_STRING 必须是 32 位十六进制字符"
+}
+
 android {
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
@@ -32,10 +38,11 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.9.24"
+        versionCode = 14
+        versionName = "0.9.30.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
 
     if (hasReleaseSigning) {

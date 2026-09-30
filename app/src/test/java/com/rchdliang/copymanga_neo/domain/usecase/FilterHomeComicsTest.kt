@@ -1,11 +1,11 @@
 package com.rchdliang.copymanga_neo.domain.usecase
 
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.data.repository.MangaRepositoryImpl
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.testing.webRepositoryFixture
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -42,7 +42,7 @@ class FilterHomeComicsTest {
         }.build())
         .addConverterFactory(GsonConverterFactory.create()).build()
         .create(MangaApiService::class.java)
-    private val repository = MangaRepositoryImpl(api, api)
+    private val repository = webRepositoryFixture(api)
     private val filter = FilterHomeComics(repository)
 
     @Test
@@ -100,23 +100,21 @@ class FilterHomeComicsTest {
     }
 
     @Test
-    fun failedOrMissingDetailsStayHiddenAndCanBeRetried() = runBlocking {
+    fun failedDetailsRemainVisibleAndRetriesRespectCooldown() = runBlocking {
         val data = HomeComicsData(recComics = listOf(comic("blocked")))
         responseFor = { 503 to "{}" }
         val failed = filter.filter(data, blocked)
-        assertTrue(failed.comics.recComics.isEmpty())
+        assertEquals("blocked", failed.comics.recComics.single().pathWord)
         assertEquals(1, failed.unresolvedCount)
-        responseFor = { 200 to """{"code":200,"results":{"comic":{"theme":null}}}""" }
-        assertEquals(1, filter.filter(data, blocked).unresolvedCount)
         responseFor = { 200 to detail("xiaoyuan") }
         val retried = filter.filter(data, blocked)
-        assertTrue(retried.comics.recComics.isEmpty())
-        assertEquals(0, retried.unresolvedCount)
-        assertEquals(3, requests.size)
+        assertEquals("blocked", retried.comics.recComics.single().pathWord)
+        assertEquals(1, retried.unresolvedCount)
+        assertEquals(1, requests.size)
     }
 
     @Test
-    fun requestsAreLimitedToFourAtATime() = runBlocking {
+    fun requestsAreProcessedOneAtATime() = runBlocking {
         val active = AtomicInteger()
         val maximum = AtomicInteger()
         val fake = object : MangaRepository by unsupported() {
@@ -133,7 +131,7 @@ class FilterHomeComicsTest {
         }
         val data = HomeComicsData(recComics = (1..12).map { comic("comic-$it") })
         assertEquals(12, FilterHomeComics(fake).filter(data, blocked).comics.recComics.size)
-        assertEquals(4, maximum.get())
+        assertEquals(1, maximum.get())
         assertEquals(0, active.get())
     }
 

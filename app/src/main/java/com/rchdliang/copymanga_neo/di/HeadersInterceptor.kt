@@ -33,11 +33,9 @@ class HeadersInterceptor : Interceptor {
         // 识别请求类型
         val isApi = original.isCopyApi()
         // 识别章节 HTML 页面请求 (加载图片前置请求)
-        val isChapterHtml = original.isCopyWww() &&
-                path.startsWith("/comic/") && path.contains("/chapter/")
+        val isChapterHtml = original.isCopyWww() && path.startsWith("/comic/")
 
         val requestBuilder = original.newBuilder()
-
         when {
             isApi -> {
                 // API 请求：仅自动设置 User-Agent，
@@ -65,17 +63,6 @@ class HeadersInterceptor : Interceptor {
                 )
                 requestBuilder.header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
             }
-        }
-
-        // Cookie 处理：非 API 域名（www 等）的 Cookie 中确保 webp=1
-        if (original.isCopyWww()) {
-            val existingCookie = original.header("Cookie") ?: ""
-            val newCookie = when {
-                existingCookie.isBlank() -> "webp=1"
-                !existingCookie.contains("webp=1") -> "$existingCookie; webp=1"
-                else -> existingCookie
-            }
-            requestBuilder.header("Cookie", newCookie)
         }
 
         return chain.proceed(requestBuilder.build())

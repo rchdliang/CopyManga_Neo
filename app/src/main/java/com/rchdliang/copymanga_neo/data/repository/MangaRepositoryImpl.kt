@@ -1,11 +1,9 @@
 package com.rchdliang.copymanga_neo.data.repository
 
-import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.local.ComicThemeCache
 import com.rchdliang.copymanga_neo.data.local.MemoryComicThemeCache
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.data.remote.dto.ChapterCatalogResponse
 import com.rchdliang.copymanga_neo.data.remote.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterCatalogDecryptor
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterDecryptor
@@ -19,6 +17,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicDetail
 import com.rchdliang.copymanga_neo.domain.model.ComicPage
 import com.rchdliang.copymanga_neo.domain.model.ComicStatus
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
 import com.rchdliang.copymanga_neo.domain.model.QueryType
@@ -48,8 +47,14 @@ import kotlin.random.Random
 class MangaRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
     @param:WwwRetrofit private val wwwApiService: MangaApiService,
-    private val themeCache: ComicThemeCache = MemoryComicThemeCache()
+    private val themeCache: ComicThemeCache = MemoryComicThemeCache(),
+    private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
+    private val officialContent: OfficialAppContentSource,
+    private val networkLog: com.rchdliang.copymanga_neo.data.local.LocalNetworkLogStore? = null
 ) : MangaRepository {
+
+    private fun usesOfficialApp() = networkSettings.settings.value.requestMode ==
+            com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP
 
     private data class CachedCatalog(val result: Result<ChapterCatalog>, val expiresAt: Long)
 
@@ -65,37 +70,71 @@ class MangaRepositoryImpl @Inject constructor(
     ): Result<ChapterCatalog> =
         withContext(Dispatchers.IO) {
             catalogMutex.withLock {
+                val generation = networkSettings.generation
+                val appMode = usesOfficialApp()
+                val cacheKey = "$generation:$pathWord"
                 if (!forceRefresh) {
-                    catalogCache[pathWord]?.takeIf { it.expiresAt > System.nanoTime() }?.let {
+                    catalogCache[cacheKey]?.takeIf { it.expiresAt > System.nanoTime() }?.let {
                         return@withLock it.result
                     }
                 }
                 val result = try {
-                    val response = wwwApiService.getChapterCatalog(pathWord)
-                    if (!response.isSuccessful) {
-                        response.errorBody()?.close()
-                        error("获取 WWW 章节目录失败：HTTP ${response.code()}")
+                    if (appMode) {
+                        officialContent.catalog(pathWord)
+                    } else {
+                        val page = wwwApiService.getComicHtml(pathWord)
+                        if (!page.isSuccessful) {
+                            page.errorBody()?.close()
+                            error("获取漫画网页失败：HTTP ${page.code()}")
+                        }
+                        val html = page.body()?.use { it.string() } ?: error("漫画网页内容为空")
+                        val protocol =
+                            com.rchdliang.copymanga_neo.data.remote.util.WwwCatalogProtocol.fromHtml(
+                                html
+                            )
+                        check(generation == networkSettings.generation) { "网络设置已更改，请刷新重试" }
+                        val response = wwwApiService.getChapterCatalog(
+                            pathWord,
+                            com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig.chapterCatalogHeaders(
+                                pathWord,
+                                protocol.dnts
+                            ),
+                            protocol
+                        )
+                        if (!response.isSuccessful) {
+                            response.errorBody()?.close()
+                            error("获取 WWW 章节目录失败：HTTP ${response.code()}")
+                        }
+                        val json = response.body()?.use { it.string() } ?: error("WWW 章节目录为空")
+                        Result.success(
+                            ChapterCatalogDecryptor.parseResponse(
+                                json,
+                                pathWord,
+                                protocol.key
+                            )
+                        )
                     }
-                    val json = response.body()?.use { it.string() } ?: error("WWW 章节目录为空")
-                    val body = Gson().fromJson(json, ChapterCatalogResponse::class.java)
-                    check(body?.code == 200) { body?.message ?: "WWW 章节目录响应异常" }
-                    Result.success(
-                        ChapterCatalogDecryptor.decrypt(
-                        requireNotNull(body.results) { "WWW 章节目录缺少密文" }, pathWord
-                    )
-                    )
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: RiskControlException) {
+                    // 风控由全局闸门管理；不缓存空目录或短期失败，也不回退分页请求。
+                    catalogCache.remove(cacheKey)
+                    return@withLock Result.failure(e)
                 } catch (e: Exception) {
+                    if (!appMode) networkLog?.catalogFailure(pathWord, e)
                     android.util.Log.w(
                         "MangaRepository",
                         "WWW 章节目录不可用，将回退 API：${e.message}"
                     )
                     Result.failure(e)
                 }
+                if (generation != networkSettings.generation) return@withLock Result.failure(
+                    Exception("网络设置已更改，请刷新重试")
+                )
+                if (appMode && result.isFailure) return@withLock result
                 // 失败短暂缓存，避免连续阅读或下载时反复等待同一个失败请求；手动刷新不受影响。
                 val lifetime = if (result.isSuccess) 300L else 30L
-                catalogCache[pathWord] = CachedCatalog(
+                catalogCache[cacheKey] = CachedCatalog(
                     result,
                     System.nanoTime() + TimeUnit.SECONDS.toNanos(lifetime)
                 )
@@ -153,7 +192,7 @@ class MangaRepositoryImpl @Inject constructor(
             } finally {
                 // 即使任务在请求中取消，下一个后台请求也必须等待；并发始终为 1。
                 nextThemeRequestAtNanos =
-                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Random.nextLong(5_000, 8_001))
+                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500)
         }
         }
 
@@ -186,12 +225,34 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun getHomeComics(): Result<HomeComicsData> = supervisorScope {
         try {
             val homeResponseDeferred = async { apiService.getHomeComics() }
-            val recResponseDeferred = async { apiService.getRecComics(freeType = null) }
+            val recResponseDeferred = async {
+                try {
+                    apiService.getRecComics(limit = 6, freeType = null)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e is RiskControlException) throw e
+                    android.util.Log.w("MangaRepository", "推荐请求失败", e)
+                    null
+                }
+            }
+            val finishResponseDeferred = async {
+                try {
+                    apiService.getFinishedComics(limit = 6)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e is RiskControlException) throw e
+                    android.util.Log.w("MangaRepository", "完结请求失败", e)
+                    null
+                }
+            }
 
             val homeResponse = homeResponseDeferred.await()
             val recResponse = recResponseDeferred.await()
+            val finishResponse = finishResponseDeferred.await()
 
-            if (!homeResponse.isSuccessful) {
+            if (!homeResponse.isSuccessful || homeResponse.body()?.code != 200) {
                 val errorBody = homeResponse.errorBody()?.string()
                 android.util.Log.e("MangaRepository", "Error response: $errorBody")
                 return@supervisorScope Result.failure(Exception("HTTP ${homeResponse.code()}: ${homeResponse.message()}"))
@@ -200,20 +261,23 @@ class MangaRepositoryImpl @Inject constructor(
             val body = homeResponse.body()
             android.util.Log.d("MangaRepository", "Response body is null: ${body == null}")
 
-            if (body == null) {
+            val home = body?.results
+            if (home == null) {
                 return@supervisorScope Result.failure(Exception("Response body is null"))
             }
 
-            // 优先使用 getRecComics 的结果
-            val recComics = if (recResponse.isSuccessful) {
-                recResponse.body()?.results?.list?.map { it.comic } ?: emptyList()
-            } else {
-                body.results.recComics?.list?.map { it.comic } ?: emptyList()
+            val recPage = recResponse?.takeIf { it.isSuccessful && it.body()?.code == 200 }
+                ?.body()?.results ?: home.recComics
+            val recComics = recPage?.list.orEmpty().map { it.comic }
+            val hotComics = home.hotComics.orEmpty().map { it.comic }
+            val newComics = home.newComics.orEmpty().map { it.comic }
+            val finishPage = finishResponse?.takeIf { it.isSuccessful && it.body()?.code == 200 }
+                ?.body()?.results
+            val finishComics = finishPage?.list ?: home.finishComics?.list.orEmpty()
+            val rankComics = home.rankDayComics?.list.orEmpty().map { it.comic }
+            val topics = (home.topicsList ?: home.topics)?.list.orEmpty().map {
+                ComicTopic(it.pathWord, it.title, it.cover, it.brief)
             }
-
-            val hotComics = body.results.hotComics?.map { it.comic } ?: emptyList()
-            val newComics = body.results.newComics?.map { it.comic } ?: emptyList()
-            val finishComics = body.results.finishComics?.list ?: emptyList()
 
             android.util.Log.d(
                 "MangaRepository",
@@ -225,7 +289,14 @@ class MangaRepositoryImpl @Inject constructor(
                     recComics = recComics.map { it.toSummary() },
                     hotComics = hotComics.map { it.toSummary() },
                     newComics = newComics.map { it.toSummary() },
-                    finishComics = finishComics.map { it.toSummary() }
+                    finishComics = finishComics.map { it.toSummary() },
+                    rankComics = rankComics.map { it.toSummary() },
+                    topics = topics.take(2),
+                    recNextOffset = recPage?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } },
+                    newNextOffset = newComics.size.takeIf { it > 0 },
+                    finishNextOffset = finishPage?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } }
+                        ?: if (finishPage == null) home.finishComics?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } } else null,
+                    rankNextOffset = home.rankDayComics?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } }
                 )
             )
         } catch (e: CancellationException) {
@@ -305,7 +376,9 @@ class MangaRepositoryImpl @Inject constructor(
     override suspend fun getChapterInfo(
         comicPathWord: String, chapterUuid: String, group: String
     ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterInfo> {
-        getChapterCatalog(comicPathWord).getOrNull()?.let { catalog ->
+        val catalogResult = getChapterCatalog(comicPathWord)
+        (catalogResult.exceptionOrNull() as? RiskControlException)?.let { return Result.failure(it) }
+        catalogResult.getOrNull()?.let { catalog ->
             val resolvedGroup = catalog.findGroup(chapterUuid) ?: group
             catalog.chaptersByGroup[resolvedGroup]?.firstOrNull { it.uuid == chapterUuid }?.let {
                 return Result.success(it)
@@ -359,11 +432,14 @@ class MangaRepositoryImpl @Inject constructor(
         group: String
     ): Result<ChapterContent> {
         return try {
+            if (usesOfficialApp()) return officialContent.chapter(comicPathWord, chapterUuid)
             // 先从章节列表 API 获取上下章 UUID 及章节名称
             var prevUuid: String? = null
             var nextUuid: String? = null
             var chapterName: String? = null
-            getChapterInfo(comicPathWord, chapterUuid, group).onSuccess { chapter ->
+            val metadata = getChapterInfo(comicPathWord, chapterUuid, group)
+            (metadata.exceptionOrNull() as? RiskControlException)?.let { return Result.failure(it) }
+            metadata.onSuccess { chapter ->
                 prevUuid = chapter.prevChapter
                 nextUuid = chapter.nextChapter
                 chapterName = chapter.name
@@ -418,7 +494,7 @@ class MangaRepositoryImpl @Inject constructor(
 
     override suspend fun getRecComics(limit: Int, offset: Int): Result<List<ComicSummary>> {
         return try {
-            val response = apiService.getRecComics(limit = limit, offset = offset, freeType = 0)
+            val response = apiService.getRecComics(limit = limit, offset = offset, freeType = null)
             if (response.isSuccessful && response.body()?.code == 200) {
                 Result.success(response.body()?.results?.list?.map { it.comic.toSummary() }
                     ?: emptyList())

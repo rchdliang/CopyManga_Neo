@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,10 +17,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -33,12 +37,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
@@ -55,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,14 +79,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
+import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
+import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
+import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionClick
 import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * 搜索屏幕
@@ -88,6 +99,7 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel(),
     onComicClick: (String) -> Unit,
+    onNavigateToExplore: (String?, String?) -> Unit = { _, _ -> },
     onNavigateBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -109,6 +121,9 @@ fun SearchScreen(
         onLoadMore = { viewModel.loadMore() },
         onQueryTypeChange = { viewModel.updateQueryType(it) },
         onComicClick = onComicClick,
+        onDiscoveryThemeSelected = viewModel::selectDiscoveryTheme,
+        onDiscoveryTopSelected = viewModel::selectDiscoveryTop,
+        onNavigateToExplore = onNavigateToExplore,
         onNavigateBack = onNavigateBack,
         onRefresh = viewModel::refresh,
         pullToRefreshState = pullToRefreshState
@@ -125,6 +140,9 @@ fun SearchScreen(
     onLoadMore: () -> Unit = {},
     onQueryTypeChange: (QueryType?) -> Unit,
     onComicClick: (String) -> Unit,
+    onDiscoveryThemeSelected: (ComicFilterOption?) -> Unit = {},
+    onDiscoveryTopSelected: (ComicFilterOption?) -> Unit = {},
+    onNavigateToExplore: (String?, String?) -> Unit = { _, _ -> },
     onNavigateBack: () -> Unit = {},
     onRefresh: () -> Unit = {},
     pullToRefreshState: PullToRefreshState = rememberPullToRefreshState()
@@ -133,9 +151,7 @@ fun SearchScreen(
     val textFieldState = rememberTextFieldState(uiState.query)
     var expanded by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = expanded) {
-        expanded = false
-    }
+    BackHandler(enabled = expanded) { expanded = false }
 
     LaunchedEffect(uiState.query) {
         if (textFieldState.text.toString() != uiState.query) {
@@ -153,17 +169,17 @@ fun SearchScreen(
             searchBarState = searchBarState,
             onSearch = {
                 onSearch(textFieldState.text.toString())
+                expanded = false
             },
             placeholder = {
-                Text(modifier = Modifier.clearAndSetSemantics {}, text = "搜索漫画")
+                Text(
+                    modifier = Modifier.clearAndSetSemantics {}, text = "搜索漫画",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             },
             leadingIcon = {
                 IconButton(onClick = {
-                    if (expanded) {
-                        expanded = false
-                    } else {
-                        onNavigateBack()
-                    }
+                    if (expanded) expanded = false else onNavigateBack()
                 }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                 }
@@ -173,6 +189,7 @@ fun SearchScreen(
                     if (textFieldState.text.isNotEmpty()) {
                         IconButton(onClick = {
                             onSearch(textFieldState.text.toString())
+                            expanded = false
                         }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
                         }
@@ -219,20 +236,35 @@ fun SearchScreen(
             SearchBar(
                 inputField = inputField,
                 expanded = expanded,
-                onExpandedChange = { newExpanded ->
-                    expanded = newExpanded
-                },
+                onExpandedChange = { expanded = it },
                 modifier = Modifier.fillMaxWidth()
-            ) {}
+            ) {
+                SearchCategorySelector(
+                    selectedType = uiState.queryType,
+                    onTypeSelected = onQueryTypeChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
+                SearchScreenContent(
+                    uiState = uiState,
+                    onComicClick = onComicClick,
+                    onDiscoveryThemeSelected = onDiscoveryThemeSelected,
+                    onDiscoveryTopSelected = onDiscoveryTopSelected,
+                    onNavigateToExplore = onNavigateToExplore,
+                    onLoadMore = onLoadMore,
+                    onRetry = onRefresh
+                )
+            }
 
-            SearchCategorySelector(
+            if (!expanded) SearchCategorySelector(
                 selectedType = uiState.queryType,
                 onTypeSelected = onQueryTypeChange,
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
-        PullToRefreshBox(
+        if (!expanded) PullToRefreshBox(
             isRefreshing = uiState.isLoading,
             onRefresh = onRefresh,
             state = pullToRefreshState,
@@ -250,6 +282,9 @@ fun SearchScreen(
             SearchScreenContent(
                 uiState = uiState,
                 onComicClick = onComicClick,
+                onDiscoveryThemeSelected = onDiscoveryThemeSelected,
+                onDiscoveryTopSelected = onDiscoveryTopSelected,
+                onNavigateToExplore = onNavigateToExplore,
                 onLoadMore = onLoadMore,
                 onRetry = onRefresh
             )
@@ -288,7 +323,10 @@ private fun SearchCategorySelector(
                 },
                 modifier = Modifier.semantics { role = Role.RadioButton }
             ) {
-                Text(text = label, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = label, style = MaterialTheme.typography.labelLarge,
+                    color = androidx.compose.material3.LocalContentColor.current
+                )
             }
         }
     }
@@ -299,6 +337,9 @@ private fun SearchCategorySelector(
 private fun SearchScreenContent(
     uiState: SearchUiState,
     onComicClick: (String) -> Unit,
+    onDiscoveryThemeSelected: (ComicFilterOption?) -> Unit = {},
+    onDiscoveryTopSelected: (ComicFilterOption?) -> Unit = {},
+    onNavigateToExplore: (String?, String?) -> Unit = { _, _ -> },
     onLoadMore: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
@@ -328,7 +369,7 @@ private fun SearchScreenContent(
                     Spacer(Modifier.height(16.dp))
                     FilledTonalButton(
                         onClick = onRetry,
-                    ) { Text("重试") }
+                    ) { Text("重试", color = MaterialTheme.colorScheme.onSecondaryContainer) }
                 }
             }
 
@@ -339,6 +380,13 @@ private fun SearchScreenContent(
                     hasMore = uiState.hasMore,
                     onComicClick = onComicClick,
                     onLoadMore = onLoadMore
+                )
+            }
+
+            uiState.submittedQuery.isBlank() && uiState.theme == null -> {
+                SearchDiscoveryContent(
+                    uiState, onComicClick, onDiscoveryThemeSelected,
+                    onDiscoveryTopSelected, onNavigateToExplore, onLoadMore, onRetry
                 )
             }
 
@@ -548,5 +596,162 @@ private fun SearchResultsListPreview() {
             onComicClick = {},
             onLoadMore = {}
         )
+    }
+}
+
+/** 搜索框下直接展示完整发现列表，题材、类型和漫画始终属于同一筛选区域。 */
+@Composable
+private fun SearchDiscoveryContent(
+    state: SearchUiState,
+    onComicClick: (String) -> Unit,
+    onThemeSelected: (ComicFilterOption?) -> Unit,
+    onTopSelected: (ComicFilterOption?) -> Unit,
+    onMore: (String?, String?) -> Unit,
+    onLoadMore: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 12.dp)
+    ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val columns = comicGridColumns(maxWidth - 32.dp)
+            val gridState = rememberLazyGridState()
+            LaunchedEffect(state.selectedDiscoveryTheme, state.selectedDiscoveryTop) {
+                gridState.scrollToItem(0)
+            }
+            LaunchedEffect(
+                state.discoveryNextOffset, state.isDiscoveryLoading,
+                state.isDiscoveryLoadingMore, state.discoveryError, columns
+            ) {
+                if (state.discoveryNextOffset != null && !state.isDiscoveryLoading &&
+                    !state.isDiscoveryLoadingMore && state.discoveryError == null
+                ) {
+                    snapshotFlow {
+                        val layout = gridState.layoutInfo
+                        layout.totalItemsCount > 0 && (layout.visibleItemsInfo.lastOrNull()?.index
+                            ?: -1) >=
+                                layout.totalItemsCount - columns * 2 - 1
+                    }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
+                }
+            }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns), state = gridState,
+                modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "探索题材",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = {
+                                onMore(
+                                    state.selectedDiscoveryTheme?.pathWord,
+                                    state.selectedDiscoveryTop?.pathWord
+                                )
+                            }) {
+                                Text("更多筛选  ›", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        DiscoveryOptionRow(
+                            "类型", state.discoveryOptions?.tops.orEmpty(),
+                            state.selectedDiscoveryTop, onTopSelected
+                        )
+                        DiscoveryOptionRow(
+                            "题材", state.discoveryOptions?.themes.orEmpty(),
+                            state.selectedDiscoveryTheme, onThemeSelected
+                        )
+                        state.discoveryOptionsError?.let {
+                            Text(
+                                it, color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+                items(state.discoveryComics, key = { "comic:${it.pathWord}" }) { comic ->
+                    ComicCard(
+                        name = comic.name, cover = comic.cover,
+                        subtitle = comic.author?.firstOrNull()?.name,
+                        sharedTransitionKey = "search-discovery:${comic.pathWord}",
+                        comicPathWord = comic.pathWord, onClick = { onComicClick(comic.pathWord) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        when {
+                            state.isDiscoveryLoading || state.isDiscoveryLoadingMore ->
+                                androidx.compose.material3.CircularProgressIndicator()
+
+                            state.discoveryError != null -> {
+                                Text(state.discoveryError, color = MaterialTheme.colorScheme.error)
+                                TextButton(onClick = if (state.discoveryComics.isEmpty()) onRetry else onLoadMore) {
+                                    Text("重试", color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+
+                            state.discoveryComics.isEmpty() -> Text(
+                                "暂无漫画",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            state.discoveryNextOffset != null -> TextButton(onClick = onLoadMore) {
+                                Text("加载更多", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryOptionRow(
+    title: String, options: List<ComicFilterOption>, selected: ComicFilterOption?,
+    onSelected: (ComicFilterOption?) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            title, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelLarge
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            item(key = "all") {
+                FilterChip(
+                    selected = selected == null, onClick = { onSelected(null) },
+                    label = { Text("全部", color = MaterialTheme.colorScheme.onSurface) })
+            }
+            items(options, key = { it.pathWord }) { option ->
+                FilterChip(
+                    selected = selected?.pathWord == option.pathWord,
+                    onClick = { onSelected(option) },
+                    label = { Text(option.name, color = MaterialTheme.colorScheme.onSurface) })
+            }
+        }
     }
 }

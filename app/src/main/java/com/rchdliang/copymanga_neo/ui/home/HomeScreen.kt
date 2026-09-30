@@ -1,10 +1,14 @@
 package com.rchdliang.copymanga_neo.ui.home
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,8 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
@@ -21,6 +29,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,18 +42,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
+import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.floor
 
 /**
  * 首页屏幕
@@ -56,6 +73,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onComicClick: (String) -> Unit,
     onNavigateToSearch: () -> Unit = {},
+    onNavigateToExplore: (String) -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -80,7 +98,12 @@ fun HomeScreen(
         uiState = uiState,
         onComicClick = onComicClick,
         onNavigateToSearch = onNavigateToSearch,
+        onNavigateToExplore = onNavigateToExplore,
         onRefresh = viewModel::loadComics,
+        onViewportChanged = viewModel::onShelfViewportChanged,
+        onLoadMore = viewModel::loadMore,
+        onRankAudienceSelected = viewModel::selectRankAudience,
+        onRankPeriodSelected = viewModel::selectRankPeriod,
         onRetryAfterRisk = viewModel::retryAfterRiskControl,
         onNavigateToDownloads = onNavigateToDownloads
     )
@@ -126,7 +149,12 @@ private fun HomeContent(
     uiState: HomeUiState,
     onComicClick: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToExplore: (String) -> Unit = {},
     onRefresh: () -> Unit,
+    onViewportChanged: (HomeShelf, Int) -> Unit = { _, _ -> },
+    onLoadMore: (HomeShelf, Boolean) -> Unit = { _, _ -> },
+    onRankAudienceSelected: (String) -> Unit = {},
+    onRankPeriodSelected: (String) -> Unit = {},
     onRetryAfterRisk: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -154,186 +182,194 @@ private fun HomeContent(
             },
             modifier = Modifier.fillMaxSize()
         ) {
-        when {
-            uiState.riskControl != null -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "当前网络已被风控", style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "已暂停网络请求，请更换代理节点或等待官方解除限制。\n本地下载仍可正常阅读。",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    FilledTonalButton(onClick = onNavigateToDownloads) {
-                        Text("查看本地下载", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-                    TextButton(onClick = onRetryAfterRisk) {
-                        Text("重试", color = MaterialTheme.colorScheme.primary)
+            when {
+                uiState.riskControl != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "当前网络已被风控", style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "已暂停网络请求，请更换代理节点或等待官方解除限制。\n本地下载仍可正常阅读。",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        FilledTonalButton(onClick = onNavigateToDownloads) {
+                            Text(
+                                "查看本地下载",
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        TextButton(onClick = onRetryAfterRisk) {
+                            Text("重试", color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
-            }
 
-            (uiState.error != null && uiState.recComicList.isEmpty() &&
-                    uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty()) -> {
-                val errorMsg = uiState.error.orEmpty()
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "错误",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = errorMsg,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 32.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    FilledTonalButton(
-                        onClick = onRefresh,
-                    ) { Text("重试", color = MaterialTheme.colorScheme.onSecondaryContainer) }
+                (uiState.error != null && uiState.recComicList.isEmpty() &&
+                        uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty()) -> {
+                    val errorMsg = uiState.error.orEmpty()
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "错误",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = errorMsg,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 32.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        FilledTonalButton(
+                            onClick = onRefresh,
+                        ) { Text("重试", color = MaterialTheme.colorScheme.onSecondaryContainer) }
+                    }
                 }
-            }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp),
-//                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    uiState.filterWarning?.let { warning ->
-                        item(key = "filter_warning") {
-                            Surface(
-                                shape = MaterialTheme.shapes.extraLarge,
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        uiState.filterWarning?.let { warning ->
+                            item(key = "filter_warning") {
+                                Surface(
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 8.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Default.Info, null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        warning, style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Info, null,
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(
+                                            warning, style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                    // 推荐漫画
-                    if (uiState.recComicList.isNotEmpty()) {
-                        item(key = "rec_title", contentType = "section_title") {
-                            Text(
-                                text = "漫画推荐",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
+                        if (uiState.recComicList.isNotEmpty() || HomeShelf.RECOMMENDED in uiState.paging) item(
+                            key = "recommended"
+                        ) {
+                            HomeComicSection(
+                                "漫画推荐",
+                                uiState.recComicList,
+                                "home-recommended",
+                                onComicClick,
+                                onMore = { onNavigateToExplore("recommended") },
+                                shelf = HomeShelf.RECOMMENDED,
+                                paging = uiState.paging[HomeShelf.RECOMMENDED],
+                                filterReady = uiState.filterReady,
+                                onViewportChanged = onViewportChanged,
+                                onLoadMore = onLoadMore
                             )
                         }
-                        item(key = "rec_grid", contentType = "comic_grid") {
-                            ComicGrid(
-                                comics = uiState.recComicList,
-                                transitionGroupKey = "home-recommended",
-                                onComicClick = onComicClick,
-                                modifier = Modifier.fillMaxWidth()
+                        if (uiState.hotComics.isNotEmpty()) item(key = "hot") {
+                            HomeComicSection(
+                                "热门更新",
+                                uiState.hotComics,
+                                "home-hot",
+                                onComicClick
                             )
                         }
-                    }
-
-                    // 热门漫画
-                    if (uiState.hotComics.isNotEmpty()) {
-                        item(key = "hot_title", contentType = "section_title") {
-                            Text(
-                                text = "热门更新",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                        if (uiState.newComics.isNotEmpty() || HomeShelf.NEWEST in uiState.paging) item(
+                            key = "newest"
+                        ) {
+                            HomeComicSection(
+                                "最新上架",
+                                uiState.newComics,
+                                "home-new",
+                                onComicClick,
+                                onMore = { onNavigateToExplore("newest") },
+                                shelf = HomeShelf.NEWEST,
+                                paging = uiState.paging[HomeShelf.NEWEST],
+                                filterReady = uiState.filterReady,
+                                onViewportChanged = onViewportChanged,
+                                onLoadMore = onLoadMore
                             )
                         }
-                        item(key = "hot_grid", contentType = "comic_grid") {
-                            ComicGrid(
-                                comics = uiState.hotComics,
-                                transitionGroupKey = "home-hot",
-                                onComicClick = onComicClick,
-                                modifier = Modifier.fillMaxWidth()
+                        if (uiState.rankComics.isNotEmpty() || HomeShelf.RANKS in uiState.paging) item(
+                            key = "ranks"
+                        ) {
+                            HomeComicSection(
+                                "排行榜",
+                                uiState.rankComics,
+                                "home-ranks",
+                                onComicClick,
+                                onMore = { onNavigateToExplore("ranks?audience=${uiState.rankAudience}&period=${uiState.rankPeriod}") },
+                                shelf = HomeShelf.RANKS,
+                                paging = uiState.paging[HomeShelf.RANKS],
+                                filterReady = uiState.filterReady,
+                                onViewportChanged = onViewportChanged,
+                                onLoadMore = onLoadMore,
+                                ranked = true,
+                                rankPositions = uiState.rankPositions,
+                                rankAudience = uiState.rankAudience,
+                                rankPeriod = uiState.rankPeriod,
+                                onRankAudienceSelected = onRankAudienceSelected,
+                                onRankPeriodSelected = onRankPeriodSelected
                             )
                         }
-                    }
-
-                    // 最新漫画
-                    if (uiState.newComics.isNotEmpty()) {
-                        item(key = "new_title", contentType = "section_title") {
-                            Text(
-                                text = "最新上架",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                            )
+                        if (uiState.topics.isNotEmpty()) item(key = "topics") {
+                            HomeTopicsSection(
+                                uiState.topics,
+                                onMore = { onNavigateToExplore("topics") })
                         }
-                        item(key = "new_grid", contentType = "comic_grid") {
-                            ComicGrid(
-                                comics = uiState.newComics,
-                                transitionGroupKey = "home-new",
-                                onComicClick = onComicClick,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    // 完结漫画
-                    if (uiState.finishComics.isNotEmpty()) {
-                        item(key = "finish_title", contentType = "section_title") {
-                            Text(
-                                text = "完结漫画",
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                            )
-                        }
-                        item(key = "finish_grid", contentType = "comic_grid") {
-                            ComicGrid(
-                                comics = uiState.finishComics,
-                                transitionGroupKey = "home-finished",
-                                onComicClick = onComicClick,
-                                modifier = Modifier.fillMaxWidth()
+                        if (uiState.finishComics.isNotEmpty() || HomeShelf.FINISHED in uiState.paging) item(
+                            key = "finished"
+                        ) {
+                            HomeComicSection(
+                                "完结漫画",
+                                uiState.finishComics,
+                                "home-finished",
+                                onComicClick,
+                                onMore = { onNavigateToExplore("finished") },
+                                shelf = HomeShelf.FINISHED,
+                                paging = uiState.paging[HomeShelf.FINISHED],
+                                filterReady = uiState.filterReady,
+                                onViewportChanged = onViewportChanged,
+                                onLoadMore = onLoadMore
                             )
                         }
                     }
                 }
             }
-        }
         }
     }
 }
@@ -368,32 +404,271 @@ private fun SearchEntryBar(
     }
 }
 
+/** 分区容器将标题、跳转入口和首页预览统一包裹。 */
+@Composable
+private fun HomeComicSection(
+    title: String,
+    comics: List<ComicSummary>,
+    transitionGroupKey: String,
+    onComicClick: (String) -> Unit,
+    onMore: (() -> Unit)? = null,
+    shelf: HomeShelf? = null,
+    paging: HomeShelfPaging? = null,
+    filterReady: Boolean = true,
+    onViewportChanged: (HomeShelf, Int) -> Unit = { _, _ -> },
+    onLoadMore: (HomeShelf, Boolean) -> Unit = { _, _ -> },
+    ranked: Boolean = false,
+    rankPositions: Map<String, Int> = emptyMap(),
+    rankAudience: String = "male",
+    rankPeriod: String = "day",
+    onRankAudienceSelected: (String) -> Unit = {},
+    onRankPeriodSelected: (String) -> Unit = {}
+) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            HomeSectionHeader(
+                title,
+                onMore,
+                if (ranked) rankAudience else null,
+                onRankAudienceSelected
+            )
+            if (ranked) {
+                HomeRankChoices(
+                    rankAudience,
+                    rankPeriod,
+                    onRankPeriodSelected
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val visibleCards = floor(((maxWidth + 8.dp) / 128.dp).toDouble())
+                    .toInt().coerceAtLeast(3)
+                val cardWidth = (maxWidth - 8.dp * (visibleCards - 1)) / visibleCards
+                val listState = rememberLazyListState()
+                LaunchedEffect(shelf, visibleCards) {
+                    if (shelf != null) onViewportChanged(shelf, visibleCards)
+                }
+                LaunchedEffect(
+                    shelf, visibleCards, comics.size, filterReady,
+                    paging?.nextOffset, paging?.isLoading, paging?.error, paging?.requiredCount
+                ) {
+                    if (shelf != null && filterReady && paging?.nextOffset != null &&
+                        !paging.isLoading && paging.error == null &&
+                        comics.size < maxOf(visibleCards + 1, paging.requiredCount)
+                    ) {
+                        onLoadMore(shelf, true)
+                    }
+                }
+                LaunchedEffect(rankAudience, rankPeriod) {
+                    if (ranked) listState.scrollToItem(0)
+                }
+                LaunchedEffect(
+                    shelf,
+                    comics.size,
+                    filterReady,
+                    paging?.nextOffset,
+                    paging?.isLoading,
+                    paging?.error
+                ) {
+                    if (shelf != null && filterReady && paging?.nextOffset != null && !paging.isLoading && paging.error == null) {
+                        snapshotFlow {
+                            listState.firstVisibleItemIndex > 0 &&
+                                    (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                        ?: -1) >= comics.lastIndex - 1
+                        }.distinctUntilChanged().collect { nearEnd ->
+                            if (nearEnd) onLoadMore(shelf, false)
+                        }
+                    }
+                }
+                ComicGrid(
+                    comics = comics,
+                    transitionGroupKey = transitionGroupKey,
+                    onComicClick = onComicClick,
+                    ranked = ranked,
+                    rankPositions = rankPositions,
+                    cardWidth = cardWidth,
+                    placeholderCount = if (paging?.nextOffset != null || paging?.isLoading == true)
+                        (visibleCards - comics.size).coerceAtLeast(0) else 0,
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (paging?.error != null) {
+                TextButton(onClick = { if (shelf != null) onLoadMore(shelf, false) }) {
+                    Text("加载更多失败，点击重试", color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeSectionHeader(
+    title: String,
+    onMore: (() -> Unit)?,
+    rankAudience: String? = null,
+    onRankAudienceSelected: (String) -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onMore != null, role = Role.Button) {
+                onMore?.invoke()
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (rankAudience != null) {
+                val nextAudience = if (rankAudience == "male") "female" else "male"
+                Text(
+                    if (rankAudience == "male") "男榜" else "女榜",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = if (nextAudience == "female") "切换至女榜" else "切换至男榜"
+                        ) {
+                            onRankAudienceSelected(nextAudience)
+                        }
+                        .padding(vertical = 14.dp, horizontal = 2.dp)
+                )
+            }
+        }
+        if (onMore != null) {
+            Text(
+                "查看更多  ›", style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeRankChoices(
+    audience: String,
+    period: String,
+    onPeriodSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val periods = if (audience == "female") listOf("total" to "总榜") else listOf(
+            "day" to "日榜", "week" to "周榜", "month" to "月榜", "total" to "总榜"
+        )
+        periods.forEach { (value, label) ->
+            FilterChip(
+                selected = period == value, onClick = { onPeriodSelected(value) },
+                label = { Text(label, color = MaterialTheme.colorScheme.onSurface) })
+        }
+    }
+}
+
+/** 专题仅在首页预览，标题和专题卡片都进入专题列表。 */
+@Composable
+private fun HomeTopicsSection(topics: List<ComicTopic>, onMore: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            HomeSectionHeader("漫画专题", onMore)
+            Spacer(Modifier.height(12.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val cardWidth = if (maxWidth >= 600.dp && topics.size >= 2)
+                    (maxWidth - 8.dp) / 2 else if (topics.size == 1) maxWidth else 252.dp
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(topics.take(2), key = { it.pathWord }) { topic ->
+                        Surface(
+                            onClick = onMore,
+                            shape = MaterialTheme.shapes.large,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier
+                                .width(cardWidth)
+                                .height(96.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                AsyncImage(
+                                    model = topic.cover,
+                                    contentDescription = topic.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .width(72.dp)
+                                        .height(96.dp)
+                                )
+                                Text(
+                                    topic.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    maxLines = 2,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ComicGrid(
     comics: List<ComicSummary>,
     transitionGroupKey: String,
     onComicClick: (String) -> Unit,
+    ranked: Boolean = false,
+    rankPositions: Map<String, Int> = emptyMap(),
+    cardWidth: Dp = 120.dp,
+    placeholderCount: Int = 0,
+    state: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 8.dp),
+        contentPadding = PaddingValues(0.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        state = state,
         modifier = modifier
     ) {
-        items(
+        itemsIndexed(
             items = comics,
-            key = { it.pathWord },
-            contentType = { "comic_card" }
-        ) { comic ->
+            key = { _, comic -> comic.pathWord },
+            contentType = { _, _ -> "comic_card" }
+        ) { index, comic ->
             ComicCard(
                 name = comic.name,
                 cover = comic.cover,
                 subtitle = comic.author?.firstOrNull()?.name,
+                statusText = if (ranked) "第 ${rankPositions[comic.pathWord] ?: index + 1} 位" else null,
                 sharedTransitionKey = "$transitionGroupKey:${comic.pathWord}",
                 comicPathWord = comic.pathWord,
                 onClick = { onComicClick(comic.pathWord) },
-                modifier = Modifier.width(120.dp)
+                modifier = Modifier.width(cardWidth)
             )
+        }
+        items(placeholderCount, key = { "placeholder-$it" }) {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier
+                    .width(cardWidth)
+                    .aspectRatio(3f / 4f)
+            ) {}
         }
     }
 }
@@ -428,7 +703,9 @@ private fun rememberHomePreviewState(): HomeUiState {
             recComicList = comics.take(5),
             hotComics = comics.drop(2).take(5),
             newComics = comics.reversed().take(5),
-            finishComics = comics.takeLast(5)
+            finishComics = comics.takeLast(5),
+            rankComics = comics.drop(1).take(3),
+            topics = listOf(ComicTopic("preview-topic", "奇幻世界漫游", null, null))
         )
     }
 }
