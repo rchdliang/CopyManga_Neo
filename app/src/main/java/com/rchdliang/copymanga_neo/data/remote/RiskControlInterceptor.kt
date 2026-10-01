@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.data.remote
 import com.google.gson.JsonParser
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.remote.util.ChapterCatalogDecryptor
+import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -38,8 +39,15 @@ class RiskControlInterceptor @Inject constructor(
                 } else response.peekBody(64 * 1024).string().trimStart()
                 val json =
                     if (body.startsWith("{")) JsonParser.parseString(body).asJsonObject else null
-                if (response.code == 210 || json?.get("code")?.asInt == 210) {
-                    json?.get("message")?.takeUnless { it.isJsonNull }?.asString
+                val code = json?.get("code")?.takeUnless { it.isJsonNull }?.asInt
+                val message = json?.get("message")?.takeUnless { it.isJsonNull }?.asString
+                if (chain.request().isCopyApi() && CommentPolicy.isClosedResponse(
+                        chain.request().url.encodedPath, response.code, code, message
+                    )
+                ) {
+                    null
+                } else if (response.code == 210 || code == 210) {
+                    message
                         ?.takeIf { it.isNotBlank() } ?: "官方暂时限制了当前网络的访问"
                 } else {
                     if (catalogPathWord != null && response.isSuccessful) {
@@ -56,7 +64,9 @@ class RiskControlInterceptor @Inject constructor(
                 if (response.code == 210) "官方暂时限制了当前网络的访问" else null
             }
             if (reason != null) {
-                networkSettings.ifCurrent(chain.request().tag(NetworkRequestContext::class.java)?.generation) {
+                networkSettings.ifCurrent(
+                    chain.request().tag(NetworkRequestContext::class.java)?.generation
+                ) {
                     gate.block(reason, call)
                 }
                 response.close()

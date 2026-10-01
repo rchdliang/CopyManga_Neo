@@ -130,6 +130,7 @@ import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ComicInfo
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
+import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
@@ -169,7 +170,11 @@ fun DetailScreen(
         CommentsDialog(
             target = CommentTarget(CommentKind.COMIC, comic.uuid),
             title = comic.name,
-            postingAllowed = !comic.closeComment,
+            postingAllowed = CommentPolicy.postingAllowed(
+                CommentKind.COMIC,
+                comic.closeComment,
+                comic.closeRoast
+            ),
             onDismiss = { showComments = false },
             onLogin = onNavigateToProfile
         )

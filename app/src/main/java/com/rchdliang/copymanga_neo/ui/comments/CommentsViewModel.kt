@@ -3,10 +3,14 @@ package com.rchdliang.copymanga_neo.ui.comments
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
+import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
+import com.rchdliang.copymanga_neo.domain.model.CommentReplyPreview
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.CommentText
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
+import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
+import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -18,6 +22,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 
 data class CommentFeed(
@@ -25,10 +31,16 @@ data class CommentFeed(
     val total: Int = 0,
     val nextOffset: Int? = null,
     val loading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val totalExact: Boolean = true
 )
 
 data class CommentsUiState(
+    val reportTarget: MangaComment? = null,
+    val reportConfig: com.rchdliang.copymanga_neo.domain.model.CommentReportConfig? = null,
+    val reportLoading: Boolean = false,
+    val reporting: Boolean = false,
+    val reportError: String? = null,
     val target: CommentTarget? = null,
     val feed: CommentFeed = CommentFeed(),
     val parent: MangaComment? = null,
@@ -37,14 +49,19 @@ data class CommentsUiState(
     val loggedIn: Boolean = false,
     val posting: Boolean = false,
     val postingAllowed: Boolean = true,
-    val message: String? = null
+    val checkingPermission: Boolean = false,
+    val permissionError: String? = null,
+    val message: String? = null,
+    val replyPreviews: Map<String, CommentReplyPreview> = emptyMap(),
+    val previewGeneration: Long = 0
 )
 
 /** 一个打开的评论窗口只有一个活动请求上下文，切章、退出和切账号都会失效旧请求。 */
 @HiltViewModel
 class CommentsViewModel @Inject constructor(
     private val repository: CommentRepository,
-    private val users: UserRepository
+    private val users: UserRepository,
+    private val manga: MangaRepository
 ) : ViewModel() {
     private val state = MutableStateFlow(CommentsUiState(loggedIn = users.isLoggedInSync()))
     val uiState = state.asStateFlow()
@@ -53,12 +70,21 @@ class CommentsViewModel @Inject constructor(
     private val replyDrafts = mutableMapOf<String, String>()
     private var readJob: Job? = null
     private var postJob: Job? = null
+    private var reportJob: Job? = null
+    private var permissionJob: Job? = null
+    private var permissionPathWord: String? = null
     private var revision = 0L
+    private var previewGeneration = 0L
+    private val previewJobs = mutableMapOf<String, Job>()
+    private val previewPermits = Semaphore(2)
     private val handler = CoroutineExceptionHandler { _, error ->
         android.util.Log.e("Comments", "评论操作失败", error)
         state.update {
             it.copy(
                 posting = false,
+                reporting = false,
+                reportLoading = false,
+                reportError = if (it.reportTarget != null) "举报操作失败，请重试" else it.reportError,
                 feed = it.feed.copy(loading = false),
                 message = "评论操作失败，请重试"
             )
@@ -72,8 +98,10 @@ class CommentsViewModel @Inject constructor(
                 .distinctUntilChanged().collect { account ->
                     if (previous != null && previous != account) {
                         postJob?.cancel()
+                        reportJob?.cancel()
                         state.update {
                             it.copy(
+                                reportTarget = null, reporting = false, reportLoading = false,
                                 posting = false,
                                 message = "登录状态已变化，请确认后再发表"
                             )
@@ -85,20 +113,68 @@ class CommentsViewModel @Inject constructor(
         }
     }
 
-    fun open(target: CommentTarget, postingAllowed: Boolean) {
+    fun open(target: CommentTarget, postingAllowed: Boolean, comicPathWord: String? = null) {
         close()
+        permissionPathWord =
+            comicPathWord?.takeIf { it.isNotBlank() && target.kind == CommentKind.CHAPTER }
         state.value = CommentsUiState(
             target = target,
             loggedIn = users.isLoggedInSync(),
-            postingAllowed = postingAllowed
+            postingAllowed = postingAllowed && permissionPathWord == null,
+            checkingPermission = postingAllowed && permissionPathWord != null
         )
         rootFeed = CommentFeed()
         rootDraft = ""
         replyDrafts.clear()
         load(refresh = true)
+        if (postingAllowed && permissionPathWord != null) retryPermission()
+    }
+
+    /** 阅读器按漫画详情的 close_roast 确认章节评论权限，不因未知状态放行发表。 */
+    fun retryPermission() {
+        val pathWord = permissionPathWord ?: return
+        val target = state.value.target ?: return
+        permissionJob?.cancel()
+        state.update {
+            it.copy(
+                postingAllowed = false,
+                checkingPermission = true,
+                permissionError = null
+            )
+        }
+        permissionJob = viewModelScope.launch(handler) {
+            manga.getComicDetail(pathWord).fold(
+                onSuccess = { detail ->
+                    ensureActive()
+                    if (state.value.target == target) state.update {
+                        it.copy(
+                            checkingPermission = false,
+                            postingAllowed = CommentPolicy.postingAllowed(
+                                target.kind,
+                                detail.comic.closeComment,
+                                detail.comic.closeRoast
+                            )
+                        )
+                    }
+                },
+                onFailure = {
+                    ensureActive()
+                    if (state.value.target == target) state.update {
+                        it.copy(
+                            checkingPermission = false,
+                            permissionError = "无法确认评论权限，请重试"
+                        )
+                    }
+                }
+            )
+        }
     }
 
     fun close() {
+        reportJob?.cancel()
+        permissionJob?.cancel()
+        permissionPathWord = null
+        invalidatePreviews()
         revision++
         readJob?.cancel()
         postJob?.cancel()
@@ -116,16 +192,170 @@ class CommentsViewModel @Inject constructor(
         state.update { it.copy(message = null) }
     }
 
-    fun cancelReply() {
-        state.update { it.copy(replyTo = null) }
+    /** 举报独立于评论草稿，关闭或切换账号时取消请求。 */
+    fun openReport(comment: MangaComment) {
+        val current = state.value
+        val target = current.target ?: return
+        if (current.reporting || current.posting) return
+        if (!current.loggedIn) {
+            state.update { it.copy(message = "请先到“我的”登录后举报") }
+            return
+        }
+        reportJob?.cancel()
+        state.update {
+            it.copy(
+                reportTarget = comment,
+                reportConfig = null,
+                reportLoading = true,
+                reportError = null
+            )
+        }
+        reportJob = viewModelScope.launch(handler) {
+            repository.getReportConfig(target).fold(
+                onSuccess = { config ->
+                    ensureActive()
+                    state.update { it.copy(reportConfig = config, reportLoading = false) }
+                },
+                onFailure = { error ->
+                    ensureActive()
+                    state.update {
+                        it.copy(
+                            reportLoading = false,
+                            reportError = error.message ?: "举报类型加载失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun closeReport() {
+        if (state.value.reporting) return
+        reportJob?.cancel()
+        state.update { it.copy(reportTarget = null, reportLoading = false, reportError = null) }
+    }
+
+    fun report(type: Int, reason: String) {
+        val current = state.value
+        val target = current.target ?: return
+        val comment = current.reportTarget ?: return
+        if (current.reporting || current.reportLoading || !current.loggedIn ||
+            CommentText.length(reason) > CommentText.MAX_LENGTH ||
+            current.reportConfig?.types?.none { it.type == type } != false
+        ) return
+        state.update { it.copy(reporting = true, reportError = null) }
+        reportJob = viewModelScope.launch(handler) {
+            repository.reportComment(target, comment.id, type, reason).fold(
+                onSuccess = {
+                    ensureActive()
+                    state.update {
+                        it.copy(
+                            reporting = false,
+                            reportTarget = null,
+                            message = "举报已提交"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    ensureActive()
+                    state.update {
+                        it.copy(
+                            reporting = false, reportError = (error.message ?: "举报失败") +
+                                    if (error is java.io.IOException) "。结果可能未确认，请勿重复提交。" else ""
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    private fun saveDraft() {
+        val current = state.value
+        val id = (current.replyTo ?: current.parent)?.id
+        if (id == null) rootDraft = current.draft else replyDrafts[id] = current.draft
+    }
+
+    /** 直接打开输入面板时保留列表位置，并按回复对象隔离草稿。 */
+    fun startReply(comment: MangaComment) {
+        if (state.value.posting || state.value.target?.kind != CommentKind.COMIC) return
+        saveDraft()
+        state.update {
+            it.copy(
+                replyTo = comment,
+                draft = replyDrafts[comment.id].orEmpty(),
+                message = null
+            )
+        }
+    }
+
+    fun startComment() {
+        if (state.value.posting) return
+        saveDraft()
+        val parent = state.value.parent
+        state.update {
+            it.copy(
+                replyTo = null,
+                draft = if (parent == null) rootDraft else replyDrafts[parent.id].orEmpty(),
+                message = null
+            )
+        }
+    }
+
+    private fun invalidatePreviews() {
+        previewGeneration++
+        previewJobs.values.forEach { it.cancel() }
+        previewJobs.clear()
+        state.update { it.copy(replyPreviews = emptyMap(), previewGeneration = previewGeneration) }
+    }
+
+    /** 只为可见评论加载预览；失败不影响主列表，也不在重组时反复重试。 */
+    fun loadReplyPreview(comment: MangaComment) {
+        val current = state.value
+        val target = current.target ?: return
+        if (target.kind != CommentKind.COMIC || current.parent != null || comment.replyCount <= 0 ||
+            comment.id in current.replyPreviews || comment.id in previewJobs
+        ) return
+        val generation = previewGeneration
+        previewJobs[comment.id] = viewModelScope.launch(handler) {
+            previewPermits.withPermit {
+                repository.getReplyPreview(target, comment.id).fold(
+                    onSuccess = { preview ->
+                        ensureActive()
+                        if (generation == previewGeneration) state.update {
+                            fun correctCount(items: List<MangaComment>) = items.map { item ->
+                                if (item.id == comment.id && preview.total != null) item.copy(
+                                    replyCount = preview.total
+                                ) else item
+                            }
+                            if (it.parent != null) rootFeed =
+                                rootFeed.copy(items = correctCount(rootFeed.items))
+                            it.copy(
+                                feed = if (it.parent == null) it.feed.copy(items = correctCount(it.feed.items)) else it.feed,
+                                replyPreviews = it.replyPreviews + (comment.id to preview)
+                            )
+                        }
+                    },
+                    onFailure = {
+                        ensureActive()
+                        if (generation == previewGeneration) state.update {
+                            it.copy(
+                                replyPreviews = it.replyPreviews + (comment.id to CommentReplyPreview(
+                                    emptyList()
+                                ))
+                            )
+                        }
+                    }
+                )
+            }
+        }
     }
 
     fun showReplies(comment: MangaComment) {
         val current = state.value
         if (current.posting || current.target?.kind != CommentKind.COMIC) return
         if (current.parent == null) {
+            saveDraft()
             rootFeed = current.feed.copy(loading = false)
-            rootDraft = current.draft
             readJob?.cancel()
             revision++
             state.update {
@@ -137,14 +367,14 @@ class CommentsViewModel @Inject constructor(
                 )
             }
             load(refresh = true)
-        } else state.update { it.copy(replyTo = comment) }
+        } else startReply(comment)
     }
 
     fun backToComments() {
         if (state.value.posting) return
         readJob?.cancel()
         revision++
-        state.value.parent?.let { replyDrafts[it.id] = state.value.draft }
+        saveDraft()
         state.update {
             it.copy(
                 parent = null,
@@ -164,6 +394,7 @@ class CommentsViewModel @Inject constructor(
         readJob?.cancel()
         val requestRevision = ++revision
         val parentId = current.parent?.id
+        if (refresh && parentId == null) invalidatePreviews()
         state.update { it.copy(feed = it.feed.copy(loading = true, error = null)) }
         readJob = viewModelScope.launch(handler) {
             repository.getComments(target, offset, parentId).fold(
@@ -173,13 +404,34 @@ class CommentsViewModel @Inject constructor(
                     state.update {
                         val items =
                             (if (refresh) page.comments else it.feed.items + page.comments).distinctBy { comment -> comment.id }
-                        it.copy(feed = CommentFeed(items, page.total, page.nextOffset))
+                        val exact = parentId == null || page.nextOffset == null
+                        if (parentId != null && exact) {
+                            rootFeed = rootFeed.copy(items = rootFeed.items.map { root ->
+                                if (root.id == parentId) root.copy(replyCount = items.size) else root
+                            })
+                        }
+                        it.copy(
+                            feed = CommentFeed(
+                                items,
+                                if (parentId == null) page.total else items.size,
+                                page.nextOffset,
+                                totalExact = exact
+                            ),
+                            parent = if (parentId != null && exact) it.parent?.copy(replyCount = items.size) else it.parent,
+                            replyPreviews = if (parentId != null && exact) {
+                                it.replyPreviews + (parentId to CommentReplyPreview(
+                                    items.take(2),
+                                    items.size
+                                ))
+                            } else it.replyPreviews
+                        )
                     }
                 },
                 onFailure = { error ->
                     ensureActive()
                     if (requestRevision == revision) state.update {
                         it.copy(
+                            postingAllowed = it.postingAllowed && error !is CommentClosedException,
                             feed = it.feed.copy(
                                 loading = false,
                                 error = error.message ?: "评论加载失败"
@@ -216,13 +468,15 @@ class CommentsViewModel @Inject constructor(
                 onSuccess = {
                     ensureActive()
                     if (requestRevision != revision) return@fold
-                    current.parent?.let { parent ->
-                        replyDrafts.remove(parent.id)
+                    val threadId = current.parent?.id ?: reply?.id
+                    reply?.let { replyDrafts.remove(it.id) }
+                    threadId?.let { id ->
                         rootFeed = rootFeed.copy(items = rootFeed.items.map {
-                            if (it.id == parent.id) it.copy(replyCount = it.replyCount + 1) else it
+                            if (it.id == id) it.copy(replyCount = it.replyCount + 1) else it
                         })
                     }
-                    if (current.parent == null) rootDraft = ""
+                    if (reply == null) rootDraft = ""
+                    invalidatePreviews()
                     state.update {
                         it.copy(
                             posting = false,
@@ -239,7 +493,8 @@ class CommentsViewModel @Inject constructor(
                         it.copy(
                             posting = false,
                             message = (error.message
-                                ?: "发表失败") + if (error is java.io.IOException) "。结果可能未确认，请先刷新评论，避免重复发表。" else ""
+                                ?: "发表失败") + if (error is java.io.IOException) "。结果可能未确认，请先刷新评论，避免重复发表。" else "",
+                            postingAllowed = it.postingAllowed && error !is CommentClosedException
                         )
                     }
                 }

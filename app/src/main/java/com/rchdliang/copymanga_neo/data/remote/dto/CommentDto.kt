@@ -3,6 +3,22 @@ package com.rchdliang.copymanga_neo.data.remote.dto
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 
+data class CommentReportConfigResponseDto(
+    @SerializedName("code") val code: Int?,
+    @SerializedName("message") val message: String?,
+    @SerializedName("results") val results: CommentReportConfigDto?
+)
+
+data class CommentReportConfigDto(
+    @SerializedName("report_type") val types: List<CommentReportTypeDto?>?,
+    @SerializedName("report_tip") val tip: String?
+)
+
+data class CommentReportTypeDto(
+    @SerializedName("type") val type: Int?,
+    @SerializedName("name") val name: String?
+)
+
 data class CommentResponseDto(
     @SerializedName("code") val code: Int?,
     @SerializedName("message") val message: String?,

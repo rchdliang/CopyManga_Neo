@@ -87,6 +87,7 @@ fun ReaderScreen(
         CommentsDialog(
             target = CommentTarget(CommentKind.CHAPTER, currentChapter.chapterUuid),
             title = currentChapter.content.chapterName.ifBlank { chapterName },
+            comicPathWord = comicPathWord,
             onDismiss = { showComments = false }
         )
     }

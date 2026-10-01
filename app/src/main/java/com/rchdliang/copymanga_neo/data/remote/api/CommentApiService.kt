@@ -14,6 +14,42 @@ import retrofit2.http.Query
 
 /** 漫画评论与章节吐槽分别使用官方接口；读取不依赖登录。 */
 interface CommentApiService {
+    @GET("api/v3/roast/config")
+    suspend fun chapterReportConfig(
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = headers()
+    ): Response<com.rchdliang.copymanga_neo.data.remote.dto.CommentReportConfigResponseDto>
+
+    @FormUrlEncoded
+    @POST("api/v3/member/roast/report")
+    suspend fun reportChapterComment(
+        @Field("roast_id") roastId: String,
+        @Field("chapter_id") chapterId: String,
+        @Field("report_type") type: Int,
+        @Field("report_reason") reason: String,
+        @Header("Authorization") authorization: String,
+        @Field("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = postHeaders()
+    ): Response<CommentPostResponseDto>
+
+    @GET("api/v3/comment/config")
+    suspend fun reportConfig(
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = headers()
+    ): Response<com.rchdliang.copymanga_neo.data.remote.dto.CommentReportConfigResponseDto>
+
+    @FormUrlEncoded
+    @POST("api/v3/member/comment/report")
+    suspend fun reportComment(
+        @Field("comic_id") comicId: String,
+        @Field("comment_id") commentId: String,
+        @Field("report_type") type: Int,
+        @Field("report_reason") reason: String,
+        @Header("Authorization") authorization: String,
+        @Field("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = postHeaders()
+    ): Response<CommentPostResponseDto>
+
     companion object {
         /** 评论沿用 Web API 公共头；标记仅用于路由和阻止 App 协议改写。 */
         fun headers(): Map<String, String> = CopyMangaNetworkConfig.apiHeaders() +
