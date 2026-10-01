@@ -52,6 +52,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Velocity
@@ -60,7 +61,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.rchdliang.copymanga_neo.R
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewImage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -248,10 +249,19 @@ private fun ReaderImageItem(
     isRtl: Boolean = false,
     onTurnPage: ((isForward: Boolean) -> Unit)? = null
 ) {
+    if (LocalInspectionMode.current) {
+        PreviewImage(
+            contentDescription = null,
+            drawable = R.drawable.preview_reader_page,
+            contentScale = contentScale,
+            modifier = if (isContinuous) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
+        )
+        return
+    }
     val context = LocalContext.current
     var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
     val data: Any = if (path.startsWith("http")) path else File(path)
-    val imageData = previewImageModel(data, R.drawable.preview_reader_page)
+    val imageData = data
     val request = remember(imageData, retryKey) {
         ImageRequest.Builder(context)
             .data(imageData)

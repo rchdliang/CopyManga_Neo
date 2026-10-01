@@ -30,9 +30,9 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
     ): Result<ComicPage> = result {
         require(
             offset >= 0 && limit in 1..21 && period in setOf("day", "week", "month", "total") &&
-                    (audience == "male" || audience == "female" && period == "total")
+                    audience in setOf("male", "female")
         ) {
-            "该榜单组合没有抓包证据"
+            "榜单参数无效"
         }
         val response = api.getComicRankings(
             period = period,

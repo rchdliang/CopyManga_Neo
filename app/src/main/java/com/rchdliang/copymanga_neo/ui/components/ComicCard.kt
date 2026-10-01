@@ -30,9 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -108,11 +107,11 @@ fun ComicCard(
                 .clip(MaterialTheme.shapes.large)
         ) {}
 
-        AsyncImage(
+        PreviewAwareAsyncImage(
             model = ImageRequest
                 .Builder(LocalContext.current)
                 .crossfade(sharedTransitionKey == null)
-                .data(previewImageModel(cover))
+                .data(cover)
                 .build(),
             contentDescription = name,
             contentScale = ContentScale.Crop,

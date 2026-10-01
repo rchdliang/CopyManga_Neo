@@ -201,11 +201,19 @@ sealed class Screen(val route: String) {
     }
 
     object Explore :
-        Screen("explore/{section}?theme={theme}&top={top}&audience={audience}&period={period}") {
-        fun createRoute(section: String, theme: String? = null, top: String? = null): String {
+        Screen("explore/{section}?theme={theme}&top={top}&audience={audience}&period={period}&topic={topic}&topicTitle={topicTitle}") {
+        fun createRoute(
+            section: String,
+            theme: String? = null,
+            top: String? = null,
+            topic: String? = null,
+            topicTitle: String? = null
+        ): String {
             val filters = listOfNotNull(
                 theme?.let { "theme=${Uri.encode(it)}" },
-                top?.let { "top=${Uri.encode(it)}" })
+                top?.let { "top=${Uri.encode(it)}" },
+                topic?.let { "topic=${Uri.encode(it)}" },
+                topicTitle?.let { "topicTitle=${Uri.encode(it)}" })
             return "explore/$section" + if (filters.isEmpty()) "" else filters.joinToString(
                 "&",
                 prefix = "?"
@@ -286,6 +294,15 @@ fun CopyManga_NeoApp(
                                     onNavigateToSearch = {
                                         navController.navigate(Screen.Search.createRoute())
                                     },
+                                    onNavigateToTopic = { pathWord, title ->
+                                        navController.navigate(
+                                            Screen.Explore.createRoute(
+                                                "topics",
+                                                topic = pathWord,
+                                                topicTitle = title
+                                            )
+                                        )
+                                    },
                                     onNavigateToExplore = { section ->
                                         navController.navigate(Screen.Explore.createRoute(section))
                                     }
@@ -343,6 +360,12 @@ fun CopyManga_NeoApp(
                                 type = NavType.StringType; nullable = true; defaultValue = null
                             },
                             navArgument("period") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("topic") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("topicTitle") {
                                 type = NavType.StringType; nullable = true; defaultValue = null
                             }
                         )
@@ -446,6 +469,7 @@ fun MainScreen(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit,
+    onNavigateToTopic: (String, String) -> Unit,
     favoritesViewModel: FavoritesViewModel = hiltViewModel(),
     openDownloads: Boolean = false,
     onDownloadsOpened: () -> Unit = {}
@@ -491,6 +515,7 @@ fun MainScreen(
             onNavigateToDetail = onNavigateToDetail,
             onNavigateToSearch = onNavigateToSearch,
             onNavigateToExplore = onNavigateToExplore,
+            onNavigateToTopic = onNavigateToTopic,
             onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
         )
     } else {
@@ -534,6 +559,7 @@ fun MainScreen(
                     onNavigateToDetail = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
                     onNavigateToExplore = onNavigateToExplore,
+                    onNavigateToTopic = onNavigateToTopic,
                     onNavigateToProfile = { currentDestination = AppDestinations.PROFILE },
                     onNavigateToDownloads = { currentDestination = AppDestinations.DOWNLOADS }
                 )
@@ -554,6 +580,7 @@ private fun WideScreenLayout(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit,
+    onNavigateToTopic: (String, String) -> Unit,
     onNavigateToProfile: () -> Unit
 ) {
     val railState = rememberWideNavigationRailState(
@@ -668,6 +695,7 @@ private fun WideScreenLayout(
                 onNavigateToDetail = onNavigateToDetail,
                 onNavigateToSearch = onNavigateToSearch,
                 onNavigateToExplore = onNavigateToExplore,
+                onNavigateToTopic = onNavigateToTopic,
                 onNavigateToProfile = onNavigateToProfile,
                 onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
             )
@@ -684,6 +712,7 @@ private fun MainDestinationContent(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit,
+    onNavigateToTopic: (String, String) -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToDownloads: () -> Unit
 ) {
@@ -721,6 +750,7 @@ private fun MainDestinationContent(
                     onComicClick = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
                     onNavigateToExplore = onNavigateToExplore,
+                    onNavigateToTopic = onNavigateToTopic,
                     onNavigateToDownloads = onNavigateToDownloads
                 )
 

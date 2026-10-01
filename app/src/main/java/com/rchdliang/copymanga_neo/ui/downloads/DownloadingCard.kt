@@ -34,10 +34,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import java.util.Locale
 
@@ -107,8 +106,8 @@ fun DownloadingCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                AsyncImage(
-                    model = previewImageModel(cover),
+                PreviewAwareAsyncImage(
+                    model = cover,
                     contentDescription = name,
                     modifier = Modifier
                         .width(80.dp)

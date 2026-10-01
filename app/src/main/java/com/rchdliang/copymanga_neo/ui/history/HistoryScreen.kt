@@ -42,11 +42,10 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 @Composable
@@ -258,8 +257,8 @@ private fun HistoryRow(item: BrowseHistoryItem, enabled: Boolean, onClick: () ->
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AsyncImage(
-                model = previewImageModel(item.cover),
+            PreviewAwareAsyncImage(
+                model = item.cover,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

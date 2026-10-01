@@ -104,6 +104,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -119,7 +120,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.compose.SubcomposeAsyncImage
 import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
@@ -142,7 +142,8 @@ import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.currentComicTransitionData
 import com.rchdliang.copymanga_neo.ui.components.isComicSharedTransitionActive
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
+import com.rchdliang.copymanga_neo.ui.preview.PreviewImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
@@ -457,8 +458,8 @@ fun DetailScreen(
                     .padding(top = 48.dp)
                     .clipToBounds()
             ) {
-                AsyncImage(
-                    model = previewImageModel(coverData.cover),
+                PreviewAwareAsyncImage(
+                    model = coverData.cover,
                     contentDescription = coverData.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -727,57 +728,69 @@ private fun DetailContent(
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                SubcomposeAsyncImage(
-                    model = previewImageModel(comicDetail.cover),
-                    contentDescription = comicDetail.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = coverTransitionModifier
-                        .width(detailCoverWidth)
-                        .aspectRatio(3f / 4f)
-                        .clip(MaterialTheme.shapes.medium)
-                        .alpha(if (hideCoverDuringTransition) 0f else 1f)
-                ) {
-                    when (painter.state) {
-                        is AsyncImagePainter.State.Loading -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                LoadingIndicator(
+                if (LocalInspectionMode.current) {
+                    PreviewImage(
+                        contentDescription = comicDetail.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = coverTransitionModifier
+                            .width(detailCoverWidth)
+                            .aspectRatio(3f / 4f)
+                            .clip(MaterialTheme.shapes.medium)
+                            .alpha(if (hideCoverDuringTransition) 0f else 1f)
+                    )
+                } else {
+                    SubcomposeAsyncImage(
+                        model = comicDetail.cover,
+                        contentDescription = comicDetail.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = coverTransitionModifier
+                            .width(detailCoverWidth)
+                            .aspectRatio(3f / 4f)
+                            .clip(MaterialTheme.shapes.medium)
+                            .alpha(if (hideCoverDuringTransition) 0f else 1f)
+                    ) {
+                        when (painter.state) {
+                            is AsyncImagePainter.State.Loading -> {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    LoadingIndicator(
+                                        modifier = Modifier
+                                            .width(32.dp)
+                                            .aspectRatio(1f),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            is AsyncImagePainter.State.Error -> {
+                                Box(
                                     modifier = Modifier
-                                        .width(32.dp)
-                                        .aspectRatio(1f),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(
+                                        imageVector = Icons.Default.BrokenImage,
+                                        contentDescription = "加载失败",
+                                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                }
                             }
-                        }
 
-                        is AsyncImagePainter.State.Error -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.surfaceContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            is AsyncImagePainter.State.Success -> {
                                 Image(
-                                    imageVector = Icons.Default.BrokenImage,
-                                    contentDescription = "加载失败",
-                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
-                                    modifier = Modifier.padding(16.dp)
+                                    painter = painter,
+                                    contentDescription = comicDetail.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
-                        }
 
-                        is AsyncImagePainter.State.Success -> {
-                            Image(
-                                painter = painter,
-                                contentDescription = comicDetail.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            else -> Unit
                         }
-
-                        else -> Unit
                     }
                 }
 

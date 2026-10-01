@@ -76,7 +76,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
@@ -88,7 +87,7 @@ import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionClick
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -500,8 +499,8 @@ private fun SearchComicCard(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
 //            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            AsyncImage(
-                model = previewImageModel(comic.cover),
+            PreviewAwareAsyncImage(
+                model = comic.cover,
                 contentDescription = comic.name,
                 modifier = Modifier
                     .comicCoverSharedElement(transitionKey)

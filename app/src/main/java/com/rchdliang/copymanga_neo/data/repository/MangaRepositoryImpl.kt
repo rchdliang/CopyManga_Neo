@@ -291,7 +291,7 @@ class MangaRepositoryImpl @Inject constructor(
                     newComics = newComics.map { it.toSummary() },
                     finishComics = finishComics.map { it.toSummary() },
                     rankComics = rankComics.map { it.toSummary() },
-                    topics = topics.take(2),
+                    topics = topics,
                     recNextOffset = recPage?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } },
                     newNextOffset = newComics.size.takeIf { it > 0 },
                     finishNextOffset = finishPage?.let { (it.offset + it.list.size).takeIf { next -> it.list.isNotEmpty() && next < it.total } }

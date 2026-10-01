@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -45,20 +46,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.TopicCard
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.floor
@@ -75,6 +75,7 @@ fun HomeScreen(
     onNavigateToSearch: () -> Unit = {},
     onNavigateToExplore: (String) -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToTopic: (String, String) -> Unit = { _, _ -> },
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
@@ -99,6 +100,8 @@ fun HomeScreen(
         onComicClick = onComicClick,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToExplore = onNavigateToExplore,
+        onNavigateToTopic = onNavigateToTopic,
+        onLoadMoreTopics = viewModel::loadMoreTopics,
         onRefresh = viewModel::loadComics,
         onViewportChanged = viewModel::onShelfViewportChanged,
         onLoadMore = viewModel::loadMore,
@@ -151,6 +154,8 @@ private fun HomeContent(
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit = {},
     onRefresh: () -> Unit,
+    onNavigateToTopic: (String, String) -> Unit = { _, _ -> },
+    onLoadMoreTopics: () -> Unit = {},
     onViewportChanged: (HomeShelf, Int) -> Unit = { _, _ -> },
     onLoadMore: (HomeShelf, Boolean) -> Unit = { _, _ -> },
     onRankAudienceSelected: (String) -> Unit = {},
@@ -348,7 +353,10 @@ private fun HomeContent(
                         }
                         if (uiState.topics.isNotEmpty()) item(key = "topics") {
                             HomeTopicsSection(
-                                uiState.topics,
+                                topics = uiState.topics,
+                                paging = uiState.topicPaging,
+                                onLoadMore = onLoadMoreTopics,
+                                onTopicClick = { onNavigateToTopic(it.pathWord, it.title) },
                                 onMore = { onNavigateToExplore("topics") })
                         }
                         if (uiState.finishComics.isNotEmpty() || HomeShelf.FINISHED in uiState.paging) item(
@@ -567,7 +575,7 @@ private fun HomeRankChoices(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        val periods = if (audience == "female") listOf("total" to "总榜") else listOf(
+        val periods = listOf(
             "day" to "日榜", "week" to "周榜", "month" to "月榜", "total" to "总榜"
         )
         periods.forEach { (value, label) ->
@@ -578,9 +586,15 @@ private fun HomeRankChoices(
     }
 }
 
-/** 专题仅在首页预览，标题和专题卡片都进入专题列表。 */
+/** 专题横向列表按窗口宽度展示，到达末尾时分页加载。 */
 @Composable
-private fun HomeTopicsSection(topics: List<ComicTopic>, onMore: () -> Unit) {
+private fun HomeTopicsSection(
+    topics: List<ComicTopic>,
+    paging: HomeShelfPaging,
+    onLoadMore: () -> Unit,
+    onTopicClick: (ComicTopic) -> Unit,
+    onMore: () -> Unit
+) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -590,34 +604,46 @@ private fun HomeTopicsSection(topics: List<ComicTopic>, onMore: () -> Unit) {
             HomeSectionHeader("漫画专题", onMore)
             Spacer(Modifier.height(12.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cardWidth = if (maxWidth >= 600.dp && topics.size >= 2)
-                    (maxWidth - 8.dp) / 2 else if (topics.size == 1) maxWidth else 252.dp
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(topics.take(2), key = { it.pathWord }) { topic ->
-                        Surface(
-                            onClick = onMore,
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier
-                                .width(cardWidth)
-                                .height(96.dp)
+                val visibleCards = ((maxWidth + 12.dp) / 280.dp).toInt().coerceAtLeast(1)
+                val cardWidth = if (visibleCards == 1 && topics.size > 1)
+                    (maxWidth * 0.9f).coerceAtMost(360.dp)
+                else (maxWidth - 12.dp * (visibleCards - 1)) / visibleCards
+                val listState = rememberLazyListState()
+                LaunchedEffect(
+                    topics.size,
+                    visibleCards,
+                    paging.nextOffset,
+                    paging.isLoading,
+                    paging.error
+                ) {
+                    if (paging.nextOffset != null && !paging.isLoading && paging.error == null) {
+                        snapshotFlow {
+                            val layout = listState.layoutInfo
+                            layout.visibleItemsInfo.isNotEmpty() &&
+                                    (topics.size <= visibleCards || listState.firstVisibleItemIndex > 0) &&
+                                    (layout.visibleItemsInfo.lastOrNull()?.index
+                                        ?: -1) >= topics.lastIndex - 1
+                        }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
+                    }
+                }
+                LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(topics, key = { it.pathWord }) { topic ->
+                        TopicCard(
+                            topic,
+                            onClick = { onTopicClick(topic) },
+                            modifier = Modifier.width(cardWidth)
+                        )
+                    }
+                    if (paging.isLoading || paging.error != null) item(key = "topic-pagination") {
+                        Column(
+                            Modifier
+                                .width(128.dp)
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(
-                                    model = topic.cover,
-                                    contentDescription = topic.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .width(72.dp)
-                                        .height(96.dp)
-                                )
-                                Text(
-                                    topic.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    maxLines = 2,
-                                    modifier = Modifier.padding(12.dp)
-                                )
+                            if (paging.isLoading) CircularProgressIndicator(Modifier.size(28.dp))
+                            else TextButton(onClick = onLoadMore) {
+                                Text("加载失败，重试", color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -654,7 +680,7 @@ private fun ComicGrid(
                 name = comic.name,
                 cover = comic.cover,
                 subtitle = comic.author?.firstOrNull()?.name,
-                statusText = if (ranked) "第 ${rankPositions[comic.pathWord] ?: index + 1} 位" else null,
+                statusText = if (ranked) "第 ${rankPositions[comic.pathWord] ?: (index + 1)} 位" else null,
                 sharedTransitionKey = "$transitionGroupKey:${comic.pathWord}",
                 comicPathWord = comic.pathWord,
                 onClick = { onComicClick(comic.pathWord) },
@@ -704,8 +730,23 @@ private fun rememberHomePreviewState(): HomeUiState {
             hotComics = comics.drop(2).take(5),
             newComics = comics.reversed().take(5),
             finishComics = comics.takeLast(5),
-            rankComics = comics.drop(1).take(3),
-            topics = listOf(ComicTopic("preview-topic", "奇幻世界漫游", null, null))
+            rankComics = comics,
+            topics = listOf(
+                ComicTopic("preview-summer", "夏番漫畫2026 必看熱門漫畫推薦第41期", null, null),
+                ComicTopic(
+                    "preview-awards",
+                    "这本漫画真厉害2026获奖作品 必看热门漫画推荐第40期",
+                    null,
+                    null
+                ),
+                ComicTopic(
+                    "preview-animation",
+                    "最期待2026動畫化漫畫 必看热门漫画推荐第39期",
+                    null,
+                    null
+                ),
+                ComicTopic("preview-spring", "春番漫畫2026 必看熱門漫畫推薦第40期", null, null)
+            )
         )
     }
 }
@@ -783,6 +824,58 @@ private fun HomeTagWarningPreview() {
             filterWarning = "部分漫画的标签暂时无法获取，已先展示漫画。标签加载完成后会自动应用黑名单。"
         )
     )
+}
+
+/** 独立预览首页中部，直接展示排行与专题，不需要从推荐区滚动。 */
+@Preview(name = "首页中部 - 手机", showBackground = true, widthDp = 411, heightDp = 600)
+@Preview(
+    name = "首页中部 - 手机深色",
+    showBackground = true,
+    widthDp = 411,
+    heightDp = 600,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
+)
+@Preview(name = "首页中部 - 横屏平板", showBackground = true, widthDp = 1200, heightDp = 600)
+@Preview(
+    name = "首页中部 - 横屏平板深色",
+    showBackground = true,
+    widthDp = 1200,
+    heightDp = 600,
+    uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES
+)
+@Composable
+private fun HomeRanksAndTopicsPreview() {
+    val state = rememberHomePreviewState()
+    CopyManga_NeoTheme(dynamicColor = false) {
+        Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    HomeComicSection(
+                        title = "排行榜",
+                        comics = state.rankComics,
+                        transitionGroupKey = "preview-ranks",
+                        onComicClick = {},
+                        onMore = {},
+                        ranked = true,
+                        rankAudience = "male",
+                        rankPeriod = "week"
+                    )
+                }
+                item {
+                    HomeTopicsSection(
+                        topics = state.topics,
+                        paging = HomeShelfPaging(),
+                        onLoadMore = {},
+                        onTopicClick = {},
+                        onMore = {}
+                    )
+                }
+            }
+        }
+    }
 }
 
 private fun homeRiskPreviewState(showDialog: Boolean = false) = HomeUiState(

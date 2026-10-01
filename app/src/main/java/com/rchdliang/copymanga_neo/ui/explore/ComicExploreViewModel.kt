@@ -57,6 +57,8 @@ class ComicExploreViewModel @Inject constructor(
     private val repository: ComicDiscoveryRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val initialTopic = savedStateHandle.get<String>("topic")?.takeIf { it.isNotBlank() }
+    val openedFromTopic = initialTopic != null
     private val _uiState = MutableStateFlow(
         ComicExploreUiState(
             section = ExploreSection.fromRoute(savedStateHandle["section"]),
@@ -82,10 +84,16 @@ class ComicExploreViewModel @Inject constructor(
     }
 
     init {
-        if (_uiState.value.rankAudience == "female" && _uiState.value.rankPeriod != "total") {
-            _uiState.update { it.copy(rankPeriod = "total") }
-        }
-        refresh()
+        if (initialTopic != null) {
+            openTopic(
+                ComicTopic(
+                    initialTopic,
+                    savedStateHandle.get<String>("topicTitle").orEmpty(),
+                    null,
+                    null
+                )
+            )
+        } else refresh()
     }
 
     fun selectSection(section: ExploreSection) {
@@ -108,12 +116,7 @@ class ComicExploreViewModel @Inject constructor(
 
     fun selectRankAudience(audience: String) {
         if (_uiState.value.rankAudience == audience || audience !in setOf("male", "female")) return
-        _uiState.update {
-            it.copy(
-                rankAudience = audience,
-                rankPeriod = if (audience == "female") "total" else it.rankPeriod
-            )
-        }
+        _uiState.update { it.copy(rankAudience = audience) }
         refresh()
     }
 

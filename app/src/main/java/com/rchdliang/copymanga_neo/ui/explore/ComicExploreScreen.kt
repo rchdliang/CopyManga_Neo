@@ -7,12 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -42,7 +41,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,7 +60,10 @@ fun ComicExploreScreen(
     viewModel: ComicExploreViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val back = { if (state.topic != null) viewModel.closeTopic() else onNavigateBack() }
+    val back = {
+        if (state.topic != null && !viewModel.openedFromTopic) viewModel.closeTopic()
+        else onNavigateBack()
+    }
     BackHandler(enabled = state.topic != null, onBack = back)
 
     Scaffold(
@@ -135,15 +136,15 @@ fun ComicExploreScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                state.topic?.cover?.takeIf { it.isNotBlank() }?.let { cover ->
+                state.topic?.fullResolutionCover?.takeIf { it.isNotBlank() }?.let { cover ->
                     item(key = "topic_cover", span = { GridItemSpan(maxLineSpan) }) {
                         AsyncImage(
                             model = cover,
                             contentDescription = state.topic?.title,
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp)
+                                .aspectRatio(1920f / 412f)
                         )
                     }
                 }
@@ -261,8 +262,7 @@ private fun RankChoices(state: ComicExploreUiState, viewModel: ComicExploreViewM
             "受众", listOf(ComicFilterOption("男榜", "male"), ComicFilterOption("女榜", "female")),
             state.rankAudience, viewModel::selectRankAudience
         )
-        val periods = if (state.rankAudience == "female") listOf(ComicFilterOption("总榜", "total"))
-        else listOf(
+        val periods = listOf(
             ComicFilterOption("日榜", "day"), ComicFilterOption("周榜", "week"),
             ComicFilterOption("月榜", "month"), ComicFilterOption("总榜", "total")
         )
@@ -324,34 +324,7 @@ private fun OptionRow(
 
 @Composable
 private fun TopicCard(topic: ComicTopic, onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = topic.cover,
-                contentDescription = topic.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(width = 84.dp, height = 108.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(
-                    topic.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                topic.brief?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        it, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+    com.rchdliang.copymanga_neo.ui.components.TopicCard(topic, onClick, Modifier.fillMaxWidth())
 }
 
 @Composable

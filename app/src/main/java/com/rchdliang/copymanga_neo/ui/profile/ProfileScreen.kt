@@ -70,11 +70,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.history.HistoryScreen
-import com.rchdliang.copymanga_neo.ui.preview.previewImageModel
+import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -349,8 +348,9 @@ private fun AccountCard(
             .padding(24.dp)
     ) {
         if (isLoggedIn) {
-            AsyncImage(
-                model = previewImageModel(avatar, R.drawable.preview_avatar),
+            PreviewAwareAsyncImage(
+                model = avatar,
+                previewDrawable = R.drawable.preview_avatar,
                 contentDescription = "用户头像",
                 modifier = Modifier
                     .size(80.dp)

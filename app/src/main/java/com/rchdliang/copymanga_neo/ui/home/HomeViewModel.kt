@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.model.HomeComicsData
+import com.rchdliang.copymanga_neo.domain.model.HomeRankPreferences
+import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
 import com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
@@ -17,6 +19,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +56,7 @@ data class HomeUiState(
     val rankComics: List<ComicSummary> = emptyList(),
     val rankPositions: Map<String, Int> = emptyMap(),
     val topics: List<ComicTopic> = emptyList(),
+    val topicPaging: HomeShelfPaging = HomeShelfPaging(),
     val paging: Map<HomeShelf, HomeShelfPaging> = emptyMap(),
     val rankAudience: String = "male",
     val rankPeriod: String = "day",
@@ -74,10 +79,13 @@ class HomeViewModel @Inject constructor(
     private val discoveryRepository: ComicDiscoveryRepository,
     themeBlacklistRepository: ThemeBlacklistRepository,
     private val filterHomeComics: FilterHomeComics,
-    private val riskControl: RiskControlRepository
+    private val riskControl: RiskControlRepository,
+    private val appSettings: AppSettingsRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(HomeUiState(isLoading = true))
+    private var rankPreferencesReady = false
+    private val rankPreferenceWrites = Channel<HomeRankPreferences>(Channel.UNLIMITED)
     private val dismissedRisk = MutableStateFlow<Long?>(null)
 
     private val blockedThemes = combine(
@@ -148,11 +156,15 @@ class HomeViewModel @Inject constructor(
 
     fun retryAfterRiskControl() {
         // 先停止旧列表的补全；闸门解除后统一由 notice 观察者加载一次首页。
-        _uiState.value = HomeUiState(isLoading = true)
+        val previous = _uiState.value
+        _uiState.value = HomeUiState(
+            isLoading = true, rankAudience = previous.rankAudience, rankPeriod = previous.rankPeriod
+        )
         riskControl.resumeByUser()
     }
 
     private var loadJob: Job? = null
+    private var topicJob: Job? = null
     private val pageJobs = mutableMapOf<HomeShelf, Job>()
     private val desiredCounts = mutableMapOf<HomeShelf, Int>()
 
@@ -160,21 +172,61 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             var wasBlocked = false
             riskControl.notice.collect { notice ->
-                if (notice != null) pageJobs.values.forEach { it.cancel() }
+                if (notice != null) {
+                    pageJobs.values.forEach { it.cancel() }
+                    topicJob?.cancel()
+                }
                 if (wasBlocked && notice == null) loadComics()
                 wasBlocked = notice != null
             }
         }
-        loadComics()
+        viewModelScope.launch(exceptionHandler) {
+            appSettings.getHomeRankPreferences().fold(
+                onSuccess = { saved ->
+                    _uiState.update {
+                        it.copy(
+                            rankAudience = saved.audience,
+                            rankPeriod = saved.period
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    android.util.Log.w("HomeViewModel", "读取首页榜单偏好失败", error)
+                    _uiState.update { it.copy(toastMessage = "榜单偏好读取失败，暂时使用男榜日榜") }
+                }
+            )
+            rankPreferencesReady = true
+            loadComics()
+        }
+        viewModelScope.launch(exceptionHandler) {
+            // 串行保存快速连续的选择，避免较早的写入覆盖最后一次选择。
+            for (selection in rankPreferenceWrites) {
+                appSettings.setHomeRankPreferences(selection).fold(
+                    onSuccess = {},
+                    onFailure = { error ->
+                        android.util.Log.w("HomeViewModel", "保存首页榜单偏好失败", error)
+                        _uiState.update { it.copy(toastMessage = "榜单偏好保存失败，请重试") }
+                    }
+                )
+            }
+        }
     }
 
     fun loadComics() {
-        if (riskControl.notice.value != null) return
+        if (!rankPreferencesReady || riskControl.notice.value != null) return
         loadJob?.cancel()
+        topicJob?.cancel()
         pageJobs.values.forEach { it.cancel() }
         pageJobs.clear()
         loadJob = viewModelScope.launch(exceptionHandler) {
-            _uiState.update { it.copy(isLoading = true, error = null, paging = emptyMap()) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    paging = emptyMap(),
+                    topicPaging = HomeShelfPaging()
+                )
+            }
             mangaRepository.getHomeComics().fold(
                 onSuccess = { homeComicsData ->
                     _uiState.update {
@@ -186,6 +238,7 @@ class HomeViewModel @Inject constructor(
                             finishComics = homeComicsData.finishComics,
                             rankComics = if (defaultRank) homeComicsData.rankComics else emptyList(),
                             topics = homeComicsData.topics,
+                            topicPaging = HomeShelfPaging(nextOffset = 0),
                             paging = mapOf(
                                 HomeShelf.RECOMMENDED to HomeShelfPaging(homeComicsData.recNextOffset),
                                 HomeShelf.NEWEST to HomeShelfPaging(homeComicsData.newNextOffset),
@@ -289,20 +342,64 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** 首页专题从列表接口的第一页开始合并，不假定首页摘要与分页 offset 一致。 */
+    fun loadMoreTopics() {
+        if (riskControl.notice.value != null) return
+        val current = _uiState.value
+        val offset = current.topicPaging.nextOffset ?: return
+        if (current.isLoading || current.topicPaging.isLoading) return
+        _uiState.update {
+            it.copy(
+                topicPaging = it.topicPaging.copy(
+                    isLoading = true,
+                    error = null
+                )
+            )
+        }
+        topicJob = viewModelScope.launch(exceptionHandler) {
+            val result = discoveryRepository.getTopics(offset)
+            ensureActive()
+            result.fold(
+                onSuccess = { page ->
+                    _uiState.update {
+                        it.copy(
+                            topics = (it.topics + page.topics).distinctBy { topic -> topic.pathWord },
+                            topicPaging = HomeShelfPaging(nextOffset = page.nextOffset?.takeIf { next -> next > offset })
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update {
+                        it.copy(
+                            topicPaging = it.topicPaging.copy(
+                                isLoading = false,
+                                error = error.message ?: "专题加载失败"
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     fun selectRankAudience(audience: String) {
+        if (!rankPreferencesReady) return
         if (audience !in setOf("male", "female") || _uiState.value.rankAudience == audience) return
-        selectRank(audience, if (audience == "female") "total" else "day")
+        selectRank(audience, _uiState.value.rankPeriod)
     }
 
     fun selectRankPeriod(period: String) {
+        if (!rankPreferencesReady) return
         val state = _uiState.value
         if (period !in setOf("day", "week", "month", "total") ||
-            state.rankAudience == "female" && period != "total" || state.rankPeriod == period
+            state.rankPeriod == period
         ) return
         selectRank(state.rankAudience, period)
     }
 
     private fun selectRank(audience: String, period: String) {
+        rankPreferenceWrites.trySend(HomeRankPreferences(audience, period))
         pageJobs[HomeShelf.RANKS]?.cancel()
         _uiState.update {
             it.copy(

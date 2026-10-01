@@ -6,7 +6,11 @@ data class ComicTopic(
     val title: String,
     val cover: String?,
     val brief: String?
-)
+) {
+    /** 移除专题接口附加的缩略图后缀，保留查询参数和片段。 */
+    val fullResolutionCover: String?
+        get() = cover?.replace(Regex("\\.200x80\\.jpg(?=[?#]|$)"), "")
+}
 
 /** 专题分页。 */
 data class ComicTopicPage(
