@@ -16,8 +16,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Palette
@@ -64,6 +64,7 @@ import com.rchdliang.copymanga_neo.ui.reader.ScreenOrientationSetting
 internal fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToNetwork: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,12 +84,12 @@ internal fun SettingsScreen(
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
         onNavigateBack = onNavigateBack,
         onNavigateToNetwork = onNavigateToNetwork,
+        onNavigateToAbout = onNavigateToAbout,
         onDirectionChange = viewModel::setReadingDirection,
         onScaleChange = viewModel::setPageScale,
         onOrientationChange = viewModel::setScreenOrientation,
         onReaderReset = viewModel::resetReaderDefaults,
         onGlobalReset = viewModel::resetGlobalDefaults,
-        onClearCache = viewModel::clearImageCache,
         onRefreshStorage = viewModel::refreshStorage,
         onManageDownloads = {
             context.startActivity(
@@ -105,7 +106,7 @@ internal fun SettingsScreen(
 }
 
 private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
-private enum class SettingsConfirmation { CLEAR_CACHE, RESET_READER, RESET_GLOBAL }
+private enum class SettingsConfirmation { RESET_READER, RESET_GLOBAL }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,12 +116,12 @@ internal fun SettingsPage(
     onWifiOnlyChange: (Boolean) -> Unit = {},
     onNavigateBack: () -> Unit,
     onNavigateToNetwork: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {},
     onDirectionChange: (String) -> Unit = {},
     onScaleChange: (String) -> Unit = {},
     onOrientationChange: (String) -> Unit = {},
     onReaderReset: () -> Unit = {},
     onGlobalReset: () -> Unit = {},
-    onClearCache: () -> Unit = {},
     onRefreshStorage: () -> Unit = {},
     onManageDownloads: () -> Unit = {},
     notifications: NotificationSettingsStatus = NotificationSettingsStatus(),
@@ -233,17 +234,9 @@ internal fun SettingsPage(
                 }
             }
             ProfileListItem(
-                Icons.Outlined.DeleteSweep,
-                "图片缓存",
-                if (state.clearingCache) "正在清理" else "${size(state.storageUsage?.imageCacheBytes)} · 点击清理",
-                index = 0,
-                count = 2,
-                enabled = !state.clearingCache && !state.storageLoading && state.storageUsage != null,
-                onClick = { confirmation = SettingsConfirmation.CLEAR_CACHE })
-            ProfileListItem(
                 Icons.Outlined.Download, "漫画文件",
                 "${size(state.storageUsage?.downloadBytes)} · 管理已下载漫画与任务",
-                index = 1, count = 2, onClick = onManageDownloads
+                index = 0, count = 1, onClick = onManageDownloads
             )
             Text(
                 "设备可用空间：${size(state.storageUsage?.availableBytes)}",
@@ -291,6 +284,13 @@ internal fun SettingsPage(
                 },
                 index = 3, count = 4, enabled = notifications.liveSupported,
                 onClick = { onNotificationSettings(NotificationSettingsTarget.LIVE) })
+
+            SettingsSectionTitle("关于")
+            ProfileListItem(
+                Icons.Outlined.Info, "关于 CopyManga Neo",
+                "版本信息、缓存、日志与设置备份",
+                index = 0, count = 1, onClick = onNavigateToAbout
+            )
 
             TextButton(
                 onClick = { confirmation = SettingsConfirmation.RESET_GLOBAL }, enabled = enabled,
@@ -381,12 +381,6 @@ internal fun SettingsPage(
     }
     confirmation?.let { action ->
         val (title, message, button) = when (action) {
-            SettingsConfirmation.CLEAR_CACHE -> Triple(
-                "清理图片缓存？",
-                "清理可重新获取的图片缓存，保留下载漫画、账号和全部设置。",
-                "清理"
-            )
-
             SettingsConfirmation.RESET_READER -> Triple(
                 "恢复阅读默认值？",
                 "全局阅读默认值将恢复为从右到左、匹配屏幕、系统默认方向。各部漫画已保存的设置保持不变。",
@@ -406,7 +400,6 @@ internal fun SettingsPage(
             confirmButton = {
                 TextButton(onClick = {
                     when (action) {
-                        SettingsConfirmation.CLEAR_CACHE -> onClearCache()
                         SettingsConfirmation.RESET_READER -> onReaderReset()
                         SettingsConfirmation.RESET_GLOBAL -> onGlobalReset()
                     }

@@ -85,7 +85,6 @@ internal fun NetworkSettingsScreen(onNavigateBack: () -> Unit, viewModel: Networ
             .weight(1f)
             .verticalScroll(rememberScrollState())
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            NetworkLogCard()
             NetworkCard("请求模式") {
                 NetworkHint("两套地址分别保存。App 模式通过 API 加载目录和章节；失败时不会自动切换网页。更改模式或 App 身份后需重新登录。")
                 Column(Modifier.selectableGroup()) {

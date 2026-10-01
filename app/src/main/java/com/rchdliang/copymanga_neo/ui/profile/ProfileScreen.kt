@@ -84,7 +84,8 @@ private enum class ProfilePage {
     HISTORY,
     SETTINGS,
     BLACKLIST,
-    NETWORK
+    NETWORK,
+    ABOUT
 }
 
 /**
@@ -128,7 +129,11 @@ fun ProfileScreen(
     }
 
     BackHandler(enabled = currentPage != ProfilePage.MAIN) {
-        currentPage = if (currentPage == ProfilePage.NETWORK) ProfilePage.SETTINGS else ProfilePage.MAIN
+        currentPage = if (currentPage in setOf(
+                ProfilePage.NETWORK,
+                ProfilePage.ABOUT
+            )
+        ) ProfilePage.SETTINGS else ProfilePage.MAIN
     }
 
     when (currentPage) {
@@ -169,10 +174,15 @@ fun ProfileScreen(
 
         ProfilePage.SETTINGS -> SettingsScreen(
             onNavigateBack = { currentPage = ProfilePage.MAIN },
-            onNavigateToNetwork = { currentPage = ProfilePage.NETWORK }
+            onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
+            onNavigateToAbout = { currentPage = ProfilePage.ABOUT }
         )
 
-        ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = { currentPage = ProfilePage.SETTINGS })
+        ProfilePage.ABOUT -> AboutScreen(onNavigateBack = { currentPage = ProfilePage.SETTINGS })
+
+        ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = {
+            currentPage = ProfilePage.SETTINGS
+        })
 
         ProfilePage.BLACKLIST -> ThemeBlacklistPage(
             uiState = uiState,

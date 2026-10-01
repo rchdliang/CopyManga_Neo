@@ -17,6 +17,12 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindSettingsBackupRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.SettingsBackupRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.SettingsBackupRepository
+
+    @Binds
+    @Singleton
     abstract fun bindNetworkLogRepository(
         implementation: com.rchdliang.copymanga_neo.data.local.LocalNetworkLogStore
     ): com.rchdliang.copymanga_neo.domain.repository.NetworkLogRepository
@@ -38,6 +44,7 @@ abstract class RepositoryModule {
     abstract fun bindNetworkSettingsRepository(
         implementation: com.rchdliang.copymanga_neo.data.repository.NetworkSettingsRepositoryImpl
     ): com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
+
     @Binds
     @Singleton
     abstract fun bindRiskControlRepository(
@@ -68,7 +75,7 @@ abstract class RepositoryModule {
         implementation: ThemeBlacklistRepositoryImpl
     ): ThemeBlacklistRepository
 
-    
+
     @Binds
     @Singleton
     abstract fun bindMangaRepository(

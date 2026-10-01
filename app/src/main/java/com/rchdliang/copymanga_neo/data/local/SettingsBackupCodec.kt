@@ -1,0 +1,65 @@
+package com.rchdliang.copymanga_neo.data.local
+
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.rchdliang.copymanga_neo.domain.model.AppSettings
+import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
+import com.rchdliang.copymanga_neo.domain.model.HomeRankPreferences
+import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
+import com.rchdliang.copymanga_neo.domain.model.SettingsBackup
+
+/** 先校验完整文件，再允许写入；拒绝未知版本、缺失字段与非法枚举。 */
+internal object SettingsBackupCodec {
+    const val MAX_BYTES = 64 * 1024
+    fun encode(value: SettingsBackup): String = JsonObject().apply {
+        addProperty("format", "copymanga-neo-settings")
+        addProperty("version", 1)
+        add("settings", JsonObject().apply {
+            addProperty("themeMode", value.settings.themeMode.name)
+            addProperty("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
+        })
+        add("readerDefaults", JsonObject().apply {
+            addProperty("readingDirection", value.readerDefaults.readingDirection)
+            addProperty("pageScale", value.readerDefaults.pageScale)
+            addProperty("screenOrientation", value.readerDefaults.screenOrientation)
+        })
+        add("homeRank", JsonObject().apply {
+            addProperty("audience", value.homeRank.audience)
+            addProperty("period", value.homeRank.period)
+        })
+    }.toString()
+
+    fun decode(serialized: String): SettingsBackup {
+        require(serialized.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "设置文件过大" }
+        val root = JsonParser.parseString(serialized).asJsonObject
+        require(root.string("format") == "copymanga-neo-settings") { "不是软件设置备份" }
+        val version = root.get("version")
+        require(
+            version?.isJsonPrimitive == true && version.asJsonPrimitive.isNumber &&
+                    version.asString == "1"
+        ) { "不支持的备份版本" }
+        val settings = root.getAsJsonObject("settings")
+        val wifiOnly = settings.get("wifiOnlyDownloads")
+        require(wifiOnly?.isJsonPrimitive == true && wifiOnly.asJsonPrimitive.isBoolean)
+        val reader = root.getAsJsonObject("readerDefaults")
+        val defaults = ReaderPreferences(
+            reader.string("readingDirection"),
+            reader.string("pageScale"),
+            reader.string("screenOrientation")
+        )
+        require(defaults == defaults.normalized()) { "阅读设置无效" }
+        val rank = root.getAsJsonObject("homeRank")
+        val homeRank = HomeRankPreferences(rank.string("audience"), rank.string("period"))
+        require(homeRank == homeRank.normalized()) { "排行榜设置无效" }
+        return SettingsBackup(
+            AppSettings(AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean),
+            defaults, homeRank
+        )
+    }
+
+    private fun JsonObject.string(key: String): String {
+        val value = get(key)
+        require(value?.isJsonPrimitive == true && value.asJsonPrimitive.isString) { "备份缺少有效字段" }
+        return value.asString
+    }
+}
