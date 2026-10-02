@@ -233,10 +233,15 @@ fun CopyManga_NeoApp(
     onDownloadsOpened: () -> Unit = {}
 ) {
     val navController = rememberNavController()
+    var mainDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
     val downloads by mainViewModel.downloadProgress.collectAsStateWithLifecycle()
     DownloadNotificationPermission(hasDownloads = downloads.isNotEmpty())
     LaunchedEffect(openDownloads) {
-        if (openDownloads) navController.popBackStack(Screen.Main.route, inclusive = false)
+        if (openDownloads) {
+            mainDestination = AppDestinations.DOWNLOADS
+            navController.popBackStack(Screen.Main.route, inclusive = false)
+            onDownloadsOpened()
+        }
     }
     val comicSharedTransitionState = rememberComicSharedTransitionState()
     val density = LocalDensity.current
@@ -283,8 +288,8 @@ fun CopyManga_NeoApp(
                                 val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
                                 val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
                                 MainScreen(
-                                    openDownloads = openDownloads,
-                                    onDownloadsOpened = onDownloadsOpened,
+                                    currentDestination = mainDestination,
+                                    onDestinationSelected = { mainDestination = it },
                                     isLoggedIn = isLoggedIn,
                                     avatar = avatar,
                                     onNavigateToDetail = { pathWord ->
@@ -418,7 +423,13 @@ fun CopyManga_NeoApp(
                                         )
                                     },
                                     onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToProfile = { navController.popBackStack() },
+                                    onNavigateToProfile = {
+                                        mainDestination = AppDestinations.PROFILE
+                                        navController.popBackStack(
+                                            Screen.Main.route,
+                                            inclusive = false
+                                        )
+                                    },
                                     onThemeClick = { theme ->
                                         navController.navigate(Screen.Search.createRoute(theme))
                                     }
@@ -469,9 +480,9 @@ fun MainScreen(
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit,
     onNavigateToTopic: (String, String) -> Unit,
-    favoritesViewModel: FavoritesViewModel = hiltViewModel(),
-    openDownloads: Boolean = false,
-    onDownloadsOpened: () -> Unit = {}
+    currentDestination: AppDestinations,
+    onDestinationSelected: (AppDestinations) -> Unit,
+    favoritesViewModel: FavoritesViewModel = hiltViewModel()
 ) {
     // 主界面创建共享书架状态，登录后即可在导航栏提示更新。
     val favoritesState by favoritesViewModel.uiState.collectAsStateWithLifecycle()
@@ -479,23 +490,15 @@ fun MainScreen(
         favoritesViewModel.onMainScreenResumed()
     }
     android.util.Log.d("MainScreen", "Recompose: isLoggedIn=$isLoggedIn")
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
-    LaunchedEffect(openDownloads) {
-        if (openDownloads) {
-            currentDestination = AppDestinations.DOWNLOADS
-            onDownloadsOpened()
-        }
-    }
-
     fun animateToDestination(destination: AppDestinations) {
         // 书架自行呈现登录状态；顶层导航不能用冷启动期间的瞬时 false 将用户改道到“我的”。
-        currentDestination = destination
+        onDestinationSelected(destination)
     }
 
     BackHandler(
         enabled = currentDestination != AppDestinations.HOME
     ) {
-        currentDestination = AppDestinations.HOME
+        onDestinationSelected(AppDestinations.HOME)
     }
 
     val density = LocalDensity.current
@@ -515,7 +518,7 @@ fun MainScreen(
             onNavigateToSearch = onNavigateToSearch,
             onNavigateToExplore = onNavigateToExplore,
             onNavigateToTopic = onNavigateToTopic,
-            onNavigateToProfile = { currentDestination = AppDestinations.PROFILE }
+            onNavigateToProfile = { onDestinationSelected(AppDestinations.PROFILE) }
         )
     } else {
         NavigationSuiteScaffold(
@@ -559,8 +562,8 @@ fun MainScreen(
                     onNavigateToSearch = onNavigateToSearch,
                     onNavigateToExplore = onNavigateToExplore,
                     onNavigateToTopic = onNavigateToTopic,
-                    onNavigateToProfile = { currentDestination = AppDestinations.PROFILE },
-                    onNavigateToDownloads = { currentDestination = AppDestinations.DOWNLOADS }
+                    onNavigateToProfile = { onDestinationSelected(AppDestinations.PROFILE) },
+                    onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
                 )
             }
         }

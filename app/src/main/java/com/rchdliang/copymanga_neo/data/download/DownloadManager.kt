@@ -9,6 +9,7 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException as SiteRiskControlException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -730,6 +731,9 @@ class DownloadManager internal constructor(
                         speedBytesPerSecond = 0L
                     )
                 }
+            } catch (e: SiteRiskControlException) {
+                Log.w(TAG, "下载章节触发站点风控: ${chapterItem.chapter.name}", e)
+                handleRiskControl(comicPathWord, chapterItem, e.reason)
             } catch (e: RiskControlException) {
                 Log.w(TAG, "下载章节触发风控: ${chapterItem.chapter.name}", e)
                 handleRiskControl(
@@ -808,7 +812,7 @@ class DownloadManager internal constructor(
                 mangaRepository.getChapterContent(
                     comicPathWord, chapter.uuid,
                     chapter.groupPathWord ?: "default"
-                ).getOrNull()
+                ).fold(onSuccess = { it }, onFailure = { throw it })
             }
             val restricted =
                 networkPolicy?.let { policy -> async { policy.state.first { !it.allowed } } }
@@ -985,6 +989,8 @@ class DownloadManager internal constructor(
         message: String
     ) {
         stateMutex.withLock {
+            val task = currentTasks[comicPathWord] ?: return
+            if (task.chapters.none { it.chapter.uuid == chapterItem.chapter.uuid }) return
             pausedComics = pausedComics + comicPathWord
         }
         markChapterError(comicPathWord, chapterItem, message)

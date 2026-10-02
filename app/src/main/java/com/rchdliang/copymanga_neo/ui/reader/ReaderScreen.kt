@@ -348,6 +348,7 @@ fun ReaderSuccessContent(
     var anchor by rememberSaveable { mutableStateOf<String?>(null) }
     var anchorChapter by rememberSaveable { mutableStateOf<String?>(null) }
     var anchorPage by rememberSaveable { mutableIntStateOf(0) }
+    var anchorScrollOffset by rememberSaveable { mutableIntStateOf(0) }
     var previousContinuous by remember { mutableStateOf(isContinuous) }
     var showControls by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -385,12 +386,9 @@ fun ReaderSuccessContent(
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
     LaunchedEffect(pages, isContinuous) {
         if (pages.isEmpty()) return@LaunchedEffect
-        val target = anchor?.let { key -> pages.indexOfFirst { it.key == key }.takeIf { it >= 0 } }
-            ?: pages.indexOfFirst { it.chapterUuid == anchorChapter && it.page == anchorPage && it.source != null }
-                .takeIf { it >= 0 }
-            ?: initial
+        val target = resolveReaderPageIndex(pages, anchor, anchorChapter, anchorPage, initial)
         val offset =
-            if (isContinuous && previousContinuous) list.firstVisibleItemScrollOffset else 0
+            if (isContinuous && previousContinuous) anchorScrollOffset else 0
         previousContinuous = isContinuous
         if (isContinuous) list.scrollToItem(
             target.coerceIn(pages.indices),
@@ -400,11 +398,14 @@ fun ReaderSuccessContent(
         )
         pendingInitialPage.value = null
         // 先恢复位置再观察可见页，避免移除评论页时把旧索引误认作下一章。
-        snapshotFlow { visibleIndex }.collect { index ->
+        snapshotFlow {
+            visibleIndex to if (isContinuous) list.firstVisibleItemScrollOffset else 0
+        }.collect { (index, scrollOffset) ->
             pages.getOrNull(index)?.let {
                 anchor = it.key
                 anchorChapter = it.chapterUuid
                 anchorPage = it.page
+                anchorScrollOffset = scrollOffset
                 onActivateChapter(it.chapterUuid)
                 if (!dragging) sliderPreview = it.page.toFloat()
                 if (it.source == null) automatic = false
@@ -485,6 +486,7 @@ fun ReaderSuccessContent(
     LaunchedEffect(
         page?.key,
         chapters.lastOrNull()?.uuid,
+        chapters.lastOrNull()?.content?.nextUuid,
         tools.continuousChapters,
         tools.preloadPages
     ) {

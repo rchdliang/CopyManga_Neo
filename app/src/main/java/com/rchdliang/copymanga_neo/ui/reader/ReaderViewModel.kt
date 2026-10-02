@@ -12,6 +12,7 @@ import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,7 @@ class ReaderViewModel @Inject constructor(
     val appending = mutableAppending.asStateFlow()
     private var chain = emptyList<ReaderSessionChapter>()
     private var appendJob: Job? = null
+    private val navigationJobs = mutableMapOf<String, Job>()
     private var policyJob: Job? = null
     private var attemptedNext: String? = null
     private var sessionRevision = 0L
@@ -102,7 +104,15 @@ class ReaderViewModel @Inject constructor(
         loadChapter(comicPathWord, initialChapterPathWord, groupPathWord)
     }
 
-    fun loadChapter(comicPathWord: String, chapterUuid: String, group: String = "default") {
+    fun loadChapter(
+        comicPathWord: String,
+        chapterUuid: String,
+        group: String = "default",
+        preserveContent: Boolean = false
+    ) {
+        // 刷新保留同一阅读会话，页码和连续滚动偏移仍由已存在的界面状态维护。
+        val keepContent = preserveContent && currentComicPathWord == comicPathWord &&
+                currentChapterUuid == chapterUuid && _uiState.value is ReaderUiState.Success
         if (preferencesComic != comicPathWord) {
             preferencesJob?.cancel()
             preferencesJob = null
@@ -113,14 +123,22 @@ class ReaderViewModel @Inject constructor(
         currentChapterUuid = chapterUuid
         currentGroup = group
         appendJob?.cancel()
+        if (keepContent) {
+            // 同一会话内刷新一章，不打断其他已追加章节尚未完成的在线导航。
+            navigationJobs.remove(chapterUuid)?.cancel()
+        } else {
+            navigationJobs.values.toList().forEach { it.cancel() }
+            navigationJobs.clear()
+            sessionRevision++
+            chain = emptyList()
+        }
         mutableAppending.value = false
         attemptedNext = null
-        sessionRevision++
-        chain = emptyList()
+        val revision = sessionRevision
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch(exceptionHandler) {
-            _uiState.value = ReaderUiState.Loading
+            if (!keepContent) _uiState.value = ReaderUiState.Loading
 
             try {
                 val progressOwner = readingProgress.awaitOwner()
@@ -128,7 +146,9 @@ class ReaderViewModel @Inject constructor(
                 prefs.initializeComic(comicPathWord).fold(
                     onSuccess = { ensureActive(); mutablePreferences.value = it },
                     onFailure = {
-                        _uiState.value = ReaderUiState.Error("无法读取阅读设置：${it.message}")
+                        ensureActive()
+                        if (it is CancellationException) throw it
+                        loadFailed("无法读取阅读设置：${it.message}", keepContent)
                         return@launch
                     }
                 )
@@ -144,39 +164,19 @@ class ReaderViewModel @Inject constructor(
                 val downloadedChapter = downloadRepository.getDownloadedChapter(chapterUuid)
                 if (downloadedChapter != null && downloadedChapter.comicPathWord == comicPathWord) {
                     val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
+                    ensureActive()
                     val localContent = downloadedChapter.offlineContent(allChapters)
                     publish(localContent, chapterUuid, downloadedChapter.groupPathWord ?: group)
                     val resolvedGroup = downloadedChapter.groupPathWord ?: group
-                    currentGroup = resolvedGroup
-                    readingProgress.recordRead(
-                        progressOwner, comicPathWord, chapterUuid,
-                        localContent.chapterName, resolvedGroup
-                    )
-                    // 图片立即离线展示；目录刷新失败不影响当前章节阅读。
-                    repository.getChapterInfo(comicPathWord, chapterUuid, resolvedGroup).fold(
-                        onSuccess = { chapter ->
-                            ensureActive()
-                            publish(
-                                localContent.copy(
-                                    prevUuid = chapter.prevChapter,
-                                    nextUuid = chapter.nextChapter,
-                                    chapterName = chapter.name
-                                ), chapterUuid, resolvedGroup
-                            )
-                            try {
-                                downloadRepository.updateChapterMetadata(
-                                    comicPathWord, resolvedGroup, listOf(chapter)
-                                )
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                android.util.Log.w("ReaderViewModel", "保存章节导航失败", e)
-                            }
-                        },
-                        onFailure = { error ->
-                            if (error is CancellationException) throw error
-                            android.util.Log.d("ReaderViewModel", "目录刷新失败，使用离线导航")
-                        }
+                    if (currentChapterUuid == chapterUuid) {
+                        currentGroup = resolvedGroup
+                        readingProgress.recordRead(
+                            progressOwner, comicPathWord, chapterUuid,
+                            localContent.chapterName, resolvedGroup
+                        )
+                    }
+                    refreshDownloadedNavigation(
+                        comicPathWord, chapterUuid, resolvedGroup, revision
                     )
                     return@launch
                 }
@@ -185,28 +185,80 @@ class ReaderViewModel @Inject constructor(
                     .onSuccess { content ->
                         ensureActive()
                         publish(content, chapterUuid, group)
-                        if (content.imageUrls.isNotEmpty()) readingProgress.recordRead(
+                        if (content.imageUrls.isNotEmpty() && currentChapterUuid == chapterUuid) readingProgress.recordRead(
                             progressOwner,
                             comicPathWord, chapterUuid, content.chapterName, group
                         )
                     }
                     .onFailure { error ->
-                        val message = error.message ?: "未知错误"
-                        if (message == "contentKey为空" || message.startsWith("code 210:")) {
-                            _uiState.value = ReaderUiState.RiskControl(message)
-                        } else {
-                            _uiState.value = ReaderUiState.Error(message)
-                            _toastMessage.value = message
-                        }
+                        ensureActive()
+                        if (error is CancellationException) throw error
+                        loadFailed(error.message ?: "未知错误", keepContent)
                     }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ReaderViewModel", "loadChapter failed", e)
-                _uiState.value = ReaderUiState.Error(e.message ?: "未知错误")
-                _toastMessage.value = e.message ?: "加载失败"
+                ensureActive()
+                loadFailed(e.message ?: "加载失败", keepContent)
             }
         }
+    }
+
+    private fun loadFailed(message: String, keepContent: Boolean) {
+        if (keepContent) {
+            _toastMessage.value = "刷新失败：$message"
+        } else if (message == "contentKey为空" || message.startsWith("code 210:")) {
+            _uiState.value = ReaderUiState.RiskControl(message)
+        } else {
+            _uiState.value = ReaderUiState.Error(message)
+            _toastMessage.value = message
+        }
+    }
+
+    /** 本地图像先展示，再补齐在线导航；迟到的目录不能写回已切换的阅读会话。 */
+    private fun refreshDownloadedNavigation(
+        comic: String, uuid: String, group: String, revision: Long
+    ) {
+        navigationJobs.remove(uuid)?.cancel()
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val result = repository.getChapterInfo(comic, uuid, group)
+                ensureActive()
+                if (revision != sessionRevision || comic != currentComicPathWord) return@launch
+                result.fold(
+                    onSuccess = { chapter ->
+                        val entry = chain.firstOrNull { it.uuid == uuid } ?: return@fold
+                        publish(
+                            entry.content.copy(
+                                prevUuid = chapter.prevChapter,
+                                nextUuid = chapter.nextChapter,
+                                chapterName = chapter.name
+                            ), uuid, group
+                        )
+                        try {
+                            downloadRepository.updateChapterMetadata(comic, group, listOf(chapter))
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            android.util.Log.w("ReaderViewModel", "保存章节导航失败", error)
+                        }
+                    },
+                    onFailure = { error ->
+                        if (error is CancellationException) throw error
+                        android.util.Log.d("ReaderViewModel", "目录刷新失败，使用离线导航")
+                    }
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                android.util.Log.w("ReaderViewModel", "目录刷新失败，使用离线导航", error)
+            } finally {
+                if (navigationJobs[uuid] === coroutineContext[Job]) navigationJobs.remove(uuid)
+            }
+        }
+        navigationJobs[uuid] = job
+        job.start()
     }
 
     fun loadPrevChapter() {
@@ -279,6 +331,9 @@ class ReaderViewModel @Inject constructor(
                         chain = chain + ReaderSessionChapter(next, group, content)
                         val active = chain.firstOrNull { it.uuid == currentChapterUuid } ?: last
                         _uiState.value = ReaderUiState.Success(active.content, active.uuid, chain)
+                        if (downloaded?.comicPathWord == comic) {
+                            refreshDownloadedNavigation(comic, next, group, revision)
+                        }
                     },
                     onFailure = { _toastMessage.value = "下一章未加载，可在章末重试" }
                 )
@@ -389,7 +444,7 @@ class ReaderViewModel @Inject constructor(
     fun refreshCurrentChapter() {
         val comic = currentComicPathWord.ifEmpty { return }
         val chapter = currentChapterUuid.ifEmpty { return }
-        loadChapter(comic, chapter, currentGroup.ifEmpty { "default" })
+        loadChapter(comic, chapter, currentGroup.ifEmpty { "default" }, preserveContent = true)
     }
 
     fun setReadingDirection(value: String) {

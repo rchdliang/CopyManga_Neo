@@ -44,7 +44,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.comic.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -58,7 +58,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.comic.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total)
         )
     }
 
@@ -69,7 +69,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.comic.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -80,7 +80,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -91,7 +91,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicTopicPage(
             page.list.map { ComicTopic(it.pathWord, it.title, it.cover, it.brief) },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -110,7 +110,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -145,7 +145,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.toSummary() },
-            nextOffset(page.offset, page.list.size, page.total)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
         )
     }
 
@@ -175,6 +175,19 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         return value ?: throw IllegalStateException("接口没有返回列表数据")
     }
 
-    private fun nextOffset(offset: Int, count: Int, total: Int): Int? =
-        (offset + count).takeIf { count > 0 && it < total }
+    /** 有 limit 的响应按服务端分页窗口推进，避免过滤后的短页重复请求。 */
+    private fun nextOffset(
+        requestedOffset: Int,
+        offset: Int,
+        count: Int,
+        total: Int,
+        windowSize: Int = count
+    ): Int? {
+        check(offset == requestedOffset) { "分页位置与请求不一致，请重试" }
+        if (count == 0) return null
+        check(windowSize > 0) { "分页跨度无效，请重试" }
+        val next = offset.toLong() + windowSize
+        check(next > requestedOffset && next <= Int.MAX_VALUE) { "分页位置无效，请重试" }
+        return next.toInt().takeIf { it < total }
+    }
 }

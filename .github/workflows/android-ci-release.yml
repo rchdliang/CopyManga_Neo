@@ -42,13 +42,13 @@ jobs:
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v6
         with:
-          name: android-debug-apk
+          name: CopyManga_Neo-${{ github.sha }}-debug-apk
           path: |
             **/build/outputs/apk/**/debug/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
 
     steps:
@@ -59,6 +59,7 @@ jobs:
           fetch-tags: true
 
       - name: Prepare release notes
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
@@ -108,13 +109,14 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v6
         with:
-          name: CopyManga_Neo-${{ github.ref_name }}-android-release-apk
+          name: CopyManga_Neo-${{ github.sha }}-release-apk
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/*/release/*.apk
           if-no-files-found: error
 
       - name: Rename APK
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
           set -euo pipefail
           apk="$(find app/build/outputs/apk -path "*/release/*.apk" -type f | head -n 1)"
@@ -122,6 +124,7 @@ jobs:
           cp "$apk" "CopyManga_Neo_${GITHUB_REF_NAME}.apk"
 
       - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: CopyManga_Neo_${{ github.ref_name }}.apk
