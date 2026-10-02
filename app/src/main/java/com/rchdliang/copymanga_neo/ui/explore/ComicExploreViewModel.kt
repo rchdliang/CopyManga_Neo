@@ -46,6 +46,7 @@ data class ComicExploreUiState(
     val ordering: String = "-datetime_updated",
     val nextOffset: Int? = null,
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: String? = null,
     val filterError: String? = null
@@ -77,6 +78,7 @@ class ComicExploreViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isLoading = false,
+                isRefreshing = false,
                 isLoadingMore = false,
                 error = error.message ?: "加载失败"
             )
@@ -161,11 +163,24 @@ class ComicExploreViewModel @Inject constructor(
     }
 
     fun refresh() {
+        refreshContent(keepContent = false)
+    }
+
+    /** 下拉刷新保留当前内容，完成后再替换首屏数据。 */
+    fun pullToRefresh() {
+        if (_uiState.value.isLoading) return
+        refreshContent(keepContent = true)
+    }
+
+    private fun refreshContent(keepContent: Boolean) {
         loadJob?.cancel()
         _uiState.update {
             it.copy(
-                comics = emptyList(), topics = emptyList(), nextOffset = null,
-                isLoading = true, isLoadingMore = false, error = null
+                comics = if (keepContent) it.comics else emptyList(),
+                topics = if (keepContent) it.topics else emptyList(),
+                nextOffset = null,
+                isLoading = true, isRefreshing = keepContent,
+                isLoadingMore = false, error = null
             )
         }
         loadJob = viewModelScope.launch(exceptionHandler) {
@@ -211,6 +226,7 @@ class ComicExploreViewModel @Inject constructor(
                             topics = (if (append) it.topics + page.topics else page.topics).distinctBy { topic -> topic.pathWord },
                             nextOffset = page.nextOffset?.takeIf { next -> next > offset },
                             isLoading = false,
+                            isRefreshing = false,
                             isLoadingMore = false,
                             error = null
                         )
@@ -241,6 +257,7 @@ class ComicExploreViewModel @Inject constructor(
                         comics = (if (append) it.comics + page.comics else page.comics).distinctBy { comic -> comic.pathWord },
                         nextOffset = page.nextOffset?.takeIf { next -> next > offset },
                         isLoading = false,
+                        isRefreshing = false,
                         isLoadingMore = false,
                         error = null
                     )
@@ -253,7 +270,7 @@ class ComicExploreViewModel @Inject constructor(
     private fun publishError(error: Throwable, append: Boolean) {
         _uiState.update {
             it.copy(
-                isLoading = false, isLoadingMore = false,
+                isLoading = false, isRefreshing = false, isLoadingMore = false,
                 error = error.message ?: if (append) "加载更多失败" else "加载失败"
             )
         }

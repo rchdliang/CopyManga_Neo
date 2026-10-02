@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -27,6 +29,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -98,6 +102,7 @@ internal fun HistoryContent(
     onDismissClear: () -> Unit,
     onConfirmClear: () -> Unit
 ) {
+    val pullState = rememberPullToRefreshState()
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("浏览记录", color = MaterialTheme.colorScheme.onSurface) },
@@ -123,10 +128,20 @@ internal fun HistoryContent(
         )
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
-            onRefresh = { if (!uiState.isClearing) onRefresh() },
+            onRefresh = {
+                if (uiState.isLoggedIn && !uiState.isClearing && !uiState.isRefreshing) onRefresh()
+            },
+            state = pullState,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
+                .fillMaxWidth(),
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullState,
+                    isRefreshing = uiState.isRefreshing,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            }
         ) {
             when {
                 uiState.isCheckingLogin || (uiState.isRefreshing && uiState.items.isEmpty()) -> {
@@ -143,7 +158,7 @@ internal fun HistoryContent(
                     HistoryMessage(uiState.error, "重试", onRefresh)
                 }
 
-                uiState.items.isEmpty() -> HistoryMessage("暂无浏览记录", "刷新", onRefresh)
+                uiState.items.isEmpty() -> HistoryMessage("暂无浏览记录，下拉刷新")
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -225,10 +240,11 @@ internal fun HistoryContent(
 }
 
 @Composable
-private fun HistoryMessage(message: String, action: String, onAction: () -> Unit) {
+private fun HistoryMessage(message: String, action: String? = null, onAction: () -> Unit = {}) {
     Box(
         Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp), contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -237,7 +253,7 @@ private fun HistoryMessage(message: String, action: String, onAction: () -> Unit
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
-            TextButton(onClick = onAction) {
+            if (action != null) TextButton(onClick = onAction) {
                 Text(
                     action,
                     color = MaterialTheme.colorScheme.primary

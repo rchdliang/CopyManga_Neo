@@ -7,9 +7,15 @@ data class ComicTopic(
     val cover: String?,
     val brief: String?
 ) {
-    /** 移除专题接口附加的缩略图后缀，保留查询参数和片段。 */
+    /** 仅移除原图扩展名之后的缩略图后缀，保留原图扩展名、查询参数和片段。 */
     val fullResolutionCover: String?
-        get() = cover?.replace(Regex("\\.200x80\\.jpg(?=[?#]|$)"), "")
+        get() = cover?.replace(
+            Regex(
+                "(\\.(?:jpg|jpeg|png|webp))\\.\\d+x\\d+\\.(?:jpg|jpeg|png|webp)(?=[?#]|$)",
+                RegexOption.IGNORE_CASE
+            ),
+            "$1"
+        )
 }
 
 /** 专题分页。 */

@@ -32,7 +32,9 @@ data class CommentFeed(
     val nextOffset: Int? = null,
     val loading: Boolean = false,
     val error: String? = null,
-    val totalExact: Boolean = true
+    val totalExact: Boolean = true,
+    val refreshing: Boolean = false,
+    val refreshFailed: Boolean = false
 )
 
 data class CommentsUiState(
@@ -85,7 +87,7 @@ class CommentsViewModel @Inject constructor(
                 reporting = false,
                 reportLoading = false,
                 reportError = if (it.reportTarget != null) "举报操作失败，请重试" else it.reportError,
-                feed = it.feed.copy(loading = false),
+                feed = it.feed.copy(loading = false, refreshing = false),
                 message = "评论操作失败，请重试"
             )
         }
@@ -355,7 +357,7 @@ class CommentsViewModel @Inject constructor(
         if (current.posting || current.target?.kind != CommentKind.COMIC) return
         if (current.parent == null) {
             saveDraft()
-            rootFeed = current.feed.copy(loading = false)
+            rootFeed = current.feed.copy(loading = false, refreshing = false)
             readJob?.cancel()
             revision++
             state.update {
@@ -386,16 +388,27 @@ class CommentsViewModel @Inject constructor(
         }
     }
 
-    fun load(refresh: Boolean) {
+    fun load(refresh: Boolean, fromPullToRefresh: Boolean = false) {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || (!refresh && current.feed.loading)) return
+        if (current.posting || current.reporting ||
+            ((!refresh || fromPullToRefresh) && current.feed.loading)
+        ) return
         val offset = if (refresh) 0 else current.feed.nextOffset ?: return
         readJob?.cancel()
         val requestRevision = ++revision
         val parentId = current.parent?.id
         if (refresh && parentId == null) invalidatePreviews()
-        state.update { it.copy(feed = it.feed.copy(loading = true, error = null)) }
+        state.update {
+            it.copy(
+                feed = it.feed.copy(
+                    loading = true,
+                    refreshing = fromPullToRefresh,
+                    refreshFailed = false,
+                    error = null
+                )
+            )
+        }
         readJob = viewModelScope.launch(handler) {
             repository.getComments(target, offset, parentId).fold(
                 onSuccess = { page ->
@@ -434,6 +447,8 @@ class CommentsViewModel @Inject constructor(
                             postingAllowed = it.postingAllowed && error !is CommentClosedException,
                             feed = it.feed.copy(
                                 loading = false,
+                                refreshing = false,
+                                refreshFailed = refresh,
                                 error = error.message ?: "评论加载失败"
                             )
                         )

@@ -9,12 +9,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
-import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /** 专题卡片独立预览，使用本地横幅资源。 */
@@ -47,11 +44,9 @@ fun TopicCard(topic: ComicTopic, onClick: () -> Unit, modifier: Modifier = Modif
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
         Column {
-            PreviewAwareAsyncImage(
-                model = topic.fullResolutionCover,
-                previewDrawable = R.drawable.preview_topic_banner,
+            TopicCoverImage(
+                topic = topic,
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1920f / 412f)

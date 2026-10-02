@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,6 +36,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -129,6 +133,7 @@ internal fun AboutScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun AboutPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
@@ -155,92 +160,100 @@ internal fun AboutPage(
             },
             windowInsets = WindowInsets(0, 0, 0, 0)
         )
-        BoxWithConstraints(
-            Modifier
+        val pullState = rememberPullToRefreshState()
+        PullToRefreshBox(
+            isRefreshing = state.storageLoading,
+            onRefresh = { if (!state.storageLoading && !state.clearingCache) onRefreshStorage() },
+            state = pullState,
+            modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            val identity: @Composable () -> Unit = { AppIdentityCard() }
-            val tools: @Composable () -> Unit = {
-                Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AboutSectionTitle("存储", Modifier.weight(1f))
-                        TextButton(
-                            onClick = onRefreshStorage,
-                            enabled = !state.storageLoading && !state.clearingCache
-                        ) {
-                            Text("刷新", color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    ProfileListItem(
-                        Icons.Outlined.DeleteSweep, "清理图片缓存",
-                        if (state.clearingCache) "正在清理" else "$cache · 保留已下载漫画",
-                        index = 0, count = 1,
-                        enabled = !state.clearingCache && !state.storageLoading && state.storageUsage != null,
-                        onClick = { confirmClear = true },
-                        trailingContent = { AboutChevron() }
-                    )
-                    state.storageError?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                    AboutSectionTitle("软件设置")
-                    Text(
-                        "备份主题、下载偏好、全局阅读默认值和首页排行榜偏好。",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    ProfileListItem(
-                        Icons.Outlined.FileUpload,
-                        "导出软件设置",
-                        "保存为文件，便于备份与迁移",
-                        index = 0,
-                        count = 2,
-                        enabled = !backupBusy && !state.isLoading && !state.isSaving,
-                        onClick = onExport,
-                        trailingContent = { AboutChevron() }
-                    )
-                    ProfileListItem(
-                        Icons.Outlined.FileDownload,
-                        "导入软件设置",
-                        "从备份文件恢复设置",
-                        index = 1,
-                        count = 2,
-                        enabled = !backupBusy && !state.isLoading && !state.isSaving,
-                        onClick = onImport,
-                        trailingContent = { AboutChevron() }
-                    )
-                    AboutSectionTitle("日志")
-                    logsContent()
-                }
+                .fillMaxWidth(),
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullState,
+                    isRefreshing = state.storageLoading,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
             }
-            if (maxWidth >= 840.dp) {
-                Row(
-                    Modifier
-                        .widthIn(max = 1040.dp)
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    Box(Modifier.weight(0.85f)) { identity() }
-                    Box(Modifier.weight(1.15f)) { tools() }
+        ) {
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                val identity: @Composable () -> Unit = { AppIdentityCard() }
+                val tools: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+                        AboutSectionTitle("存储")
+                        ProfileListItem(
+                            Icons.Outlined.DeleteSweep, "清理图片缓存",
+                            if (state.clearingCache) "正在清理" else "$cache · 保留已下载漫画",
+                            index = 0, count = 1,
+                            enabled = !state.clearingCache && !state.storageLoading && state.storageUsage != null,
+                            onClick = { confirmClear = true },
+                            trailingContent = { AboutChevron() }
+                        )
+                        state.storageError?.let {
+                            Text(
+                                it,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                        AboutSectionTitle("软件设置")
+                        Text(
+                            "备份主题、下载偏好、全局阅读默认值和首页排行榜偏好。",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        ProfileListItem(
+                            Icons.Outlined.FileUpload,
+                            "导出软件设置",
+                            "保存为文件，便于备份与迁移",
+                            index = 0,
+                            count = 2,
+                            enabled = !backupBusy && !state.isLoading && !state.isSaving,
+                            onClick = onExport,
+                            trailingContent = { AboutChevron() }
+                        )
+                        ProfileListItem(
+                            Icons.Outlined.FileDownload,
+                            "导入软件设置",
+                            "从备份文件恢复设置",
+                            index = 1,
+                            count = 2,
+                            enabled = !backupBusy && !state.isLoading && !state.isSaving,
+                            onClick = onImport,
+                            trailingContent = { AboutChevron() }
+                        )
+                        AboutSectionTitle("日志")
+                        logsContent()
+                    }
                 }
-            } else {
-                Column(
-                    Modifier
-                        .widthIn(max = 600.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    identity()
-                    tools()
+                if (maxWidth >= 840.dp) {
+                    Row(
+                        Modifier
+                            .widthIn(max = 1040.dp)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        Box(Modifier.weight(0.85f)) { identity() }
+                        Box(Modifier.weight(1.15f)) { tools() }
+                    }
+                } else {
+                    Column(
+                        Modifier
+                            .widthIn(max = 600.dp)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        identity()
+                        tools()
+                    }
                 }
             }
         }

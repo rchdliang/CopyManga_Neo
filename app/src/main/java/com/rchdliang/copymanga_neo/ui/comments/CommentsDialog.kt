@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.comments
 
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -42,22 +43,25 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -73,13 +78,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +105,7 @@ import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
@@ -234,8 +240,8 @@ fun CommentsDialog(
             },
             onCloseComposer = closeComposer, onDismiss = dismiss,
             onBackToComments = viewModel::backToComments,
-            onRefresh = { viewModel.load(true) },
-            onRetry = { viewModel.load(refresh = state.feed.items.isEmpty()) },
+            onRefresh = { viewModel.load(refresh = true, fromPullToRefresh = true) },
+            onRetry = { viewModel.load(refresh = state.feed.items.isEmpty() || state.feed.refreshFailed) },
             onRetryPermission = viewModel::retryPermission,
             onLoadReplyPreview = viewModel::loadReplyPreview,
             onShowReplies = viewModel::showReplies,
@@ -280,6 +286,7 @@ fun CommentsDialog(
 }
 
 /** 纯界面组件：运行时与静态 Preview 共用，不创建 ViewModel 或发起网络请求。 */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun CommentsContent(
     target: CommentTarget,
@@ -304,6 +311,7 @@ internal fun CommentsContent(
     onLogin: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val pullState = rememberPullToRefreshState()
     BoxWithConstraints(
         modifier
             .fillMaxSize()
@@ -394,12 +402,6 @@ internal fun CommentsContent(
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    IconButton(
-                        onClick = onRefresh,
-                        enabled = !state.posting && !state.feed.loading
-                    ) {
-                        Icon(Icons.Default.Refresh, "刷新")
-                    }
                     IconButton(onClick = onDismiss, enabled = !state.posting) {
                         Icon(Icons.Default.Close, "关闭")
                     }
@@ -429,108 +431,121 @@ internal fun CommentsContent(
                         .fillMaxWidth()
                 ) {
                     if (state.target != target) {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        LoadingIndicator(Modifier.align(Alignment.Center))
                     } else {
-                        LazyColumn(
-                            state = listState, modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 96.dp)
+                        PullToRefreshBox(
+                            isRefreshing = state.feed.refreshing,
+                            onRefresh = {
+                                if (!state.posting && !state.reporting && !state.feed.loading && !composerOpen) onRefresh()
+                            },
+                            state = pullState,
+                            modifier = Modifier.fillMaxSize(),
+                            indicator = {
+                                PullToRefreshDefaults.LoadingIndicator(
+                                    state = pullState,
+                                    isRefreshing = state.feed.refreshing,
+                                    modifier = Modifier.align(Alignment.TopCenter)
+                                )
+                            }
                         ) {
-                            state.parent?.let { parent ->
-                                item(key = "parent") {
+                            LazyColumn(
+                                state = listState, modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(bottom = 96.dp)
+                            ) {
+                                state.parent?.let { parent ->
+                                    item(key = "parent") {
+                                        CommentCard(
+                                            comment = parent,
+                                            currentTime = currentTime,
+                                            onReport = onReport,
+                                            onReply = if (state.postingAllowed) ({
+                                                onCompose(parent)
+                                            }) else null,
+                                            enabled = !state.posting
+                                        )
+                                        CommentDivider()
+                                        Text(
+                                            if (state.feed.totalExact) "共 ${state.feed.total} 条回复" else "已加载 ${state.feed.items.size} 条回复",
+                                            Modifier.padding(
+                                                start = 68.dp,
+                                                top = 16.dp,
+                                                bottom = 8.dp
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                }
+                                items(state.feed.items, key = { "comment:${it.id}" }) { comment ->
+                                    val preview = state.replyPreviews[comment.id]
+                                    if (state.parent == null && comment.replyCount > 0 && target.kind == CommentKind.COMIC) {
+                                        LaunchedEffect(comment.id, state.previewGeneration) {
+                                            onLoadReplyPreview(comment)
+                                        }
+                                    }
                                     CommentCard(
-                                        comment = parent,
+                                        comment = comment,
                                         currentTime = currentTime,
+                                        previews = preview?.comments.orEmpty(),
+                                        previewTotal = preview?.total,
+                                        threadUsername = state.parent?.username,
                                         onReport = onReport,
-                                        onReply = if (state.postingAllowed) ({
-                                            onCompose(parent)
+                                        onClick = if (state.parent == null && target.kind == CommentKind.COMIC &&
+                                            (preview?.total ?: comment.replyCount) > 0
+                                        ) ({
+                                            onShowReplies(comment)
+                                        }) else null,
+                                        onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
+                                            onCompose(comment)
+                                        }) else null,
+                                        onShowReplies = if (state.parent == null && target.kind == CommentKind.COMIC && preview?.comments?.isNotEmpty() == true) ({
+                                            onShowReplies(comment)
                                         }) else null,
                                         enabled = !state.posting
                                     )
                                     CommentDivider()
-                                    Text(
-                                        if (state.feed.totalExact) "共 ${state.feed.total} 条回复" else "已加载 ${state.feed.items.size} 条回复",
-                                        Modifier.padding(
-                                            start = 68.dp,
-                                            top = 16.dp,
-                                            bottom = 8.dp
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.labelLarge
-                                    )
                                 }
-                            }
-                            items(state.feed.items, key = { "comment:${it.id}" }) { comment ->
-                                val preview = state.replyPreviews[comment.id]
-                                if (state.parent == null && comment.replyCount > 0 && target.kind == CommentKind.COMIC) {
-                                    LaunchedEffect(comment.id, state.previewGeneration) {
-                                        onLoadReplyPreview(comment)
-                                    }
-                                }
-                                CommentCard(
-                                    comment = comment,
-                                    currentTime = currentTime,
-                                    previews = preview?.comments.orEmpty(),
-                                    previewTotal = preview?.total,
-                                    threadUsername = state.parent?.username,
-                                    onReport = onReport,
-                                    onClick = if (state.parent == null && target.kind == CommentKind.COMIC &&
-                                        (preview?.total ?: comment.replyCount) > 0
-                                    ) ({
-                                        onShowReplies(comment)
-                                    }) else null,
-                                    onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
-                                        onCompose(comment)
-                                    }) else null,
-                                    onShowReplies = if (state.parent == null && target.kind == CommentKind.COMIC && preview?.comments?.isNotEmpty() == true) ({
-                                        onShowReplies(comment)
-                                    }) else null,
-                                    enabled = !state.posting
-                                )
-                                CommentDivider()
-                            }
-                            // 固定页脚不能成为首屏或分页加载的滚动锚点。
-                            item(key = "footer:${state.feed.items.size}") {
-                                Column(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    when {
-                                        state.feed.loading -> CircularProgressIndicator(
-                                            Modifier.size(
-                                                28.dp
-                                            )
-                                        )
+                                // 固定页脚不能成为首屏或分页加载的滚动锚点。
+                                item(key = "footer:${state.feed.items.size}") {
+                                    Column(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        when {
+                                            state.feed.refreshing -> Unit
+                                            state.feed.loading -> LoadingIndicator()
 
-                                        state.feed.error != null -> {
-                                            Text(
-                                                state.feed.error.orEmpty(),
-                                                color = MaterialTheme.colorScheme.error
-                                            )
-                                            TextButton(
-                                                onClick = onRetry,
-                                                enabled = !state.posting
-                                            ) {
+                                            state.feed.error != null -> {
                                                 Text(
-                                                    "重试",
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    state.feed.error.orEmpty(),
+                                                    color = MaterialTheme.colorScheme.error
                                                 )
+                                                TextButton(
+                                                    onClick = onRetry,
+                                                    enabled = !state.posting
+                                                ) {
+                                                    Text(
+                                                        "重试",
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
                                             }
+
+                                            state.feed.items.isEmpty() -> Text(
+                                                if (state.parent == null) "还没有评论" else "暂无可见回复",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+
                                         }
-
-                                        state.feed.items.isEmpty() -> Text(
-                                            if (state.parent == null) "还没有评论" else "暂无可见回复",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-
-                                    }
-                                    state.message?.let {
-                                        Text(
-                                            it,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
+                                        state.message?.let {
+                                            Text(
+                                                it,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -620,7 +635,8 @@ private fun CommentCard(
     onReport: (MangaComment) -> Unit = {},
     enabled: Boolean = true
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var menuComment by remember(comment.id) { mutableStateOf<MangaComment?>(null) }
     val longPress: (MangaComment) -> Unit = { menuComment = it }
     Box {
@@ -698,7 +714,13 @@ private fun CommentCard(
             DropdownMenuItem(
                 text = { Text("复制", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
-                    menuComment?.let { clipboard.setText(AnnotatedString(it.content)) }
+                    menuComment?.let { selected ->
+                        scope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(ClipData.newPlainText("评论", selected.content))
+                            )
+                        }
+                    }
                     menuComment = null
                 }
             )
