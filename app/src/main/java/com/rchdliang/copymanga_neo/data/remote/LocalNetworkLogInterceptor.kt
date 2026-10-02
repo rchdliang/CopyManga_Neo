@@ -117,9 +117,9 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
                         bytes,
                         0,
                         minOf(bytes.size, limit),
-                        type?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+                        type.charset(Charsets.UTF_8) ?: Charsets.UTF_8
                     )
-                    if (type?.subtype?.contains("json") == true || body.trimStart()
+                    if (type.subtype.contains("json") || body.trimStart()
                             .startsWith("{")
                     ) {
                         if (truncated) result.addProperty(

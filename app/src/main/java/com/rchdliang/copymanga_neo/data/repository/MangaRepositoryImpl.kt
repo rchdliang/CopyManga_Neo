@@ -39,6 +39,8 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 漫画数据仓库实现
@@ -178,12 +180,12 @@ class MangaRepositoryImpl @Inject constructor(
                     (nextThemeRequestAtNanos - System.nanoTime()).coerceAtLeast(
                         0
                     )
-                )
+                ).milliseconds
             )
             // 等待期间用户可能打开详情并写入了新标签，重新检查以避免重复请求。
             freshThemes()?.let { return@withLock Result.success(it) }
             try {
-                val result = withTimeoutOrNull(8_000) { fetchComicThemes(pathWord) }
+                val result = withTimeoutOrNull(8.seconds) { fetchComicThemes(pathWord) }
                     ?: Result.failure(Exception("标签请求超时"))
                 if (result.isFailure) {
                     themeRetryAfter[pathWord] = System.nanoTime() + TimeUnit.MINUTES.toNanos(15)
@@ -262,9 +264,7 @@ class MangaRepositoryImpl @Inject constructor(
             android.util.Log.d("MangaRepository", "Response body is null: ${body == null}")
 
             val home = body?.results
-            if (home == null) {
-                return@supervisorScope Result.failure(Exception("Response body is null"))
-            }
+                ?: return@supervisorScope Result.failure(Exception("Response body is null"))
 
             val recPage = recResponse?.takeIf { it.isSuccessful && it.body()?.code == 200 }
                 ?.body()?.results ?: home.recComics
@@ -317,7 +317,7 @@ class MangaRepositoryImpl @Inject constructor(
                 val errorMsg = body?.message ?: response.errorBody()?.string()?.let {
                     try {
                         JsonParser.parseString(it).asJsonObject.get("message")?.asString
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         null
                     }
                 } ?: "未知风控原因"
@@ -452,7 +452,7 @@ class MangaRepositoryImpl @Inject constructor(
                 val message = try {
                     val json = JsonParser.parseString(bodyString).asJsonObject
                     json.get("message")?.asString ?: "未知风控原因"
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     bodyString.take(100)
                 }
                 return Result.failure(Exception("code 210: $message"))
@@ -602,11 +602,11 @@ class MangaRepositoryImpl @Inject constructor(
             Result.success(favorites.values.toList())
         } catch (e: CancellationException) {
             throw e
-        } catch (e: java.net.SocketTimeoutException) {
+        } catch (_: java.net.SocketTimeoutException) {
             Result.failure(Exception("请求超时，请检查网络后重试"))
-        } catch (e: java.net.UnknownHostException) {
+        } catch (_: java.net.UnknownHostException) {
             Result.failure(Exception("无法连接服务器，请检查网络"))
-        } catch (e: javax.net.ssl.SSLException) {
+        } catch (_: javax.net.ssl.SSLException) {
             Result.failure(Exception("网络连接异常 (SSL)，请检查网络"))
         } catch (e: Exception) {
             Result.failure(Exception("获取书架失败：${e.message}"))

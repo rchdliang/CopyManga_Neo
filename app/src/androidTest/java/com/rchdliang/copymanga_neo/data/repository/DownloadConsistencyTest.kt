@@ -166,12 +166,12 @@ class DownloadConsistencyTest {
             Result.success(ChapterContent(listOf("https://example.com/page.jpg"), null, null, it))
         }
         downloads.enqueueDownload(task("one"))
-        withTimeout(5000) { started.await() }
+        withTimeout(5000.milliseconds) { started.await() }
         manager.pauseAll().join()
         val resume = manager.resumeComic(comic)
         assertTrue(manager.isPaused(comic))
         release.complete(Unit)
-        withTimeout(5000) { resume.join() }
+        withTimeout(5000.milliseconds) { resume.join() }
         awaitStatus(DownloadTaskStatus.COMPLETED)
         assertEquals(2, requests)
         assertEquals(1, requestedImages)
@@ -273,9 +273,9 @@ class DownloadConsistencyTest {
             Result.success(ChapterContent(listOf("https://example.com/page.jpg"), null, null, it))
         }
         downloads.enqueueDownload(task("one"))
-        withTimeout(5000) { started.await() }
+        withTimeout(5000.milliseconds) { started.await() }
         val cancel = launch { downloads.cancelComic(comic) }
-        withTimeout(5000) { downloads.getDownloadProgress().first { it.isEmpty() } }
+        withTimeout(5000.milliseconds) { downloads.getDownloadProgress().first { it.isEmpty() } }
         release.complete(Unit)
         cancel.join()
         assertTrue(downloads.getAllDownloadedComics().first().isEmpty())
@@ -298,13 +298,13 @@ class DownloadConsistencyTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             viewModel.loadChapter(comic, "one", "default")
         }
-        withTimeout(5000) { requested.await() }
+        withTimeout(5000.milliseconds) { requested.await() }
         assertEquals(
             listOf(local.imagePaths),
             (viewModel.uiState.value as ReaderUiState.Success).content.imageUrls
         )
         release.complete(Unit)
-        val state = withTimeout(5000) {
+        val state = withTimeout(5000.milliseconds) {
             viewModel.uiState.first {
                 it is ReaderUiState.Success && it.content.nextUuid == "new-online-chapter"
             }
@@ -321,7 +321,7 @@ class DownloadConsistencyTest {
         InstrumentationRegistry.getInstrumentation()
             .runOnMainSync { viewModel.loadChapter(comic, "one") }
         val state =
-            withTimeout(5000) { viewModel.uiState.first { it is ReaderUiState.Success } } as ReaderUiState.Success
+            withTimeout(5000.milliseconds) { viewModel.uiState.first { it is ReaderUiState.Success } } as ReaderUiState.Success
         assertNull(state.content.nextUuid)
         assertEquals(0, requestedImages)
     }
@@ -331,14 +331,14 @@ class DownloadConsistencyTest {
         db.downloadedChapterDao().insertChapter(entity("one").copy(groupPathWord = "default"))
         db.downloadedChapterDao().insertChapter(entity("two"))
         val viewModel = detail()
-        withTimeout(5000) { viewModel.uiState.first { it.chapterDownloadStatuses.size == 2 && it.chapters.size == 1 } }
+        withTimeout(5000.milliseconds) { viewModel.uiState.first { it.chapterDownloadStatuses.size == 2 && it.chapters.size == 1 } }
         withContext(Dispatchers.Main) {
             viewModel.enterManageMode()
             assertEquals(setOf("one", "two"), viewModel.getSelectedChapterUuids())
             viewModel.toggleChapterSelection("one")
             viewModel.confirmBatchAction()
         }
-        withTimeout(5000) {
+        withTimeout(5000.milliseconds) {
             db.downloadedChapterDao().getAllChapters()
                 .first { rows -> rows.none { it.uuid == "one" } }
         }
@@ -350,14 +350,14 @@ class DownloadConsistencyTest {
         db.downloadedChapterDao().insertChapter(entity("one").copy(index = 1, nextChapter = "two"))
         db.downloadedChapterDao().insertChapter(entity("two").copy(index = 2, prevChapter = "one"))
         val viewModel = detail()
-        withTimeout(5000) { viewModel.uiState.first { it.chapters.size == 2 && !it.isLoading } }
+        withTimeout(5_000.milliseconds) { viewModel.uiState.first { it.chapters.size == 2 && !it.isLoading } }
         withContext(Dispatchers.Main) {
             assertEquals("one", viewModel.getStartChapter()?.uuid)
             viewModel.toggleSortOrder()
             assertEquals("one", viewModel.getStartChapter()?.uuid)
             viewModel.refreshDetail()
         }
-        withTimeout(5000) { viewModel.uiState.first { !it.isLoading && it.toastMessage == "offline" } }
+        withTimeout(5_000.milliseconds) { viewModel.uiState.first { !it.isLoading && it.toastMessage == "offline" } }
         assertEquals(2, viewModel.uiState.value.chapters.size)
         assertNotNull(viewModel.uiState.value.comicDetail)
     }
@@ -407,7 +407,23 @@ class DownloadConsistencyTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             reader = ReaderViewModel(
                 remote, prefs, downloads,
-                com.rchdliang.copymanga_neo.testing.InMemoryReadingProgressRepository()
+                com.rchdliang.copymanga_neo.testing.InMemoryReadingProgressRepository(),
+                object : com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository {
+                    override val settings = kotlinx.coroutines.flow.MutableStateFlow(
+                        com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings()
+                    )
+                    override val bookmarks = kotlinx.coroutines.flow.MutableStateFlow(
+                        emptyList<com.rchdliang.copymanga_neo.domain.model.ReaderBookmark>()
+                    )
+
+                    override suspend fun updateSettings(transform: (com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings) -> com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings): Result<Unit> {
+                        settings.value = transform(settings.value)
+                        return Result.success(Unit)
+                    }
+
+                    override suspend fun toggleBookmark(bookmark: com.rchdliang.copymanga_neo.domain.model.ReaderBookmark): Result<Unit> =
+                        Result.success(Unit)
+                }
             )
             store.put("reader", reader)
         }

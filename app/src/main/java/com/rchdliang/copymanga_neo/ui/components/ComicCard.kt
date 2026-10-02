@@ -1,6 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -48,7 +47,6 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
  * @param onClick 点击回调
  * @param onLongClick 长按回调，为 null 时不处理长按
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ComicCard(
     name: String,

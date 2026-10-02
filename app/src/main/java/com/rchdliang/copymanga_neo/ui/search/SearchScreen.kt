@@ -291,7 +291,6 @@ fun SearchScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchCategorySelector(
     selectedType: QueryType?,
@@ -331,7 +330,6 @@ private fun SearchCategorySelector(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchScreenContent(
     uiState: SearchUiState,
@@ -406,8 +404,8 @@ private fun SearchResultsList(
     comics: List<ComicSummary>,
     isLoadingMore: Boolean,
     onComicClick: (String) -> Unit,
-    hasMore: Boolean = false,
     modifier: Modifier = Modifier,
+    hasMore: Boolean = false,
     onLoadMore: () -> Unit = {}
 ) {
     val gridState = rememberLazyGridState()

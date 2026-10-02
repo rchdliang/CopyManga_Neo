@@ -4,9 +4,9 @@ import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.net.toUri
 import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
 
 internal enum class NotificationSettingsTarget { APP, PROGRESS, COMPLETED, LIVE }
@@ -66,7 +66,7 @@ internal fun openNotificationSettings(
         ),
         Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}")
+            "package:${context.packageName}".toUri()
         )
     )
     for (candidate in fallbacks) {

@@ -23,6 +23,8 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 abstract class AuthModule {
 
+    // 此绑定由 Hilt 生成代码使用。
+    @Suppress("unused")
     @Binds
     @Singleton
     abstract fun bindUserRepository(

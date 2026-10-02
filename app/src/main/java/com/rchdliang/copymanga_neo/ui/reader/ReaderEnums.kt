@@ -5,7 +5,12 @@ import androidx.compose.ui.layout.ContentScale
 enum class ReadingDirection(val label: String) {
     LEFT_TO_RIGHT("从左到右"),
     RIGHT_TO_LEFT("从右到左"),
-    TOP_TO_BOTTOM("从上至下")
+    TOP_TO_BOTTOM("从上至下");
+
+    companion object {
+        fun fromName(name: String): ReadingDirection =
+            entries.firstOrNull { it.name == name } ?: RIGHT_TO_LEFT
+    }
 }
 
 enum class PageScale(val label: String) {
@@ -17,6 +22,11 @@ enum class PageScale(val label: String) {
         FIT_SCREEN -> ContentScale.Fit
         FIT_HEIGHT -> ContentScale.FillHeight
         FIT_WIDTH -> ContentScale.FillWidth
+    }
+
+    companion object {
+        fun fromName(name: String): PageScale =
+            entries.firstOrNull { it.name == name } ?: FIT_SCREEN
     }
 }
 

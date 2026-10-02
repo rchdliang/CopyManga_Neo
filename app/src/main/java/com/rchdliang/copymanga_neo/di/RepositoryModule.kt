@@ -12,9 +12,23 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+// Hilt 通过生成的组件安装此模块及绑定，源码没有直接调用。
+@Suppress("unused")
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
+    @Binds
+    @Singleton
+    abstract fun bindReaderToolsRepository(
+        implementation: com.rchdliang.copymanga_neo.data.local.ReaderToolsStore
+    ): com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReaderImageRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.ReaderImageRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.ReaderImageRepository
+
     @Binds
     @Singleton
     abstract fun bindSettingsBackupRepository(

@@ -106,7 +106,7 @@ class NetworkGenerationInterceptor @Inject constructor(private val store: Networ
 /** 系统模式委托系统选择器；手动模式失败时不会偷偷回退直连。 */
 internal class SettingsProxySelector(
     private val settings: () -> NetworkSettings,
-    private val system: ProxySelector? = ProxySelector.getDefault()
+    private val system: ProxySelector? = getDefault()
 ) : ProxySelector() {
     override fun select(uri: URI): List<Proxy> {
         val config = settings()

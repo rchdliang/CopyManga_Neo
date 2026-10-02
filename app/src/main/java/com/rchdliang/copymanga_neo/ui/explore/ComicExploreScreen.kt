@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -53,7 +52,7 @@ import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** 排行、更新、专题和筛选共用的漫画发现页面。 */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ComicExploreScreen(
     onComicClick: (String) -> Unit,
@@ -296,10 +295,12 @@ private fun FilterChoices(state: ComicExploreUiState, viewModel: ComicExploreVie
         val options = state.filters
         OptionRow(
             "类型", listOf(ComicFilterOption("全部", "")) + options?.tops.orEmpty(),
-            state.top.orEmpty(), { viewModel.selectTop(it.ifEmpty { null }) })
+            state.top.orEmpty()
+        ) { viewModel.selectTop(it.ifEmpty { null }) }
         OptionRow(
             "题材", listOf(ComicFilterOption("全部", "")) + options?.themes.orEmpty(),
-            state.theme.orEmpty(), { viewModel.selectTheme(it.ifEmpty { null }) })
+            state.theme.orEmpty()
+        ) { viewModel.selectTheme(it.ifEmpty { null }) }
         OptionRow(
             "排序",
             options?.orderings.orEmpty()

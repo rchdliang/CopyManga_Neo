@@ -63,7 +63,7 @@ object ChapterDecryptor {
             } else {
                 Log.e(TAG, message)
             }
-        } catch (ex: Exception) {
+        } catch (_: Exception) {
             println(message)
             e?.printStackTrace()
         }

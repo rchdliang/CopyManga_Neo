@@ -62,7 +62,6 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 /**
  * 收藏夹屏幕
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FavoritesScreen(
     viewModel: FavoritesViewModel = hiltViewModel(),
@@ -138,7 +137,7 @@ private fun FavoritesContent(
 
             uiState.error != null && uiState.favorites.isEmpty() -> {
                 ErrorContent(
-                    error = uiState.error.orEmpty(),
+                    error = uiState.error,
                     onRetry = onRefresh
                 )
             }
@@ -384,7 +383,6 @@ private fun rememberReadingStatus(comic: FavoriteComic): Pair<String, Color> {
 
 // region Previews
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Preview(showBackground = true, showSystemUi = false, name = "收藏 - 收藏卡片")
 @Composable
 private fun FavoriteCardPreview() {
@@ -431,7 +429,6 @@ private fun FavoriteCardPreview() {
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Preview(showBackground = true, showSystemUi = true, name = "书架 - 完整列表")
 @Composable
 private fun FavoriteGridPreview() {

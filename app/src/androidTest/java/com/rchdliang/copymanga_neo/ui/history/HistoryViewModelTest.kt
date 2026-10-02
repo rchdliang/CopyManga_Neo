@@ -21,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.lang.reflect.Proxy
+import kotlin.time.Duration.Companion.seconds
 
 @RunWith(AndroidJUnit4::class)
 class HistoryViewModelTest {
@@ -103,7 +104,7 @@ class HistoryViewModelTest {
     }
 
     private suspend fun withViewModel(block: suspend (HistoryViewModel) -> Unit) =
-        withTimeout(10_000) {
+        withTimeout(10.seconds) {
             val store = ViewModelStore()
             val vm = withContext(Dispatchers.Main) {
                 HistoryViewModel(

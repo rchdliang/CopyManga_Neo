@@ -22,6 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 @RunWith(AndroidJUnit4::class)
 class AuthDataStoreLogoutTest {
@@ -37,7 +38,7 @@ class AuthDataStoreLogoutTest {
         auth = AuthDataStore(
             PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })
         )
-        withTimeout(5_000) { auth.cacheReadyFlow.first { it } }
+        withTimeout(5.seconds) { auth.cacheReadyFlow.first { it } }
     }
 
     @After
@@ -72,7 +73,7 @@ class AuthDataStoreLogoutTest {
         auth.saveCredentials("user", "password", rememberPassword = true, autoLogin = true)
 
         assertTrue(auth.clearAuthSyncIfTokenMatches("expired-token"))
-        withTimeout(5_000) { auth.getToken().first { it == null } }
+        withTimeout(5.seconds) { auth.getToken().first { it == null } }
 
         assertTrue(auth.getAutoLoginSync())
         assertTrue(auth.getAutoLogin().first())

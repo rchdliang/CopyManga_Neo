@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItemDefaults
@@ -28,7 +27,6 @@ internal object ProfileListDefaults {
 }
 
 /** 我的页面与黑名单管理共用的 Expressive 分组列表项。 */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ProfileListItem(
     icon: ImageVector,

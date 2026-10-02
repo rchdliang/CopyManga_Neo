@@ -14,6 +14,7 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -31,7 +32,6 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resumeWithException
 
 @Singleton
@@ -72,8 +72,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     private suspend fun saveConfiguration(value: NetworkSettings) {
         val old = store.settings.value
         val identityChanged = old.requestMode != value.requestMode ||
-                (old.officialApp != value.officialApp && (old.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP ||
-                        value.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP))
+                (old.officialApp != value.officialApp && old.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP)
         if (identityChanged) {
             // 先推进会话代次，使切换期间返回的旧登录结果无法重新写入。
             auth.clearAuth(manualLogout = true)
@@ -94,7 +93,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
             try {
                 // 仅查询拷贝当前配置的 API / WWW，没有预置任何其他内容源。
                 for (host in listOf(start.apiHost, start.wwwHost).distinct()) {
-                    coroutineContext.ensureActive()
+                    currentCoroutineContext().ensureActive()
                     val builder = Request.Builder().url("https://$host/api/v3/system/network21?platform=1")
                     CopyMangaNetworkConfig.apiHeaders().forEach { (key, value) -> builder.header(key, value) }
                     val call = client.newCall(builder.header("version", start.version)

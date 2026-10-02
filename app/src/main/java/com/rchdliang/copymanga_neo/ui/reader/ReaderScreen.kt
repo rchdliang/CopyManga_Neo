@@ -6,20 +6,22 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -42,33 +44,48 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.imageLoader
+import coil.request.ImageRequest
+import com.rchdliang.copymanga_neo.di.ReaderImageLoaderEntryPoint
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
+import com.rchdliang.copymanga_neo.domain.model.MangaComment
+import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
+import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
-import kotlinx.coroutines.CoroutineScope
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.seconds
 
 
 @Composable
@@ -82,13 +99,23 @@ fun ReaderScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentChapter = uiState as? ReaderUiState.Success
-    var showComments by remember(currentChapter?.chapterUuid) { mutableStateOf(false) }
-    if (showComments && currentChapter != null && currentChapter.chapterUuid.isNotBlank()) {
+    val tools by viewModel.toolsSettings.collectAsStateWithLifecycle()
+    val readerBookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val commentsAllowed by viewModel.commentsAllowed.collectAsStateWithLifecycle()
+    val closedChapters by viewModel.closedChapters.collectAsStateWithLifecycle()
+    val appending by viewModel.appending.collectAsStateWithLifecycle()
+    val catalog by viewModel.catalog.collectAsStateWithLifecycle()
+    var commentChapter by remember(comicPathWord) { mutableStateOf<String?>(null) }
+    var commentReport by remember(comicPathWord) { mutableStateOf<MangaComment?>(null) }
+    var commentRefreshVersion by remember(comicPathWord) { mutableIntStateOf(0) }
+    if (commentChapter != null && currentChapter != null && commentsAllowed && commentChapter !in closedChapters) {
         CommentsDialog(
-            target = CommentTarget(CommentKind.CHAPTER, currentChapter.chapterUuid),
-            title = currentChapter.content.chapterName.ifBlank { chapterName },
+            target = CommentTarget(CommentKind.CHAPTER, commentChapter.orEmpty()),
+            title = currentChapter.chapters.firstOrNull { it.uuid == commentChapter }?.content?.chapterName
+                ?: chapterName,
             comicPathWord = comicPathWord,
-            onDismiss = { showComments = false }
+            onDismiss = { commentChapter = null; commentReport = null; commentRefreshVersion++ },
+            initialReport = commentReport
         )
     }
     val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
@@ -140,9 +167,11 @@ fun ReaderScreen(
     // 章节切换时的目标页码：null=保持当前页（方向切换/刷新），非null=跳转到指定页（切章/撤回）
     val pendingInitialPage = remember { mutableStateOf<Int?>(null) }
 
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .background(Color.Black)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
         when (val state = uiState) {
             is ReaderUiState.Loading -> CircularWavyProgressIndicator(
                 modifier = Modifier.align(Alignment.Center), color = Color.White
@@ -174,7 +203,7 @@ fun ReaderScreen(
             )
 
             is ReaderUiState.Success -> ReaderSuccessContent(
-                images = state.content.imageUrls,
+                images = state.chapters.flatMap { it.content.imageUrls },
                 chapterName = state.content.chapterName.ifEmpty { chapterName },
                 readingDirection = readingDirectionPref,
                 pageScale = pageScalePref,
@@ -188,8 +217,22 @@ fun ReaderScreen(
                 onPageScaleChange = { viewModel.setPageScale(it) },
                 onScreenOrientationChange = { viewModel.setScreenOrientation(it) },
                 onResetPreferences = viewModel::resetComicPreferences,
-                onComments = { showComments = true },
-                pendingInitialPage = pendingInitialPage
+                onComments = { commentReport = null; commentChapter = it },
+                onReport = { uuid, comment -> commentChapter = uuid; commentReport = comment },
+                pendingInitialPage = pendingInitialPage,
+                sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
+                tools = tools, onToolsChange = viewModel::updateTools,
+                commentsAllowed = commentsAllowed, closedChapters = closedChapters,
+                commentRefreshVersion = commentRefreshVersion,
+                onCloseComments = viewModel::closeChapterComments,
+                onActivateChapter = viewModel::activateChapter,
+                onAppendNext = { viewModel.appendNextChapter(it) }, appending = appending,
+                bookmarks = readerBookmarks.filter { it.comicPathWord == comicPathWord },
+                onToggleBookmark = viewModel::toggleBookmark,
+                onBookmarkSelected = viewModel::jumpToBookmark,
+                onBack = onNavigateBack, catalog = catalog,
+                onLoadCatalog = viewModel::loadCatalog,
+                onSelectCatalog = viewModel::selectCatalogChapter
             )
         }
     }
@@ -215,330 +258,427 @@ fun ReaderSuccessContent(
     pendingInitialPage: MutableState<Int?>,
     modifier: Modifier = Modifier,
     onResetPreferences: () -> Unit = {},
-    onComments: () -> Unit = {}
+    onComments: (String) -> Unit = {},
+    onReport: (String, MangaComment) -> Unit = { _, _ -> },
+    sessionChapters: List<ReaderSessionChapter> = emptyList(),
+    tools: ReaderToolsSettings = ReaderToolsSettings(),
+    onToolsChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit = {},
+    commentsAllowed: Boolean = false,
+    commentRefreshVersion: Int = 0,
+    closedChapters: Set<String> = emptySet(),
+    onCloseComments: (String) -> Unit = {},
+    onActivateChapter: (String) -> Unit = {},
+    onAppendNext: (Boolean) -> Unit = {},
+    appending: Boolean = false,
+    bookmarks: List<ReaderBookmark> = emptyList(),
+    onToggleBookmark: (String, Int) -> Unit = { _, _ -> },
+    onBookmarkSelected: (ReaderBookmark) -> Unit = {},
+    onBack: () -> Unit = {},
+    catalog: ReaderCatalogUiState = ReaderCatalogUiState(),
+    onLoadCatalog: () -> Unit = {},
+    onSelectCatalog: (String) -> Unit = {}
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val locale = LocalLocale.current.platformLocale
-    val toastHost = LocalToastHost.current
-    var previousPageInOriginal by rememberSaveable { mutableIntStateOf(0) }
-
-    // 章节切换时显示带撤回按钮的 Snackbar
-    val onPrevChapterWithSnackbar: () -> Unit =
-        remember(onPrevChapter, onNextChapter, hasPrevChapter) {
-            {
-                if (hasPrevChapter) {
-                    val savedPage = previousPageInOriginal
-                    pendingInitialPage.value = 0
-                    onPrevChapter()
-                    toastHost.showSnackbar("已切换到上一章", "撤回") {
-                        pendingInitialPage.value = savedPage
-                        onNextChapter()
-                    }
-                } else {
-                    toastHost.showToast("已是第一章")
-                }
-            }
-        }
-    val onNextChapterWithSnackbar: () -> Unit =
-        remember(onNextChapter, onPrevChapter, hasNextChapter) {
-            {
-                if (hasNextChapter) {
-                    val savedPage = previousPageInOriginal
-                    pendingInitialPage.value = 0
-                    onNextChapter()
-                    toastHost.showSnackbar("已切换到下一章", "撤回") {
-                        pendingInitialPage.value = savedPage
-                        onPrevChapter()
-                    }
-                } else {
-                    toastHost.showToast("已是最后一章")
-                }
-            }
-        }
-
-    val dir = remember(readingDirection) {
-        ReadingDirection.entries.find { it.name == readingDirection }
-            ?: ReadingDirection.RIGHT_TO_LEFT
-    }
-    val scale = remember(pageScale) {
-        PageScale.entries.find { it.name == pageScale } ?: PageScale.FIT_SCREEN
-    }
-    val orient = remember(screenOrientation) {
-        ScreenOrientationSetting.fromName(screenOrientation)
-    }
-
-    var prevDir by remember { mutableStateOf(dir) }
-    var dirStable by remember { mutableStateOf(false) }
-    var showSettingsMenu by remember { mutableStateOf(false) }
-    var showImageMenu by remember { mutableStateOf(false) }
-    // 底栏（进度条）显示状态与拖动状态
-    var showBottomBar by remember { mutableStateOf(false) }
-    var sliderValue by remember { mutableFloatStateOf(0f) }
-    var sliderDragging by remember { mutableStateOf(false) }
-
-    if (dir != prevDir) {
-        dirStable = false
-        prevDir = dir
-    }
-
+    val context = LocalContext.current
+    val view = LocalView.current
+    val owner = LocalLifecycleOwner.current
+    val preview = LocalInspectionMode.current
+    val scope = rememberCoroutineScope()
+    val focus = remember { FocusRequester() }
+    val toast = LocalToastHost.current
+    val dir = ReadingDirection.fromName(readingDirection)
     val isContinuous = dir == ReadingDirection.TOP_TO_BOTTOM
-    val contentScale = scale.toContentScale()
-
-    val initialPage = previousPageInOriginal.coerceIn(0, (images.size - 1).coerceAtLeast(0))
-
-    val pagerState = rememberPagerState(
-        initialPage = initialPage,
-        pageCount = { images.size.coerceAtLeast(1) }
-    )
-    val listState = rememberLazyListState()
-    val continuousVisibleIndex by remember { derivedStateOf { listState.firstVisibleItemIndex } }
-
-    val currentPageIndex = if (isContinuous) continuousVisibleIndex else pagerState.currentPage
-    if (dirStable) {
-        previousPageInOriginal = currentPageIndex
-    }
-
-    // 章节切换或方向切换时重置滚动位置
-    LaunchedEffect(dir, images) {
-        if (images.isNotEmpty()) {
-            val target = pendingInitialPage.value?.coerceIn(0, images.size - 1)
-                ?: previousPageInOriginal.coerceIn(0, images.size - 1)
-            if (isContinuous) listState.scrollToItem(target) else pagerState.scrollToPage(target)
-            dirStable = true
-            pendingInitialPage.value = null
-        }
-    }
-
-    // 非拖动状态下，进度条跟随当前页码同步
-    LaunchedEffect(currentPageIndex) {
-        if (!sliderDragging) {
-            sliderValue = currentPageIndex.toFloat()
-        }
-    }
-
-    // 底栏显示后 5s 自动收回；拖动进度条会重置计时
-    LaunchedEffect(showBottomBar, sliderValue) {
-        if (showBottomBar) {
-            delay(5000.milliseconds)
-            showBottomBar = false
-        }
-    }
-
-    // 对话框打开时拦截返回键，避免直接退出阅读器
-    BackHandler(enabled = showSettingsMenu || showImageMenu) {
-        showSettingsMenu = false
-        showImageMenu = false
-    }
-
-    val displayedPageNumber = currentPageIndex + 1
-
-    // 翻页 — reverseLayout 下 LTR/RTL 方向统一
-    fun animateToPagerPage(target: Int) {
-        coroutineScope.launch {
-            pagerState.animateScrollToPage(
-                target.coerceIn(0, (pagerState.pageCount - 1).coerceAtLeast(0))
+    val chapters = sessionChapters.ifEmpty {
+        listOf(
+            ReaderSessionChapter(
+                "preview", "default",
+                com.rchdliang.copymanga_neo.domain.model.ChapterContent(
+                    images,
+                    null,
+                    null,
+                    chapterName
+                )
             )
-        }
+        )
     }
-
-    fun animateToListIndex(target: Int) {
-        coroutineScope.launch {
-            listState.animateScrollToItem(target.coerceIn(0, (images.size - 1).coerceAtLeast(0)))
-        }
-    }
-
-    // 进度条拖动时即时跳页（无动画，跟随拖动实时跳转）
-    fun scrollToPageInstant(target: Int) {
-        coroutineScope.launch {
-            val safe = target.coerceIn(0, (images.size - 1).coerceAtLeast(0))
-            if (isContinuous) listState.scrollToItem(safe) else pagerState.scrollToPage(safe)
-        }
-    }
-
-    val goForward: () -> Unit = {
-        when {
-            isContinuous -> {
-                if (currentPageIndex >= images.size - 1 ||
-                    (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                        ?: -1) >= images.size - 1
-                ) {
-                    onNextChapterWithSnackbar()
-                } else {
-                    animateToListIndex(currentPageIndex + 1)
+    val pages = remember(chapters, tools.inlineComments, commentsAllowed, closedChapters) {
+        chapters.flatMap { chapter ->
+            buildList {
+                chapter.content.imageUrls.forEachIndexed { index, source ->
+                    add(
+                        ReaderPageEntry(
+                            "${chapter.uuid}:image:$index",
+                            chapter.uuid,
+                            chapter.content.chapterName.ifBlank { chapterName },
+                            source,
+                            index,
+                            chapter.content.imageUrls.size
+                        )
+                    )
                 }
-            }
-
-            else -> {
-                if (pagerState.currentPage >= pagerState.pageCount - 1) {
-                    onNextChapterWithSnackbar()
-                } else {
-                    animateToPagerPage(pagerState.currentPage + 1)
-                }
+                if (tools.inlineComments && commentsAllowed && chapter.uuid !in closedChapters && chapter.content.imageUrls.isNotEmpty())
+                    add(
+                        ReaderPageEntry(
+                            "${chapter.uuid}:comments",
+                            chapter.uuid,
+                            chapter.content.chapterName,
+                            null,
+                            chapter.content.imageUrls.lastIndex,
+                            chapter.content.imageUrls.size
+                        )
+                    )
             }
         }
     }
+    val initial = (pendingInitialPage.value ?: 0).coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+    val pager =
+        rememberPagerState(initialPage = initial, pageCount = { pages.size.coerceAtLeast(1) })
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = initial)
+    val visibleIndex by remember(
+        isContinuous,
+        list,
+        pager
+    ) { derivedStateOf { if (isContinuous) list.firstVisibleItemIndex else pager.currentPage } }
+    val page = pages.getOrNull(visibleIndex)
+    // 底栏和章末评论共用同一章节的加载状态，角标取 API 总数，避免重复请求。
+    val chapterCommentsViewModel = if (!preview && page != null) {
+        hiltViewModel<ReaderChapterCommentsViewModel>(key = "reader-comments:${page.chapterUuid}")
+    } else null
+    val chapterCommentsState =
+        chapterCommentsViewModel?.uiState?.collectAsStateWithLifecycle()?.value
+    var anchor by rememberSaveable { mutableStateOf<String?>(null) }
+    var anchorChapter by rememberSaveable { mutableStateOf<String?>(null) }
+    var anchorPage by rememberSaveable { mutableIntStateOf(0) }
+    var previousContinuous by remember { mutableStateOf(isContinuous) }
+    var showControls by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
+    var showCatalog by remember { mutableStateOf(false) }
+    var showImageMenu by rememberSaveable { mutableStateOf(false) }
+    var selectedSource by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedTitle by rememberSaveable { mutableStateOf("") }
+    var automatic by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
+    var sliderPreview by remember { mutableFloatStateOf(0f) }
+    var pendingChapter by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(showControls, page?.chapterUuid, commentsAllowed, closedChapters) {
+        val current = page ?: return@LaunchedEffect
+        if (showControls && commentsAllowed && current.chapterUuid !in closedChapters) {
+            chapterCommentsViewModel?.load(current.chapterUuid)
+        }
+    }
+    LaunchedEffect(page?.chapterUuid, chapterCommentsState?.closed) {
+        if (chapterCommentsState?.closed == true) page?.let { onCloseComments(it.chapterUuid) }
+    }
+    LaunchedEffect(commentRefreshVersion) {
+        val current = page ?: return@LaunchedEffect
+        if (commentRefreshVersion > 0 && commentsAllowed && current.chapterUuid !in closedChapters) {
+            chapterCommentsViewModel?.load(current.chapterUuid, refresh = true)
+        }
+    }
+    val currentAppending by rememberUpdatedState(appending)
+    val loader = remember(context, tools.imageTimeoutSeconds, preview) {
+        if (preview) context.imageLoader else EntryPointAccessors.fromApplication(
+            context.applicationContext, ReaderImageLoaderEntryPoint::class.java
+        ).readerImageLoaders().get(tools.imageTimeoutSeconds)
+    }
 
-    val goBackward: () -> Unit = {
-        when {
-            isContinuous -> {
-                if (currentPageIndex <= 0) {
-                    onPrevChapterWithSnackbar()
-                } else {
-                    animateToListIndex(currentPageIndex - 1)
-                }
+    // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
+    LaunchedEffect(pages, isContinuous) {
+        if (pages.isEmpty()) return@LaunchedEffect
+        val target = anchor?.let { key -> pages.indexOfFirst { it.key == key }.takeIf { it >= 0 } }
+            ?: pages.indexOfFirst { it.chapterUuid == anchorChapter && it.page == anchorPage && it.source != null }
+                .takeIf { it >= 0 }
+            ?: initial
+        val offset =
+            if (isContinuous && previousContinuous) list.firstVisibleItemScrollOffset else 0
+        previousContinuous = isContinuous
+        if (isContinuous) list.scrollToItem(
+            target.coerceIn(pages.indices),
+            offset
+        ) else pager.scrollToPage(
+            target.coerceIn(pages.indices)
+        )
+        pendingInitialPage.value = null
+        // 先恢复位置再观察可见页，避免移除评论页时把旧索引误认作下一章。
+        snapshotFlow { visibleIndex }.collect { index ->
+            pages.getOrNull(index)?.let {
+                anchor = it.key
+                anchorChapter = it.chapterUuid
+                anchorPage = it.page
+                onActivateChapter(it.chapterUuid)
+                if (!dragging) sliderPreview = it.page.toFloat()
+                if (it.source == null) automatic = false
             }
+        }
+    }
+    LaunchedEffect(showControls, dragging, sliderPreview) {
+        if (showControls && !dragging) {
+            delay(5.seconds); showControls = false
+        }
+    }
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) automatic =
+                false
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    DisposableEffect(automatic) {
+        val previous = view.keepScreenOn
+        if (automatic) view.keepScreenOn = true
+        onDispose { view.keepScreenOn = previous }
+    }
+    LaunchedEffect(showSettings, showImageMenu, showBookmarks, showCatalog) {
+        if (showSettings || showImageMenu || showBookmarks || showCatalog) automatic = false
+        else focus.requestFocus()
+    }
 
-            else -> {
-                if (pagerState.currentPage <= 0) {
-                    onPrevChapterWithSnackbar()
-                } else {
-                    animateToPagerPage(pagerState.currentPage - 1)
-                }
+    fun jump(index: Int, animate: Boolean = false) {
+        scope.launch {
+            if (pages.isEmpty()) return@launch
+            val safe = index.coerceIn(pages.indices)
+            if (isContinuous) {
+                if (animate) list.animateScrollToItem(safe) else list.scrollToItem(safe)
+            } else {
+                if (animate) pager.animateScrollToPage(safe) else pager.scrollToPage(safe)
             }
         }
     }
 
-    // 连续模式跨章节滑动
-    val density = LocalDensity.current
-    val threshold = remember(density) { with(density) { 60.dp.toPx() } }
-    val nestedScrollConnection = rememberContinuousOverscroll(
-        coroutineScope = coroutineScope,
-        threshold = threshold,
-        onPrevChapter = onPrevChapterWithSnackbar,
-        onNextChapter = onNextChapterWithSnackbar
-    )
+    fun nextChapter() {
+        val current = chapters.firstOrNull { it.uuid == page?.chapterUuid }
+        val next = current?.content?.nextUuid
+        val target = pages.indexOfFirst { it.chapterUuid == next && it.source != null }
+        if (target >= 0) jump(target)
+        else if (next != null && tools.continuousChapters) {
+            pendingChapter = next; onAppendNext(true)
+        } else if (hasNextChapter) {
+            pendingInitialPage.value = 0; onNextChapter()
+        } else toast.showToast("已是最后一章")
+    }
 
-    val timeText = java.text.SimpleDateFormat("HH:mm", locale).format(java.util.Date())
+    fun previousChapter() {
+        val current = chapters.firstOrNull { it.uuid == page?.chapterUuid }
+        val previous = current?.content?.prevUuid
+        val target = pages.indexOfFirst { it.chapterUuid == previous && it.source != null }
+        if (target >= 0) jump(target)
+        else if (hasPrevChapter) {
+            pendingInitialPage.value = 0; onPrevChapter()
+        } else toast.showToast("已是第一章")
+    }
 
-    // 全屏布局
-    Box(modifier = modifier
-        .fillMaxSize()
-        .background(Color.Black)) {
+    fun forward() {
+        if (visibleIndex < pages.lastIndex) jump(visibleIndex + 1, true) else nextChapter()
+    }
+
+    fun backward() {
+        if (visibleIndex > 0) jump(visibleIndex - 1, true) else previousChapter()
+    }
+    LaunchedEffect(pages, pendingChapter) {
+        val uuid = pendingChapter ?: return@LaunchedEffect
+        val target = pages.indexOfFirst { it.chapterUuid == uuid && it.source != null }
+        if (target >= 0) {
+            pendingChapter = null; jump(target)
+        }
+    }
+    LaunchedEffect(
+        page?.key,
+        chapters.lastOrNull()?.uuid,
+        tools.continuousChapters,
+        tools.preloadPages
+    ) {
+        val current = page ?: return@LaunchedEffect
+        if (tools.continuousChapters && current.chapterUuid == chapters.lastOrNull()?.uuid &&
+            current.page >= current.imageCount - maxOf(tools.preloadPages, 1)
+        ) onAppendNext(false)
+    }
+    DisposableEffect(page?.key, pages, loader, tools.preloadPages) {
+        val jobs =
+            if (preview) emptyList() else pages.drop(visibleIndex + 1).filter { it.source != null }
+                .take(tools.preloadPages).map { next ->
+                    loader.enqueue(
+                        ImageRequest.Builder(context)
+                            .data(next.source?.let {
+                                if (it.startsWith("http")) it else java.io.File(
+                                    it
+                                )
+                            })
+                            .size(512).build()
+                    )
+                }
+        onDispose { jobs.forEach { it.dispose() } }
+    }
+
+    // 每次只运行一条自动阅读协程；触摸、菜单、拖进度条及评论页立即暂停。
+    LaunchedEffect(automatic, isContinuous, pages, tools.autoIntervalSeconds) {
+        if (!automatic) return@LaunchedEffect
+        while (automatic) {
+            delay(tools.autoIntervalSeconds.seconds)
+            val index = if (isContinuous) list.firstVisibleItemIndex else pager.currentPage
+            val current = pages.getOrNull(index) ?: break
+            if (current.source == null) {
+                automatic = false; break
+            }
+            if (isContinuous) {
+                val height = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
+                val before = list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset
+                list.animateScrollBy(height * 0.75f, tween(900, easing = LinearEasing))
+                if (list.layoutInfo.visibleItemsInfo.any { pages.getOrNull(it.index)?.source == null }) {
+                    automatic = false
+                    break
+                }
+                if (before == (list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset)) {
+                    if (currentAppending) continue
+                    automatic = false
+                    if (hasNextChapter) nextChapter()
+                }
+            } else if (index < pages.lastIndex) pager.animateScrollToPage(index + 1)
+            else {
+                if (currentAppending) continue
+                automatic = false
+                if (hasNextChapter) nextChapter()
+            }
+        }
+    }
+
+    BackHandler(enabled = showControls && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+        showControls = false
+    }
+    val nested = remember { object : NestedScrollConnection {} }
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(focus)
+            .onPreviewKeyEvent { event ->
+                if (!tools.volumeKeys || (event.key != Key.VolumeUp && event.key != Key.VolumeDown)) false
+                else {
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        automatic = false
+                        if (event.key == Key.VolumeDown) forward() else backward()
+                    }
+                    true
+                }
+            }
+            .focusable()
+    ) {
         ReaderContent(
-            effectiveImages = images,
-            isContinuous = isContinuous,
-            isRtl = dir == ReadingDirection.RIGHT_TO_LEFT,
-            contentScale = contentScale,
-            pagerState = pagerState,
-            listState = listState,
-            continuousNestedScrollConnection = nestedScrollConnection,
-            onForward = goForward,
-            onBackward = goBackward,
-            onPrevChapter = onPrevChapterWithSnackbar,
-            onNextChapter = onNextChapterWithSnackbar,
-            onShowMenu = { showSettingsMenu = true },
-            onLongPress = { showImageMenu = true },
-            onBottomAreaTap = { showBottomBar = !showBottomBar }
-        )
-
-        ReaderTopBar(
-            timeText = timeText,
-            chapterName = chapterName,
-            modifier = Modifier
-                .statusBarsPadding()
-                .align(Alignment.TopCenter)
-        )
-
-        if (images.isNotEmpty()) {
-            ReaderPageIndicator(
-                pageText = "$displayedPageNumber/${images.size}",
-                onClick = { showSettingsMenu = true },
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-        }
-
-        // 底栏（进度条）——覆盖在图片上方，不挤压图片显示区域；带滑入/滑出动画
+            pages,
+            isContinuous,
+            dir == ReadingDirection.RIGHT_TO_LEFT,
+            PageScale.fromName(pageScale).toContentScale(),
+            pager,
+            list,
+            nested,
+            ::forward,
+            ::backward,
+            onShowMenu = { showControls = !showControls },
+            onImageLongPress = { selected ->
+                automatic = false; selectedSource = selected.source
+                selectedTitle =
+                    "${selected.chapterName} - 第${selected.page + 1}页"; showImageMenu = true
+            },
+            onBottomAreaTap = { showControls = !showControls },
+            imageLoader = loader,
+            tools = tools,
+            onUserInteraction = { automatic = false; pendingChapter = null },
+            commentContent = { comment ->
+                ReaderChapterComments(
+                    comment,
+                    onOpen = { automatic = false; onComments(comment.chapterUuid) },
+                    onClosed = { onCloseComments(comment.chapterUuid) },
+                    onShowControls = { showControls = !showControls },
+                    onReport = { automatic = false; onReport(comment.chapterUuid, it) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            })
         AnimatedVisibility(
-            visible = showBottomBar && images.isNotEmpty(),
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            showControls,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            ReaderTopBar(
+                page?.chapterName ?: chapterName,
+                page?.let { current -> bookmarks.any { it.chapterUuid == current.chapterUuid && it.page == current.page } }
+                    ?: false,
+                onBack = onBack, onBookmark = {
+                    if (page?.source == null) toast.showToast("返回图片页后可添加书签")
+                    else onToggleBookmark(page.chapterUuid, page.page)
+                }, onSettings = { showSettings = true })
+        }
+        if (!showControls && page != null) Text(
+            if (page.source == null) "章节评论" else "${page.page + 1}/${page.imageCount}",
+            color = Color.White, style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(12.dp)
+        )
+        AnimatedVisibility(
+            showControls && page != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             ReaderBottomBar(
-                onComments = onComments,
-                currentPage = currentPageIndex,
-                totalPages = images.size,
-                sliderValue = sliderValue,
-                onSliderValueChange = { value ->
-                    sliderValue = value
-                    sliderDragging = true
-                    scrollToPageInstant(value.toInt())
-                },
+                page?.imageCount ?: 0, sliderPreview,
+                onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
-                    sliderDragging = false
-                    // 拖动结束后吸附到实际页码位置
-                    sliderValue = sliderValue.toInt().toFloat()
-                }
-            )
+                    dragging = false
+                    val target =
+                        pages.indexOfFirst { it.chapterUuid == page?.chapterUuid && it.source != null && it.page == sliderPreview.roundToInt() }
+                    if (target >= 0) jump(target)
+                },
+                onPrevious = { automatic = false; previousChapter() },
+                onNext = { automatic = false; nextChapter() },
+                onCatalog = { automatic = false; showCatalog = true; onLoadCatalog() },
+                onBookmarks = { automatic = false; showBookmarks = true },
+                onComments = { automatic = false; page?.let { onComments(it.chapterUuid) } },
+                commentsEnabled = commentsAllowed && page?.chapterUuid !in closedChapters,
+                commentCount = chapterCommentsState?.page?.total,
+                autoRunning = automatic,
+                onAuto = {
+                    if (page?.source == null) toast.showToast("返回图片页后可开始自动阅读")
+                    else {
+                        automatic = !automatic; showControls = false
+                    }
+                })
         }
-    }
-
-    if (showSettingsMenu) {
-        ReaderSettingsDialog(
-            readingDirection = dir,
-            pageScale = scale,
-            screenOrientation = orient,
-            onReadingDirectionChange = { onReadingDirectionChange(it.name) },
-            onPageScaleChange = { onPageScaleChange(it.name) },
-            onScreenOrientationChange = { onScreenOrientationChange(it.name) },
-            onResetPreferences = onResetPreferences,
-            onDismiss = { showSettingsMenu = false }
+        if (appending) Text(
+            "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(12.dp)
         )
     }
-
-    if (showImageMenu) {
-        ReaderImageActionDialog(
-            title = "$chapterName - 第${displayedPageNumber}页",
-            currentImageUrl = images.getOrNull(currentPageIndex),
-            onRefresh = { showImageMenu = false; onRefresh() },
-            onDismiss = { showImageMenu = false }
+    if (showSettings) ReaderSettingsDialog(
+        dir,
+        PageScale.fromName(pageScale),
+        ScreenOrientationSetting.fromName(screenOrientation),
+        onReadingDirectionChange = { onReadingDirectionChange(it.name) },
+        onPageScaleChange = { onPageScaleChange(it.name) },
+        onScreenOrientationChange = { onScreenOrientationChange(it.name) },
+        onResetPreferences = onResetPreferences,
+        onDismiss = { showSettings = false },
+        extraSettings = { ReaderToolsOptions(tools, onToolsChange) })
+    if (showBookmarks) ReaderBookmarksDialog(
+        bookmarks,
+        onSelect = {
+            pendingInitialPage.value = it.page; showBookmarks = false; onBookmarkSelected(
+            it
         )
-    }
-}
-
-// ── 连续模式跨章节滑动 NestedScrollConnection ──────────────────────
-
-@Composable
-private fun rememberContinuousOverscroll(
-    coroutineScope: CoroutineScope,
-    threshold: Float,
-    onPrevChapter: () -> Unit,
-    onNextChapter: () -> Unit
-): NestedScrollConnection {
-    val continuousOverscroll = remember { mutableFloatStateOf(0f) }
-    val latestOnPrevChapter by rememberUpdatedState(onPrevChapter)
-    val latestOnNextChapter by rememberUpdatedState(onNextChapter)
-
-    return remember(coroutineScope, threshold) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: androidx.compose.ui.geometry.Offset,
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                continuousOverscroll.floatValue += available.y
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val v = continuousOverscroll.floatValue
-                if (v > threshold) {
-                    coroutineScope.launch { latestOnPrevChapter() }
-                } else if (v < -threshold) {
-                    coroutineScope.launch { latestOnNextChapter() }
-                }
-                continuousOverscroll.floatValue = 0f
-                return Velocity.Zero
-            }
-        }
-    }
+        },
+        onDismiss = { showBookmarks = false })
+    if (showCatalog) ReaderCatalogDialog(
+        catalog, page?.chapterUuid.orEmpty(),
+        onSelect = { pendingInitialPage.value = 0; showCatalog = false; onSelectCatalog(it) },
+        onRetry = onLoadCatalog, onDismiss = { showCatalog = false })
+    if (showImageMenu) ReaderImageActionDialog(
+        selectedTitle, selectedSource,
+        onRefresh = { showImageMenu = false; onRefresh() }, onDismiss = { showImageMenu = false })
 }
 
 // ── RiskControl ────────────────────────────────────────────────────
@@ -569,9 +709,11 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 @Composable
 private fun ReaderLoadingPreview() {
     CopyManga_NeoTheme {
-        Box(Modifier
-            .fillMaxSize()
-            .background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
             CircularWavyProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
         }
     }
@@ -581,9 +723,11 @@ private fun ReaderLoadingPreview() {
 @Composable
 private fun ReaderErrorPreview() {
     CopyManga_NeoTheme {
-        Box(Modifier
-            .fillMaxSize()
-            .background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
             Text(
                 "加载失败：网络连接超时",
                 color = Color.White,
@@ -599,9 +743,11 @@ private fun ReaderErrorPreview() {
 @Composable
 private fun ReaderRiskControlPreview() {
     CopyManga_NeoTheme {
-        Box(Modifier
-            .fillMaxSize()
-            .background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
             ReaderRiskControlContent("访问过于频繁，请稍后再试", Modifier.align(Alignment.Center))
         }
     }

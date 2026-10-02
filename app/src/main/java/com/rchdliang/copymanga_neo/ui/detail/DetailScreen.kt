@@ -149,6 +149,7 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -193,7 +194,7 @@ fun DetailScreen(
     LaunchedEffect(pathWord, transitionData) {
         if (transitionData != null) {
             keepTransitionCover = true
-            delay(700)
+            delay(700.milliseconds)
             keepTransitionCover = false
         }
     }
@@ -1086,7 +1087,7 @@ private fun DetailContent(
                 },
                 text = {
                     Text(
-                        startChapterName.orEmpty(),
+                        startChapterName,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

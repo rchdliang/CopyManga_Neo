@@ -52,7 +52,7 @@ class DownloadManager internal constructor(
     private val startForegroundDownload: () -> Unit,
     private val queueStore: DownloadQueueStore? = null,
     private val networkPolicy: DownloadNetworkPolicy? = null,
-    private val networkSettings: NetworkSettingsStore? = null
+    networkSettings: NetworkSettingsStore? = null
 ) {
     @Inject
     constructor(
@@ -503,9 +503,7 @@ class DownloadManager internal constructor(
         for (task in queue) {
             val completion = CompletableDeferred<Unit>()
             val shouldProcess = stateMutex.withLock {
-                if (currentTasks[task.pathWord]?.taskId != task.taskId || task.pathWord in pausedComics) {
-                    false
-                } else if (!networkAllowed() || task.pathWord in networkWaiting) {
+                !(currentTasks[task.pathWord]?.taskId != task.taskId || task.pathWord in pausedComics) && if (!networkAllowed() || task.pathWord in networkWaiting) {
                     networkWaiting = networkWaiting + task.pathWord
                     updateProgress(
                         task.pathWord, status = DownloadTaskStatus.WAITING_FOR_WIFI,
@@ -1177,7 +1175,7 @@ class DownloadManager internal constructor(
             currentChapterName = currentChapter?.chapter?.name,
             currentChapterProgress = currentChapter?.progress ?: 0f,
             status = status,
-            statusText = statusText ?: old?.statusText ?: "等待中",
+            statusText = statusText ?: "等待中",
             errorMessage = old?.errorMessage ?: errorChapter?.errorMessage,
             downloadedImages = old?.downloadedImages ?: 0,
             totalImages = old?.totalImages ?: 0,

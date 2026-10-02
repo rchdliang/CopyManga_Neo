@@ -8,12 +8,12 @@ import com.rchdliang.copymanga_neo.domain.repository.StorageRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.coroutineContext
 
 @Singleton
 @OptIn(coil.annotation.ExperimentalCoilApi::class)
@@ -22,7 +22,7 @@ class StorageRepositoryImpl @Inject constructor(@ApplicationContext private val 
     override suspend fun getUsage(): Result<StorageUsage> = result {
         val downloadRoot = File(context.filesDir, "downloads")
         val bytes = if (downloadRoot.exists()) downloadRoot.walkTopDown().sumOf { file ->
-            coroutineContext.ensureActive()
+            currentCoroutineContext().ensureActive()
             if (file.isFile) file.length() else 0L
         } else 0L
         StorageUsage(

@@ -152,6 +152,7 @@ private fun HomeContent(
     uiState: HomeUiState,
     onComicClick: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
+    modifier: Modifier = Modifier,
     onNavigateToExplore: (String) -> Unit = {},
     onRefresh: () -> Unit,
     onNavigateToTopic: (String, String) -> Unit = { _, _ -> },
@@ -161,8 +162,7 @@ private fun HomeContent(
     onRankAudienceSelected: (String) -> Unit = {},
     onRankPeriodSelected: (String) -> Unit = {},
     onRetryAfterRisk: () -> Unit = {},
-    onNavigateToDownloads: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onNavigateToDownloads: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
 
@@ -227,7 +227,7 @@ private fun HomeContent(
 
                 (uiState.error != null && uiState.recComicList.isEmpty() &&
                         uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty()) -> {
-                    val errorMsg = uiState.error.orEmpty()
+                    val errorMsg = uiState.error
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.Center,
@@ -446,7 +446,6 @@ private fun HomeComicSection(
             )
             if (ranked) {
                 HomeRankChoices(
-                    rankAudience,
                     rankPeriod,
                     onRankPeriodSelected
                 )
@@ -567,7 +566,6 @@ private fun HomeSectionHeader(
 
 @Composable
 private fun HomeRankChoices(
-    audience: String,
     period: String,
     onPeriodSelected: (String) -> Unit
 ) {
@@ -658,12 +656,12 @@ private fun ComicGrid(
     comics: List<ComicSummary>,
     transitionGroupKey: String,
     onComicClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
     ranked: Boolean = false,
     rankPositions: Map<String, Int> = emptyMap(),
     cardWidth: Dp = 120.dp,
     placeholderCount: Int = 0,
-    state: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    state: LazyListState = rememberLazyListState()
 ) {
     LazyRow(
         contentPadding = PaddingValues(0.dp),

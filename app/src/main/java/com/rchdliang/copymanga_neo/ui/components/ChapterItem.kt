@@ -1,7 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -65,7 +64,6 @@ private fun resolveChapterManageVisualState(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChapterItem(
     chapter: ChapterInfo,

@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.local
 
 import android.content.Context
+import androidx.core.content.edit
 import com.google.gson.JsonObject
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogRepository
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogState
@@ -82,7 +83,7 @@ class LocalNetworkLogStore @Inject constructor(@ApplicationContext context: Cont
     override suspend fun setEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
         synchronized(lock) {
             generation++
-            preferences.edit().putBoolean("enabled", enabled).apply()
+            preferences.edit { putBoolean("enabled", enabled) }
             mutableState.value = mutableState.value.copy(enabled = enabled)
         }
     }

@@ -439,8 +439,7 @@ class DetailViewModel @Inject constructor(
     }
 
     private suspend fun saveLocalCache(detail: ComicInfo) {
-        val existing = downloadRepository.getDownloadedComic(detail.pathWord)
-        if (existing == null) return
+        val existing = downloadRepository.getDownloadedComic(detail.pathWord) ?: return
         val authors = detail.author?.joinToString(",") { it.name } ?: ""
         val entity = DownloadedComicInfo(
             pathWord = detail.pathWord,
@@ -500,10 +499,10 @@ class DetailViewModel @Inject constructor(
 
     private suspend fun observeDownload(pathWord: String) {
         try {
-            kotlinx.coroutines.flow.combine(
+            combine(
                 downloadRepository.getDownloadProgress(),
                 downloadRepository.getAllDownloadedComics()
-            ) { _, _ -> Unit }.collect {
+            ) { _, _ -> }.collect {
                 refreshDownloadStatus(pathWord)
             }
         } catch (e: CancellationException) {
@@ -648,7 +647,7 @@ class DetailViewModel @Inject constructor(
         val chapters = state.chapters.sortedBy { it.index }
 
         val browse = state.browse
-        if (browse != null && browse.chapterUuid != null) {
+        if (browse?.chapterUuid != null) {
             val lastReadIndex = chapters.indexOfFirst { it.uuid == browse.chapterUuid }
             if (lastReadIndex >= 0) {
                 // 跳到下一章；若已是最后一章，停留在当前章（避免 fallback 回第一章）

@@ -119,7 +119,8 @@ fun CommentsDialog(
     postingAllowed: Boolean = true,
     onLogin: (() -> Unit)? = null,
     comicPathWord: String? = null,
-    viewModel: CommentsViewModel = hiltViewModel()
+    viewModel: CommentsViewModel = hiltViewModel(),
+    initialReport: MangaComment? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val currentTime by produceState(initialValue = ZonedDateTime.now()) {
@@ -165,6 +166,9 @@ fun CommentsDialog(
         viewModel.open(target, postingAllowed, comicPathWord)
         onDispose { viewModel.close() }
     }
+    LaunchedEffect(target, initialReport?.id, state.target) {
+        if (state.target == target && initialReport != null) viewModel.openReport(initialReport)
+    }
     val rootList = rememberLazyListState()
     val replyList = rememberLazyListState()
     LaunchedEffect(target) {
@@ -192,10 +196,9 @@ fun CommentsDialog(
                 lastOffset = offset
                 return@collect
             }
-            if (index == 0 && offset == 0) fabVisible = true
-            else if (index != lastIndex || abs(offset - lastOffset) >= scrollThreshold) {
-                fabVisible = index < lastIndex || (index == lastIndex && offset < lastOffset)
-            } else return@collect
+            val atStart = index == 0 && offset == 0
+            if (!atStart && index == lastIndex && abs(offset - lastOffset) < scrollThreshold) return@collect
+            fabVisible = atStart || index < lastIndex || (index == lastIndex && offset < lastOffset)
             lastIndex = index
             lastOffset = offset
         }
@@ -307,9 +310,9 @@ internal fun CommentsContent(
     onShowReplies: (MangaComment) -> Unit,
     onDraftChange: (String) -> Unit,
     onPost: () -> Unit,
+    modifier: Modifier = Modifier,
     onReport: (MangaComment) -> Unit = {},
-    onLogin: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onLogin: (() -> Unit)? = null
 ) {
     val pullState = rememberPullToRefreshState()
     BoxWithConstraints(
@@ -415,7 +418,7 @@ internal fun CommentsContent(
                     Text(
                         when {
                             state.checkingPermission -> "正在确认评论权限…"
-                            state.permissionError != null -> state.permissionError.orEmpty()
+                            state.permissionError != null -> state.permissionError
                             else -> "这部漫画已关闭评论发表"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -519,7 +522,7 @@ internal fun CommentsContent(
 
                                             state.feed.error != null -> {
                                                 Text(
-                                                    state.feed.error.orEmpty(),
+                                                    state.feed.error,
                                                     color = MaterialTheme.colorScheme.error
                                                 )
                                                 TextButton(
@@ -623,7 +626,7 @@ private fun CommentDivider() {
 }
 
 @Composable
-private fun CommentCard(
+internal fun CommentCard(
     comment: MangaComment,
     currentTime: ZonedDateTime,
     previews: List<MangaComment> = emptyList(),

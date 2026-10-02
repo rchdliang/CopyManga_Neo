@@ -32,5 +32,5 @@ data class FavoriteComic(
     /** 已有阅读记录，且尚未读到服务端返回的最新章节。 */
     val hasUnreadUpdate: Boolean
         get() = !browse?.chapterUuid.isNullOrBlank() &&
-                lastChapterId.isNotBlank() && browse?.chapterUuid != lastChapterId
+                lastChapterId.isNotBlank() && browse.chapterUuid != lastChapterId
 }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.seconds
 
 data class FilteredHomeComics(
     val comics: HomeComicsData,
@@ -44,7 +45,7 @@ class FilterHomeComics @Inject constructor(private val mangaRepository: MangaRep
         val allowUnknown = MutableStateFlow(false)
         val enrichmentComplete = MutableStateFlow(!refresh)
         launch {
-            delay(3_000)
+            delay(3.seconds)
             allowUnknown.value = true
         }
         launch {

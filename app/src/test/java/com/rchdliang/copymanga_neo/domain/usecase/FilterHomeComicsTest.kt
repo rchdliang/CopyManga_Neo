@@ -23,6 +23,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.lang.reflect.Proxy
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 
 class FilterHomeComicsTest {
     private val blocked = listOf(Theme("校园", "xiaoyuan"))
@@ -122,7 +123,7 @@ class FilterHomeComicsTest {
                 val count = active.incrementAndGet()
                 maximum.updateAndGet { maxOf(it, count) }
                 try {
-                    delay(10)
+                    delay(10.milliseconds)
                     return Result.success(emptyList())
                 } finally {
                     active.decrementAndGet()
