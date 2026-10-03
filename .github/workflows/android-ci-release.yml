@@ -29,6 +29,10 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Prepare artifact version
+        id: artifact_version
+        run: echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
@@ -42,7 +46,7 @@ jobs:
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v6
         with:
-          name: CopyManga_Neo-${{ github.sha }}-debug-apk
+          name: CopyManga_Neo-${{ steps.artifact_version.outputs.short_sha }}-debug-apk
           path: |
             **/build/outputs/apk/**/debug/*.apk
           if-no-files-found: error
@@ -83,6 +87,10 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Prepare artifact version
+        id: artifact_version
+        run: echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
@@ -102,31 +110,24 @@ jobs:
       - name: Build release APK
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ENABLE_ABI_SPLITS: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         run: |
           test -n "$COPYMANGA_TAP_STRING" || { echo "Missing release configuration" >&2; exit 1; }
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease "-PenableAbiSplits=$ENABLE_ABI_SPLITS"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v6
         with:
-          name: CopyManga_Neo-${{ github.sha }}-release-apk
+          name: CopyManga_Neo-${{ steps.artifact_version.outputs.short_sha }}-release-apk
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/*/release/*.apk
           if-no-files-found: error
 
-      - name: Rename APK
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        run: |
-          set -euo pipefail
-          apk="$(find app/build/outputs/apk -path "*/release/*.apk" -type f | head -n 1)"
-          test -n "$apk"
-          cp "$apk" "CopyManga_Neo_${GITHUB_REF_NAME}.apk"
-
       - name: Create GitHub Release
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: CopyManga_Neo_${{ github.ref_name }}.apk
+          files: app/build/outputs/apk/release/*.apk
           body_path: release_body.txt
           fail_on_unmatched_files: true

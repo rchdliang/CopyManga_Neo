@@ -47,7 +47,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
+import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.ui.components.ShareAction
 import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -76,6 +78,34 @@ fun ComicExploreScreen(
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                },
+                actions = {
+                    val topic = state.topic
+                    val target = if (topic != null) {
+                        ShareTarget.topic(topic.pathWord, topic.title.ifBlank { "漫画专题" })
+                    } else when (state.section) {
+                        ExploreSection.RANKS -> ShareTarget.rank(
+                            state.rankAudience,
+                            state.rankPeriod
+                        )
+
+                        ExploreSection.RECOMMENDED -> ShareTarget.page(
+                            "recommend",
+                            state.section.title
+                        )
+
+                        ExploreSection.NEWEST -> ShareTarget.page("newest", state.section.title)
+                        ExploreSection.TOPICS -> ShareTarget.page("topic", state.section.title)
+                        ExploreSection.FINISHED -> ShareTarget.comics(
+                            state.section.title,
+                            top = "finish"
+                        )
+
+                        ExploreSection.FILTER -> ShareTarget.comics(
+                            state.section.title, state.theme, state.top, state.ordering
+                        )
+                    }
+                    ShareAction(target)
                 },
                 navigationIcon = {
                     IconButton(onClick = back) {
@@ -328,8 +358,15 @@ private fun OptionRow(
         items(options, key = { it.pathWord }) { option ->
             FilterChip(
                 selected = selected == option.pathWord,
+                enabled = option.enabled,
                 onClick = { onSelect(option.pathWord) },
-                label = { Text(option.name, color = MaterialTheme.colorScheme.onSurface) }
+                label = {
+                    Text(
+                        option.label,
+                        color = if (option.enabled) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
             )
         }
     }

@@ -134,11 +134,13 @@ import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.LastChapter
+import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.blocks
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.ShareAction
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.currentComicTransitionData
@@ -691,6 +693,7 @@ private fun DetailContent(
                                 )
                             }
                         }
+                        ShareAction(ShareTarget.comic(comicDetail.pathWord, comicDetail.name))
                         IconButton(onClick = onComments, enabled = comicDetail.uuid.isNotBlank()) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.Comment,

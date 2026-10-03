@@ -11,5 +11,9 @@ interface AppSettingsRepository {
     suspend fun setWifiOnlyDownloads(enabled: Boolean): Result<Unit>
     suspend fun getHomeRankPreferences(): Result<HomeRankPreferences>
     suspend fun setHomeRankPreferences(preferences: HomeRankPreferences): Result<Unit>
+
+    /** 搜索结果与发现结果分别保存布局偏好。 */
+    suspend fun getSearchCompactLayout(keywordSearch: Boolean): Result<Boolean>
+    suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean): Result<Unit>
     suspend fun resetDefaults(): Result<Unit>
 }

@@ -7,6 +7,9 @@ import com.rchdliang.copymanga_neo.domain.model.ComicTopicPage
 
 /** HAR 中确认的漫画只读入口，仅用于 Web 模式。 */
 interface ComicDiscoveryRepository {
+    fun cachedFilterOptions(): ComicFilterOptions =
+        com.rchdliang.copymanga_neo.domain.model.ComicFilterDefaults.options
+
     suspend fun getRankings(
         period: String,
         audience: String,

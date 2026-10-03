@@ -57,3 +57,23 @@ data class ComicFilterTagDto(
     @SerializedName("name") val name: String,
     @SerializedName("path_word") val pathWord: String
 )
+
+/** 全部漫画题材及对应漫画数量；initials 不参与筛选。 */
+data class ComicThemeCountsResponse(
+    @SerializedName("code") val code: Int,
+    @SerializedName("message") val message: String?,
+    @SerializedName("results") val results: ComicThemeCountsResult?
+)
+
+data class ComicThemeCountsResult(
+    @SerializedName("list") val list: List<ComicThemeCountDto>,
+    @SerializedName("total") val total: Int,
+    @SerializedName("offset") val offset: Int,
+    @SerializedName("limit") val limit: Int
+)
+
+data class ComicThemeCountDto(
+    @SerializedName("name") val name: String,
+    @SerializedName("path_word") val pathWord: String,
+    @SerializedName("count") val count: Int?
+)

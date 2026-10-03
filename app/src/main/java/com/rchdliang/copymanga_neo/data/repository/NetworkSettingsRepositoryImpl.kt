@@ -58,7 +58,14 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
             // 更换发现入口后，旧线路不能继续覆盖新 API 域名。
             saveConfiguration(
                 if (value.apiHost != old.apiHost || value.wwwHost != old.wwwHost) {
-                value.copy(routes = emptyList(), discoveredAt = 0, selection = NetworkSelection.DEFAULT, fixedHost = "", routeIndex = 0)
+                    value.copy(
+                        routes = emptyList(),
+                        shareHosts = emptyList(),
+                        discoveredAt = 0,
+                        selection = NetworkSelection.DEFAULT,
+                        fixedHost = "",
+                        routeIndex = 0
+                    )
             } else value)
         }
     }
@@ -101,6 +108,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                         .header("Origin", "https://${start.wwwHost}").build())
                     gate.register(call)
                     try {
+                        var shareHosts = start.shareHosts
                         val routes = call.awaitResponse().use { response ->
                             val body = response.peekBody(1024 * 1024 + 1).string()
                             val code = try { JsonParser.parseString(body).asJsonObject.get("code")?.asInt } catch (_: Exception) { null }
@@ -109,6 +117,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                                 throw RiskControlException("网络配置接口触发访问限制，请稍后再试")
                             }
                             if (!response.isSuccessful) throw IOException("网络配置请求失败：HTTP ${response.code}")
+                            shareHosts = NetworkSettingsCodec.parseShareHosts(body)
                             NetworkSettingsCodec.parseRoutes(body)
                         }
                         val oldRoute = start.routes.getOrNull(start.routeIndex)
@@ -118,7 +127,11 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                             start.selection == NetworkSelection.ROUTE && matchingRoute < 0 -> NetworkSelection.DEFAULT
                             else -> start.selection
                         }
-                        store.save(start.copy(routes = routes, discoveredAt = System.currentTimeMillis(),
+                        store.save(
+                            start.copy(
+                                routes = routes,
+                                shareHosts = shareHosts,
+                                discoveredAt = System.currentTimeMillis(),
                             selection = selection, routeIndex = matchingRoute.coerceAtLeast(0)), rememberPrevious = false)
                         return@withLock
                     } catch (e: CancellationException) { throw e }

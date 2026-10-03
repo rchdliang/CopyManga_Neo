@@ -87,6 +87,16 @@ interface MangaApiService {
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SearchResponse>
 
+    /** 全量题材与数量，沿用默认请求头。 */
+    @GET("api/v3/theme/comic/count")
+    suspend fun getComicThemeCounts(
+        @Query("free_type") freeType: Int = 1,
+        @Query("limit") limit: Int = 500,
+        @Query("offset") offset: Int = 0,
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<com.rchdliang.copymanga_neo.data.remote.dto.ComicThemeCountsResponse>
+
     @GET("api/v3/h5/filter/comic/tags")
     suspend fun getComicFilterTags(
         @Query("type") type: Int = 1,
@@ -194,6 +204,12 @@ interface MangaApiService {
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SearchResponse>
 
+    /**
+     * 保留当前搜索契约和服务端结果顺序，不添加发现页的排序参数。
+     * 用户观察：App 结果接近 PC 的 /api/kb/web/searchcl/comics（platform=2、limit=12），
+     * 与 H5 的 /api/v3/search/comic（platform=1、limit=20）存在差异；
+     * 差异原因、是否按相关性排序尚未验证，不能据此推断两个接口是固定结果集。
+     */
     @GET("api/v3/search/comic")
     suspend fun search(
         @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,

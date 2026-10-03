@@ -53,12 +53,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
+import com.rchdliang.copymanga_neo.domain.model.ShareTarget
+import com.rchdliang.copymanga_neo.ui.components.ShareAction
 import kotlin.math.roundToInt
 
 @Composable
 fun ReaderTopBar(
     chapterName: String, bookmarked: Boolean, onBack: () -> Unit,
-    onBookmark: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier
+    onBookmark: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier,
+    shareTarget: ShareTarget? = null
 ) {
     Surface(modifier, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
         Row(
@@ -83,6 +86,7 @@ fun ReaderTopBar(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            shareTarget?.let { ShareAction(it) }
             IconButton(onClick = onBookmark) {
                 Icon(
                     if (bookmarked) Icons.Filled.BookmarkAdded else Icons.Outlined.BookmarkAdd,

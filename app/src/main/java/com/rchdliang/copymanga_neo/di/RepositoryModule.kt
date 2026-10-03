@@ -19,6 +19,12 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindShareLinkRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.ShareLinkRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.ShareLinkRepository
+
+    @Binds
+    @Singleton
     abstract fun bindReaderToolsRepository(
         implementation: com.rchdliang.copymanga_neo.data.local.ReaderToolsStore
     ): com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository

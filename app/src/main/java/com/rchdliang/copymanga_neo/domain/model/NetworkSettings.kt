@@ -33,6 +33,7 @@ data class NetworkSettings(
     val routeIndex: Int = 0,
     val fixedHost: String = "",
     val routes: List<List<String>> = emptyList(),
+    val shareHosts: List<String> = emptyList(),
     val discoveredAt: Long = 0,
     val autoDiscover: Boolean = false,
     val proxyMode: ProxyMode = ProxyMode.SYSTEM,

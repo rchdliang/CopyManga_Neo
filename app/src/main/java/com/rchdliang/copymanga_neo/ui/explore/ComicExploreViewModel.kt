@@ -63,6 +63,7 @@ class ComicExploreViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(
         ComicExploreUiState(
             section = ExploreSection.fromRoute(savedStateHandle["section"]),
+            filters = repository.cachedFilterOptions(),
             theme = savedStateHandle.get<String>("theme")?.takeIf { it.isNotBlank() },
             top = savedStateHandle.get<String>("top")?.takeIf { it.isNotBlank() },
             rankAudience = savedStateHandle.get<String>("audience")
@@ -73,6 +74,8 @@ class ComicExploreViewModel @Inject constructor(
     )
     val uiState: StateFlow<ComicExploreUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
+    private var filterJob: Job? = null
+    private var filterOptionsLoaded = false
     private val exceptionHandler = CoroutineExceptionHandler { _, error ->
         android.util.Log.e("ComicExplore", "加载漫画发现页失败", error)
         _uiState.update {
@@ -123,6 +126,7 @@ class ComicExploreViewModel @Inject constructor(
     }
 
     fun selectTheme(theme: String?) {
+        if (_uiState.value.filters?.themes?.firstOrNull { it.pathWord == theme }?.enabled == false) return
         if (_uiState.value.theme == theme) return
         _uiState.update { it.copy(theme = theme) }
         refresh()
@@ -173,6 +177,9 @@ class ComicExploreViewModel @Inject constructor(
     }
 
     private fun refreshContent(keepContent: Boolean) {
+        if (_uiState.value.section == ExploreSection.FILTER &&
+            _uiState.value.topic == null && (!filterOptionsLoaded || keepContent)
+        ) refreshFilterOptions()
         loadJob?.cancel()
         _uiState.update {
             it.copy(
@@ -184,27 +191,38 @@ class ComicExploreViewModel @Inject constructor(
             )
         }
         loadJob = viewModelScope.launch(exceptionHandler) {
-            if (_uiState.value.section == ExploreSection.FILTER && _uiState.value.filters == null) {
-                repository.getFilterOptions().fold(
-                    onSuccess = { options ->
-                        _uiState.update {
-                            it.copy(
-                                filters = options,
-                                filterError = null
-                            )
-                        }
-                    },
-                    onFailure = { error ->
-                        _uiState.update {
-                            it.copy(
-                                filterError = error.message ?: "筛选项暂不可用"
-                            )
-                        }
-                    }
-                )
-            }
             currentCoroutineContext().ensureActive()
             loadPage(0, append = false)
+        }
+    }
+
+    private fun refreshFilterOptions() {
+        if (filterJob?.isActive == true) return
+        filterOptionsLoaded = true
+        filterJob = viewModelScope.launch(exceptionHandler) {
+            repository.getFilterOptions().fold(
+                onSuccess = { options ->
+                    val selected = _uiState.value.theme
+                    val updated = selected?.takeIf { path ->
+                        options.themes.any { it.pathWord == path && it.enabled }
+                    }
+                    _uiState.update {
+                        it.copy(
+                            filters = options,
+                            theme = updated,
+                            filterError = null
+                        )
+                    }
+                    if (selected != null && updated == null &&
+                        _uiState.value.section == ExploreSection.FILTER && _uiState.value.topic == null
+                    ) refresh()
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(filterError = error.message ?: "标签数量暂不可用")
+                    }
+                }
+            )
         }
     }
 

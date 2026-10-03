@@ -1,3 +1,4 @@
+import com.android.build.api.variant.FilterConfiguration.FilterType.ABI
 import java.util.Properties
 
 plugins {
@@ -30,6 +31,11 @@ require(officialAppTapString.isEmpty() || officialAppTapString.matches(Regex("[0
     "COPYMANGA_TAP_STRING 必须是 32 位十六进制字符"
 }
 
+// 仅标签发布任务显式开启，普通 CI 和本地构建默认生成通用包。
+val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
+    .map(String::toBooleanStrict)
+    .getOrElse(false)
+
 android {
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
@@ -38,10 +44,9 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 19
-        versionName = "0.10.3.0"
+        versionCode = 20
+        versionName = "0.10.3.1"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
 
@@ -70,6 +75,14 @@ android {
             }
         }
     }
+    splits {
+        abi {
+            isEnable = enableAbiSplits
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -84,9 +97,11 @@ android {
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         variant.outputs.forEach { output ->
+            val abi = output.filters.firstOrNull { it.filterType == ABI }?.identifier
+            val suffix = if (enableAbiSplits) "-${abi ?: "universal"}" else ""
             output.outputFileName.set(
                 output.versionName.map { versionName ->
-                    "CopyManga_Neo-v$versionName-release.apk"
+                    "CopyManga_Neo-v$versionName$suffix-release.apk"
                 }
             )
         }
@@ -101,7 +116,6 @@ dependencies {
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)
-    androidTestImplementation(composeBom)
     implementation(libs.androidx.compose.runtime)
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
@@ -151,14 +165,9 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
-    
-    // Testing
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+
+    // Compose 预览工具
     debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
 
 }

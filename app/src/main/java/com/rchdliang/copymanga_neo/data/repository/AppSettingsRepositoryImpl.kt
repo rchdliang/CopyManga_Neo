@@ -68,12 +68,29 @@ class AppSettingsRepositoryImpl @Inject constructor(
         }
     }
 
+    private fun searchLayoutKey(keywordSearch: Boolean) =
+        booleanPreferencesKey(if (keywordSearch) "search_compact_layout" else "discovery_compact_layout")
+
+    override suspend fun getSearchCompactLayout(keywordSearch: Boolean): Result<Boolean> = try {
+        Result.success(store.data.first()[searchLayoutKey(keywordSearch)] ?: false)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean) = save {
+        store.edit { it[searchLayoutKey(keywordSearch)] = compact }
+    }
+
     override suspend fun resetDefaults() = save {
         store.edit {
             it.remove(themeKey)
             it.remove(wifiOnlyKey)
             it.remove(rankAudienceKey)
             it.remove(rankPeriodKey)
+            it.remove(searchLayoutKey(true))
+            it.remove(searchLayoutKey(false))
         }
     }
 

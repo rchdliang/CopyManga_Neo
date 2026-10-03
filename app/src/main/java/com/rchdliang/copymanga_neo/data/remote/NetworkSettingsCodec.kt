@@ -55,6 +55,7 @@ internal object NetworkSettingsCodec {
             officialApp = app.copy(apiHost = host(app.apiHost), loginHost = host(app.loginHost)),
             apiHost = host(value.apiHost),
             wwwHost = host(value.wwwHost),
+            shareHosts = value.shareHosts.take(20).map(::host).distinct(),
             loginHost = value.loginHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty(),
             version = value.version.trim(), routes = routes, fixedHost = fixed,
             proxyAddress = value.proxyAddress.trim())
@@ -77,6 +78,7 @@ internal object NetworkSettingsCodec {
         })
         addProperty("apiHost", value.apiHost)
         addProperty("wwwHost", value.wwwHost)
+        add("shareHosts", JsonArray().apply { value.shareHosts.forEach { add(it) } })
         addProperty("loginHost", value.loginHost)
         addProperty("version", value.version)
         addProperty("selection", value.selection.name)
@@ -115,6 +117,7 @@ internal object NetworkSettingsCodec {
                     buildTime = appStr("buildTime")
                 ),
                 apiHost = str("apiHost", defaults.apiHost), wwwHost = str("wwwHost", defaults.wwwHost),
+                shareHosts = json.getAsJsonArray("shareHosts")?.map { it.asString } ?: emptyList(),
                 loginHost = str("loginHost", ""), version = str("version", defaults.version),
                 selection = NetworkSelection.valueOf(str("selection", "DEFAULT")),
                 routeIndex = json.get("routeIndex")?.asInt ?: 0, fixedHost = str("fixedHost", ""),
@@ -124,6 +127,22 @@ internal object NetworkSettingsCodec {
                 proxyMode = ProxyMode.valueOf(str("proxyMode", "SYSTEM")), proxyAddress = str("proxyAddress", "")
             ))
         } catch (_: Exception) { NetworkSettings() }
+    }
+
+    /** 分享域名允许缺失，保留 WWW 回退；无效地址不会参与链接生成。 */
+    fun parseShareHosts(body: String): List<String> {
+        require(body.length <= 1024 * 1024) { "网络配置响应过大" }
+        val json = JsonParser.parseString(body).asJsonObject
+        require(json.get("code")?.asInt == 200) { "分享配置获取失败" }
+        return json.getAsJsonObject("results")?.get("share")?.takeIf { it.isJsonArray }
+            ?.asJsonArray?.take(20)
+            ?.mapNotNull { item ->
+                try {
+                    host(item.asString)
+                } catch (_: Exception) {
+                    null
+                }
+            }?.distinct().orEmpty()
     }
 
     /** 错误页或空配置不能覆盖上次可用线路。 */

@@ -13,6 +13,13 @@ import retrofit2.http.Query
  */
 interface SystemApiService {
 
+    /** 使用 WWW Retrofit 获取分享配置，不依赖 App API 的响应结构。 */
+    @GET("api/v3/system/network21")
+    suspend fun getShareNetworkConfig(
+        @Query("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
+        @HeaderMap headers: Map<String, String> = WwwApiService.noAuthHeaders()
+    ): Response<com.google.gson.JsonObject>
+
     companion object {
         /**
          * 标记该请求不需要 Authorization。

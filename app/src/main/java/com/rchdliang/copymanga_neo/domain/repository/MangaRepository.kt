@@ -92,6 +92,13 @@ interface MangaRepository {
         queryType: QueryType? = null
     ): Result<List<ComicSummary>>
 
+    /** 返回服务端总数与游标；兼容仅实现旧列表方法的仓库。 */
+    suspend fun searchComicPage(
+        query: String, page: Int, queryType: QueryType? = null, offset: Int? = null
+    ): Result<ComicPage> = searchComics(query, page, queryType).map {
+        ComicPage(it, if (it.size >= 20) page * 20 else null)
+    }
+
     /**
      * 获取推荐漫画
      */

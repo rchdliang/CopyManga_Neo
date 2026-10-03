@@ -25,7 +25,10 @@ data class ComicTopicPage(
 )
 
 /** 服务端筛选项。 */
-data class ComicFilterOption(val name: String, val pathWord: String)
+data class ComicFilterOption(val name: String, val pathWord: String, val count: Int? = null) {
+    val enabled: Boolean get() = count != 0
+    val label: String get() = count?.let { "$name ($it)" } ?: name
+}
 
 data class ComicFilterOptions(
     val themes: List<ComicFilterOption>,

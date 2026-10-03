@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -86,10 +87,15 @@ class ToastState internal constructor(
 }
 
 /**
- * 全局 Toast CompositionLocal，默认抛出异常以提示未提供 ToastHost
+ * 全局 Toast CompositionLocal，默认提供预览与测试用的安全回退实例，避免在 Preview 中未提供 ToastHost 时抛出异常
  */
 val LocalToastHost: ProvidableCompositionLocal<ToastState> =
-    compositionLocalOf { error("LocalToastHost 未提供，请在 App 根部放置 AppToastHost") }
+    compositionLocalOf {
+        ToastState(
+            scope = CoroutineScope(EmptyCoroutineContext),
+            snackbarHostState = SnackbarHostState()
+        )
+    }
 
 /**
  * App 级 Toast 宿主 Composable。

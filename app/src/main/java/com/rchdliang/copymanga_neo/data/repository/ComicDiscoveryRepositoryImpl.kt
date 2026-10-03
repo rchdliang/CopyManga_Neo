@@ -11,6 +11,10 @@ import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import retrofit2.Response
 import javax.inject.Inject
@@ -20,8 +24,13 @@ import javax.inject.Singleton
 @Singleton
 class ComicDiscoveryRepositoryImpl @Inject constructor(
     private val api: MangaApiService,
-    private val networkSettings: NetworkSettingsStore
+    private val networkSettings: NetworkSettingsStore,
+    private val themeCatalog: com.rchdliang.copymanga_neo.data.local.ComicThemeCatalogStore
 ) : ComicDiscoveryRepository {
+    private val filterMutation = Mutex()
+
+    @Volatile
+    private var extraOptions = com.rchdliang.copymanga_neo.domain.model.ComicFilterDefaults.options
     override suspend fun getRankings(
         period: String,
         audience: String,
@@ -114,17 +123,58 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun getFilterOptions(): Result<ComicFilterOptions> = result {
-        val response = api.getComicFilterTags()
-        val body = response.body()
-        val options = checked(response, body?.code, body?.message, body?.results)
-        ComicFilterOptions(
-            themes = options.theme.orEmpty().map { ComicFilterOption(it.name, it.pathWord) },
-            tops = options.top.orEmpty().map { ComicFilterOption(it.name, it.pathWord) },
-            orderings = options.ordering.orEmpty()
-                .filter { it.pathWord in setOf("datetime_updated", "popular") }
-                .map { ComicFilterOption(it.name, "-${it.pathWord}") }
-        )
+    override fun cachedFilterOptions(): ComicFilterOptions =
+        extraOptions.copy(themes = themeCatalog.themes)
+
+    override suspend fun getFilterOptions(): Result<ComicFilterOptions> = filterMutation.withLock {
+        result {
+            supervisorScope {
+                val filtersRequest = async {
+                    result {
+                        val response = api.getComicFilterTags()
+                        val body = response.body()
+                        val options = checked(response, body?.code, body?.message, body?.results)
+                        extraOptions.copy(
+                            tops = options.top.orEmpty()
+                                .map { ComicFilterOption(it.name, it.pathWord) }
+                                .ifEmpty { extraOptions.tops },
+                            orderings = options.ordering.orEmpty()
+                                .filter { it.pathWord in setOf("datetime_updated", "popular") }
+                                .map { ComicFilterOption(it.name, "-${it.pathWord}") }
+                                .ifEmpty { extraOptions.orderings }
+                        )
+                    }
+                }
+                val themes = mutableListOf<ComicFilterOption>()
+                var offset = 0
+                do {
+                    val response = api.getComicThemeCounts(offset = offset)
+                    val body = response.body()
+                    val page = checked(response, body?.code, body?.message, body?.results)
+                    check(page.list.isNotEmpty() && page.total > 0) { "标签接口没有返回完整列表" }
+                    themes += page.list.map { tag ->
+                        check(
+                            tag.name.isNotBlank() && tag.pathWord.isNotBlank() &&
+                                    tag.count != null && tag.count >= 0
+                        ) { "标签数据无效" }
+                        ComicFilterOption(tag.name, tag.pathWord, tag.count)
+                    }
+                    val next =
+                        nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
+                    if (next == null) break
+                    offset = next
+                } while (true)
+                filtersRequest.await().fold(
+                    onSuccess = { extraOptions = it },
+                    onFailure = {
+                        if (it is com.rchdliang.copymanga_neo.domain.repository.RiskControlException) throw it
+                        android.util.Log.w("ComicThemes", "类型和排序暂不可用，保留已有筛选项", it)
+                    }
+                )
+                themeCatalog.save(themes.distinctBy { it.pathWord })
+                cachedFilterOptions()
+            }
+        }
     }
 
     override suspend fun filterComics(
@@ -135,7 +185,12 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
     ): Result<ComicPage> = result {
         require(
             offset >= 0 && (top == null || top in setOf("japan", "korea", "west", "finish")) &&
-                    ordering in setOf("-datetime_updated", "-popular", "datetime_updated")
+                    ordering in setOf(
+                "-datetime_updated",
+                "-popular",
+                "datetime_updated",
+                "popular"
+            )
         ) {
             "该筛选组合没有抓包证据"
         }
@@ -145,7 +200,8 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.toSummary() },
-            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit),
+            page.total
         )
     }
 

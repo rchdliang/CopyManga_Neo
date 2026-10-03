@@ -539,18 +539,36 @@ class MangaRepositoryImpl @Inject constructor(
         page: Int,
         queryType: QueryType?
     ): Result<List<ComicSummary>> {
+        return searchComicPage(query, page, queryType).map { it.comics }
+    }
+
+    override suspend fun searchComicPage(
+        query: String, page: Int, queryType: QueryType?, offset: Int?
+    ): Result<ComicPage> {
         return try {
+            require(page >= 1)
             val pageSize = 20
-            val offset = (page - 1) * pageSize
+            val requestedOffset = offset ?: (page - 1) * pageSize
+            require(requestedOffset >= 0)
             val response = apiService.search(
                 query = query,
                 limit = pageSize,
-                offset = offset,
+                offset = requestedOffset,
                 queryType = queryType
             )
             val body = response.body()
             if (response.isSuccessful && body?.code == 200) {
-                Result.success(body.results.list.map { it.toSummary() })
+                val result = body.results
+                check(result.offset == requestedOffset && result.limit > 0 && result.total >= 0) { "搜索分页数据无效" }
+                val next = result.offset.toLong() + result.limit
+                check(next <= Int.MAX_VALUE) { "搜索分页位置无效" }
+                Result.success(
+                    ComicPage(
+                        result.list.map { it.toSummary() },
+                        next.toInt().takeIf { result.list.isNotEmpty() && it < result.total },
+                        result.total
+                    )
+                )
             } else {
                 Result.failure(Exception(body?.message ?: "搜索失败"))
             }

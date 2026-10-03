@@ -78,6 +78,7 @@ import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
+import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
@@ -232,7 +233,8 @@ fun ReaderScreen(
                 onBookmarkSelected = viewModel::jumpToBookmark,
                 onBack = onNavigateBack, catalog = catalog,
                 onLoadCatalog = viewModel::loadCatalog,
-                onSelectCatalog = viewModel::selectCatalogChapter
+                onSelectCatalog = viewModel::selectCatalogChapter,
+                shareComicPathWord = comicPathWord
             )
         }
     }
@@ -276,7 +278,8 @@ fun ReaderSuccessContent(
     onBack: () -> Unit = {},
     catalog: ReaderCatalogUiState = ReaderCatalogUiState(),
     onLoadCatalog: () -> Unit = {},
-    onSelectCatalog: (String) -> Unit = {}
+    onSelectCatalog: (String) -> Unit = {},
+    shareComicPathWord: String? = null
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -608,7 +611,12 @@ fun ReaderSuccessContent(
                 onBack = onBack, onBookmark = {
                     if (page?.source == null) toast.showToast("返回图片页后可添加书签")
                     else onToggleBookmark(page.chapterUuid, page.page)
-                }, onSettings = { showSettings = true })
+                }, onSettings = { showSettings = true },
+                shareTarget = page?.let { current ->
+                    shareComicPathWord?.let { comic ->
+                        ShareTarget.chapter(comic, current.chapterUuid, current.chapterName)
+                    }
+                })
         }
         if (!showControls && page != null) Text(
             if (page.source == null) "章节评论" else "${page.page + 1}/${page.imageCount}",

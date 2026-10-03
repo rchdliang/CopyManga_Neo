@@ -7,14 +7,14 @@ import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterOptions
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
-import com.rchdliang.copymanga_neo.domain.model.Theme
+import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
 import com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,73 +23,156 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** 搜索和题材筛选共用的列表状态。 */
+/** 有已提交的关键词时搜索；否则按题材、类型和排序发现漫画。 */
 data class SearchUiState(
+    val compactLayout: Boolean = false,
+    val promotedDiscoveryThemePath: String? = null,
+    val ordering: String = "-datetime_updated",
+    val total: Int? = null,
     val query: String = "",
     val submittedQuery: String = "",
+    val submittedQueryType: QueryType? = null,
+    val queryType: QueryType? = null,
     val searchResults: List<ComicSummary> = emptyList(),
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: String? = null,
+    val loadMoreError: String? = null,
     val currentPage: Int = 1,
     val hasMore: Boolean = false,
-    val queryType: QueryType? = null,
-    val toastMessage: String? = null,
-    val theme: Theme? = null,
     val nextOffset: Int? = null,
     val discoveryOptions: ComicFilterOptions? = null,
-    val discoveryComics: List<ComicSummary> = emptyList(),
     val selectedDiscoveryTheme: ComicFilterOption? = null,
     val selectedDiscoveryTop: ComicFilterOption? = null,
-    val discoveryNextOffset: Int? = null,
-    val isDiscoveryLoading: Boolean = false,
-    val isDiscoveryLoadingMore: Boolean = false,
     val discoveryOptionsError: String? = null,
-    val discoveryError: String? = null
-)
+    val toastMessage: String? = null
+) {
+    val isKeywordSearch: Boolean get() = submittedQuery.isNotBlank()
+}
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
     private val comicDiscoveryRepository: ComicDiscoveryRepository,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    private val appSettings: AppSettingsRepository
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(SearchUiState())
+    private val cachedOptions = comicDiscoveryRepository.cachedFilterOptions()
+    private val initialThemePath = savedStateHandle.get<String>("selectedThemePath")
+        ?: savedStateHandle.get<String>("themePathWord")?.takeUnless {
+            savedStateHandle.get<Boolean>("themeCleared") == true
+        }
+    private val initialTheme = initialThemePath?.takeIf { it.isNotBlank() }?.let { path ->
+        cachedOptions.themes.firstOrNull { it.pathWord == path }
+            ?: ComicFilterOption(savedStateHandle.get<String>("themeName") ?: path, path)
+    }?.takeIf { it.enabled }
+    private val initialQueryType = QueryType.entries.firstOrNull {
+        it.value == savedStateHandle.get<String>("queryType")
+    }
+    private val _uiState = MutableStateFlow(
+        SearchUiState(
+            compactLayout = savedStateHandle.get<Boolean>(
+                if (savedStateHandle.get<String>("submittedQuery").isNullOrBlank())
+                    "discoveryCompactLayout" else "searchCompactLayout"
+            ) ?: savedStateHandle.get<Boolean>("compactLayout") ?: false,
+            promotedDiscoveryThemePath = savedStateHandle.get<String>("themePathWord"),
+            ordering = savedStateHandle.get<String>("ordering")
+                ?.takeIf {
+                    it in setOf(
+                        "-datetime_updated",
+                        "datetime_updated",
+                        "-popular",
+                        "popular"
+                    )
+                }
+                ?: "-datetime_updated",
+            query = savedStateHandle.get<String>("query").orEmpty(),
+            submittedQuery = savedStateHandle.get<String>("submittedQuery").orEmpty(),
+            submittedQueryType = initialQueryType,
+            queryType = initialQueryType,
+            selectedDiscoveryTheme = initialTheme,
+            selectedDiscoveryTop = cachedOptions.tops.firstOrNull {
+                it.pathWord == savedStateHandle.get<String>("selectedTopPath")
+            },
+            discoveryOptions = cachedOptions
+        )
+    )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        android.util.Log.e("SearchViewModel", "Unhandled coroutine exception", throwable)
-        _uiState.update {
-            it.copy(
-                isLoading = false,
-                isLoadingMore = false,
-                error = throwable.message,
-                toastMessage = throwable.message ?: "操作失败"
-            )
-        }
-    }
+    /** 仅缓存成功结果和分页信息，刷新始终重新请求；搜索与发现各保留最近八组条件。 */
+    private data class ContentKey(
+        val query: String,
+        val queryType: QueryType?,
+        val theme: String?,
+        val top: String?,
+        val ordering: String?
+    )
 
-    private var searchJob: Job? = null
-    private var loadMoreJob: Job? = null
-    private var discoveryJob: Job? = null
-    private var discoveryOptionsJob: Job? = null
-    private val discoveryExceptionHandler = CoroutineExceptionHandler { _, error ->
-        android.util.Log.e("SearchViewModel", "加载发现漫画失败", error)
+    private data class CachedContent(
+        val comics: List<ComicSummary>,
+        val total: Int?,
+        val page: Int,
+        val nextOffset: Int?
+    )
+
+    private val searchCache = LinkedHashMap<ContentKey, CachedContent>()
+    private val discoveryCache = LinkedHashMap<ContentKey, CachedContent>()
+
+    private fun contentKey(state: SearchUiState): ContentKey =
+        if (state.isKeywordSearch) ContentKey(
+            state.submittedQuery, state.submittedQueryType, null, null, null
+        ) else ContentKey(
+            "", null, state.selectedDiscoveryTheme?.pathWord,
+            state.selectedDiscoveryTop?.pathWord, state.ordering
+        )
+
+    private fun layoutKey(state: SearchUiState): String =
+        if (state.isKeywordSearch) "searchCompactLayout" else "discoveryCompactLayout"
+
+    private val layoutWrites = Channel<Pair<Boolean, Boolean>>(Channel.UNLIMITED)
+    private var contentJob: Job? = null
+    private var optionsJob: Job? = null
+    private val exceptionHandler = CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("SearchViewModel", "搜索加载失败", error)
         _uiState.update {
             it.copy(
-                isDiscoveryLoading = false, isDiscoveryLoadingMore = false,
-                discoveryError = error.message ?: "加载失败"
+                isLoading = false, isRefreshing = false, isLoadingMore = false,
+                error = error.message ?: "加载失败"
             )
         }
     }
 
     init {
-        val themePath = savedStateHandle.get<String>("themePathWord")
-        if (!themePath.isNullOrBlank() && savedStateHandle.get<Boolean>("themeCleared") != true) {
-            browseTheme(Theme(savedStateHandle["themeName"] ?: themePath, themePath))
-        } else {
-            loadDiscovery()
+        viewModelScope.launch(exceptionHandler) {
+            for (keywordSearch in listOf(false, true)) {
+                appSettings.getSearchCompactLayout(keywordSearch).fold(
+                    onSuccess = { compact ->
+                        val key =
+                            if (keywordSearch) "searchCompactLayout" else "discoveryCompactLayout"
+                        if (!savedStateHandle.contains(key)) savedStateHandle[key] = compact
+                    },
+                    onFailure = { error ->
+                        if (error is CancellationException) throw error
+                        android.util.Log.w("SearchViewModel", "读取布局偏好失败", error)
+                    }
+                )
+            }
+            _uiState.update {
+                it.copy(compactLayout = savedStateHandle.get<Boolean>(layoutKey(it)) ?: false)
+            }
+            for ((keywordSearch, compact) in layoutWrites) {
+                appSettings.setSearchCompactLayout(keywordSearch, compact).fold(
+                    onSuccess = {},
+                    onFailure = { error ->
+                        if (error is CancellationException) throw error
+                        _uiState.update { it.copy(toastMessage = "布局设置保存失败") }
+                    }
+                )
+            }
         }
+        refreshOptions()
+        loadContent()
     }
 
     fun clearToastMessage() {
@@ -97,230 +180,229 @@ class SearchViewModel @Inject constructor(
     }
 
     fun updateQuery(query: String) {
+        if (query.isBlank() && _uiState.value.isKeywordSearch) {
+            clearSearch()
+            return
+        }
+        savedStateHandle["query"] = query
         _uiState.update { it.copy(query = query) }
     }
 
-    fun clearSearch() {
-        searchJob?.cancel()
-        loadMoreJob?.cancel()
-        discoveryJob?.cancel()
-        discoveryOptionsJob?.cancel()
-        savedStateHandle["themeCleared"] = true
-        _uiState.value = SearchUiState()
-        loadDiscovery()
+
+    fun toggleLayout() {
+        val compact = !_uiState.value.compactLayout
+        savedStateHandle[layoutKey(_uiState.value)] = compact
+        _uiState.update { it.copy(compactLayout = compact) }
+        layoutWrites.trySend(_uiState.value.isKeywordSearch to compact)
     }
 
-    fun selectDiscoveryTheme(option: ComicFilterOption?) {
-        if (_uiState.value.selectedDiscoveryTheme == option) return
-        _uiState.update { it.copy(selectedDiscoveryTheme = option) }
-        loadDiscoveryComics()
-    }
-
-    fun selectDiscoveryTop(option: ComicFilterOption?) {
-        if (_uiState.value.selectedDiscoveryTop == option) return
-        _uiState.update { it.copy(selectedDiscoveryTop = option) }
-        loadDiscoveryComics()
-    }
-
-    private fun loadDiscovery() {
-        discoveryOptionsJob?.cancel()
-        discoveryJob?.cancel()
-        _uiState.update {
-            it.copy(
-                isDiscoveryLoading = true, isDiscoveryLoadingMore = false,
-                discoveryError = null
-            )
-        }
-        discoveryOptionsJob = viewModelScope.launch(discoveryExceptionHandler) {
-            val result = comicDiscoveryRepository.getFilterOptions()
-            currentCoroutineContext().ensureActive()
-            result.fold(
-                onSuccess = { options ->
-                    _uiState.update {
-                        it.copy(
-                            discoveryOptions = options,
-                            discoveryOptionsError = null
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    if (error is CancellationException) throw error
-                    _uiState.update {
-                        it.copy(
-                            discoveryOptionsError = error.message ?: "筛选项暂不可用"
-                        )
-                    }
-                }
-            )
-            if (_uiState.value.submittedQuery.isBlank() && _uiState.value.theme == null) loadDiscoveryComics()
-        }
-    }
-
-    /** 筛选与分页共用同一列表；切换条件会取消旧请求并重置游标。 */
-    private fun loadDiscoveryComics(append: Boolean = false) {
-        val state = _uiState.value
-        val offset = if (append) state.discoveryNextOffset ?: return else 0
-        discoveryJob?.cancel()
-        _uiState.update {
-            it.copy(
-                discoveryComics = if (append) it.discoveryComics else emptyList(),
-                discoveryNextOffset = if (append) it.discoveryNextOffset else null,
-                isDiscoveryLoading = !append, isDiscoveryLoadingMore = append, discoveryError = null
-            )
-        }
-        discoveryJob = viewModelScope.launch(discoveryExceptionHandler) {
-            val result = comicDiscoveryRepository.filterComics(
-                state.selectedDiscoveryTheme?.pathWord,
-                state.selectedDiscoveryTop?.pathWord, "-datetime_updated", offset
-            )
-            currentCoroutineContext().ensureActive()
-            result.fold(
-                onSuccess = { page ->
-                    _uiState.update {
-                        it.copy(
-                            discoveryComics = (if (append) it.discoveryComics + page.comics else page.comics)
-                                .distinctBy { comic -> comic.pathWord },
-                            discoveryNextOffset = page.nextOffset?.takeIf { next -> next > offset },
-                            isDiscoveryLoading = false,
-                            isDiscoveryLoadingMore = false,
-                            discoveryError = null
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    if (error is CancellationException) throw error
-                    _uiState.update {
-                        it.copy(
-                            isDiscoveryLoading = false, isDiscoveryLoadingMore = false,
-                            discoveryError = error.message ?: "加载失败"
-                        )
-                    }
-                }
-            )
-        }
-    }
-
-    fun updateQueryType(queryType: QueryType?) {
-        _uiState.update { it.copy(queryType = queryType) }
-        if (_uiState.value.query.isNotBlank()) search(_uiState.value.query)
+    fun selectOrdering(ordering: String) {
+        if (ordering !in setOf("-datetime_updated", "datetime_updated", "-popular", "popular") ||
+            _uiState.value.ordering == ordering
+        ) return
+        savedStateHandle["ordering"] = ordering
+        _uiState.update { it.copy(ordering = ordering) }
+        if (!_uiState.value.isKeywordSearch) loadContent()
     }
 
     fun search(query: String) {
-        searchJob?.cancel()
-        loadMoreJob?.cancel()
-        discoveryJob?.cancel()
-        discoveryOptionsJob?.cancel()
-        savedStateHandle["themeCleared"] = true
-        _uiState.update {
-            it.copy(
-                query = query,
-                submittedQuery = query.trim(),
-                theme = null,
-                nextOffset = null,
-                searchResults = emptyList(),
-                isLoading = query.isNotBlank(),
-                isLoadingMore = false,
-                error = null,
-                toastMessage = null,
-                currentPage = 1,
-                hasMore = false,
-                isDiscoveryLoading = false,
-                isDiscoveryLoadingMore = false
-            )
-        }
         if (query.isBlank()) {
-            if (_uiState.value.discoveryOptions == null) loadDiscovery() else loadDiscoveryComics()
+            clearSearch()
             return
         }
-        searchJob = viewModelScope.launch(exceptionHandler) { performSearch(isLoadMore = false) }
+        savedStateHandle["query"] = query
+        savedStateHandle["submittedQuery"] = query.trim()
+        _uiState.update {
+            it.copy(
+                query = query, submittedQuery = query.trim(), submittedQueryType = it.queryType
+            )
+        }
+        loadContent()
     }
 
-    private fun browseTheme(theme: Theme) {
-        searchJob?.cancel()
-        loadMoreJob?.cancel()
-        _uiState.value = SearchUiState(theme = theme, isLoading = true)
-        searchJob = viewModelScope.launch(exceptionHandler) { performSearch(isLoadMore = false) }
+    fun clearSearch() {
+        savedStateHandle["query"] = ""
+        savedStateHandle["submittedQuery"] = ""
+        _uiState.update { it.copy(query = "", submittedQuery = "") }
+        loadContent()
+    }
+
+    fun updateQueryType(type: QueryType?) {
+        if (_uiState.value.queryType == type) return
+        savedStateHandle["queryType"] = type?.value
+        _uiState.update { it.copy(queryType = type, submittedQueryType = type) }
+        if (_uiState.value.isKeywordSearch) loadContent()
+    }
+
+    fun selectDiscoveryTheme(option: ComicFilterOption?) {
+        if (option?.enabled == false) return
+        if (_uiState.value.selectedDiscoveryTheme?.pathWord == option?.pathWord &&
+            !_uiState.value.isKeywordSearch
+        ) return
+        savedStateHandle["themeCleared"] = true
+        savedStateHandle["selectedThemePath"] = option?.pathWord
+        selectFilter { it.copy(selectedDiscoveryTheme = option) }
+    }
+
+    fun selectDiscoveryTop(option: ComicFilterOption?) {
+        if (_uiState.value.selectedDiscoveryTop?.pathWord == option?.pathWord &&
+            !_uiState.value.isKeywordSearch
+        ) return
+        savedStateHandle["selectedTopPath"] = option?.pathWord
+        selectFilter { it.copy(selectedDiscoveryTop = option) }
+    }
+
+    private fun selectFilter(update: (SearchUiState) -> SearchUiState) {
+        savedStateHandle["query"] = ""
+        savedStateHandle["submittedQuery"] = ""
+        _uiState.update { update(it).copy(query = "", submittedQuery = "") }
+        loadContent()
     }
 
     fun refresh() {
+        refreshOptions()
+        loadContent(keepContent = true)
+    }
+
+    private fun refreshOptions() {
+        if (optionsJob?.isActive == true) return
+        optionsJob = viewModelScope.launch(exceptionHandler) {
+            comicDiscoveryRepository.getFilterOptions().fold(
+                onSuccess = { options ->
+                    ensureActive()
+                    val selected = _uiState.value.selectedDiscoveryTheme
+                    val updated = options.themes.firstOrNull {
+                        it.pathWord == selected?.pathWord && it.enabled
+                    }
+                    _uiState.update {
+                        it.copy(
+                            discoveryOptions = options, selectedDiscoveryTheme = updated,
+                            discoveryOptionsError = null
+                        )
+                    }
+                    if (selected != null && updated == null) {
+                        savedStateHandle["selectedThemePath"] = null
+                        savedStateHandle["themeCleared"] = true
+                        if (!_uiState.value.isKeywordSearch) loadContent()
+                    }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update {
+                        it.copy(
+                            discoveryOptionsError = error.message ?: "标签更新失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    private fun loadContent(keepContent: Boolean = false) {
+        contentJob?.cancel()
         val state = _uiState.value
-        val theme = state.theme
-        if (theme != null) browseTheme(theme)
-        else if (state.query.isBlank()) loadDiscovery()
-        else search(state.query)
+        val key = contentKey(state)
+        val cache = if (state.isKeywordSearch) searchCache else discoveryCache
+        val compact = savedStateHandle.get<Boolean>(layoutKey(state))
+            ?: savedStateHandle.get<Boolean>("compactLayout") ?: false
+        if (!keepContent) {
+            cache.remove(key)?.let { cached ->
+                cache[key] = cached
+                _uiState.update {
+                    it.copy(
+                        compactLayout = compact, searchResults = cached.comics,
+                        total = cached.total, currentPage = cached.page,
+                        nextOffset = cached.nextOffset, hasMore = cached.nextOffset != null,
+                        isLoading = false, isRefreshing = false, isLoadingMore = false,
+                        error = null, loadMoreError = null
+                    )
+                }
+                return
+            }
+        }
+        _uiState.update {
+            it.copy(
+                compactLayout = compact,
+                searchResults = if (keepContent) it.searchResults else emptyList(),
+                total = if (keepContent) it.total else null,
+                isLoading = true, isRefreshing = keepContent && it.searchResults.isNotEmpty(),
+                isLoadingMore = false, error = null, loadMoreError = null,
+                hasMore = false, nextOffset = null, currentPage = 1
+            )
+        }
+        contentJob = viewModelScope.launch(exceptionHandler) { loadPage(append = false) }
     }
 
     fun loadMore() {
         val state = _uiState.value
-        if (state.theme == null && state.submittedQuery.isBlank()) {
-            if (!state.isDiscoveryLoading && !state.isDiscoveryLoadingMore && state.discoveryNextOffset != null)
-                loadDiscoveryComics(append = true)
-            return
-        }
-        if (state.isLoading || state.isLoadingMore || !state.hasMore) return
-        if (state.theme == null && state.submittedQuery.isBlank()) return
-        _uiState.update { it.copy(isLoadingMore = true) }
-        loadMoreJob = viewModelScope.launch(exceptionHandler) { performSearch(isLoadMore = true) }
+        if (state.isLoading || state.isLoadingMore || !state.hasMore || state.nextOffset == null) return
+        _uiState.update { it.copy(isLoadingMore = true, loadMoreError = null) }
+        contentJob = viewModelScope.launch(exceptionHandler) { loadPage(append = true) }
     }
 
-    private suspend fun performSearch(isLoadMore: Boolean) {
+    private suspend fun loadPage(append: Boolean) {
         val state = _uiState.value
-        val page = if (isLoadMore) state.currentPage + 1 else 1
-        val themePath = state.theme?.pathWord
-        if (!themePath.isNullOrBlank()) {
-            val offset = if (isLoadMore) state.nextOffset ?: return else 0
-            val result = mangaRepository.getThemeComics(themePath, offset)
-            currentCoroutineContext().ensureActive()
-            result.fold(
-                onSuccess = { resultPage ->
-                    publishResults(resultPage.comics, isLoadMore, page, resultPage.nextOffset)
+        val page = if (append) state.currentPage + 1 else 1
+        if (state.isKeywordSearch) {
+            mangaRepository.searchComicPage(
+                state.submittedQuery, page, state.submittedQueryType,
+                offset = if (append) state.nextOffset else 0
+            ).fold(
+                onSuccess = { result ->
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    publish(result.comics, append, page, result.nextOffset, result.total)
                 },
-                onFailure = { publishError(it, isLoadMore) }
+                onFailure = { publishError(it, append) }
             )
         } else {
-            val result = mangaRepository.searchComics(state.submittedQuery, page, state.queryType)
-            currentCoroutineContext().ensureActive()
-            result.fold(
-                onSuccess = { comics ->
-                    publishResults(
-                        comics,
-                        isLoadMore,
-                        page,
-                        if (comics.size >= 20) page * 20 else null
-                    )
+            comicDiscoveryRepository.filterComics(
+                state.selectedDiscoveryTheme?.pathWord,
+                state.selectedDiscoveryTop?.pathWord,
+                state.ordering, if (append) state.nextOffset ?: return else 0
+            ).fold(
+                onSuccess = { result ->
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    publish(result.comics, append, page, result.nextOffset, result.total)
                 },
-                onFailure = { publishError(it, isLoadMore) }
+                onFailure = { publishError(it, append) }
             )
         }
     }
 
-    private fun publishResults(
+    private fun publish(
         comics: List<ComicSummary>,
-        isLoadMore: Boolean,
+        append: Boolean,
         page: Int,
-        nextOffset: Int?
+        next: Int?,
+        total: Int?
     ) {
         _uiState.update {
             it.copy(
-                searchResults = (if (isLoadMore) it.searchResults + comics else comics)
+                searchResults = (if (append) it.searchResults + comics else comics)
                     .distinctBy { comic -> comic.pathWord },
-                isLoading = false,
-                isLoadingMore = false,
-                error = null,
-                currentPage = page,
-                hasMore = nextOffset != null,
-                nextOffset = nextOffset
+                isLoading = false, isRefreshing = false, isLoadingMore = false,
+                error = null, loadMoreError = null, currentPage = page,
+                nextOffset = next, hasMore = next != null, total = total
             )
         }
+        val state = _uiState.value
+        val cache = if (state.isKeywordSearch) searchCache else discoveryCache
+        val key = contentKey(state)
+        cache.remove(key)
+        cache[key] = CachedContent(
+            state.searchResults, state.total, state.currentPage, state.nextOffset
+        )
+        if (cache.size > 8) cache.remove(cache.keys.first())
     }
 
-    private fun publishError(error: Throwable, isLoadMore: Boolean) {
+    private suspend fun publishError(error: Throwable, append: Boolean) {
+        if (error is CancellationException) throw error
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         _uiState.update {
             it.copy(
-                isLoading = false,
-                isLoadingMore = false,
-                error = if (isLoadMore) it.error else error.message ?: "搜索失败",
-                toastMessage = error.message ?: "搜索失败"
+                isLoading = false, isRefreshing = false, isLoadingMore = false,
+                error = if (append) it.error else error.message ?: "加载失败",
+                loadMoreError = if (append) error.message ?: "加载更多失败" else null
             )
         }
     }
