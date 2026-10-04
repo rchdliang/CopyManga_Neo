@@ -59,6 +59,7 @@ interface MangaApiService {
         @Query("limit") limit: Int = 21,
         @Query("offset") offset: Int = 0,
         @Query("_update") update: Boolean? = null,
+        @Query("date") date: String? = null,
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<NewestResponse>
 
@@ -74,8 +75,8 @@ interface MangaApiService {
     @GET("api/v3/topic/{pathWord}")
     suspend fun getComicTopic(
         @Path("pathWord") pathWord: String,
-        @Query("limit") limit: String = "",
-        @Query("offset") offset: String = "",
+        @Query("limit") limit: String? = "",
+        @Query("offset") offset: String? = "",
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<TopicDetailResponse>
 
@@ -84,6 +85,7 @@ interface MangaApiService {
         @Path("pathWord") pathWord: String,
         @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0,
+        @Query("type") type: Int? = null,
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<SearchResponse>
 
@@ -239,7 +241,7 @@ interface MangaApiService {
     suspend fun getBrowseHistory(
         @Query("offset") offset: Int = 0,
         @Query("limit") limit: Int = 20,
-        @Query("free_type") freeType: Int = 1,
+        @Query("free_type") freeType: Int? = 1,
         @Query("_update") update: Boolean = true,
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): Response<BrowseHistoryResponse>

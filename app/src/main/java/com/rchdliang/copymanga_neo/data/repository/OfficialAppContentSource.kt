@@ -1,12 +1,17 @@
 package com.rchdliang.copymanga_neo.data.repository
 
+import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.data.remote.api.OfficialDownloadApiService
+import com.rchdliang.copymanga_neo.data.remote.dto.OfficialChapterResult
 import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.IOException
 import javax.inject.Inject
@@ -16,8 +21,24 @@ import javax.inject.Singleton
 @Singleton
 class OfficialAppContentSource @Inject constructor(
     private val api: MangaApiService,
-    private val settings: NetworkSettingsStore
+    private val settings: NetworkSettingsStore,
+    private val downloads: OfficialDownloadApiService,
+    private val auth: AuthDataStore
 ) {
+    private data class DownloadKey(
+        val networkGeneration: Long,
+        val authGeneration: Long,
+        val pathWord: String,
+        val uuid: String
+    )
+
+    private val downloadMutex = Mutex()
+    private val downloadContents =
+        object : LinkedHashMap<DownloadKey, ChapterContent>(32, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<DownloadKey, ChapterContent>?) =
+                size > 32
+        }
+
     suspend fun catalog(pathWord: String): Result<ChapterCatalog> = capture {
         val generation = settings.generation
         fun checkGeneration() {
@@ -31,9 +52,9 @@ class OfficialAppContentSource @Inject constructor(
             response.errorBody()?.close()
             throw IOException(body?.message ?: "App 目录分组获取失败")
         }
-        val detail = body.results ?: throw IOException("App 详情为空")
+        val detail = body.results
         if (detail.isBanned || detail.isLock) throw IOException("漫画暂不可访问")
-        val groups = detail.groups?.values?.map { ChapterGroup(it.pathWord, it.total, it.name) }
+        val groups = detail.groups.values?.map { ChapterGroup(it.pathWord, it.total, it.name) }
             ?: throw IOException("App 未返回章节分组")
         val chapters = linkedMapOf<String, List<ChapterInfo>>()
         for (group in groups) {
@@ -52,7 +73,7 @@ class OfficialAppContentSource @Inject constructor(
                     pageResponse.errorBody()?.close()
                     throw IOException(pageBody?.message ?: "App 章节目录获取失败")
                 }
-                val page = pageBody.results ?: throw IOException("App 章节目录结果为空")
+                val page = pageBody.results
                 if (page.list.isNullOrEmpty() || page.list.any { !seen.add(it.uuid) }) {
                     throw IOException("App 章节目录为空或重复，未保存不完整目录")
                 }
@@ -74,6 +95,45 @@ class OfficialAppContentSource @Inject constructor(
             throw IOException(body?.message ?: "App 章节内容获取失败")
         }
         val result = body.results ?: throw IOException("App 章节结果为空")
+        parseChapter(result, uuid)
+    }
+
+    /** 同一会话内复用成功授权的图片列表，图片重试不会重新扣额度。 */
+    suspend fun download(pathWord: String, uuid: String): Result<ChapterContent> = capture {
+        downloadMutex.withLock {
+            val token = auth.getTokenSync()?.takeIf { it.isNotBlank() }
+                ?: throw IOException("请先登录后下载")
+            val key = DownloadKey(settings.generation, auth.getAuthGeneration(), pathWord, uuid)
+            fun checkSession() {
+                if (settings.generation != key.networkGeneration ||
+                    auth.getAuthGeneration() != key.authGeneration || auth.getTokenSync() != token
+                ) throw IOException("网络设置或登录状态已更改，请重新下载")
+            }
+            downloadContents.keys.removeAll {
+                it.networkGeneration != key.networkGeneration || it.authGeneration != key.authGeneration
+            }
+            checkSession()
+            downloadContents[key]?.let { return@withLock it }
+            val response = downloads.chapter(pathWord, uuid, "Token $token")
+            checkSession()
+            val body = response.body()
+            if (!response.isSuccessful || body?.code != 200) {
+                response.errorBody()?.close()
+                throw IOException(
+                    body?.message ?: "下载授权失败（HTTP ${response.code()}），未自动重试"
+                )
+            }
+            val result = body.results ?: throw IOException("下载授权结果为空，未自动重试")
+            if (result.isLogin != true) throw IOException("请先登录后下载")
+            val content = parseChapter(result, uuid)
+            checkSession()
+            downloadContents[key] = content
+            content
+        }
+    }
+
+    /** 阅读和下载复用页序与完整性校验，避免按不同次序保存图片。 */
+    private fun parseChapter(result: OfficialChapterResult, uuid: String): ChapterContent {
         if (result.isLock || result.isBanned) throw IOException("章节暂不可阅读")
         val chapter = result.chapter ?: throw IOException("App 未返回章节内容")
         if (chapter.uuid != uuid) throw IOException("App 返回的章节与请求不一致")
@@ -91,7 +151,7 @@ class OfficialAppContentSource @Inject constructor(
         if (urls.isEmpty() || chapter.size?.let { it > 0 && urls.size != it } == true) {
             throw IOException("App 返回的章节图片为空或不完整，未切换网页路径")
         }
-        ChapterContent(urls, chapter.prev, chapter.next, chapter.name.orEmpty())
+        return ChapterContent(urls, chapter.prev, chapter.next, chapter.name.orEmpty())
     }
 
     private suspend fun <T> capture(block: suspend () -> T): Result<T> = try {

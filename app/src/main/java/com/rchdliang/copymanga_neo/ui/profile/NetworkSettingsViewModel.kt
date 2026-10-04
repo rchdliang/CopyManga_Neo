@@ -59,7 +59,7 @@ class NetworkSettingsViewModel @Inject constructor(private val repository: Netwo
     fun discard() { state.update { it.copy(draft = it.saved, probes = emptyList()) } }
     fun save() = operate {
         repository.save(state.value.draft).fold(
-            { sync("网络设置已保存；请刷新页面。若更改了请求模式或 App 身份，请重新登录") },
+            { sync("网络设置已保存；请刷新页面") },
             { state.update { s -> s.copy(message = it.message ?: "保存失败") } }
         )
     }

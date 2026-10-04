@@ -23,8 +23,51 @@ import kotlin.random.Random
 class UserRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
     private val authDataStore: AuthDataStore,
-    private val cookieJar: PersistentCookieJar
+    private val cookieJar: PersistentCookieJar,
+    private val registrationApi: com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService,
+    private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
+    private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService
 ) : UserRepository {
+
+    override suspend fun register(username: String, rawPassword: String):
+            Result<com.rchdliang.copymanga_neo.domain.model.RegistrationInfo> {
+        return try {
+            com.rchdliang.copymanga_neo.domain.model.RegistrationPolicy
+                .validationError(username, rawPassword)
+                ?.let { return Result.failure(IllegalArgumentException(it)) }
+            check(!authDataStore.isLoggedInSync()) { "请先退出当前账号后注册" }
+            val (generation, settings) = networkSettings.snapshot()
+            val authGeneration = authDataStore.getAuthGeneration()
+            // 注册直接发送原始密码；登录另行使用 Base64(密码-盐)，两者不能混用。
+            val response = when (settings.requestMode) {
+                com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB ->
+                    registrationApi.registerWeb(username, rawPassword, version = settings.version)
+
+                com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP ->
+                    registrationApi.register(username, rawPassword)
+            }
+            val body = response.body()
+            if (!response.isSuccessful || body?.code != 200) {
+                val error = response.errorBody()?.use { it.string() }
+                val message = body?.message ?: runCatching {
+                    com.google.gson.JsonParser.parseString(error).asJsonObject
+                        .get("message")?.takeUnless { it.isJsonNull }?.asString
+                }.getOrNull()
+                return Result.failure(Exception(message ?: "注册失败（HTTP ${response.code()}）"))
+            }
+            check(body.results != null) { "注册响应缺少账号信息，请先尝试登录，勿重复注册" }
+            Result.success(
+                com.rchdliang.copymanga_neo.domain.model.RegistrationInfo(
+                    username, networkSettings.generation == generation &&
+                            authDataStore.getAuthGeneration() == authGeneration
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     override suspend fun login(username: String, rawPassword: String): Result<LoginInfo> {
         return try {
@@ -72,7 +115,8 @@ class UserRepositoryImpl @Inject constructor(
                 generation = authGeneration,
                 token = token,
                 username = loginResult.username ?: username,
-                avatar = loginResult.avatar
+                avatar = loginResult.avatar,
+                loginCredentials = username to rawPassword
             )
             if (!saved) {
                 if (!authDataStore.isLoggedInSync()) cookieJar.clearAll()
@@ -185,8 +229,25 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun logout(): Result<Unit> {
         return try {
+            val token = authDataStore.getTokenSync()
+            val appMode = networkSettings.settings.value.requestMode ==
+                    com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP
+            // 先完成本地退出并关闭自动登录；服务端响应不得清除稍后登录的新账号。
             authDataStore.clearAuth(manualLogout = true)
             cookieJar.clearAll()
+            if (appMode && !token.isNullOrBlank()) {
+                try {
+                    val response = memberWrites.logout("Token $token")
+                    if (!response.isSuccessful || response.body()?.code != 200) {
+                        android.util.Log.w("UserRepository", "本地已退出，服务端退出未确认")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 无网络也必须允许退出，本地结果不依赖服务端可用性。
+                    android.util.Log.w("UserRepository", "本地已退出，服务端退出请求失败")
+                }
+            }
             android.util.Log.d("UserRepository", "Logout success")
             Result.success(Unit)
         } catch (e: CancellationException) {

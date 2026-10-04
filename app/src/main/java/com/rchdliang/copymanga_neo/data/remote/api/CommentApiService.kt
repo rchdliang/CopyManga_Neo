@@ -51,12 +51,20 @@ interface CommentApiService {
     ): Response<CommentPostResponseDto>
 
     companion object {
-        /** 评论沿用 Web API 公共头；标记仅用于路由和阻止 App 协议改写。 */
+        /** 尚未验证的吐槽举报提交沿用 Web 协议；已确认接口按请求模式选择公共头。 */
         fun headers(): Map<String, String> = CopyMangaNetworkConfig.apiHeaders() +
                 ("X-Copy-Comment" to "1")
 
+        fun readHeaders(appMode: Boolean): Map<String, String> =
+            if (appMode) CopyMangaNetworkConfig.apiHeaders() else headers()
+
         /** 发表使用调用方固定的 Token，不由认证拦截器替换。 */
-        fun postHeaders(): Map<String, String> = headers() + ("X-No-Auth" to "1")
+        fun postHeaders(appMode: Boolean = false): Map<String, String> =
+            readHeaders(appMode) + ("X-No-Auth" to "1")
+
+        /** 固定举报账号，防止认证拦截器替换显式 Token。 */
+        fun reportHeaders(appMode: Boolean): Map<String, String> =
+            readHeaders(appMode) + ("X-No-Auth" to "1")
     }
 
     @GET("api/v3/comments")

@@ -17,6 +17,10 @@ interface UserRepository {
      */
     suspend fun login(username: String, rawPassword: String): Result<LoginInfo>
 
+    /** 只创建账号；成功后仍须登录，不把注册响应当作已登录。 */
+    suspend fun register(username: String, rawPassword: String):
+            Result<com.rchdliang.copymanga_neo.domain.model.RegistrationInfo>
+
     /** 将当前会话导出为可复制的版本化登录凭据。 */
     suspend fun exportLoginCredential(): Result<String>
 

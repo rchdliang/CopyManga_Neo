@@ -52,7 +52,9 @@ class MangaRepositoryImpl @Inject constructor(
     private val themeCache: ComicThemeCache = MemoryComicThemeCache(),
     private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
     private val officialContent: OfficialAppContentSource,
-    private val networkLog: com.rchdliang.copymanga_neo.data.local.LocalNetworkLogStore? = null
+    private val networkLog: com.rchdliang.copymanga_neo.data.local.LocalNetworkLogStore? = null,
+    private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService,
+    private val auth: com.rchdliang.copymanga_neo.data.local.AuthDataStore
 ) : MangaRepository {
 
     private fun usesOfficialApp() = networkSettings.settings.value.requestMode ==
@@ -195,7 +197,7 @@ class MangaRepositoryImpl @Inject constructor(
                 // 即使任务在请求中取消，下一个后台请求也必须等待；并发始终为 1。
                 nextThemeRequestAtNanos =
                     System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500)
-        }
+            }
         }
 
     private suspend fun fetchComicThemes(pathWord: String): Result<List<Theme>> {
@@ -275,9 +277,10 @@ class MangaRepositoryImpl @Inject constructor(
                 ?.body()?.results
             val finishComics = finishPage?.list ?: home.finishComics?.list.orEmpty()
             val rankComics = home.rankDayComics?.list.orEmpty().map { it.comic }
-            val topics = (home.topicsList ?: home.topics)?.list.orEmpty().map {
-                ComicTopic(it.pathWord, it.title, it.cover, it.brief)
-            }
+            val topics =
+                (home.topicsList ?: home.topics)?.list.orEmpty().filter { it.type == 1 }.map {
+                    ComicTopic(it.pathWord, it.title, it.cover, it.brief)
+                }
 
             android.util.Log.d(
                 "MangaRepository",
@@ -492,6 +495,12 @@ class MangaRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun getChapterDownloadContent(
+        comicPathWord: String, chapterUuid: String, group: String
+    ): Result<ChapterContent> =
+        if (usesOfficialApp()) officialContent.download(comicPathWord, chapterUuid)
+        else getChapterContent(comicPathWord, chapterUuid, group)
+
     override suspend fun getRecComics(limit: Int, offset: Int): Result<List<ComicSummary>> {
         return try {
             val response = apiService.getRecComics(limit = limit, offset = offset, freeType = null)
@@ -547,7 +556,7 @@ class MangaRepositoryImpl @Inject constructor(
     ): Result<ComicPage> {
         return try {
             require(page >= 1)
-            val pageSize = 20
+            val pageSize = if (usesOfficialApp()) 18 else 20
             val requestedOffset = offset ?: (page - 1) * pageSize
             require(requestedOffset >= 0)
             val response = apiService.search(
@@ -584,7 +593,9 @@ class MangaRepositoryImpl @Inject constructor(
             val favorites = linkedMapOf<String, FavoriteItem>()
             var offset = 0
             while (true) {
-                val response = apiService.getFavoriteComics(offset = offset, limit = 21)
+                val response = apiService.getFavoriteComics(
+                    offset = offset, limit = if (usesOfficialApp()) 18 else 21
+                )
                 val body = response.body()
                 if (!response.isSuccessful || body?.code != 200) {
                     val message = when (val code = response.code()) {
@@ -633,7 +644,10 @@ class MangaRepositoryImpl @Inject constructor(
 
     override suspend fun getBrowseHistory(offset: Int): Result<BrowseHistoryPage> {
         return try {
-            val response = apiService.getBrowseHistory(offset = offset)
+            val response = apiService.getBrowseHistory(
+                offset = offset, limit = if (usesOfficialApp()) 18 else 20,
+                freeType = if (usesOfficialApp()) null else 1
+            )
             val body = response.body()
             val page = body?.results
             if (response.isSuccessful && body?.code == 200 && page != null) {
@@ -662,6 +676,9 @@ class MangaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun clearBrowseHistory(): Result<Unit> {
+        if (usesOfficialApp()) return appMemberWrite("清空浏览记录") {
+            memberWrites.clearBrowseHistory(it)
+        }
         return try {
             val response = apiService.clearBrowseHistory()
             val body = response.body()
@@ -704,6 +721,10 @@ class MangaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addFavorite(comicId: String): Result<Unit> {
+        if (usesOfficialApp()) {
+            if (comicId.isBlank()) return Result.failure(IllegalArgumentException("漫画标识无效"))
+            return appMemberWrite("添加收藏") { memberWrites.addFavorite(comicId, it) }
+        }
         return try {
             val response = apiService.addFavorite(comicId)
             if (response.isSuccessful && response.body()?.code == 200) {
@@ -721,6 +742,7 @@ class MangaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removeFavorite(collectId: Int): Result<Unit> {
+        if (usesOfficialApp()) return removeFavorites(listOf(collectId))
         return try {
             val response = apiService.removeFavorite(collectId)
             if (response.isSuccessful && response.body()?.code == 200) {
@@ -738,6 +760,13 @@ class MangaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removeFavorites(collectIds: List<Int>): Result<Unit> {
+        if (usesOfficialApp()) {
+            if (collectIds.isEmpty()) return Result.success(Unit)
+            if (collectIds.any { it <= 0 }) return Result.failure(IllegalArgumentException("收藏标识无效"))
+            return appMemberWrite("批量移除收藏") {
+                memberWrites.removeFavorites(collectIds.distinct(), it)
+            }
+        }
         return try {
             // 拷貝漫畫 API 期望 ids[0]=xxx&ids[1]=xxx 的索引数组形式
             val fieldMap = collectIds.mapIndexed { index, id -> "ids[$index]" to id }.toMap()
@@ -748,6 +777,48 @@ class MangaRepositoryImpl @Inject constructor(
                 Result.failure(
                     Exception(response.body()?.message ?: "批量移除收藏失败")
                 )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** 固定写入账号；成功空 results 合法，错误正文仍保留服务端业务提示。 */
+    private suspend fun appMemberWrite(
+        operation: String,
+        request: suspend (String) -> retrofit2.Response<com.rchdliang.copymanga_neo.data.remote.dto.SimpleResponse>
+    ): Result<Unit> {
+        return try {
+            val token = auth.getTokenSync()?.takeIf { it.isNotBlank() }
+                ?: return Result.failure(IllegalStateException("请先登录后操作"))
+            val authGeneration = auth.getAuthGeneration()
+            val networkGeneration = networkSettings.generation
+            val response = request("Token $token")
+            val body = response.body()
+            if (response.code() == 401 || body?.code == 401) {
+                networkSettings.ifCurrent(networkGeneration) {
+                    auth.clearAuthSyncIfTokenMatches(
+                        token
+                    )
+                }
+            }
+            if (!response.isSuccessful || body?.code != 200) {
+                val error = response.errorBody()?.use { it.string() }
+                val message = body?.message ?: runCatching {
+                    JsonParser.parseString(error).asJsonObject.get("message")
+                        ?.takeUnless { it.isJsonNull }?.asString
+                }.getOrNull()
+                Result.failure(Exception(message ?: "${operation}失败（HTTP ${response.code()}）"))
+            } else {
+                check(
+                    auth.getAuthGeneration() == authGeneration && auth.getTokenSync() == token &&
+                            networkSettings.generation == networkGeneration
+                ) {
+                    "会话或网络设置已变化，请刷新确认操作结果"
+                }
+                Result.success(Unit)
             }
         } catch (e: CancellationException) {
             throw e

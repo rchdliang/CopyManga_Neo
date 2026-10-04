@@ -21,7 +21,7 @@ internal object CopyMangaNetworkConfig {
 
     private const val REGION = "1"
     private const val WEBP = "1"
-    private const val WEB_REQUESTED_WITH = "top.fumiama.copymangaweb"
+    private val WEB_REQUESTED_WITH = com.rchdliang.copymanga_neo.BuildConfig.APPLICATION_ID
 
     /** 新版网页端抓包中所有 API 请求共有的业务头。 */
     fun apiHeaders(): Map<String, String> = mapOf(

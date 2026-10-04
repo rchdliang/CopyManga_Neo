@@ -43,7 +43,8 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     private val cookies: com.rchdliang.copymanga_neo.di.PersistentCookieJar,
     private val diagnostics: com.rchdliang.copymanga_neo.data.remote.OfficialAppDiagnostics,
     private val localCalls: com.rchdliang.copymanga_neo.data.remote.LocalNetworkCallInterceptor,
-    private val localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor
+    private val localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor,
+    private val users: com.rchdliang.copymanga_neo.domain.repository.UserRepository
 ) : NetworkSettingsRepository {
     override val officialAppDefaults get() = identity.defaults
     override val settings = store.settings
@@ -66,7 +67,8 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                         fixedHost = "",
                         routeIndex = 0
                     )
-            } else value)
+                } else value
+            )
         }
     }
 
@@ -78,15 +80,39 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
 
     private suspend fun saveConfiguration(value: NetworkSettings) {
         val old = store.settings.value
+        val modeChanged = old.requestMode != value.requestMode
+        val wasLoggedIn = auth.isLoggedInSync()
+        val credentials = if (modeChanged && wasLoggedIn) auth.getRequestModeLogin() else null
         val identityChanged = old.requestMode != value.requestMode ||
                 (old.officialApp != value.officialApp && old.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP)
-        if (identityChanged) {
-            // 先推进会话代次，使切换期间返回的旧登录结果无法重新写入。
-            auth.clearAuth(manualLogout = true)
-            cookies.clearAll()
+        if (modeChanged) auth.setRequestModeSwitching(true)
+        try {
+            if (identityChanged) {
+                // 模式切换保留自动登录偏好，但阻止过期监听重复发起登录。
+                auth.clearAuth(manualLogout = !modeChanged)
+                cookies.clearAll()
+            }
+            val authGeneration = auth.getAuthGeneration()
+            store.save(value)
+            if (identityChanged) gate.resumeByUser()
+            if (modeChanged && wasLoggedIn) {
+                if (credentials == null) throw IOException("网络设置已保存，当前账号没有可用密码，请手动登录")
+                check(auth.getAuthGeneration() == authGeneration && !auth.isLoggedInSync()) {
+                    "网络设置已保存，登录状态已变化，未自动登录"
+                }
+                users.login(credentials.first, credentials.second).fold(
+                    onSuccess = {},
+                    onFailure = {
+                        throw IOException(
+                            "网络设置已保存，自动登录失败：${it.message ?: "请手动登录"}",
+                            it
+                        )
+                    }
+                )
+            }
+        } finally {
+            if (modeChanged) auth.setRequestModeSwitching(false)
         }
-        store.save(value)
-        if (identityChanged) gate.resumeByUser()
     }
 
     override suspend fun discover(): Result<Unit> = result {
@@ -101,17 +127,28 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                 // 仅查询拷贝当前配置的 API / WWW，没有预置任何其他内容源。
                 for (host in listOf(start.apiHost, start.wwwHost).distinct()) {
                     currentCoroutineContext().ensureActive()
-                    val builder = Request.Builder().url("https://$host/api/v3/system/network21?platform=1")
-                    CopyMangaNetworkConfig.apiHeaders().forEach { (key, value) -> builder.header(key, value) }
-                    val call = client.newCall(builder.header("version", start.version)
-                        .header("User-Agent", "${System.getProperty("http.agent") ?: "Dalvik/2.1.0 (Linux; Android)"} com.copymanga.app")
-                        .header("Origin", "https://${start.wwwHost}").build())
+                    val builder =
+                        Request.Builder().url("https://$host/api/v3/system/network21?platform=1")
+                    CopyMangaNetworkConfig.apiHeaders()
+                        .forEach { (key, value) -> builder.header(key, value) }
+                    val call = client.newCall(
+                        builder.header("version", start.version)
+                            .header(
+                                "User-Agent",
+                                "${System.getProperty("http.agent") ?: "Dalvik/2.1.0 (Linux; Android)"} com.copymanga.app"
+                            )
+                            .header("Origin", "https://${start.wwwHost}").build()
+                    )
                     gate.register(call)
                     try {
                         var shareHosts = start.shareHosts
                         val routes = call.awaitResponse().use { response ->
                             val body = response.peekBody(1024 * 1024 + 1).string()
-                            val code = try { JsonParser.parseString(body).asJsonObject.get("code")?.asInt } catch (_: Exception) { null }
+                            val code = try {
+                                JsonParser.parseString(body).asJsonObject.get("code")?.asInt
+                            } catch (_: Exception) {
+                                null
+                            }
                             if (response.code == 210 || code == 210) {
                                 gate.block("网络配置接口触发访问限制，请稍后再试", call)
                                 throw RiskControlException("网络配置接口触发访问限制，请稍后再试")
@@ -132,15 +169,24 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                                 routes = routes,
                                 shareHosts = shareHosts,
                                 discoveredAt = System.currentTimeMillis(),
-                            selection = selection, routeIndex = matchingRoute.coerceAtLeast(0)), rememberPrevious = false)
+                                selection = selection, routeIndex = matchingRoute.coerceAtLeast(0)
+                            ), rememberPrevious = false
+                        )
                         return@withLock
-                    } catch (e: CancellationException) { throw e }
-                    catch (e: RiskControlException) { throw e }
-                    catch (e: Exception) { lastError = e }
-                    finally { gate.unregister(call) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: RiskControlException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lastError = e
+                    } finally {
+                        gate.unregister(call)
+                    }
                 }
                 throw lastError ?: IOException("没有取得线路配置")
-            } finally { client.connectionPool.evictAll() }
+            } finally {
+                client.connectionPool.evictAll()
+            }
         }
     }
 
@@ -152,23 +198,32 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
             (if (value.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP)
                 listOf(value.officialApp.apiHost, value.officialApp.loginHost)
             else listOf(value.apiHost, value.wwwHost, value.loginHost) + value.routes.flatten())
-            .filter { it.isNotBlank() }.distinct().take(60)
+                .filter { it.isNotBlank() }.distinct().take(60)
         val limit = Semaphore(3)
         try {
             supervisorScope {
-                hosts.map { host -> async {
-                    limit.withPermit {
-                        val started = System.nanoTime()
-                        try {
-                            client.newCall(Request.Builder().url("https://$host/").head().build()).awaitResponse().use {
-                                NetworkProbe(host, (System.nanoTime() - started) / 1_000_000)
+                hosts.map { host ->
+                    async {
+                        limit.withPermit {
+                            val started = System.nanoTime()
+                            try {
+                                client.newCall(
+                                    Request.Builder().url("https://$host/").head().build()
+                                ).awaitResponse().use {
+                                    NetworkProbe(host, (System.nanoTime() - started) / 1_000_000)
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (_: Exception) {
+                                NetworkProbe(host, null, "连接失败或超时")
                             }
-                        } catch (e: CancellationException) { throw e }
-                        catch (_: Exception) { NetworkProbe(host, null, "连接失败或超时") }
+                        }
                     }
-                } }.map { it.await() }
+                }.map { it.await() }
             }
-        } finally { client.connectionPool.evictAll() }
+        } finally {
+            client.connectionPool.evictAll()
+        }
     }
 
     override suspend fun refreshIfNeeded() {
@@ -183,13 +238,19 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
         .addInterceptor(localCalls).addNetworkInterceptor(localExchanges)
         .proxySelector(SettingsProxySelector({ value }))
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
-        .connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS).build()
+        .connectTimeout(5, TimeUnit.SECONDS).readTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS).build()
 
-    private suspend fun <T> result(block: suspend () -> T): Result<T> = withContext(Dispatchers.IO) {
-        try { Result.success(block()) }
-        catch (e: CancellationException) { throw e }
-        catch (e: Exception) { Result.failure(e) }
-    }
+    private suspend fun <T> result(block: suspend () -> T): Result<T> =
+        withContext(Dispatchers.IO) {
+            try {
+                Result.success(block())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
 }
 
 /** 取消页面或协程时同时取消连接，不在后台遗留探测请求。 */
@@ -199,6 +260,7 @@ private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine
         override fun onFailure(call: Call, e: IOException) {
             if (!continuation.isCancelled) continuation.resumeWithException(e)
         }
+
         override fun onResponse(call: Call, response: Response) {
             continuation.resume(response) { _, value, _ -> value.close() }
         }

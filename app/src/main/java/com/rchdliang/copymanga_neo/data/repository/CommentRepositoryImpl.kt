@@ -11,6 +11,7 @@ import com.rchdliang.copymanga_neo.domain.model.CommentReplyPreview
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.CommentText
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
 import kotlinx.coroutines.CancellationException
@@ -28,10 +29,14 @@ class CommentRepositoryImpl @Inject constructor(
 ) : CommentRepository {
     override suspend fun getReportConfig(target: CommentTarget): Result<com.rchdliang.copymanga_neo.domain.model.CommentReportConfig> =
         result {
+            val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+            val generation = networkSettings.generation
+            val headers = CommentApiService.readHeaders(appMode)
             val response = when (target.kind) {
-                CommentKind.COMIC -> api.reportConfig()
-                CommentKind.CHAPTER -> api.chapterReportConfig()
+                CommentKind.COMIC -> api.reportConfig(headers = headers)
+                CommentKind.CHAPTER -> api.chapterReportConfig(headers = headers)
             }
+            check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
             checkResponse(response.code(), response.body()?.code, response.body()?.message)
             val config = response.body()?.results ?: throw IOException("举报配置缺少数据")
             val types = config.types.orEmpty().mapNotNull { row ->
@@ -64,7 +69,10 @@ class CommentRepositoryImpl @Inject constructor(
                 commentId,
                 type,
                 reason.trim(),
-                "Token $token"
+                "Token $token",
+                headers = CommentApiService.reportHeaders(
+                    networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+                )
             )
 
             CommentKind.CHAPTER -> api.reportChapterComment(
@@ -78,7 +86,8 @@ class CommentRepositoryImpl @Inject constructor(
         if (response.code() == 401 || response.body()?.code == 401) {
             networkSettings.ifCurrent(networkGeneration) { auth.clearAuthSyncIfTokenMatches(token) }
         }
-        checkResponse(response.code(), response.body()?.code, response.body()?.message)
+        checkWriteResponse(response)
+        check(networkSettings.generation == networkGeneration) { "网络设置已变化，请确认举报结果" }
         check(auth.getAuthGeneration() == generation && auth.getTokenSync() == token) { "登录状态已变化，请确认举报结果" }
     }
 
@@ -108,16 +117,23 @@ class CommentRepositoryImpl @Inject constructor(
         limit: Int = 20
     ): Result<CommentPage> = result {
         require(target.id.isNotBlank() && offset >= 0) { "评论标识无效" }
+        val generation = networkSettings.generation
+        val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+        val headers = CommentApiService.readHeaders(appMode)
         val response = when (target.kind) {
             CommentKind.COMIC -> api.comicComments(
                 target.id,
-                replyId?.takeIf { it.isNotBlank() },
+                replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
                 offset,
-                limit
+                if (appMode) limit.coerceAtMost(10) else limit,
+                headers = headers
             )
 
-            CommentKind.CHAPTER -> api.chapterComments(target.id, offset)
+            CommentKind.CHAPTER -> api.chapterComments(
+                target.id, offset, limit = if (appMode) 10 else 30, headers = headers
+            )
         }
+        check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
         checkResponse(response.code(), response.body()?.code, response.body()?.message)
         val page = response.body()?.results ?: throw IOException("评论响应缺少数据")
         val rows = page.list ?: throw IOException("评论响应缺少列表")
@@ -134,7 +150,13 @@ class CommentRepositoryImpl @Inject constructor(
                 dto.parentUsername
             )
         }
-        val next = (page.offset?.coerceAtLeast(offset) ?: offset) + rows.size
+        val returnedOffset = page.offset ?: offset
+        check(returnedOffset == offset) { "评论分页位置无效，请重试" }
+        val window = page.limit ?: rows.size
+        check(window >= 0 && (rows.isEmpty() || window > 0)) { "评论分页大小无效，请重试" }
+        val nextLong = offset.toLong() + window
+        check(nextLong <= Int.MAX_VALUE) { "评论分页位置无效，请重试" }
+        val next = nextLong.toInt()
         val total = page.total?.text()?.toIntOrNull()?.coerceAtLeast(0) ?: next
         CommentPage(comments, total, next.takeIf { rows.isNotEmpty() && it < total })
     }
@@ -151,21 +173,43 @@ class CommentRepositoryImpl @Inject constructor(
         val generation = auth.getAuthGeneration()
         val networkGeneration = networkSettings.generation
         // 固定本次操作的账号，排队期间切换登录也不会改用其他人的 Token。
+        val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+        val headers = CommentApiService.postHeaders(appMode)
+        require(target.kind != CommentKind.CHAPTER || replyId.isNullOrBlank()) { "章节吐槽不支持回复" }
         val response = when (target.kind) {
             CommentKind.COMIC -> api.postComicComment(
                 target.id,
                 content.trim(),
-                replyId,
-                "Token $token"
+                replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
+                "Token $token",
+                headers = headers
             )
 
-            CommentKind.CHAPTER -> api.postChapterComment(target.id, content.trim(), "Token $token")
+            CommentKind.CHAPTER -> api.postChapterComment(
+                target.id, content.trim(), "Token $token", headers = headers
+            )
         }
         if (response.code() == 401 || response.body()?.code == 401) {
             networkSettings.ifCurrent(networkGeneration) { auth.clearAuthSyncIfTokenMatches(token) }
         }
-        checkResponse(response.code(), response.body()?.code, response.body()?.message)
+        checkWriteResponse(response)
+        check(networkSettings.generation == networkGeneration) { "网络设置已变化，请刷新评论确认发表结果" }
         check(auth.getAuthGeneration() == generation && auth.getTokenSync() == token) { "登录状态已变化，请刷新评论确认发表结果" }
+    }
+
+    /** HTTP 210 的业务校验也从错误正文读取，避免丢失评论长度及新账号等待提示。 */
+    private fun checkWriteResponse(
+        response: retrofit2.Response<com.rchdliang.copymanga_neo.data.remote.dto.CommentPostResponseDto>
+    ) {
+        val body = response.body()
+        val error = response.errorBody()?.use { it.string() }
+        val json =
+            runCatching { com.google.gson.JsonParser.parseString(error).asJsonObject }.getOrNull()
+        val code = body?.code ?: runCatching { json?.get("code")?.asInt }.getOrNull()
+        val message = body?.message ?: runCatching {
+            json?.get("message")?.takeUnless { it.isJsonNull }?.asString
+        }.getOrNull()
+        checkResponse(response.code(), code, message)
     }
 
     private fun checkResponse(http: Int, code: Int?, message: String?) {
@@ -173,7 +217,9 @@ class CommentRepositoryImpl @Inject constructor(
             throw CommentClosedException(message?.take(300) ?: "该漫画不允许评论")
         }
         if (http == 401 || code == 401) throw IllegalStateException("登录已过期，请重新登录")
-        if (http !in 200..299) throw IOException("评论请求失败（HTTP $http）")
+        if (http !in 200..299) throw IOException(
+            message?.takeIf { it.isNotBlank() }?.take(300) ?: "评论请求失败（HTTP $http）"
+        )
         if (code != 200) throw IllegalStateException(
             message?.takeIf { it.isNotBlank() }?.take(300) ?: "评论请求未成功（code=$code）"
         )

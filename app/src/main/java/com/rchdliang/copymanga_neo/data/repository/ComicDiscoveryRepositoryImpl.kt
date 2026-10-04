@@ -47,7 +47,7 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
             period = period,
             audience = audience,
             offset = offset,
-            limit = limit
+            limit = pageSize(limit)
         )
         val body = response.body()
         val page = checked(response, body?.code, body?.message, body?.results)
@@ -61,19 +61,26 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         require(offset >= 0 && limit in 1..21)
         val response = api.getNewestComics(
             offset = offset,
-            limit = limit,
-            update = true.takeIf { offset == 0 })
+            limit = pageSize(limit),
+            update = true.takeIf { offset == 0 && !usesOfficialApp() },
+            date = "".takeIf { usesOfficialApp() })
         val body = response.body()
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
             page.list.map { it.comic.toSummary() },
-            nextOffset(offset, page.offset, page.list.size, page.total)
+            nextOffset(
+                offset,
+                page.offset,
+                page.list.size,
+                page.total,
+                page.limit ?: page.list.size
+            )
         )
     }
 
     override suspend fun getRecommendations(offset: Int, limit: Int): Result<ComicPage> = result {
         require(offset >= 0 && limit in 1..21)
-        val response = api.getRecComics(limit = limit, offset = offset, freeType = null)
+        val response = api.getRecComics(limit = pageSize(limit), offset = offset, freeType = null)
         val body = response.body()
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
@@ -95,26 +102,47 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
 
     override suspend fun getTopics(offset: Int): Result<ComicTopicPage> = result {
         require(offset >= 0)
-        val response = api.getComicTopics(offset = offset)
-        val body = response.body()
-        val page = checked(response, body?.code, body?.message, body?.results)
-        ComicTopicPage(
-            page.list.map { ComicTopic(it.pathWord, it.title, it.cover, it.brief) },
-            nextOffset(offset, page.offset, page.list.size, page.total, page.limit)
-        )
+        val appMode = usesOfficialApp()
+        val generation = networkSettings.generation
+        var requestedOffset = offset
+        var topics: List<ComicTopic>
+        var next: Int?
+        do {
+            check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
+            val response = api.getComicTopics(
+                type = if (appMode) 11 else 1,
+                limit = if (appMode) 18 else 20,
+                offset = requestedOffset
+            )
+            val body = response.body()
+            val page = checked(response, body?.code, body?.message, body?.results)
+            check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
+            // 先按原始分页窗口推进；全是写真的一页继续读取，避免空首屏停止加载。
+            next = nextOffset(requestedOffset, page.offset, page.list.size, page.total, page.limit)
+            topics = page.list.filter { it.type == 1 }
+                .map { ComicTopic(it.pathWord, it.title, it.cover, it.brief) }
+            next?.let { requestedOffset = it }
+        } while (topics.isEmpty() && next != null)
+        ComicTopicPage(topics, next)
     }
 
     override suspend fun getTopic(pathWord: String): Result<ComicTopic> = result {
         require(pathWord.isNotBlank())
-        val response = api.getComicTopic(pathWord)
+        val response = api.getComicTopic(
+            pathWord, limit = if (usesOfficialApp()) null else "",
+            offset = if (usesOfficialApp()) null else ""
+        )
         val body = response.body()
         val topic = checked(response, body?.code, body?.message, body?.results)
+        check(topic.type == null || topic.type == 1) { "该专题不是漫画专题" }
         ComicTopic(topic.pathWord, topic.title, topic.cover, topic.brief ?: topic.intro)
     }
 
     override suspend fun getTopicComics(pathWord: String, offset: Int): Result<ComicPage> = result {
         require(pathWord.isNotBlank() && offset >= 0)
-        val response = api.getComicTopicContents(pathWord, offset = offset)
+        val response = api.getComicTopicContents(
+            pathWord, offset = offset, type = 1.takeIf { usesOfficialApp() }
+        )
         val body = response.body()
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
@@ -195,7 +223,11 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
             "该筛选组合没有抓包证据"
         }
         val response =
-            api.browseComics(theme = theme, top = top, ordering = ordering, offset = offset)
+            api.browseComics(
+                theme = theme ?: "".takeIf { usesOfficialApp() },
+                top = top ?: "".takeIf { usesOfficialApp() },
+                ordering = ordering, offset = offset, limit = pageSize(21)
+            )
         val body = response.body()
         val page = checked(response, body?.code, body?.message, body?.results)
         ComicPage(
@@ -205,17 +237,20 @@ class ComicDiscoveryRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun requireWebMode() {
-        check(networkSettings.settings.value.requestMode == RequestMode.WEB) {
-            "探索漫画目前仅支持网页请求模式"
-        }
-    }
+    private fun usesOfficialApp() =
+        networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+
+    /** App 列表每页 18 项；完结和专题内容沿用各自的分页窗口。 */
+    private fun pageSize(requested: Int) =
+        if (usesOfficialApp()) requested.coerceAtMost(18) else requested
 
     private suspend fun <T> result(block: suspend () -> T): Result<T> =
         withContext(Dispatchers.IO) {
             try {
-                requireWebMode()
-                Result.success(block())
+                val generation = networkSettings.generation
+                val value = block()
+                check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
+                Result.success(value)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

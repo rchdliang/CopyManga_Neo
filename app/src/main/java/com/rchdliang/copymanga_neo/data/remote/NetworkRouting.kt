@@ -63,7 +63,8 @@ class NetworkRoutingInterceptor @Inject constructor(private val store: NetworkSe
                     builder.header("Referer", "https://${settings.wwwHost}" + referer.removePrefix(CopyMangaNetworkConfig.WWW_ORIGIN))
                 }
             }
-            if (login) {
+            // 登录和注册表单的 version 必须与当前网页请求头一致。
+            if (login || (api && original.url.encodedPath == "/api/v3/register")) {
                 (original.body as? FormBody)?.let { form ->
                     val replacement = FormBody.Builder()
                     for (i in 0 until form.size) replacement.add(form.name(i), if (form.name(i) == "version") settings.version else form.value(i))

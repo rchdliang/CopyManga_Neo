@@ -950,7 +950,7 @@ private fun DetailContent(
                 }
             }
 
-            comicDetail.brief?.let { brief ->
+                        comicDetail.brief?.trim()?.let { brief ->
                 var expanded by remember { mutableStateOf(false) }
                 Column(
                     modifier = Modifier

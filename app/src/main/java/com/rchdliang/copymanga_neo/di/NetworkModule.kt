@@ -38,14 +38,14 @@ object NetworkModule {
             com.rchdliang.copymanga_neo.data.remote.api.CommentApiService = retrofit.newBuilder()
         .client(
             client.newBuilder().retryOnConnectionFailure(false).followRedirects(false)
-            .followSslRedirects(false)
-            .addNetworkInterceptor { chain ->
-                val response = chain.proceed(chain.request())
-                // OkHttp 仍可能按 503 + Retry-After: 0 重放请求；发表操作明确禁止这种重试。
-                if (chain.request().method == "POST" && response.code == 503) {
-                    response.newBuilder().removeHeader("Retry-After").build()
-                } else response
-            }.build()
+                .followSslRedirects(false)
+                .addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    // OkHttp 仍可能按 503 + Retry-After: 0 重放请求；发表操作明确禁止这种重试。
+                    if (chain.request().method == "POST" && response.code == 503) {
+                        response.newBuilder().removeHeader("Retry-After").build()
+                    } else response
+                }.build()
         )
         .build().create(com.rchdliang.copymanga_neo.data.remote.api.CommentApiService::class.java)
 
@@ -141,6 +141,57 @@ object NetworkModule {
     fun provideMangaApiService(@ApiRetrofit retrofit: Retrofit): MangaApiService {
         return retrofit.create(MangaApiService::class.java)
     }
+
+    /** 禁止重放注册，防止超时后自动创建重复账号。 */
+    @Provides
+    @Singleton
+    fun provideRegistrationApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
+            com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService =
+        retrofit.newBuilder().client(
+            client.newBuilder().retryOnConnectionFailure(false)
+                .followRedirects(false).followSslRedirects(false)
+                .addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    if (response.code == 503) response.newBuilder().removeHeader("Retry-After")
+                        .build()
+                    else response
+                }.build()
+        ).build()
+            .create(com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService::class.java)
+
+    /** 会员写入禁止连接重试、503 重放及重定向。 */
+    @Provides
+    @Singleton
+    fun provideMemberWriteApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
+            com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService =
+        retrofit.newBuilder().client(
+            client.newBuilder().retryOnConnectionFailure(false)
+                .followRedirects(false).followSslRedirects(false)
+                .addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    if (response.code == 503) response.newBuilder().removeHeader("Retry-After")
+                        .build()
+                    else response
+                }.build()
+        ).build()
+            .create(com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService::class.java)
+
+    /** 下载授权会扣额度，连接失败、503 和重定向均不自动重放。 */
+    @Provides
+    @Singleton
+    fun provideOfficialDownloadApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
+            com.rchdliang.copymanga_neo.data.remote.api.OfficialDownloadApiService =
+        retrofit.newBuilder().client(
+            client.newBuilder().retryOnConnectionFailure(false)
+                .followRedirects(false).followSslRedirects(false)
+                .addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    if (response.code == 503) response.newBuilder().removeHeader("Retry-After")
+                        .build()
+                    else response
+                }.build()
+        ).build()
+            .create(com.rchdliang.copymanga_neo.data.remote.api.OfficialDownloadApiService::class.java)
 
     /**
      * 提供 SystemApiService（使用 API 域名）

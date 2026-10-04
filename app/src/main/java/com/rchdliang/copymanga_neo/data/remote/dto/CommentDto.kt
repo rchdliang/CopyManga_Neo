@@ -28,7 +28,8 @@ data class CommentResponseDto(
 data class CommentListDto(
     @SerializedName("list") val list: List<CommentDto?>?,
     @SerializedName("total") val total: JsonElement?,
-    @SerializedName("offset") val offset: Int?
+    @SerializedName("offset") val offset: Int?,
+    @SerializedName("limit") val limit: Int? = null
 )
 
 data class CommentDto(

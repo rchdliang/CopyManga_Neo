@@ -32,6 +32,10 @@ data class ProfileUiState(
     val isLoginLoading: Boolean = false,
     val loginError: String? = null,
     val showLoginDialog: Boolean = false,
+    val showRegisterDialog: Boolean = false,
+    val isRegisterLoading: Boolean = false,
+    val registerError: String? = null,
+    val registeredUsername: String? = null,
     val avatar: String? = null,
     val nickname: String? = null,
     val dayDownloads: Int? = null,
@@ -76,6 +80,11 @@ class ProfileViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isLoginLoading = false,
+                isRegisterLoading = false,
+                showRegisterDialog = it.showRegisterDialog && it.registeredUsername == null,
+                showLoginDialog = it.showLoginDialog || (it.isRegisterLoading && it.registeredUsername != null),
+                loginError = if (it.isRegisterLoading && it.registeredUsername != null)
+                    "账号已注册，请尝试登录" else it.loginError,
                 isRefreshing = false,
                 isCredentialLoading = false,
                 toastMessage = throwable.message ?: "操作失败"
@@ -89,8 +98,11 @@ class ProfileViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
-            combine(themeBlacklistRepository.blockedThemes, themeBlacklistRepository.isEnabled) {
-                themes, enabled -> themes to enabled
+            combine(
+                themeBlacklistRepository.blockedThemes,
+                themeBlacklistRepository.isEnabled
+            ) { themes, enabled ->
+                themes to enabled
             }
                 .catch { error ->
                     _uiState.update {
@@ -188,7 +200,10 @@ class ProfileViewModel @Inject constructor(
                 onSuccess = { _uiState.update { it.copy(isBlacklistSaving = false) } },
                 onFailure = { error ->
                     _uiState.update {
-                        it.copy(isBlacklistSaving = false, toastMessage = error.message ?: "保存开关失败")
+                        it.copy(
+                            isBlacklistSaving = false,
+                            toastMessage = error.message ?: "保存开关失败"
+                        )
                     }
                 }
             )
@@ -253,12 +268,105 @@ class ProfileViewModel @Inject constructor(
 
     /** 显示登录对话框 */
     fun showLoginDialog() {
-        _uiState.update { it.copy(showLoginDialog = true, loginError = null) }
+        if (_uiState.value.isRegisterLoading || _uiState.value.isLoginLoading) return
+        _uiState.update {
+            it.copy(
+                showLoginDialog = true,
+                showRegisterDialog = false,
+                loginError = null
+            )
+        }
+    }
+
+    /** 编辑登录字段后清除上次服务端错误。 */
+    fun clearLoginError() {
+        _uiState.update { it.copy(loginError = null) }
     }
 
     /** 隐藏登录对话框 */
     fun hideLoginDialog() {
+        if (_uiState.value.isLoginLoading) return
         _uiState.update { it.copy(showLoginDialog = false, loginError = null) }
+    }
+
+    fun showRegisterDialog() {
+        if (_uiState.value.isRegisterLoading || _uiState.value.isLoginLoading || _uiState.value.isLoggedIn) return
+        _uiState.update {
+            it.copy(
+                showLoginDialog = false, showRegisterDialog = true, registerError = null,
+                registeredUsername = null
+            )
+        }
+    }
+
+    fun hideRegisterDialog() {
+        if (_uiState.value.isRegisterLoading) return
+        _uiState.update { it.copy(showRegisterDialog = false, registerError = null) }
+    }
+
+    fun clearRegisterError() {
+        _uiState.update { it.copy(registerError = null) }
+    }
+
+    /** 注册和登录分两步；注册已成功后登录失败，不再回到注册提交。 */
+    fun register(username: String, password: String, confirmation: String) {
+        if (_uiState.value.isRegisterLoading || _uiState.value.isLoginLoading) return
+        val account = username.trim()
+        val error = com.rchdliang.copymanga_neo.domain.model.RegistrationPolicy
+            .validationError(account, password)
+            ?: "两次输入的密码不一致".takeIf { password != confirmation }
+        if (error != null) {
+            _uiState.update { it.copy(registerError = error) }
+            return
+        }
+        _uiState.update { it.copy(isRegisterLoading = true, registerError = null) }
+        viewModelScope.launch(exceptionHandler) {
+            userRepository.register(account, password).fold(
+                onSuccess = { registration ->
+                    _uiState.update { it.copy(registeredUsername = registration.username) }
+                    if (!registration.canAutoLogin) {
+                        _uiState.update {
+                            it.copy(
+                                isRegisterLoading = false, showRegisterDialog = false,
+                                showLoginDialog = !it.isLoggedIn,
+                                toastMessage = "账号已注册，网络或登录状态已变化，请手动登录"
+                            )
+                        }
+                        return@launch
+                    }
+                    userRepository.login(account, password).fold(
+                        onSuccess = {
+                            // 注册密码不默认持久化，也不沿用旧账号的自动登录设置。
+                            userRepository.saveCredentials(account, password, false, false)
+                            _uiState.update {
+                                it.copy(
+                                    isRegisterLoading = false, showRegisterDialog = false,
+                                    registeredUsername = null, toastMessage = "注册并登录成功"
+                                )
+                            }
+                        },
+                        onFailure = { loginError ->
+                            _uiState.update {
+                                it.copy(
+                                    isRegisterLoading = false, showRegisterDialog = false,
+                                    showLoginDialog = true, registeredUsername = account,
+                                    loginError = "注册已成功，登录失败：${loginError.message ?: "请重试登录"}",
+                                    toastMessage = "账号已注册，请登录，无需再次注册"
+                                )
+                            }
+                        }
+                    )
+                },
+                onFailure = { registerError ->
+                    _uiState.update {
+                        it.copy(
+                            isRegisterLoading = false,
+                            registerError = registerError.message ?: "注册失败"
+                        )
+                    }
+                }
+            )
+        }
     }
 
     /** 登录 */
@@ -268,6 +376,7 @@ class ProfileViewModel @Inject constructor(
         rememberPassword: Boolean,
         autoLogin: Boolean
     ) {
+        if (_uiState.value.isLoginLoading || _uiState.value.isRegisterLoading) return
         if (username.isBlank() || password.isBlank()) {
             _uiState.update { it.copy(loginError = "账号和密码不能为空") }
             return
@@ -282,6 +391,7 @@ class ProfileViewModel @Inject constructor(
                         it.copy(
                             isLoginLoading = false,
                             showLoginDialog = false,
+                            registeredUsername = null,
                             loginError = null
                         )
                     }
@@ -362,6 +472,8 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch(exceptionHandler) {
             userRepository.logout().fold(
                 onSuccess = {
+                    // 服务器退出返回较晚时，不能覆盖期间重新登录的账号界面。
+                    if (userRepository.isLoggedInSync()) return@fold
                     _uiState.update {
                         it.copy(
                             isLoggedIn = false,
@@ -377,6 +489,7 @@ class ProfileViewModel @Inject constructor(
                 },
                 onFailure = { error ->
                     android.util.Log.e("ProfileViewModel", "Logout failed: ${error.message}")
+                    if (userRepository.isLoggedInSync()) return@fold
                     _uiState.update {
                         it.copy(
                             isLoggedIn = false,

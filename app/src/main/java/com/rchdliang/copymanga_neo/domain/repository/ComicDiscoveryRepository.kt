@@ -5,7 +5,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicPage
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.model.ComicTopicPage
 
-/** HAR 中确认的漫画只读入口，仅用于 Web 模式。 */
+/** 抓包确认的漫画只读入口，支持网页和 App 请求模式。 */
 interface ComicDiscoveryRepository {
     fun cachedFilterOptions(): ComicFilterOptions =
         com.rchdliang.copymanga_neo.domain.model.ComicFilterDefaults.options

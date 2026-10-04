@@ -6,7 +6,6 @@ import android.content.ClipboardManager
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,10 +17,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.filled.AccountCircle
@@ -43,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
@@ -63,9 +69,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -75,6 +84,7 @@ import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.history.HistoryScreen
 import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
+import kotlinx.coroutines.flow.drop
 
 /**
  * 我的页面内子页面
@@ -111,14 +121,14 @@ fun ProfileScreen(
             viewModel.clearToastMessage()
         }
     }
-
     LaunchedEffect(viewModel, clipboardManager) {
         viewModel.events.collect { event ->
             when (event) {
                 is ProfileEvent.CopyLoginCredential -> {
                     runCatching {
+                        // getter 可空、setter 非空，Kotlin 将 primaryClip 映射为只读属性。
+                        @Suppress("UsePropertyAccessSyntax")
                         clipboardManager.setPrimaryClip(createSensitiveCredentialClip(event.credential))
-                        //这里改用“clipboardManager.primaryClip = createSensitiveCredentialClip(event.credential)”会报错提示val不能更改！
                     }.fold(
                         onSuccess = { toastHost.showToast("登录凭据已复制到剪切板") },
                         onFailure = { toastHost.showToast("无法写入剪切板") }
@@ -144,7 +154,12 @@ fun ProfileScreen(
             onLoginClick = viewModel::showLoginDialog,
             savedPasswordProvider = viewModel::getSavedPasswordSync,
             onLogin = viewModel::login,
+            onRegisterClick = viewModel::showRegisterDialog,
+            onRegister = viewModel::register,
+            onDismissRegister = viewModel::hideRegisterDialog,
+            onClearRegisterError = viewModel::clearRegisterError,
             onDismissLogin = viewModel::hideLoginDialog,
+            onClearLoginError = viewModel::clearLoginError,
             onExportCredential = viewModel::exportLoginCredential,
             onImportCredential = {
                 val credential = runCatching {
@@ -207,7 +222,12 @@ internal fun ProfileMainPage(
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToBlacklist: () -> Unit = {},
-    onBlacklistEnabledChange: (Boolean) -> Unit = {}
+    onBlacklistEnabledChange: (Boolean) -> Unit = {},
+    onRegisterClick: () -> Unit = {},
+    onRegister: (String, String, String) -> Unit = { _, _, _ -> },
+    onDismissRegister: () -> Unit = {},
+    onClearRegisterError: () -> Unit = {},
+    onClearLoginError: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
@@ -286,14 +306,27 @@ internal fun ProfileMainPage(
         LoginDialog(
             isLoading = uiState.isLoginLoading,
             error = uiState.loginError,
-            savedUsername = uiState.savedUsername,
-            savedPasswordProvider = savedPasswordProvider,
+            savedUsername = uiState.registeredUsername ?: uiState.savedUsername,
+            savedPasswordProvider = if (uiState.registeredUsername == null) savedPasswordProvider else ({ null }),
             rememberPassword = uiState.rememberPassword,
             autoLogin = uiState.autoLogin,
             onLogin = { username, password, remember, auto ->
                 onLogin(username, password, remember, auto)
             },
-            onDismiss = onDismissLogin
+            onDismiss = onDismissLogin,
+            onRegister = onRegisterClick,
+            onClearError = onClearLoginError
+        )
+    }
+
+    if (uiState.showRegisterDialog) {
+        RegisterDialog(
+            isLoading = uiState.isRegisterLoading,
+            error = uiState.registerError,
+            onRegister = onRegister,
+            onDismiss = onDismissRegister,
+            onLogin = onLoginClick,
+            onClearError = onClearRegisterError
         )
     }
 
@@ -561,6 +594,7 @@ private fun createSensitiveCredentialClip(credential: String): ClipData {
     }
 }
 
+/** 登录表单只校验必填项，保留已有账号的兼容性。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoginDialog(
@@ -571,15 +605,21 @@ private fun LoginDialog(
     rememberPassword: Boolean,
     autoLogin: Boolean,
     onLogin: (String, String, Boolean, Boolean) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRegister: () -> Unit = {},
+    onClearError: () -> Unit = {}
 ) {
     val usernameState = rememberTextFieldState()
-    val passwordState = rememberTextFieldState()
+    val passwordState = remember { TextFieldState() }
     var showPassword by remember { mutableStateOf(false) }
-    var remember by remember { mutableStateOf(rememberPassword) }
+    var rememberPasswordChecked by remember { mutableStateOf(rememberPassword || autoLogin) }
     var auto by remember { mutableStateOf(autoLogin) }
+    var submitted by remember { mutableStateOf(false) }
+    val username = usernameState.text.toString().trim()
+    val password = passwordState.text.toString()
+    val usernameError = if (submitted && username.isBlank()) "请输入账号" else null
+    val passwordError = if (submitted && password.isBlank()) "请输入密码" else null
 
-    // 预填充已保存的凭据（用 LaunchedEffect 避免在组合阶段产生副作用）
     LaunchedEffect(Unit) {
         if (savedUsername != null && usernameState.text.isEmpty()) {
             usernameState.edit { replace(0, length, savedUsername) }
@@ -588,114 +628,189 @@ private fun LoginDialog(
         if (savedPassword != null && passwordState.text.isEmpty()) {
             passwordState.edit { replace(0, length, savedPassword) }
         }
+        // 预填后再监听编辑，保留注册成功但登录失败的初始提示。
+        snapshotFlow { usernameState.text.toString() to passwordState.text.toString() }
+            .drop(1).collect { onClearError() }
+    }
+    fun submit() {
+        submitted = true
+        if (!isLoading && username.isNotBlank() && password.isNotBlank()) {
+            onLogin(username, password, rememberPasswordChecked, auto)
+        }
     }
 
     AlertDialog(
         onDismissRequest = { if (!isLoading) onDismiss() },
-        title = { Text("登录 CopyManga") },
+        icon = {
+            Icon(
+                Icons.AutoMirrored.Outlined.Login, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = { Text("登录账号", color = MaterialTheme.colorScheme.onSurface) },
         text = {
-            Column {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "登录 CopyManga，同步书架和阅读记录。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
                 OutlinedTextField(
                     state = usernameState,
-                    label = { Text("账号") },
+                    label = {
+                        Text(
+                            "账号", color = if (usernameError != null)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    supportingText = if (usernameError == null) null else {
+                        { Text(usernameError, color = MaterialTheme.colorScheme.error) }
+                    },
+                    isError = usernameError != null,
                     lineLimits = TextFieldLineLimits.SingleLine,
+                    keyboardOptions = KeyboardOptions(
+                        autoCorrectEnabled = false,
+                        imeAction = ImeAction.Next
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { contentType = ContentType.Username },
                     enabled = !isLoading
                 )
-                Spacer(modifier = Modifier.height(8.dp))
                 OutlinedSecureTextField(
                     state = passwordState,
-                    label = { Text("密码") },
+                    label = {
+                        Text(
+                            "密码", color = if (passwordError != null)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    supportingText = if (passwordError == null) null else {
+                        { Text(passwordError, color = MaterialTheme.colorScheme.error) }
+                    },
+                    isError = passwordError != null,
                     trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
+                        IconButton(
+                            onClick = { showPassword = !showPassword },
+                            enabled = !isLoading
+                        ) {
                             Icon(
-                                imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (showPassword) "隐藏密码" else "显示密码"
+                                if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (showPassword) "隐藏密码" else "显示密码",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     },
-                    textObfuscationMode = if (showPassword) TextObfuscationMode.Visible else TextObfuscationMode.RevealLastTyped,
+                    textObfuscationMode = if (showPassword) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    ),
+                    onKeyboardAction = { submit() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics { contentType = ContentType.Password },
                     enabled = !isLoading
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { remember = !remember },
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = MaterialTheme.shapes.medium
                 ) {
-                    Checkbox(
-                        checked = remember,
-                        onCheckedChange = { remember = it }
-                    )
-                    Text(
-                        text = "记住密码",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column {
+                        LoginPreferenceRow(
+                            "记住密码", "下次登录时填入账号和密码",
+                            rememberPasswordChecked, !isLoading
+                        ) {
+                            rememberPasswordChecked = it
+                            if (!it) auto = false
+                        }
+                        LoginPreferenceRow(
+                            "自动登录", "启动或会话失效时尝试登录",
+                            auto, !isLoading
+                        ) {
+                            auto = it
+                            if (it) rememberPasswordChecked = true
+                        }
+                    }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { auto = !auto },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = auto,
-                        onCheckedChange = { auto = it }
-                    )
-                    Text(
-                        text = "自动登录",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-                if (error != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                if (isLoading) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    LoadingIndicator(
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
+                error?.let {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Text(
+                            it, Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    onLogin(
-                        usernameState.text.toString(),
-                        passwordState.text.toString(),
-                        remember,
-                        auto
+            Button(onClick = ::submit, enabled = !isLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isLoading) LoadingIndicator(Modifier.size(24.dp))
+                    Text(
+                        if (isLoading) "正在登录" else "登录",
+                        color = if (isLoading) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary
                     )
-                },
-                enabled = !isLoading && usernameState.text.toString()
-                    .isNotBlank() && passwordState.text.toString().isNotBlank()
-            ) {
-                Text("登录")
+                }
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isLoading
-            ) {
-                Text("取消")
+            Row {
+                TextButton(onClick = onRegister, enabled = !isLoading) {
+                    Text("注册账号", color = MaterialTheme.colorScheme.primary)
+                }
+                TextButton(onClick = onDismiss, enabled = !isLoading) {
+                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     )
+}
+
+/** 整行可切换，Checkbox 不单独消费点击，避免重复触发及重复无障碍节点。 */
+@Composable
+private fun LoginPreferenceRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked, enabled = enabled, role = Role.Checkbox,
+                onValueChange = onCheckedChange
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title, color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                description, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
 }
 
 private object ButtonDefaults {

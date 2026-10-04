@@ -30,8 +30,9 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             return chain.proceed(original)
         }
         val response = chain.proceed(prepareRequest(original, settings.officialApp))
-        // 实测存在 code=200/results=null；明确作为空响应失败，不宣称已确定风控原因。
-        if (response.isSuccessful) {
+        // 只放行已抓包确认的成功写入；读取接口仍需完整数据。
+        val emptyWriteResult = permitsEmptyResult(original.method, original.url.encodedPath)
+        if (response.isSuccessful && !emptyWriteResult) {
             val json = try {
                 JsonParser.parseString(response.peekBody(64 * 1024).string()).asJsonObject
             } catch (_: Exception) {
@@ -64,6 +65,9 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             .removeAllQueryParameters("_update").setQueryParameter("platform", "3")
         val path = original.url.encodedPath
         if (path == "/api/v3/h5/homeIndex") url.encodedPath("/api/v3/h5/homeIndex2")
+        if (path == "/api/v3/search/comic" && original.url.queryParameter("q_type") == null) {
+            url.setQueryParameter("q_type", "")
+        }
         // HAR 中详情、目录和章节内容使用这些参数；状态 query 接口没有这两个参数。
         if (Regex("/api/v3/comic2/[^/]+$").matches(path) ||
             path.contains("/chapter2/") || path.endsWith("/chapters")
@@ -86,7 +90,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             "version" to app.version,
             "versioncode" to app.versionCode,
             "platform" to "3",
-            "region" to "1",
+            "region" to "0",
             "webp" to "1",
             "Accept" to "application/json",
             "Accept-Language" to "",
@@ -108,33 +112,38 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         val login = path == "/api/v3/login"
         if (!login && original.header("Authorization") == null) builder.removeHeader("X-No-Auth")
         (original.body as? FormBody)?.let { form ->
-            val fields = linkedMapOf<String, String>()
+            // 重复 ids 必须保留；Map 会丢失批量删除中的其他条目。
+            val fields = mutableListOf<Pair<String, String>>()
             for (i in 0 until form.size) {
-                if (form.name(i) != "_update") fields[form.name(i)] = form.value(i)
+                if (form.name(i) != "_update") fields += form.name(i) to form.value(i)
             }
-            if (login) {
-                fields.putAll(
-                    mapOf(
-                        "platform" to "3",
-                        "authorization" to "Token ",
-                        "version" to app.version,
-                        "source" to "copyApp",
-                        "region" to "1",
-                        "webp" to "1",
-                        "userAgent" to "COPY/${app.version}",
-                        "isGoogle" to "false",
-                        "pseudoID" to app.pseudoId,
-                        "dt" to identity.loginDate,
-                        "tapString" to tapString,
-                        "umString" to app.umString,
-                        "buildTime" to app.buildTime,
-                        "versionCode" to app.versionCode,
-                        "androidId" to app.device,
-                        "referer" to "com.copymanga.app-${app.version}",
-                        "deviceInfo" to app.deviceInfo
-                    )
+            val register = path == "/api/v3/register"
+            if (login || register || requiresMemberForm(original.method, path)) {
+                val common = mapOf(
+                    "platform" to "3",
+                    "authorization" to if (login || register) "Token " else
+                        (original.header("Authorization")
+                            ?: throw IOException("请先登录后操作")),
+                    "version" to app.version,
+                    "source" to "copyApp",
+                    "region" to "0",
+                    "webp" to "1",
+                    "userAgent" to "COPY/${app.version}",
+                    "isGoogle" to "false",
+                    "pseudoID" to app.pseudoId,
+                    "dt" to identity.loginDate,
+                    "tapString" to tapString,
+                    "umString" to app.umString,
+                    "buildTime" to app.buildTime,
+                    "versionCode" to app.versionCode,
+                    "androidId" to app.device,
+                    "referer" to "com.copymanga.app-${app.version}",
+                    "deviceInfo" to app.deviceInfo
                 )
-                builder.header("Authorization", "Token").header("X-No-Auth", "1")
+                fields.removeAll { it.first in common }
+                fields.addAll(common.toList())
+                if (login || register) builder.header("Authorization", "Token")
+                    .header("X-No-Auth", "1")
             }
             builder.method(original.method, FormBody.Builder().apply {
                 fields.forEach { (key, value) -> add(key, value) }
@@ -142,5 +151,25 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         }
         return builder.build()
     }
+
+    /** 方法和路径同时匹配，避免把读取或尚未验证的接口当作成功空结果。 */
+    private fun permitsEmptyResult(method: String, path: String): Boolean = when (method) {
+        "POST" -> path in setOf(
+            "/api/v3/logout", "/api/v3/member/collect/comic",
+            "/api/v3/member/comment", "/api/v3/member/roast",
+            "/api/v3/member/comment/report"
+        )
+
+        "DELETE" -> path == "/api/v3/member/browse/comics"
+        else -> false
+    }
+
+    private fun requiresMemberForm(method: String, path: String): Boolean =
+        (method == "POST" && path in setOf(
+            "/api/v3/member/collect/comic", "/api/v3/member/comment",
+            "/api/v3/member/roast", "/api/v3/member/comment/report"
+        )) || (method == "DELETE" && path in setOf(
+            "/api/v3/member/collect/comics", "/api/v3/member/browse/comics"
+        ))
 
 }

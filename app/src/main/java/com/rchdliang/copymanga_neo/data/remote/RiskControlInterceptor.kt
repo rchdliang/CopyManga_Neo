@@ -41,10 +41,12 @@ class RiskControlInterceptor @Inject constructor(
                     if (body.startsWith("{")) JsonParser.parseString(body).asJsonObject else null
                 val code = json?.get("code")?.takeUnless { it.isJsonNull }?.asInt
                 val message = json?.get("message")?.takeUnless { it.isJsonNull }?.asString
-                if (chain.request().isCopyApi() && CommentPolicy.isClosedResponse(
-                        chain.request().url.encodedPath, response.code, code, message
-                    )
-                ) {
+                val businessError = chain.request().isCopyApi() &&
+                        (ApiBusinessErrors.isValidation(chain.request().url.encodedPath, message) ||
+                                CommentPolicy.isClosedResponse(
+                                    chain.request().url.encodedPath, response.code, code, message
+                                ))
+                if (businessError) {
                     null
                 } else if (response.code == 210 || code == 210) {
                     message

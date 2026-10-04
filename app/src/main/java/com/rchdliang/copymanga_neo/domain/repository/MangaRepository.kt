@@ -83,6 +83,11 @@ interface MangaRepository {
         group: String = "default"
     ): Result<ChapterContent>
 
+    /** 下载内容与阅读分离；App 模式请求会消耗额度，网页模式沿用网页内容。 */
+    suspend fun getChapterDownloadContent(
+        comicPathWord: String, chapterUuid: String, group: String = "default"
+    ): Result<ChapterContent> = getChapterContent(comicPathWord, chapterUuid, group)
+
     /**
      * 搜索漫画
      */

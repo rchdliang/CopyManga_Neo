@@ -75,6 +75,24 @@ class AuthDataStore @Inject constructor(
     private val authStateLock = Any()
     private var authGeneration: Long = 0
 
+    /** 当前会话密码仅留在内存，退出、失效或导入其他会话时清除。 */
+    private var sessionLogin: Pair<String, String>? = null
+
+    @Volatile
+    private var switchingRequestMode = false
+
+    fun setRequestModeSwitching(value: Boolean) {
+        switchingRequestMode = value
+    }
+
+    /** 仅返回当前已登录账号的凭据，不能沿用其他账号的记住密码。 */
+    fun getRequestModeLogin(): Pair<String, String>? = synchronized(authStateLock) {
+        if (cachedToken == null) return@synchronized null
+        sessionLogin
+            ?: if (cachedSavedUsername == cachedUsername && !cachedSavedPassword.isNullOrEmpty())
+                cachedSavedUsername!! to cachedSavedPassword!! else null
+    }
+
     /** 内部协程作用域，用于异步执行 DataStore 读写操作（避免在主线程 / Interceptor 中阻塞） */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -120,7 +138,8 @@ class AuthDataStore @Inject constructor(
         generation: Long,
         token: String,
         username: String,
-        avatar: String?
+        avatar: String?,
+        loginCredentials: Pair<String, String>? = null
     ): Boolean {
         var saved = false
         dataStore.edit { prefs ->
@@ -132,6 +151,7 @@ class AuthDataStore @Inject constructor(
                     cachedToken = token
                     cachedUsername = username
                     cachedAvatar = avatar
+                    sessionLogin = loginCredentials
                     authGeneration++
                     saved = true
                 }
@@ -190,6 +210,7 @@ class AuthDataStore @Inject constructor(
                     cachedAutoLogin = false
                     cachedSavedUsername = null
                     cachedSavedPassword = null
+                    sessionLogin = null
                     authGeneration++
                     saved = true
                 }
@@ -263,7 +284,7 @@ class AuthDataStore @Inject constructor(
         dataStore.data.map { prefs -> prefs[KEY_AUTO_LOGIN] ?: false }
 
     /** 获取自动登录状态（同步） */
-    fun getAutoLoginSync(): Boolean = cachedAutoLogin
+    fun getAutoLoginSync(): Boolean = cachedAutoLogin && !switchingRequestMode
 
     /** 获取保存的用户名（Flow） */
     fun getSavedUsername(): Flow<String?> =
@@ -285,6 +306,7 @@ class AuthDataStore @Inject constructor(
             cachedToken = null
             cachedUsername = null
             cachedAvatar = null
+            sessionLogin = null
             if (manualLogout) cachedAutoLogin = false
             authGeneration
         }
@@ -308,6 +330,7 @@ class AuthDataStore @Inject constructor(
             cachedToken = null
             cachedUsername = null
             cachedAvatar = null
+            sessionLogin = null
             authGeneration
         }
         scope.launch {

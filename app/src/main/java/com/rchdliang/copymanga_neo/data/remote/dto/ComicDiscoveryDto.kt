@@ -18,7 +18,8 @@ data class NewestResponse(
 data class NewestResult(
     @SerializedName("list") val list: List<HotComicItem>,
     @SerializedName("total") val total: Int,
-    @SerializedName("offset") val offset: Int
+    @SerializedName("offset") val offset: Int,
+    @SerializedName("limit") val limit: Int? = null
 )
 
 data class TopicsResponse(
@@ -38,7 +39,8 @@ data class TopicDetailDto(
     @SerializedName("title") val title: String,
     @SerializedName("cover") val cover: String?,
     @SerializedName("brief") val brief: String?,
-    @SerializedName("intro") val intro: String?
+    @SerializedName("intro") val intro: String?,
+    @SerializedName("type") val type: Int? = null
 )
 
 data class ComicFilterTagsResponse(

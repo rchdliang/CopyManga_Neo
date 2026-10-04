@@ -83,7 +83,9 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
             val type = response.body.contentType()
             val text =
                 type?.type == "text" || type?.subtype?.let { "json" in it || "xml" in it || "javascript" in it } == true
-            if (request.url.encodedPath == "/api/v3/login" || request.url.encodedPath.startsWith("/api/v3/member/info")) {
+            if (request.url.encodedPath in setOf("/api/v3/login", "/api/v3/register") ||
+                request.url.encodedPath.startsWith("/api/v3/member/info")
+            ) {
                 result.addProperty("body_note", "登录和个人资料响应正文已隐藏")
             } else if (text) {
                 val limit = 2 * 1024 * 1024
@@ -200,19 +202,19 @@ internal object NetworkLogRedaction {
             addProperty("name", name)
             addProperty(
                 "value", when {
-                name.equals("Cookie", true) -> value.split(';').joinToString("; ") {
-                    val key = it.substringBefore('=').trim()
-                    "$key=${if (key == "webp") it.substringAfter('=') else "[REDACTED]"}"
+                    name.equals("Cookie", true) -> value.split(';').joinToString("; ") {
+                        val key = it.substringBefore('=').trim()
+                        "$key=${if (key == "webp") it.substringAfter('=') else "[REDACTED]"}"
+                    }
+
+                    sensitive(name) -> "[REDACTED]"
+                    name.equals("Location", true) || name.equals(
+                        "Referer",
+                        true
+                    ) -> runCatching { url(value.toHttpUrl()) }.getOrDefault("[URL OMITTED]")
+
+                    else -> value
                 }
-
-                sensitive(name) -> "[REDACTED]"
-                name.equals("Location", true) || name.equals(
-                    "Referer",
-                    true
-                ) -> runCatching { url(value.toHttpUrl()) }.getOrDefault("[URL OMITTED]")
-
-                else -> value
-            }
             )
         })
     }

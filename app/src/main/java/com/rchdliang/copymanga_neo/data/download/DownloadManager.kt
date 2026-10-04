@@ -9,7 +9,6 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
-import com.rchdliang.copymanga_neo.domain.repository.RiskControlException as SiteRiskControlException
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -39,6 +38,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException as SiteRiskControlException
 
 class RiskControlException(message: String) : IOException(message)
 private class DownloadNetworkUnavailableException : IOException("等待 Wi-Fi 连接")
@@ -809,7 +809,7 @@ class DownloadManager internal constructor(
         if (!networkAllowed()) throw DownloadNetworkUnavailableException()
         return supervisorScope {
             val request = async {
-                mangaRepository.getChapterContent(
+                mangaRepository.getChapterDownloadContent(
                     comicPathWord, chapter.uuid,
                     chapter.groupPathWord ?: "default"
                 ).fold(onSuccess = { it }, onFailure = { throw it })
