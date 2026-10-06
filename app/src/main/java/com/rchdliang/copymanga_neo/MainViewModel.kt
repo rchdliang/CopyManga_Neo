@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -44,17 +45,18 @@ class MainViewModel @Inject constructor(
             "init: isLoggedInSync=${userRepository.isLoggedInSync()}, autoLogin=${userRepository.getAutoLoginSync()}"
         )
         viewModelScope.launch {
-            userRepository.isLoggedIn().collect { value ->
+            userRepository.isAuthCacheReady().first { it }
+            userRepository.sessionChanges().collectLatest {
+                val value = userRepository.isLoggedInSync()
                 android.util.Log.d("MainViewModel", "isLoggedIn Flow emitted: $value")
                 val wasValue = _isLoggedIn.value
                 _isLoggedIn.value = value
                 if (!value && wasValue) {
                     android.util.Log.d("MainViewModel", "检测到登出，尝试自动登录")
                     tryAutoLoginAfterExpiry()
-                } else if (value && !wasValue) {
+                } else if (value) {
                     android.util.Log.d("MainViewModel", "检测到登录，刷新用户信息")
                     refreshMemberInfo()
-                } else if (value) {
                     hasTriedAutoLoginAfterExpiry = false
                 }
             }
@@ -99,6 +101,7 @@ class MainViewModel @Inject constructor(
     }
 
     private suspend fun performAutoLogin() {
+        val generation = userRepository.sessionVersionSync()
         val username = userRepository.getSavedUsernameSync()
         val password = userRepository.getSavedPasswordSync()
         if (username == null || password == null) {
@@ -106,7 +109,8 @@ class MainViewModel @Inject constructor(
             return
         }
         android.util.Log.d("MainViewModel", "尝试自动登录: $username")
-        userRepository.login(username, password).fold(
+        if (!userRepository.getAutoLoginSync() || userRepository.sessionVersionSync() != generation) return
+        userRepository.login(username, password, expectedGeneration = generation).fold(
             onSuccess = {
                 android.util.Log.d("MainViewModel", "自动登录成功，刷新用户信息")
                 refreshMemberInfo()

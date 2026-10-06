@@ -95,7 +95,7 @@ class NetworkLogViewModel @Inject constructor(
     }
 }
 
-/** 关于页面中的本地日志开关及系统文件导出入口。 */
+/** 数据管理中的本地日志开关及系统文件导出入口。 */
 @Composable
 internal fun NetworkLogCard(viewModel: NetworkLogViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()

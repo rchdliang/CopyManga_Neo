@@ -2,54 +2,41 @@ package com.rchdliang.copymanga_neo.ui.profile
 
 import android.content.Intent
 import android.text.format.Formatter
-import androidx.compose.foundation.layout.Arrangement
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -66,33 +53,28 @@ import com.rchdliang.copymanga_neo.ui.reader.ScreenOrientationSetting
 @Composable
 internal fun SettingsScreen(
     onNavigateBack: () -> Unit,
-    onNavigateToNetwork: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
+    onNavigateToData: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val toastHost = LocalToastHost.current
-    var notifications by remember { mutableStateOf(NotificationSettingsStatus()) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        notifications = readNotificationSettings(context)
-        viewModel.refreshStorage()
-    }
+    val toast = LocalToastHost.current
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshStorage() }
     LaunchedEffect(state.message) {
-        state.message?.let { toastHost.showToast(it); viewModel.clearMessage() }
+        state.message?.let { toast.showToast(it); viewModel.clearMessage() }
     }
     SettingsPage(
         state = state,
         onThemeChange = viewModel::setThemeMode,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
         onNavigateBack = onNavigateBack,
-        onNavigateToNetwork = onNavigateToNetwork,
         onNavigateToAbout = onNavigateToAbout,
+        onNavigateToData = onNavigateToData,
         onDirectionChange = viewModel::setReadingDirection,
         onScaleChange = viewModel::setPageScale,
         onOrientationChange = viewModel::setScreenOrientation,
         onReaderReset = viewModel::resetReaderDefaults,
-        onGlobalReset = viewModel::resetGlobalDefaults,
         onRefreshStorage = viewModel::refreshStorage,
         onManageDownloads = {
             context.startActivity(
@@ -101,120 +83,109 @@ internal fun SettingsScreen(
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             )
         },
-        notifications = notifications,
         onNotificationSettings = {
-            if (!openNotificationSettings(context, it)) toastHost.showToast("无法打开系统通知设置")
+            if (!openNotificationSettings(context)) toast.showToast("无法打开系统通知设置")
         }
     )
 }
 
+internal enum class SettingsDestination { OVERVIEW, READING, DOWNLOADS }
 private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
-private enum class SettingsConfirmation { RESET_READER, RESET_GLOBAL }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/** 首页只呈现分类；阅读和下载进入各自页面，通知直接交给系统设置。 */
 @Composable
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
     onNavigateBack: () -> Unit,
-    onNavigateToNetwork: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
+    onNavigateToData: () -> Unit = {},
     onDirectionChange: (String) -> Unit = {},
     onScaleChange: (String) -> Unit = {},
     onOrientationChange: (String) -> Unit = {},
     onReaderReset: () -> Unit = {},
-    onGlobalReset: () -> Unit = {},
     onRefreshStorage: () -> Unit = {},
     onManageDownloads: () -> Unit = {},
-    notifications: NotificationSettingsStatus = NotificationSettingsStatus(),
-    onNotificationSettings: (NotificationSettingsTarget) -> Unit = {}
+    onNotificationSettings: () -> Unit = {},
+    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW
 ) {
+    var destination by rememberSaveable { mutableStateOf(initialDestination) }
     var picker by rememberSaveable { mutableStateOf<SettingsPicker?>(null) }
-    var confirmation by rememberSaveable { mutableStateOf<SettingsConfirmation?>(null) }
+    var resetReader by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val enabled = !state.isLoading && !state.isSaving
     val reader = state.readerDefaults
+    val direction =
+        ReadingDirection.entries.firstOrNull { it.name == reader.readingDirection }?.label ?: "默认"
+    val scale = PageScale.entries.firstOrNull { it.name == reader.pageScale }?.label ?: "默认"
+    val orientation = ScreenOrientationSetting.fromName(reader.screenOrientation).label
     fun size(bytes: Long?) = bytes?.let { Formatter.formatShortFileSize(context, it) } ?: "正在统计"
-    Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("设置", color = MaterialTheme.colorScheme.onSurface) },
-            navigationIcon = {
-                IconButton(onClick = onNavigateBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-            windowInsets = WindowInsets(0, 0, 0, 0)
-        )
-        val pullState = rememberPullToRefreshState()
-        PullToRefreshBox(
-            isRefreshing = state.storageLoading,
-            onRefresh = { if (!state.storageLoading && !state.clearingCache) onRefreshStorage() },
-            state = pullState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullState,
-                    isRefreshing = state.storageLoading,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
-            }
-        ) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
-            ) {
-                SettingsSectionTitle("网络设置")
-                ProfileListItem(
-                    Icons.Outlined.Wifi,
-                    "网络设置",
-                    "线路、域名与代理",
-                    index = 0, count = 1, onClick = onNavigateToNetwork
-                )
-                SettingsSectionTitle("外观与下载")
+    val goBack = {
+        if (destination == SettingsDestination.OVERVIEW) onNavigateBack() else destination =
+            SettingsDestination.OVERVIEW
+    }
+    BackHandler(enabled = destination != SettingsDestination.OVERVIEW) { goBack() }
+
+    ProfileSettingsScaffold(
+        title = when (destination) {
+            SettingsDestination.OVERVIEW -> "设置"
+            SettingsDestination.READING -> "阅读设置"
+            SettingsDestination.DOWNLOADS -> "下载与存储"
+        },
+        onNavigateBack = goBack,
+        isRefreshing = state.storageLoading,
+        onRefresh = if (destination == SettingsDestination.DOWNLOADS) ({
+            if (!state.storageLoading && !state.clearingCache) onRefreshStorage()
+        }) else null
+    ) {
+        when (destination) {
+            SettingsDestination.OVERVIEW -> {
+                ProfileSectionTitle("外观")
                 ProfileListItem(
                     Icons.Outlined.Palette,
                     "主题",
                     state.settings.themeMode.label,
                     index = 0,
-                    count = 2,
+                    count = 1,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.THEME })
+                ProfileSectionTitle("阅读与下载")
                 ProfileListItem(
-                    Icons.Outlined.Wifi, "仅 Wi-Fi 下载",
-                    if (state.settings.wifiOnlyDownloads) "离开 Wi-Fi 后等待，重新连接后继续" else "允许使用当前网络下载",
-                    index = 1, count = 2, enabled = enabled,
-                    onClick = { onWifiOnlyChange(!state.settings.wifiOnlyDownloads) },
-                    trailingContent = {
-                        Switch(
-                            checked = state.settings.wifiOnlyDownloads,
-                            onCheckedChange = onWifiOnlyChange,
-                            enabled = enabled,
-                            modifier = Modifier.semantics { contentDescription = "仅 Wi-Fi 下载" })
-                    })
-                Text(
-                    "下载队列会自动保存。重新打开应用后，可在下载页继续未完成的任务；已完整下载的章节会保留。",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Icons.AutoMirrored.Outlined.MenuBook, "阅读设置",
+                    "$direction · $scale", index = 0, count = 2,
+                    onClick = { destination = SettingsDestination.READING })
+                ProfileListItem(
+                    Icons.Outlined.Download, "下载与存储",
+                    if (state.settings.wifiOnlyDownloads) "仅 Wi-Fi 下载 · 文件管理" else "下载偏好与文件管理",
+                    index = 1, count = 2, onClick = { destination = SettingsDestination.DOWNLOADS })
+                ProfileSectionTitle("管理")
+                ProfileListItem(
+                    Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
+                    index = 0, count = 3, onClick = onNavigateToData
                 )
+                ProfileListItem(
+                    Icons.Outlined.Notifications, "系统通知设置", "前往 Android 系统设置",
+                    index = 1, count = 3, onClick = onNotificationSettings
+                )
+                ProfileListItem(
+                    Icons.Outlined.Info, "关于 CopyManga Neo", "版本与应用信息",
+                    index = 2, count = 3, onClick = onNavigateToAbout
+                )
+            }
 
-                SettingsSectionTitle("阅读默认值")
+            SettingsDestination.READING -> {
                 Text(
-                    "用于首次阅读的漫画。已阅读漫画保留自己的设置，可在阅读器内单独修改或恢复。",
+                    "应用于首次阅读的漫画。已阅读漫画保留各自的设置，可在阅读器中单独修改。",
+                    Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    style = MaterialTheme.typography.bodyMedium
                 )
+                ProfileSectionTitle("阅读默认值")
                 ProfileListItem(
                     Icons.Outlined.SwapHoriz,
                     "阅读方向",
-                    ReadingDirection.entries.first { it.name == reader.readingDirection }.label,
+                    direction,
                     index = 0,
                     count = 3,
                     enabled = enabled,
@@ -222,7 +193,7 @@ internal fun SettingsPage(
                 ProfileListItem(
                     Icons.Outlined.AspectRatio,
                     "页面缩放",
-                    PageScale.entries.first { it.name == reader.pageScale }.label,
+                    scale,
                     index = 1,
                     count = 3,
                     enabled = enabled,
@@ -230,29 +201,48 @@ internal fun SettingsPage(
                 ProfileListItem(
                     Icons.Outlined.ScreenRotation,
                     "屏幕方向",
-                    ScreenOrientationSetting.fromName(reader.screenOrientation).label,
+                    orientation,
                     index = 2,
                     count = 3,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.ORIENTATION })
-                TextButton(
-                    onClick = { confirmation = SettingsConfirmation.RESET_READER },
-                    enabled = enabled
-                ) {
-                    Text("恢复阅读默认值", color = MaterialTheme.colorScheme.primary)
-                }
-
-                SettingsSectionTitle("存储")
+                ProfileSectionTitle("恢复")
                 ProfileListItem(
-                    Icons.Outlined.Download, "漫画文件",
-                    "${size(state.storageUsage?.downloadBytes)} · 管理已下载漫画与任务",
+                    Icons.Outlined.Restore, "恢复阅读默认值", "保留漫画已保存的独立设置",
+                    index = 0, count = 1, enabled = enabled, onClick = { resetReader = true })
+            }
+
+            SettingsDestination.DOWNLOADS -> {
+                ProfileSectionTitle("下载偏好")
+                ProfileListItem(
+                    Icons.Outlined.Wifi, "仅 Wi-Fi 下载",
+                    if (state.settings.wifiOnlyDownloads) "等待 Wi-Fi 连接后继续任务" else "允许使用当前网络下载",
+                    index = 0, count = 1, enabled = enabled,
+                    onClick = { onWifiOnlyChange(!state.settings.wifiOnlyDownloads) },
+                    trailingContent = {
+                        Switch(
+                            state.settings.wifiOnlyDownloads,
+                            onWifiOnlyChange,
+                            enabled = enabled
+                        )
+                    })
+                ProfileSectionTitle("存储")
+                ProfileListItem(
+                    Icons.Outlined.Download, "管理下载文件",
+                    "${size(state.storageUsage?.downloadBytes)} · 已下载漫画与任务",
                     index = 0, count = 1, onClick = onManageDownloads
                 )
                 Text(
                     "设备可用空间：${size(state.storageUsage?.availableBytes)}",
+                    Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(8.dp)
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    "下载队列会自动保存。重新打开应用后，可在下载页继续未完成的任务。",
+                    Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
                 )
                 state.storageError?.let {
                     Text(
@@ -261,64 +251,13 @@ internal fun SettingsPage(
                         modifier = Modifier.padding(8.dp)
                     )
                 }
-
-                SettingsSectionTitle("通知")
-                ProfileListItem(
-                    Icons.Outlined.Notifications,
-                    "系统通知设置",
-                    if (notifications.appEnabled) "已允许通知" else "通知已关闭，点击开启",
-                    index = 0,
-                    count = 4,
-                    onClick = { onNotificationSettings(NotificationSettingsTarget.APP) })
-                ProfileListItem(
-                    Icons.Outlined.Download,
-                    "下载进度通知",
-                    if (notifications.progressEnabled) "已开启 · 管理进度通知显示" else "已关闭 · 点击管理",
-                    index = 1,
-                    count = 4,
-                    onClick = { onNotificationSettings(NotificationSettingsTarget.PROGRESS) })
-                ProfileListItem(
-                    Icons.Outlined.NotificationsActive,
-                    "下载完成提醒",
-                    if (notifications.completionEnabled) "已开启 · 管理声音与振动" else "已关闭 · 点击管理",
-                    index = 2,
-                    count = 4,
-                    onClick = { onNotificationSettings(NotificationSettingsTarget.COMPLETED) })
-                ProfileListItem(
-                    Icons.Outlined.NotificationsActive, "实时通知",
-                    when {
-                        !notifications.liveSupported -> "需要 Android 16 或更新版本"
-                        !notifications.appEnabled || !notifications.progressEnabled -> "请先开启下载进度通知"
-                        notifications.liveEnabled -> "系统已允许 · 管理状态栏胶囊"
-                        else -> "系统未允许 · 点击管理"
-                    },
-                    index = 3, count = 4, enabled = notifications.liveSupported,
-                    onClick = { onNotificationSettings(NotificationSettingsTarget.LIVE) })
-
-                SettingsSectionTitle("关于")
-                ProfileListItem(
-                    Icons.Outlined.Info, "关于 CopyManga Neo",
-                    "版本信息、缓存、日志与设置备份",
-                    index = 0, count = 1, onClick = onNavigateToAbout
-                )
-
-                TextButton(
-                    onClick = { confirmation = SettingsConfirmation.RESET_GLOBAL },
-                    enabled = enabled,
-                    modifier = Modifier.padding(top = 16.dp)
-                ) {
-                    Text("恢复全局默认值", color = MaterialTheme.colorScheme.primary)
-                }
-                state.error?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
             }
         }
+        state.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+        }
     }
+
     picker?.let { current ->
         val (title, options, selected) = when (current) {
             SettingsPicker.THEME -> Triple(
@@ -375,14 +314,11 @@ internal fun SettingsPage(
                                 )
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = selected == value,
-                                onClick = null,
-                                enabled = enabled
-                            )
+                            RadioButton(selected == value, onClick = null, enabled = enabled)
                             Text(
-                                label, color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(start = 16.dp)
+                                label,
+                                Modifier.padding(start = 16.dp),
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -390,54 +326,36 @@ internal fun SettingsPage(
             },
             confirmButton = {
                 TextButton(onClick = { picker = null }) {
-                    Text("取消", color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        )
-    }
-    confirmation?.let { action ->
-        val (title, message, button) = when (action) {
-            SettingsConfirmation.RESET_READER -> Triple(
-                "恢复阅读默认值？",
-                "全局阅读默认值将恢复为从右到左、匹配屏幕、系统默认方向。各部漫画已保存的设置保持不变。",
-                "恢复"
-            )
-
-            SettingsConfirmation.RESET_GLOBAL -> Triple(
-                "恢复全局默认值？",
-                "恢复主题为跟随系统、关闭仅 Wi-Fi 下载，并恢复全局阅读默认值。保留漫画独立设置、黑名单、下载与账号；系统通知设置由系统管理。",
-                "恢复"
-            )
-        }
-        AlertDialog(
-            onDismissRequest = { confirmation = null },
-            title = { Text(title, color = MaterialTheme.colorScheme.onSurface) },
-            text = { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-            confirmButton = {
-                TextButton(onClick = {
-                    when (action) {
-                        SettingsConfirmation.RESET_READER -> onReaderReset()
-                        SettingsConfirmation.RESET_GLOBAL -> onGlobalReset()
-                    }
-                    confirmation = null
-                }) { Text(button, color = MaterialTheme.colorScheme.primary) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmation = null }) {
                     Text(
                         "取消",
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-            })
+            }
+        )
     }
-}
-
-@Composable
-private fun SettingsSectionTitle(title: String, modifier: Modifier = Modifier) {
-    Text(
-        title, modifier = modifier.padding(horizontal = 8.dp, vertical = 12.dp),
-        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary
+    if (resetReader) AlertDialog(
+        onDismissRequest = { resetReader = false },
+        title = { Text("恢复阅读默认值？", color = MaterialTheme.colorScheme.onSurface) },
+        text = {
+            Text(
+                "恢复为从右到左、匹配屏幕和系统默认方向，各部漫画已保存的设置保持不变。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { resetReader = false; onReaderReset() }, enabled = enabled) {
+                Text("恢复", color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { resetReader = false }) {
+                Text(
+                    "取消",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     )
 }
 

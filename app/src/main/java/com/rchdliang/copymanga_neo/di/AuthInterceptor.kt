@@ -17,13 +17,15 @@ import java.io.IOException
  */
 class AuthInterceptor(
     private val authDataStore: AuthDataStore,
-    private val cookieJar: PersistentCookieJar,
     private val networkSettings: NetworkSettingsStore? = null
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = authDataStore.getTokenSync()
         val originalRequest = chain.request()
+        val context = originalRequest.tag(NetworkRequestContext::class.java)
+        val mode = context?.settings?.requestMode ?: authDataStore.getRequestModeSync()
+        val generation = authDataStore.getAuthGeneration()
+        val token = authDataStore.getTokenForModeSync(mode)
 
         // 如果请求携带 X-No-Auth 标记，跳过 Authorization 追加，
         // 并从最终发出的请求中移除该标记头。
@@ -50,7 +52,6 @@ class AuthInterceptor(
         }
 
         // Web 会员接口与阅读进度上报需要登录；无凭据时直接停止，不发送匿名请求。
-        val context = originalRequest.tag(NetworkRequestContext::class.java)
         val path = request.url.encodedPath
         if (originalRequest.isCopyApi() && context?.settings?.requestMode == RequestMode.WEB &&
             (path.startsWith("/api/v3/member/") || path.contains("/chapter2/")) &&
@@ -64,9 +65,8 @@ class AuthInterceptor(
         // 如果收到 401 且本地记录为已登录，说明 Token 已失效
         if (response.code == 401 && token != null && !skipAuth && originalRequest.isCopyApi()) {
             val clear = {
-                if (authDataStore.clearAuthSyncIfTokenMatches(token)) {
+                if (authDataStore.clearAuthSyncIfTokenMatches(token, mode, generation)) {
                     android.util.Log.w("AuthInterceptor", "Received 401, clearing auth and cookies")
-                    cookieJar.clearAll()
                 }
             }
             if (networkSettings == null) clear()

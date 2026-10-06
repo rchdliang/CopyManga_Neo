@@ -16,12 +16,14 @@ import java.util.concurrent.ConcurrentHashMap
 class PersistentCookieJar(context: Context) : CookieJar {
 
     private val prefs: SharedPreferences =
-        context.getSharedPreferences("copymanga_cookies", Context.MODE_PRIVATE)
+        context.getSharedPreferences("copymanga_web_cookies_v2", Context.MODE_PRIVATE)
 
     // 内存缓存，按域名分组，避免频繁读取 SharedPreferences
     private val cookieStore = ConcurrentHashMap<String, List<Cookie>>()
 
     init {
+        // 旧会话格式直接清除，防止旧账号 Cookie 混入新的按模式认证存储。
+        context.getSharedPreferences("copymanga_cookies", Context.MODE_PRIVATE).edit { clear() }
         // 启动时从 SharedPreferences 恢复 Cookie
         loadAllCookiesFromPrefs()
     }

@@ -800,7 +800,9 @@ class MangaRepositoryImpl @Inject constructor(
             if (response.code() == 401 || body?.code == 401) {
                 networkSettings.ifCurrent(networkGeneration) {
                     auth.clearAuthSyncIfTokenMatches(
-                        token
+                        token,
+                        com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP,
+                        authGeneration
                     )
                 }
             }

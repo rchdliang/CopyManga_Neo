@@ -1,10 +1,18 @@
 package com.rchdliang.copymanga_neo.ui.profile
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItemDefaults
@@ -18,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /** 目前 Material 3 未提供对应公开 token 的列表尺寸。 */
 internal object ProfileListDefaults {
@@ -80,12 +90,93 @@ internal fun ProfileListItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
-        trailingContent = trailingContent
+        trailingContent = trailingContent ?: {
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyLarge,
             color = LocalContentColor.current
         )
+    }
+}
+
+@Preview(name = "组件 - 列表项 (浅色)", showBackground = true, widthDp = 360)
+@Composable
+private fun ProfileListItemPreview() {
+    CopyManga_NeoTheme {
+        Surface {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
+            ) {
+                ProfileListItem(
+                    icon = Icons.Outlined.Settings,
+                    label = "设置",
+                    supportingText = "网络与外观配置",
+                    index = 0,
+                    count = 3,
+                    onClick = {}
+                )
+                ProfileListItem(
+                    icon = Icons.Outlined.Palette,
+                    label = "外观主题",
+                    supportingText = "切换深色模式与动态色彩",
+                    index = 1,
+                    count = 3,
+                    onClick = {}
+                )
+                ProfileListItem(
+                    icon = Icons.Outlined.Info,
+                    label = "关于",
+                    supportingText = "版本信息与软件设置备份",
+                    index = 2,
+                    count = 3,
+                    onClick = {}
+                )
+            }
+        }
+    }
+}
+
+@Preview(name = "组件 - 列表项 (深色)", showBackground = true, widthDp = 360)
+@Composable
+private fun ProfileListItemDarkPreview() {
+    CopyManga_NeoTheme(darkTheme = true) {
+        Surface {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
+            ) {
+                ProfileListItem(
+                    icon = Icons.Outlined.Settings,
+                    label = "设置",
+                    supportingText = "网络与外观配置",
+                    index = 0,
+                    count = 3,
+                    onClick = {}
+                )
+                ProfileListItem(
+                    icon = Icons.Outlined.Palette,
+                    label = "外观主题",
+                    supportingText = "切换深色模式与动态色彩",
+                    index = 1,
+                    count = 3,
+                    onClick = {}
+                )
+                ProfileListItem(
+                    icon = Icons.Outlined.Info,
+                    label = "关于",
+                    supportingText = "版本信息与软件设置备份",
+                    index = 2,
+                    count = 3,
+                    onClick = {}
+                )
+            }
+        }
     }
 }

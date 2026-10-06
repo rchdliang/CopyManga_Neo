@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -81,12 +80,8 @@ class FavoritesViewModel @Inject constructor(
     init {
         viewModelScope.launch(exceptionHandler) {
             userRepository.isAuthCacheReady().first { it }
-            combine(
-                userRepository.isLoggedIn(),
-                userRepository.getUsername()
-            ) { loggedIn, username ->
-                loggedIn to username
-            }.distinctUntilChanged().collect { (loggedIn, _) ->
+            userRepository.sessionChanges().collect {
+                val loggedIn = userRepository.isLoggedInSync()
                 // 取消旧会话请求，防止登出后旧结果恢复书架和角标。
                 loadJob?.cancel()
                 deleteJob?.cancel()

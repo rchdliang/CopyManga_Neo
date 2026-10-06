@@ -1,81 +1,87 @@
 package com.rchdliang.copymanga_neo.data.local
 
-import com.google.gson.Gson
-import com.google.gson.JsonParseException
-import com.google.gson.annotations.SerializedName
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
-/** 可跨设备传递的登录凭据。凭据中的 token 等同于登录权限，必须按敏感信息处理。 */
-internal data class LoginCredential(
-    val token: String,
-    val username: String
+/** 每项凭据明确绑定请求模式，不跨模式复用 Token。 */
+internal data class LoginCredential(val mode: RequestMode, val token: String, val username: String)
+internal data class LoginCredentialBundle(
+    val activeMode: RequestMode,
+    val sessions: List<LoginCredential>
 )
 
-/**
- * CopyManga Neo 登录凭据编解码器。
- *
- * 外层使用固定前缀和 URL-safe Base64，内层使用带稳定字段名的 JSON，便于未来按版本迁移。
- */
+/** V2 包保存一种或两种模式的 Token 和用户名，不包含密码，旧包不迁移。 */
 internal object LoginCredentialCodec {
-    private const val CREDENTIAL_PREFIX = "copymanga-neo:"
-    private const val VERSIONED_PREFIX = "${CREDENTIAL_PREFIX}v1:"
-    private const val MAX_SERIALIZED_LENGTH = 16_384
-    private const val MAX_TOKEN_LENGTH = 8_192
-    private const val MAX_USERNAME_LENGTH = 256
+    private const val PREFIX = "copymanga-neo:v2:"
+    private const val MAX_LENGTH = 32_768
 
-    private val gson = Gson()
-
-    fun encode(token: String, username: String): String {
-        validate(token = token, username = username)
-        val payload = CredentialPayload(token = token, username = username)
-        val json = gson.toJson(payload)
-        val encoded = Base64.getUrlEncoder()
-            .withoutPadding()
-            .encodeToString(json.toByteArray(StandardCharsets.UTF_8))
-        return VERSIONED_PREFIX + encoded
+    fun encode(bundle: LoginCredentialBundle): String {
+        validate(bundle)
+        val root = JsonObject().apply {
+            addProperty("active_mode", bundle.activeMode.name)
+            add("sessions", JsonArray().apply {
+                bundle.sessions.forEach { session ->
+                    add(JsonObject().apply {
+                        addProperty("mode", session.mode.name)
+                        addProperty("token", session.token)
+                        addProperty("username", session.username)
+                    })
+                }
+            })
+        }
+        return PREFIX + Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(root.toString().toByteArray(StandardCharsets.UTF_8))
     }
 
-    fun decode(serialized: String): LoginCredential {
+    fun decode(serialized: String): LoginCredentialBundle {
         val normalized = serialized.trim()
         require(normalized.isNotEmpty()) { "剪切板中没有登录凭据" }
-        require(normalized.length <= MAX_SERIALIZED_LENGTH) { "登录凭据过长" }
-        require(normalized.startsWith(VERSIONED_PREFIX)) {
-            if (normalized.startsWith(CREDENTIAL_PREFIX)) {
-                "不支持的登录凭据版本"
-            } else {
-                "不是 CopyManga Neo 登录凭据"
-            }
-        }
-
-        val encodedPayload = normalized.removePrefix(VERSIONED_PREFIX)
-        require(encodedPayload.isNotEmpty()) { "登录凭据格式无效" }
-
-        val payload = try {
-            val jsonBytes = Base64.getUrlDecoder().decode(encodedPayload)
-            val json = String(jsonBytes, StandardCharsets.UTF_8)
-            gson.fromJson(json, CredentialPayload::class.java)
-        } catch (_: IllegalArgumentException) {
-            throw IllegalArgumentException("登录凭据格式无效")
-        } catch (_: JsonParseException) {
+        require(normalized.length <= MAX_LENGTH) { "登录凭据过长" }
+        require(normalized.startsWith(PREFIX)) { "凭据格式不支持，请使用新版重新导出" }
+        val bundle = try {
+            val root = JsonParser.parseString(
+                String(
+                    Base64.getUrlDecoder().decode(normalized.removePrefix(PREFIX)),
+                    StandardCharsets.UTF_8
+                )
+            ).asJsonObject
+            val array = root.getAsJsonArray("sessions")
+            require(array.size() in 1..RequestMode.entries.size)
+            LoginCredentialBundle(mode(root, "active_mode"), array.map { element ->
+                val item = element.asJsonObject
+                LoginCredential(mode(item, "mode"), string(item, "token"), string(item, "username"))
+            })
+        } catch (_: RuntimeException) {
             throw IllegalArgumentException("登录凭据格式无效")
         }
-
-        val token = payload?.token ?: throw IllegalArgumentException("登录凭据缺少 token")
-        val username = payload.username ?: throw IllegalArgumentException("登录凭据缺少用户名")
-        validate(token = token, username = username)
-        return LoginCredential(token = token, username = username)
+        validate(bundle)
+        return bundle
     }
 
-    private fun validate(token: String, username: String) {
-        require(token.isNotBlank()) { "登录凭据缺少 token" }
-        require(token.length <= MAX_TOKEN_LENGTH) { "登录 token 过长" }
-        require(username.isNotBlank()) { "登录凭据缺少用户名" }
-        require(username.length <= MAX_USERNAME_LENGTH) { "登录用户名过长" }
+    private fun string(root: JsonObject, key: String): String {
+        val value = root.getAsJsonPrimitive(key)
+        require(value.isString)
+        return value.asString
     }
 
-    private data class CredentialPayload(
-        @SerializedName("token") val token: String?,
-        @SerializedName("username") val username: String?
-    )
+    private fun mode(root: JsonObject, key: String): RequestMode {
+        val name = string(root, key)
+        return RequestMode.entries.firstOrNull { it.name == name }
+            ?: throw IllegalArgumentException("未知请求模式")
+    }
+
+    private fun validate(bundle: LoginCredentialBundle) {
+        require(bundle.sessions.size in 1..RequestMode.entries.size) { "登录凭据模式数量无效" }
+        require(bundle.sessions.map { it.mode }
+            .distinct().size == bundle.sessions.size) { "登录凭据模式重复" }
+        require(bundle.sessions.any { it.mode == bundle.activeMode }) { "登录凭据缺少当前模式" }
+        bundle.sessions.forEach {
+            require(it.token.isNotBlank() && it.token.length <= 8_192) { "登录 Token 无效" }
+            require(it.username.isNotBlank() && it.username.length <= 256) { "登录用户名无效" }
+        }
+    }
 }

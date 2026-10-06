@@ -2,15 +2,15 @@ package com.rchdliang.copymanga_neo.data.repository
 
 import android.util.Base64
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
+import com.rchdliang.copymanga_neo.data.local.ImportedSession
 import com.rchdliang.copymanga_neo.data.local.LoginCredentialCodec
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
-import com.rchdliang.copymanga_neo.di.PersistentCookieJar
 import com.rchdliang.copymanga_neo.domain.model.LoginInfo
 import com.rchdliang.copymanga_neo.domain.model.MemberInfo
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.firstOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
@@ -25,7 +25,6 @@ import kotlin.random.Random
 class UserRepositoryImpl @Inject constructor(
     private val apiService: MangaApiService,
     private val authDataStore: AuthDataStore,
-    private val cookieJar: PersistentCookieJar,
     private val registrationApi: com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService,
     private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
     private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService,
@@ -148,10 +147,10 @@ class UserRepositoryImpl @Inject constructor(
             val authGeneration = authDataStore.getAuthGeneration()
             // 注册直接发送原始密码；登录另行使用 Base64(密码-盐)，两者不能混用。
             val response = when (settings.requestMode) {
-                com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB ->
+                RequestMode.WEB ->
                     registrationApi.registerWeb(username, rawPassword, version = settings.version)
 
-                com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP ->
+                RequestMode.OFFICIAL_APP ->
                     registrationApi.register(username, rawPassword)
             }
             val body = response.body()
@@ -177,123 +176,185 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun login(username: String, rawPassword: String): Result<LoginInfo> {
-        return try {
-            val authGeneration = authDataStore.getAuthGeneration()
-            // 1. 生成随机4位盐
-            val salt = Random.nextInt(1000, 10000).toString()
-
-            // 2. 计算 base64 编码密码：Base64(rawPassword + "-" + salt)
-            val passwordInput = "$rawPassword-$salt"
-            val encodedPassword = Base64.encodeToString(
-                passwordInput.toByteArray(Charsets.UTF_8),
-                Base64.NO_WRAP
+    override suspend fun login(
+        username: String,
+        rawPassword: String,
+        expectedGeneration: Long?
+    ): Result<LoginInfo> =
+        try {
+            authDataStore.awaitReady()
+            val generation = authDataStore.getAuthGeneration()
+            val (networkGeneration, settings) = networkSettings.snapshot()
+            check(expectedGeneration == null || expectedGeneration == generation) { "登录期间会话已改变" }
+            val result = requestLogin(username, rawPassword, settings.requestMode)
+            check(authDataStore.getAuthGeneration() == generation && networkSettings.generation == networkGeneration) {
+                "登录期间会话或网络设置已改变"
+            }
+            result.fold(
+                onSuccess = { info ->
+                    val token = info.token
+                        ?: return@fold Result.failure(IllegalStateException("未能获取登录 Token"))
+                    val saved = authDataStore.saveAuthIfCurrent(
+                        generation, token, info.username ?: username, info.avatar
+                    )
+                    if (saved) Result.success(info) else Result.failure(IllegalStateException("登录期间会话已改变"))
+                },
+                onFailure = { Result.failure(it) }
             )
-
-            // 3. 调用登录 API
-            val response = apiService.login(
-                username = username,
-                password = encodedPassword,
-                salt = salt
-            )
-
-            if (!response.isSuccessful) {
-                val errorBody = response.errorBody()?.string()
-                android.util.Log.e("UserRepository", "Login HTTP error: $errorBody")
-                return Result.failure(Exception("HTTP ${response.code()}: ${response.message()}"))
-            }
-
-            val body = response.body() ?: return Result.failure(Exception("登录响应为空"))
-
-            if (body.code != 200) {
-                return Result.failure(Exception(body.message ?: "登录失败(code=${body.code})"))
-            }
-
-            val loginResult = body.results ?: return Result.failure(Exception("登录结果为空"))
-
-            // 4. 提取 token：优先从 JSON results 获取，如果为空则从 set-cookie header 获取
-            val token = loginResult.token ?: extractTokenFromCookieHeaders(response.headers())
-
-            if (token == null) {
-                return Result.failure(Exception("未能获取登录 token"))
-            }
-
-            // 5. 保存 token、用户名和头像到 AuthDataStore
-            val saved = authDataStore.saveAuthIfCurrent(
-                generation = authGeneration,
-                token = token,
-                username = loginResult.username ?: username,
-                avatar = loginResult.avatar,
-                loginCredentials = username to rawPassword
-            )
-            if (!saved) {
-                if (!authDataStore.isLoggedInSync()) cookieJar.clearAll()
-                return Result.failure(Exception("登录期间会话已退出"))
-            }
-
-            android.util.Log.d("UserRepository", "Login success: username=${loginResult.username}")
-
-            Result.success(loginResult.toLoginInfo())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.e("UserRepository", "Login exception: ${e.message}", e)
             Result.failure(e)
         }
-    }
 
-    override suspend fun exportLoginCredential(): Result<String> {
-        return try {
-            val token = authDataStore.getToken().firstOrNull()
-                ?: return Result.failure(Exception("当前未登录，无法导出登录凭据"))
-            val username = authDataStore.getUsername().firstOrNull()
-                ?: return Result.failure(Exception("当前登录信息缺少用户名，无法导出"))
-            Result.success(LoginCredentialCodec.encode(token = token, username = username))
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            android.util.Log.e("UserRepository", "Export credential failed: ${e.message}")
-            Result.failure(e)
+    override suspend fun loginWithOptions(
+        username: String,
+        rawPassword: String,
+        bothModes: Boolean,
+        rememberPassword: Boolean,
+        autoLogin: Boolean,
+        expectedGeneration: Long
+    ): Result<com.rchdliang.copymanga_neo.domain.model.ModeLoginResult> = try {
+        authDataStore.awaitReady()
+        val (networkGeneration, settings) = networkSettings.snapshot()
+        fun checkSession() {
+            check(
+                authDataStore.getAuthGeneration() == expectedGeneration &&
+                        networkSettings.generation == networkGeneration
+            ) { "登录期间会话或网络设置已改变" }
         }
+        checkSession()
+        val modes = if (bothModes) listOf(settings.requestMode) +
+                RequestMode.entries.filter { it != settings.requestMode } else listOf(settings.requestMode)
+        val successful = mutableListOf<ImportedSession>()
+        val failures = linkedMapOf<RequestMode, String>()
+        for (mode in modes) {
+            checkSession()
+            requestLogin(username, rawPassword, mode).fold(
+                onSuccess = { info ->
+                    successful += ImportedSession(
+                        mode,
+                        requireNotNull(info.token),
+                        info.username ?: username,
+                        info.avatar
+                    )
+                },
+                onFailure = { failures[mode] = it.message ?: "登录失败" }
+            )
+            checkSession()
+        }
+        if (successful.isEmpty()) {
+            val message = failures.entries.joinToString("；") { (mode, reason) ->
+                "${if (mode == RequestMode.WEB) "网页模式" else "App 模式"}登录失败：$reason"
+            }
+            Result.failure(IllegalStateException(message))
+        } else {
+            val saved = authDataStore.saveLoginSessionsIfCurrent(
+                expectedGeneration, successful, username, rawPassword, rememberPassword, autoLogin
+            )
+            check(saved) { "登录期间会话已改变" }
+            Result.success(
+                com.rchdliang.copymanga_neo.domain.model.ModeLoginResult(
+                    settings.requestMode, successful.map { it.mode }.toSet(), failures
+                )
+            )
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
-    override suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo> {
-        return try {
-            val authGeneration = authDataStore.getAuthGeneration()
-            val credential = LoginCredentialCodec.decode(serializedCredential)
+    /** 固定目标模式，各自取得 Token；不切换全局模式，不在请求中输出原始密码。 */
+    private suspend fun requestLogin(
+        username: String,
+        rawPassword: String,
+        mode: RequestMode
+    ): Result<LoginInfo> = try {
+        val salt = Random.nextInt(1000, 10000).toString()
+        val encodedPassword =
+            Base64.encodeToString("$rawPassword-$salt".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val response = apiService.login(
+            username = username, password = encodedPassword, salt = salt, requestMode = mode
+        )
+        if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code()}: ${response.message()}")
+        val body = response.body() ?: throw IllegalStateException("登录响应为空")
+        if (body.code != 200) throw IllegalStateException(
+            body.message ?: "登录失败(code=${body.code})"
+        )
+        val info = body.results ?: throw IllegalStateException("登录结果为空")
+        val token = info.token?.takeIf { it.isNotBlank() }
+            ?: extractTokenFromCookieHeaders(response.headers())
+                ?.takeIf { it.isNotBlank() } ?: throw IllegalStateException("未能获取登录 Token")
+        Result.success(info.toLoginInfo().copy(token = token))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun exportLoginCredential(): Result<String> = try {
+        authDataStore.awaitReady()
+        Result.success(LoginCredentialCodec.encode(authDataStore.exportSessions()))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo> =
+        try {
+            authDataStore.awaitReady()
+            val generation = authDataStore.getAuthGeneration()
+            val (networkGeneration, settings) = networkSettings.snapshot()
+            val bundle = LoginCredentialCodec.decode(serializedCredential)
+            val selectedMode = settings.requestMode.takeIf { mode ->
+                bundle.sessions.any { it.mode == mode }
+            } ?: bundle.activeMode
+            val imported = mutableListOf<ImportedSession>()
+            var selectedInfo: MemberInfo? = null
+            for (credential in bundle.sessions) {
+                check(
+                    networkSettings.generation == networkGeneration &&
+                            authDataStore.getAuthGeneration() == generation
+                ) { "导入期间会话或网络设置已改变" }
+                // 每项通过所属模式校验，不暂时切换全局网络设置或串用另一模式 Token。
             val response = apiService.getMemberInfoWithCredential(
-                authorization = "Token ${credential.token}"
+                authorization = "Token ${credential.token}",
+                requestMode = credential.mode
             )
-
-            if (response.code() == 401) {
-                return Result.failure(Exception("登录凭据已失效，请重新导出"))
-            }
-            if (!response.isSuccessful) {
-                return Result.failure(Exception("验证登录凭据失败: ${response.code()}"))
-            }
-
-            val body = response.body()
-                ?: return Result.failure(Exception("验证登录凭据的响应为空"))
-            if (body.code != 200) {
-                return Result.failure(Exception(body.message ?: "登录凭据无效"))
-            }
-
-            val memberInfo = body.results
-                ?: return Result.failure(Exception("登录凭据未返回用户信息"))
-            val saved = authDataStore.saveImportedAuth(
-                generation = authGeneration,
-                token = credential.token,
-                username = memberInfo.username ?: memberInfo.nickname ?: credential.username,
-                avatar = memberInfo.avatar
+                if (response.code() == 401) throw IllegalStateException("登录凭据已失效，请重新导出")
+                if (!response.isSuccessful) throw IllegalStateException("验证登录凭据失败: ${response.code()}")
+                val body = response.body() ?: throw IllegalStateException("验证登录凭据的响应为空")
+                if (body.code != 200) throw IllegalStateException(body.message ?: "登录凭据无效")
+                val member = body.results ?: throw IllegalStateException("登录凭据未返回用户信息")
+                imported += ImportedSession(
+                    credential.mode, credential.token,
+                    member.username ?: credential.username, member.avatar
             )
-            if (!saved) return Result.failure(Exception("导入期间会话已退出"))
-            Result.success(memberInfo.toMemberInfo())
+                if (credential.mode == selectedMode) selectedInfo = member.toMemberInfo()
+            }
+            check(networkSettings.generation == networkGeneration) { "导入期间网络设置已改变" }
+            val saved = authDataStore.saveImportedSessions(generation, imported)
+            check(saved) { "导入期间会话已改变" }
+            check(authDataStore.getAuthGeneration() == generation + 1) { "导入期间会话已改变" }
+            // 单模式包不包含当前模式时，自动进入包中的模式；双模式包保持当前选择。
+            if (selectedMode != settings.requestMode) {
+                check(
+                    networkSettings.saveIfCurrent(
+                        networkGeneration,
+                        settings.copy(requestMode = selectedMode)
+                    )
+                ) {
+                    "导入期间网络设置已改变"
+            }
+            }
+            Result.success(selectedInfo ?: throw IllegalStateException("凭据未包含所选模式"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.e("UserRepository", "Import credential failed: ${e.message}")
+            // 不输出导入文本、Token 或原始响应。
             Result.failure(e)
-        }
     }
 
     override suspend fun getMemberInfo(): Result<MemberInfo> {
@@ -337,15 +398,15 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun logout(): Result<Unit> {
         return try {
-            val token = authDataStore.getTokenSync()
-            val appMode = networkSettings.settings.value.requestMode ==
-                    com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP
+            val mode = authDataStore.getRequestModeSync()
+            val token = authDataStore.getTokenForModeSync(mode)
+            val appMode = mode == RequestMode.OFFICIAL_APP
             // 先完成本地退出并关闭自动登录；服务端响应不得清除稍后登录的新账号。
-            authDataStore.clearAuth(manualLogout = true)
-            cookieJar.clearAll()
+            authDataStore.clearAuth(manualLogout = true, mode = mode)
             if (appMode && !token.isNullOrBlank()) {
                 try {
-                    val response = memberWrites.logout("Token $token")
+                    val response =
+                        memberWrites.logout("Token $token", requestMode = RequestMode.OFFICIAL_APP)
                     if (!response.isSuccessful || response.body()?.code != 200) {
                         android.util.Log.w("UserRepository", "本地已退出，服务端退出未确认")
                     }
@@ -365,6 +426,10 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun sessionChanges(): Flow<Long> = authDataStore.sessionChanges
+
+    override fun sessionVersionSync(): Long = authDataStore.getAuthGeneration()
+
     override fun isLoggedIn(): Flow<Boolean> = authDataStore.isLoggedIn()
 
     override fun isAuthCacheReady(): Flow<Boolean> = authDataStore.cacheReadyFlow
@@ -379,9 +444,16 @@ class UserRepositoryImpl @Inject constructor(
         username: String,
         password: String,
         rememberPassword: Boolean,
-        autoLogin: Boolean
+        autoLogin: Boolean,
+        expectedGeneration: Long
     ) {
-        authDataStore.saveCredentials(username, password, rememberPassword, autoLogin)
+        authDataStore.saveCredentials(
+            username,
+            password,
+            rememberPassword,
+            autoLogin,
+            expectedGeneration
+        )
     }
 
     override fun getRememberPassword(): Flow<Boolean> = authDataStore.getRememberPassword()

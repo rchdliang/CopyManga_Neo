@@ -40,11 +40,9 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     private val gate: RiskControlGate,
     private val identity: com.rchdliang.copymanga_neo.data.local.OfficialAppIdentity,
     private val auth: com.rchdliang.copymanga_neo.data.local.AuthDataStore,
-    private val cookies: com.rchdliang.copymanga_neo.di.PersistentCookieJar,
     private val diagnostics: com.rchdliang.copymanga_neo.data.remote.OfficialAppDiagnostics,
     private val localCalls: com.rchdliang.copymanga_neo.data.remote.LocalNetworkCallInterceptor,
-    private val localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor,
-    private val users: com.rchdliang.copymanga_neo.domain.repository.UserRepository
+    private val localExchanges: com.rchdliang.copymanga_neo.data.remote.LocalNetworkLogInterceptor
 ) : NetworkSettingsRepository {
     override val officialAppDefaults get() = identity.defaults
     override val settings = store.settings
@@ -79,40 +77,18 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
         result { mutation.withLock { saveConfiguration(store.previousSettings()) } }
 
     private suspend fun saveConfiguration(value: NetworkSettings) {
+        auth.awaitReady()
         val old = store.settings.value
-        val modeChanged = old.requestMode != value.requestMode
-        val wasLoggedIn = auth.isLoggedInSync()
-        val credentials = if (modeChanged && wasLoggedIn) auth.getRequestModeLogin() else null
-        val identityChanged = old.requestMode != value.requestMode ||
-                (old.officialApp != value.officialApp && old.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP)
-        if (modeChanged) auth.setRequestModeSwitching(true)
-        try {
-            if (identityChanged) {
-                // 模式切换保留自动登录偏好，但阻止过期监听重复发起登录。
-                auth.clearAuth(manualLogout = !modeChanged)
-                cookies.clearAll()
-            }
-            val authGeneration = auth.getAuthGeneration()
-            store.save(value)
-            if (identityChanged) gate.resumeByUser()
-            if (modeChanged && wasLoggedIn) {
-                if (credentials == null) throw IOException("网络设置已保存，当前账号没有可用密码，请手动登录")
-                check(auth.getAuthGeneration() == authGeneration && !auth.isLoggedInSync()) {
-                    "网络设置已保存，登录状态已变化，未自动登录"
-                }
-                users.login(credentials.first, credentials.second).fold(
-                    onSuccess = {},
-                    onFailure = {
-                        throw IOException(
-                            "网络设置已保存，自动登录失败：${it.message ?: "请手动登录"}",
-                            it
-                        )
-                    }
-                )
-            }
-        } finally {
-            if (modeChanged) auth.setRequestModeSwitching(false)
+        val appIdentityChanged = old.officialApp != value.officialApp
+        if (appIdentityChanged) {
+            auth.clearAuth(
+                manualLogout = true,
+                mode = com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP
+            )
         }
+        // 监听器在网络快照变更时恢复对应会话；切换模式不清 Token、不发起登录。
+        store.save(value)
+        if (old.requestMode != value.requestMode || appIdentityChanged) gate.resumeByUser()
     }
 
     override suspend fun discover(): Result<Unit> = result {

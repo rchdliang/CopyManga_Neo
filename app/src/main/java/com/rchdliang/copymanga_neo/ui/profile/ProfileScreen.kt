@@ -6,16 +6,20 @@ import android.content.ClipboardManager
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -28,24 +32,27 @@ import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -76,6 +83,7 @@ import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -96,7 +104,8 @@ private enum class ProfilePage {
     SETTINGS,
     BLACKLIST,
     NETWORK,
-    ABOUT
+    ABOUT,
+    DATA
 }
 
 /**
@@ -141,7 +150,7 @@ fun ProfileScreen(
 
     BackHandler(enabled = currentPage != ProfilePage.MAIN) {
         currentPage = if (currentPage in setOf(
-                ProfilePage.NETWORK,
+                ProfilePage.DATA,
                 ProfilePage.ABOUT
             )
         ) ProfilePage.SETTINGS else ProfilePage.MAIN
@@ -178,6 +187,7 @@ fun ProfileScreen(
             },
             onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
             onNavigateToSettings = { currentPage = ProfilePage.SETTINGS },
+            onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
             onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
             onBlacklistEnabledChange = viewModel::setBlacklistEnabled
         )
@@ -194,14 +204,18 @@ fun ProfileScreen(
 
         ProfilePage.SETTINGS -> SettingsScreen(
             onNavigateBack = { currentPage = ProfilePage.MAIN },
-            onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
+            onNavigateToData = { currentPage = ProfilePage.DATA },
             onNavigateToAbout = { currentPage = ProfilePage.ABOUT }
         )
 
         ProfilePage.ABOUT -> AboutScreen(onNavigateBack = { currentPage = ProfilePage.SETTINGS })
 
-        ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = {
+        ProfilePage.DATA -> DataSettingsScreen(onNavigateBack = {
             currentPage = ProfilePage.SETTINGS
+        })
+
+        ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = {
+            currentPage = ProfilePage.MAIN
         })
 
         ProfilePage.BLACKLIST -> ThemeBlacklistPage(
@@ -220,12 +234,13 @@ internal fun ProfileMainPage(
     onLogout: () -> Unit,
     onLoginClick: () -> Unit,
     savedPasswordProvider: () -> String?,
-    onLogin: (String, String, Boolean, Boolean) -> Unit,
+    onLogin: (String, String, Boolean, Boolean, Boolean) -> Unit,
     onDismissLogin: () -> Unit,
     onExportCredential: () -> Unit,
     onImportCredential: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToNetwork: () -> Unit = {},
     onNavigateToBlacklist: () -> Unit = {},
     onBlacklistEnabledChange: (Boolean) -> Unit = {},
     onRegisterClick: () -> Unit = {},
@@ -241,67 +256,68 @@ internal fun ProfileMainPage(
     val pullToRefreshState = rememberPullToRefreshState()
     var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
 
-    if (uiState.isLoggedIn) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 840.dp
         PullToRefreshBox(
-            isRefreshing = uiState.isRefreshing,
-            onRefresh = onRefresh,
+            isRefreshing = uiState.isLoggedIn && uiState.isRefreshing,
+            onRefresh = { if (uiState.isLoggedIn) onRefresh() },
             state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize(),
             indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullToRefreshState,
-                    isRefreshing = uiState.isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter),
+                if (uiState.isLoggedIn) PullToRefreshDefaults.LoadingIndicator(
+                    state = pullToRefreshState, isRefreshing = uiState.isRefreshing,
+                    modifier = Modifier.align(Alignment.TopCenter)
                 )
-            },
-            modifier = Modifier.fillMaxSize()
+            }
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize()
+                Modifier
+                    .widthIn(max = 1040.dp)
+                    .fillMaxSize()
+                    .align(Alignment.TopCenter),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    AccountCard(
-                        avatar = uiState.avatar,
-                        username = uiState.username,
-                        nickname = uiState.nickname,
-                        onEditProfile = onEditProfile,
-                        onLogout = onLogout,
-                        onLoginClick = onLoginClick
+                    Text(
+                        "我的",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 item {
-                    ProfileMenuGroup(
-                        uiState = uiState,
-                        onNavigateToHistory = onNavigateToHistory,
-                        onCredentialClick = { showExportCredentialDialog = true },
-                        onNavigateToSettings = onNavigateToSettings,
-                        onNavigateToBlacklist = onNavigateToBlacklist,
-                        onBlacklistEnabledChange = onBlacklistEnabledChange
-                    )
+                    val account: @Composable () -> Unit = {
+                        AccountCard(
+                            uiState,
+                            onLogout,
+                            onLoginClick,
+                            onEditProfile,
+                            onExport = { showExportCredentialDialog = true },
+                            onImport = onImportCredential
+                        )
+                    }
+                    val menus: @Composable () -> Unit = {
+                        ProfileMenuGroup(
+                            uiState,
+                            onNavigateToHistory = { if (uiState.isLoggedIn) onNavigateToHistory() else onLoginClick() },
+                            onNavigateToSettings,
+                            onNavigateToNetwork,
+                            onNavigateToBlacklist,
+                            onBlacklistEnabledChange
+                        )
+                    }
+                    if (wide) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                            Box(Modifier.weight(0.9f)) { account() }
+                            Box(Modifier.weight(1.1f)) { menus() }
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            account()
+                            menus()
+                        }
+                    }
                 }
-            }
-        }
-    } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            item {
-                AccountCard(
-                    avatar = null,
-                    username = null,
-                    nickname = null,
-                    onLogout = {},
-                    onLoginClick = onLoginClick
-                )
-            }
-            item {
-                ProfileMenuGroup(
-                    uiState = uiState,
-                    onNavigateToHistory = onNavigateToHistory,
-                    onCredentialClick = onImportCredential,
-                    onNavigateToSettings = onNavigateToSettings,
-                    onNavigateToBlacklist = onNavigateToBlacklist,
-                    onBlacklistEnabledChange = onBlacklistEnabledChange
-                )
             }
         }
     }
@@ -314,8 +330,8 @@ internal fun ProfileMainPage(
             savedPasswordProvider = if (uiState.registeredUsername == null) savedPasswordProvider else ({ null }),
             rememberPassword = uiState.rememberPassword,
             autoLogin = uiState.autoLogin,
-            onLogin = { username, password, remember, auto ->
-                onLogin(username, password, remember, auto)
+            onLogin = { username, password, remember, auto, both ->
+                onLogin(username, password, remember, auto, both)
             },
             onDismiss = onDismissLogin,
             onRegister = onRegisterClick,
@@ -355,7 +371,7 @@ internal fun ProfileMainPage(
             },
             text = {
                 Text(
-                    text = "登录凭据等同于账号登录权限。复制后请妥善保管，不要发送给不信任的人。",
+                    text = "两种请求模式都有凭据时一起导出，否则只导出当前模式。凭据包含 Token 和用户名，等同于账号登录权限；请妥善保管，不要发送给不信任的人。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -385,174 +401,243 @@ internal fun ProfileMainPage(
     }
 }
 
+/** 账号资料可直接编辑，其余账号操作收进菜单。 */
 @Composable
 private fun AccountCard(
-    avatar: String?,
-    username: String?,
-    nickname: String?,
+    uiState: ProfileUiState,
     onLogout: () -> Unit,
     onLoginClick: () -> Unit,
-    onEditProfile: () -> Unit = {}
+    onEditProfile: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit
 ) {
-    val isLoggedIn = avatar != null || username != null
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(24.dp)
+    var menu by remember { mutableStateOf(false) }
+    val enabled =
+        !uiState.isCredentialLoading && !uiState.isLoginLoading && !uiState.isProfileSaving
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        if (isLoggedIn) {
-            PreviewAwareAsyncImage(
-                model = avatar,
-                previewDrawable = R.drawable.preview_avatar,
-                contentDescription = "用户头像",
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape),
-                placeholder = rememberVectorPainter(Icons.Filled.AccountCircle),
-                error = rememberVectorPainter(Icons.Filled.AccountCircle)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = nickname ?: username ?: "未知用户",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (username != null && nickname != null && nickname != username) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (uiState.isLoggedIn) {
+                    PreviewAwareAsyncImage(
+                        model = uiState.avatar, previewDrawable = R.drawable.preview_avatar,
+                        contentDescription = "用户头像",
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .clickable(
+                                enabled = enabled,
+                                role = Role.Button,
+                                onClickLabel = "编辑资料",
+                                onClick = onEditProfile
+                            ),
+                        placeholder = rememberVectorPainter(Icons.Filled.AccountCircle),
+                        error = rememberVectorPainter(Icons.Filled.AccountCircle)
+                    )
+                } else {
+                    Icon(
+                        Icons.Filled.AccountCircle,
+                        null,
+                        Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clickable(
+                            enabled = enabled,
+                            role = Role.Button,
+                            onClickLabel = if (uiState.isLoggedIn) "编辑资料" else "登录",
+                            onClick = if (uiState.isLoggedIn) onEditProfile else onLoginClick
+                        )
+                        .padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        if (uiState.isLoggedIn) uiState.nickname?.takeIf { it.isNotBlank() }
+                            ?: uiState.username?.takeIf { it.isNotBlank() }
+                            ?: "未知用户" else "登录账号",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (uiState.isLoggedIn && !uiState.username.isNullOrBlank() &&
+                        !uiState.nickname.isNullOrBlank() && uiState.nickname != uiState.username
+                    ) {
+                        Text(
+                            "@${uiState.username}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        "${uiState.requestMode.profileLabel} · ${if (uiState.isLoggedIn) "已登录" else "未登录"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Box {
+                    IconButton(onClick = { menu = true }, enabled = enabled) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            "账号操作",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                        if (uiState.isLoggedIn) DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "导出登录凭据",
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.Key, null) },
+                            onClick = { menu = false; onExport() }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "导入登录凭据",
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Outlined.ContentPaste, null) },
+                            onClick = { menu = false; onImport() }
+                        )
+                        if (uiState.isLoggedIn) DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "退出当前模式",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.Logout,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = { menu = false; onLogout() }
+                        )
+                    }
+                }
+            }
+            if (!uiState.isLoggedIn) {
                 Text(
-                    text = "@$username",
-                    style = MaterialTheme.typography.bodySmall,
+                    "登录后同步书架与阅读记录，也可一次登录两种请求模式。",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-
-
-            Spacer(modifier = Modifier.height(16.dp))
-            FilledTonalButton(onClick = onEditProfile, modifier = Modifier.fillMaxWidth()) {
-                Text("编辑昵称与头像", color = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-            OutlinedButton(
-                onClick = onLogout,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("退出登录", color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            Icon(
-                imageVector = Icons.Filled.AccountCircle,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "未登录",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "登录后可使用书架收藏等功能",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onLoginClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.Login,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
-                Text("登录")
+                Button(
+                    onClick = onLoginClick,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "登录",
+                        color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (uiState.dayDownloads != null) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "今日下载额度",
+                            Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            uiState.dayDownloads.toString(),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-/** 登录前后的菜单共用分组样式，黑名单不依赖账号。 */
+/** 常用功能与应用配置分组，黑名单始终可用且仅影响首页。 */
 @Composable
 private fun ProfileMenuGroup(
     uiState: ProfileUiState,
     onNavigateToHistory: () -> Unit,
-    onCredentialClick: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToNetwork: () -> Unit,
     onNavigateToBlacklist: () -> Unit,
     onBlacklistEnabledChange: (Boolean) -> Unit
 ) {
-    val entries = buildList {
-        if (uiState.isLoggedIn) {
-            add(
-                ProfileMenuEntry(
-                    Icons.Filled.History,
-                    "浏览记录",
-                    "查看最近阅读的漫画",
-                    onClick = onNavigateToHistory
+    val common = listOf(
+        ProfileMenuEntry(
+            Icons.Filled.History,
+            "浏览记录",
+            if (uiState.isLoggedIn) "继续查看最近阅读的漫画" else "登录后同步最近阅读的漫画",
+            onClick = onNavigateToHistory
+        ),
+        ProfileMenuEntry(
+            Icons.Outlined.Block, "标签黑名单",
+            "实验性 · " + when {
+                uiState.isBlacklistLoading -> "正在读取标签"
+                uiState.blacklistError != null -> "读取失败，点击查看"
+                !uiState.isBlacklistEnabled -> "已停用 · 保留 ${uiState.blockedThemes.size} 个标签"
+                else -> "仅影响首页 · 屏蔽 ${uiState.blockedThemes.size} 个标签"
+            },
+            onClick = onNavigateToBlacklist,
+            trailingContent = {
+                Switch(
+                    checked = uiState.isBlacklistEnabled,
+                    onCheckedChange = onBlacklistEnabledChange,
+                    enabled = !uiState.isBlacklistLoading && !uiState.isBlacklistSaving && uiState.blacklistError == null,
+                    modifier = Modifier.semantics { contentDescription = "启用标签黑名单" }
                 )
-            )
-        }
-        add(
-            ProfileMenuEntry(
-                icon = if (uiState.isLoggedIn) Icons.Outlined.Key else Icons.Outlined.ContentPaste,
-                label = if (uiState.isLoggedIn) "导出登录凭据" else "导入登录凭据",
-                supportingText = if (uiState.isCredentialLoading) "正在处理，请稍候"
-                else if (uiState.isLoggedIn) "复制当前账号的登录凭据" else "从剪切板导入并验证账号",
-                enabled = !uiState.isCredentialLoading,
-                onClick = onCredentialClick
-            )
+            })
+    )
+    val app = listOf(
+        ProfileMenuEntry(
+            Icons.Outlined.Wifi, "请求模式与网络", "当前：${uiState.requestMode.profileLabel}",
+            onClick = onNavigateToNetwork
+        ),
+        ProfileMenuEntry(
+            Icons.Filled.Settings,
+            "设置",
+            "外观、阅读、下载与通知",
+            onClick = onNavigateToSettings
         )
-        add(
-            ProfileMenuEntry(
-                Icons.Outlined.Block,
-                "标签黑名单（实验性功能）",
-                when {
-                    uiState.isBlacklistLoading -> "正在读取标签"
-                    uiState.blacklistError != null -> "读取失败，点击查看"
-                    !uiState.isBlacklistEnabled -> "已停用，保留 ${uiState.blockedThemes.size} 个标签"
-                    else -> "已屏蔽 ${uiState.blockedThemes.size} 个标签"
-                },
-                onClick = onNavigateToBlacklist,
-                trailingContent = {
-                    Switch(
-                        checked = uiState.isBlacklistEnabled,
-                        onCheckedChange = onBlacklistEnabledChange,
-                        enabled = !uiState.isBlacklistLoading && !uiState.isBlacklistSaving &&
-                                uiState.blacklistError == null,
-                        modifier = Modifier.semantics { contentDescription = "启用标签黑名单" }
-                    )
-                }
-            )
-        )
-        add(
-            ProfileMenuEntry(
-                Icons.Filled.Settings,
-                "设置",
-                "应用偏好设置",
-                onClick = onNavigateToSettings
-            )
-        )
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)
-    ) {
-        entries.forEachIndexed { index, entry ->
-            ProfileListItem(
-                icon = entry.icon,
-                label = entry.label,
-                supportingText = entry.supportingText,
-                index = index,
-                count = entries.size,
-                enabled = entry.enabled,
-                onClick = entry.onClick,
-                trailingContent = entry.trailingContent
-            )
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+        listOf("常用" to common, "应用" to app).forEach { (title, entries) ->
+            ProfileSectionTitle(title)
+            entries.forEachIndexed { index, entry ->
+                ProfileListItem(
+                    entry.icon, entry.label, entry.supportingText, index, entries.size,
+                    entry.onClick, enabled = entry.enabled, trailingContent = entry.trailingContent
+                )
+            }
         }
     }
 }
@@ -590,7 +675,7 @@ private fun LoginDialog(
     savedPasswordProvider: () -> String?,
     rememberPassword: Boolean,
     autoLogin: Boolean,
-    onLogin: (String, String, Boolean, Boolean) -> Unit,
+    onLogin: (String, String, Boolean, Boolean, Boolean) -> Unit,
     onDismiss: () -> Unit,
     onRegister: () -> Unit = {},
     onClearError: () -> Unit = {}
@@ -600,6 +685,7 @@ private fun LoginDialog(
     var showPassword by remember { mutableStateOf(false) }
     var rememberPasswordChecked by remember { mutableStateOf(rememberPassword || autoLogin) }
     var auto by remember { mutableStateOf(autoLogin) }
+    var bothModes by rememberSaveable { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
     val username = usernameState.text.toString().trim()
     val password = passwordState.text.toString()
@@ -621,7 +707,7 @@ private fun LoginDialog(
     fun submit() {
         submitted = true
         if (!isLoading && username.isNotBlank() && password.isNotBlank()) {
-            onLogin(username, password, rememberPasswordChecked, auto)
+            onLogin(username, password, rememberPasswordChecked, auto, bothModes)
         }
     }
 
@@ -706,6 +792,13 @@ private fun LoginDialog(
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Column {
+                        LoginPreferenceRow(
+                            "同时登录两种模式", "一次输入账号密码，分别登录网页和 App 模式",
+                            bothModes, !isLoading
+                        ) {
+                            bothModes = it
+                            onClearError()
+                        }
                         LoginPreferenceRow(
                             "记住密码", "下次登录时填入账号和密码",
                             rememberPasswordChecked, !isLoading
@@ -799,13 +892,10 @@ private fun LoginPreferenceRow(
     }
 }
 
-private object ButtonDefaults {
-    val IconSpacing = 8.dp
-}
-
 // region Previews
 
 @Preview(showBackground = true, showSystemUi = true, name = "我的 - 已登录")
+@Preview(showBackground = true, widthDp = 1200, heightDp = 800, name = "我的 - 平板")
 @Composable
 private fun ProfileLoggedInPreview() {
     CopyManga_NeoTheme {
@@ -823,7 +913,7 @@ private fun ProfileLoggedInPreview() {
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { null },
-            onLogin = { _, _, _, _ -> },
+            onLogin = { _, _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},
@@ -843,7 +933,7 @@ private fun ProfileNotLoggedInPreview() {
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { null },
-            onLogin = { _, _, _, _ -> },
+            onLogin = { _, _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},
@@ -869,7 +959,7 @@ private fun LoginDialogPreview() {
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { "preview_password" },
-            onLogin = { _, _, _, _ -> },
+            onLogin = { _, _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},
@@ -884,6 +974,25 @@ private fun LoginDialogPreview() {
 private fun SettingsPagePreview() {
     CopyManga_NeoTheme {
         SettingsPage(onNavigateBack = {})
+    }
+}
+
+@Preview(showBackground = true, name = "设置 - 阅读")
+@Composable
+private fun ReaderSettingsPreview() {
+    CopyManga_NeoTheme {
+        SettingsPage(
+            onNavigateBack = {},
+            initialDestination = SettingsDestination.READING
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "设置 - 下载 · 深色")
+@Composable
+private fun DownloadSettingsPreview() {
+    CopyManga_NeoTheme(darkTheme = true) {
+        SettingsPage(onNavigateBack = {}, initialDestination = SettingsDestination.DOWNLOADS)
     }
 }
 

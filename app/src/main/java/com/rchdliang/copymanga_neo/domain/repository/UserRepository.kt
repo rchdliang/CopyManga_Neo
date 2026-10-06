@@ -26,13 +26,27 @@ interface UserRepository {
      * @param rawPassword 原始密码（未编码）
      * @return 登录结果
      */
-    suspend fun login(username: String, rawPassword: String): Result<LoginInfo>
+    suspend fun login(
+        username: String,
+        rawPassword: String,
+        expectedGeneration: Long? = null
+    ): Result<LoginInfo>
+
+    /** 根据登录页选项登录当前模式或两种模式，并为成功模式保存登录偏好。 */
+    suspend fun loginWithOptions(
+        username: String,
+        rawPassword: String,
+        bothModes: Boolean,
+        rememberPassword: Boolean,
+        autoLogin: Boolean,
+        expectedGeneration: Long
+    ): Result<com.rchdliang.copymanga_neo.domain.model.ModeLoginResult>
 
     /** 只创建账号；成功后仍须登录，不把注册响应当作已登录。 */
     suspend fun register(username: String, rawPassword: String):
             Result<com.rchdliang.copymanga_neo.domain.model.RegistrationInfo>
 
-    /** 将当前会话导出为可复制的版本化登录凭据。 */
+    /** 两种模式都有会话时一起导出，否则只导出当前模式。 */
     suspend fun exportLoginCredential(): Result<String>
 
     /** 验证并导入登录凭据；验证成功后才保存新的登录状态。 */
@@ -53,6 +67,10 @@ interface UserRepository {
      */
     fun isLoggedIn(): Flow<Boolean>
     fun isAuthCacheReady(): Flow<Boolean>
+
+    /** 登录、退出、模式或网络变更时递增，用于取消旧请求及重置页面状态。 */
+    fun sessionChanges(): Flow<Long>
+    fun sessionVersionSync(): Long
 
     /**
      * 是否已登录（同步，取缓存值，适用于初始化状态）
@@ -77,7 +95,8 @@ interface UserRepository {
         username: String,
         password: String,
         rememberPassword: Boolean,
-        autoLogin: Boolean
+        autoLogin: Boolean,
+        expectedGeneration: Long
     )
 
     /** 获取是否记住密码（Flow） */

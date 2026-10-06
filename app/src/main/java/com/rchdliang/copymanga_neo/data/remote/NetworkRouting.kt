@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.ProxyMode
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import okhttp3.FormBody
 import okhttp3.Interceptor
 import okhttp3.Request
@@ -35,15 +36,18 @@ internal fun Request.isCopyWww(): Boolean = tag(NetworkRequestContext::class.jav
 class NetworkRoutingInterceptor @Inject constructor(private val store: NetworkSettingsStore) : Interceptor {
     private val counter = AtomicInteger()
     override fun intercept(chain: Interceptor.Chain): Response {
-        val (generation, settings) = store.snapshot()
+        val (generation, snapshot) = store.snapshot()
         val original = chain.request()
+        val settings =
+            original.tag(RequestMode::class.java)?.let { snapshot.copy(requestMode = it) }
+                ?: snapshot
         val api = original.url.host == CopyMangaNetworkConfig.API_HOST && original.url.encodedPath.startsWith("/api/")
         val www = original.url.host == CopyMangaNetworkConfig.WWW_HOST && !api
         val builder = original.newBuilder()
         if (api || www) {
             val login = api && original.url.encodedPath == "/api/v3/login"
             val appMode =
-                settings.requestMode == com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP &&
+                settings.requestMode == RequestMode.OFFICIAL_APP &&
                         original.header("X-Copy-Comment") == null
             if (www && appMode && (original.url.encodedPath.startsWith("/comicdetail/") ||
                         original.url.encodedPath.startsWith("/comic/"))

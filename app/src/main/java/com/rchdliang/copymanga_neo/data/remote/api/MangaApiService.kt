@@ -271,7 +271,8 @@ interface MangaApiService {
     @GET("api/v3/member/info?_update=true")
     suspend fun getMemberInfoWithCredential(
         @Header("Authorization") authorization: String,
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
     ): Response<MemberInfoResponse>
 
     /**
@@ -317,6 +318,7 @@ interface MangaApiService {
         @Field("version") version: String = CopyMangaNetworkConfig.WEB_VERSION,
         @Field("platform") platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null,
     ): Response<LoginResponse>
 
     /**

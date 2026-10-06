@@ -53,6 +53,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         authInterceptor: AuthInterceptor,
+        authDataStore: AuthDataStore,
         cookieJar: PersistentCookieJar,
         riskControlInterceptor: com.rchdliang.copymanga_neo.data.remote.RiskControlInterceptor,
         networkSettings: NetworkSettingsStore,
@@ -75,12 +76,13 @@ object NetworkModule {
 
             // 2. 添加认证拦截器（已登录时自动附加 Token header）
             .addInterceptor(authInterceptor)
+            .addInterceptor(WwwCookieInterceptor(cookieJar, networkSettings, authDataStore))
             .addInterceptor(generation)
             .addNetworkInterceptor(boundary)
             .addNetworkInterceptor(localExchanges)
 
-            // 3. 仅 WWW 请求使用持久化 Cookie
-            .cookieJar(WwwCookieJar(cookieJar, networkSettings))
+            // Cookie 由绑定请求代数的拦截器管理，禁止 BridgeInterceptor 回写旧响应。
+            .cookieJar(okhttp3.CookieJar.NO_COOKIES)
 
             // 4. 添加请求日志拦截器（记录 URL / 请求头 / 状态码 / 耗时）
             .addInterceptor(RequestLoggingInterceptor())
@@ -108,10 +110,9 @@ object NetworkModule {
     @Singleton
     fun provideAuthInterceptor(
         authDataStore: AuthDataStore,
-        cookieJar: PersistentCookieJar,
         networkSettings: NetworkSettingsStore
     ): AuthInterceptor {
-        return AuthInterceptor(authDataStore, cookieJar, networkSettings)
+        return AuthInterceptor(authDataStore, networkSettings)
     }
 
     /**

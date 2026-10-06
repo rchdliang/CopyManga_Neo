@@ -41,6 +41,14 @@ class NetworkSettingsStore internal constructor(private val prefs: SharedPrefere
     @Synchronized
     fun snapshot(): Pair<Long, NetworkSettings> = generation to state.value
 
+    /** 导入校验完成后只能修改校验时的配置，避免覆盖用户期间保存的新设置。 */
+    @Synchronized
+    fun saveIfCurrent(expectedGeneration: Long, value: NetworkSettings): Boolean {
+        if (generation != expectedGeneration) return false
+        save(value)
+        return true
+    }
+
     @Synchronized
     fun onChange(listener: () -> Unit) { onChange.add(listener) }
 

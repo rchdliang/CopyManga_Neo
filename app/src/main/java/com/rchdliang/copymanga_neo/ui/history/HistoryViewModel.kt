@@ -13,8 +13,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -64,12 +62,8 @@ class HistoryViewModel @Inject constructor(
     init {
         viewModelScope.launch(exceptionHandler) {
             userRepository.isAuthCacheReady().first { it }
-            combine(
-                userRepository.isLoggedIn(),
-                userRepository.getUsername()
-            ) { loggedIn, username ->
-                loggedIn to username
-            }.distinctUntilChanged().collect { (loggedIn, _) ->
+            userRepository.sessionChanges().collect {
+                val loggedIn = userRepository.isLoggedInSync()
                 // 会话切换时取消请求，防止旧账号的数据重新填回列表。
                 loadJob?.cancel()
                 clearJob?.cancel()

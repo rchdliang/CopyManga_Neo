@@ -63,6 +63,7 @@ class CommentRepositoryImpl @Inject constructor(
             ?: throw IllegalStateException("请先登录后举报")
         val generation = auth.getAuthGeneration()
         val networkGeneration = networkSettings.generation
+        val mode = networkSettings.settings.value.requestMode
         val response = when (target.kind) {
             CommentKind.COMIC -> api.reportComment(
                 target.id,
@@ -84,7 +85,13 @@ class CommentRepositoryImpl @Inject constructor(
             )
         }
         if (response.code() == 401 || response.body()?.code == 401) {
-            networkSettings.ifCurrent(networkGeneration) { auth.clearAuthSyncIfTokenMatches(token) }
+            networkSettings.ifCurrent(networkGeneration) {
+                auth.clearAuthSyncIfTokenMatches(
+                    token,
+                    mode,
+                    generation
+                )
+            }
         }
         checkWriteResponse(response)
         check(networkSettings.generation == networkGeneration) { "网络设置已变化，请确认举报结果" }
@@ -173,6 +180,7 @@ class CommentRepositoryImpl @Inject constructor(
         val generation = auth.getAuthGeneration()
         val networkGeneration = networkSettings.generation
         // 固定本次操作的账号，排队期间切换登录也不会改用其他人的 Token。
+        val mode = networkSettings.settings.value.requestMode
         val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
         val headers = CommentApiService.postHeaders(appMode)
         require(target.kind != CommentKind.CHAPTER || replyId.isNullOrBlank()) { "章节吐槽不支持回复" }
@@ -190,7 +198,13 @@ class CommentRepositoryImpl @Inject constructor(
             )
         }
         if (response.code() == 401 || response.body()?.code == 401) {
-            networkSettings.ifCurrent(networkGeneration) { auth.clearAuthSyncIfTokenMatches(token) }
+            networkSettings.ifCurrent(networkGeneration) {
+                auth.clearAuthSyncIfTokenMatches(
+                    token,
+                    mode,
+                    generation
+                )
+            }
         }
         checkWriteResponse(response)
         check(networkSettings.generation == networkGeneration) { "网络设置已变化，请刷新评论确认发表结果" }

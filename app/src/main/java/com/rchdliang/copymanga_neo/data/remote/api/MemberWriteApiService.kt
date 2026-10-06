@@ -42,6 +42,7 @@ interface MemberWriteApiService {
     @POST("api/v3/logout")
     suspend fun logout(
         @Header("Authorization") authorization: String,
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
     ): Response<SimpleResponse>
 }

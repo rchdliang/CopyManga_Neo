@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.ZoneId
@@ -27,6 +29,7 @@ import javax.inject.Inject
  * 注意：密码不再通过 UiState 暴露，改用 [ProfileViewModel.getSavedPasswordSync] 同步读取
  */
 data class ProfileUiState(
+    val requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode = com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB,
     val isLoggedIn: Boolean = false,
     val username: String? = null,
     val isLoginLoading: Boolean = false,
@@ -71,11 +74,15 @@ sealed interface ProfileEvent {
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    private val themeBlacklistRepository: ThemeBlacklistRepository
+    private val themeBlacklistRepository: ThemeBlacklistRepository,
+    private val networkSettings: com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ProfileUiState())
+    private val _uiState =
+        MutableStateFlow(ProfileUiState(requestMode = networkSettings.settings.value.requestMode))
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+
+    private var memberInfoJob: Job? = null
 
     private val _events = MutableSharedFlow<ProfileEvent>()
     val events: SharedFlow<ProfileEvent> = _events.asSharedFlow()
@@ -109,9 +116,11 @@ class ProfileViewModel @Inject constructor(
                 editableProfile = null, profileEditError = null
             )
         }
+        val generation = userRepository.sessionVersionSync()
         viewModelScope.launch(exceptionHandler) {
             userRepository.getEditableProfile().fold(
                 onSuccess = { profile ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update {
                         it.copy(
                             isProfileLoading = false,
@@ -120,6 +129,7 @@ class ProfileViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update {
                         it.copy(
                             isProfileLoading = false,
@@ -145,9 +155,11 @@ class ProfileViewModel @Inject constructor(
     fun saveProfile(nickname: String, avatarJpeg: ByteArray?) {
         if (_uiState.value.isProfileSaving || !_uiState.value.isLoggedIn) return
         _uiState.update { it.copy(isProfileSaving = true, profileEditError = null) }
+        val generation = userRepository.sessionVersionSync()
         viewModelScope.launch(exceptionHandler) {
             userRepository.updateProfile(nickname, avatarJpeg).fold(
                 onSuccess = { info ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update {
                         it.copy(
                             isProfileSaving = false,
@@ -159,6 +171,7 @@ class ProfileViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update { state ->
                         if (error is com.rchdliang.copymanga_neo.domain.repository.ProfileSavedRefreshException)
                             state.copy(
@@ -176,6 +189,11 @@ class ProfileViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch(exceptionHandler) {
+            networkSettings.settings.collect { network ->
+                _uiState.update { it.copy(requestMode = network.requestMode) }
+            }
+        }
         viewModelScope.launch(exceptionHandler) {
             combine(
                 themeBlacklistRepository.blockedThemes,
@@ -204,11 +222,17 @@ class ProfileViewModel @Inject constructor(
         }
 
         viewModelScope.launch(exceptionHandler) {
-            userRepository.isLoggedIn().collect { loggedIn ->
+            userRepository.isAuthCacheReady().first { it }
+            userRepository.sessionChanges().collect {
+                val loggedIn = userRepository.isLoggedInSync()
+                memberInfoJob?.cancel()
                 _uiState.update {
                     it.copy(
-                        isLoggedIn = loggedIn,
-                        showProfileEditor = it.showProfileEditor && loggedIn
+                        isLoggedIn = loggedIn, nickname = null, dayDownloads = null,
+                        dayDownloadsRefresh = null, ticket = null, rewardTicket = null,
+                        showProfileEditor = false, editableProfile = null,
+                        isProfileLoading = false, isProfileSaving = false, profileEditError = null,
+                        isRefreshing = false
                     )
                 }
                 if (loggedIn) {
@@ -299,12 +323,15 @@ class ProfileViewModel @Inject constructor(
 
     /** 刷新用户信息（合并原 refreshMemberInfo 和 refresh 的重复逻辑） */
     fun refreshMemberInfo(isPullToRefresh: Boolean = false) {
-        viewModelScope.launch(exceptionHandler) {
+        memberInfoJob?.cancel()
+        val generation = userRepository.sessionVersionSync()
+        memberInfoJob = viewModelScope.launch(exceptionHandler) {
             if (isPullToRefresh) {
                 _uiState.update { it.copy(isRefreshing = true) }
             }
             userRepository.getMemberInfo().fold(
                 onSuccess = { info ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update {
                         it.copy(
                             nickname = info.nickname,
@@ -317,6 +344,7 @@ class ProfileViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
+                    if (userRepository.sessionVersionSync() != generation) return@fold
                     android.util.Log.e(
                         "ProfileViewModel",
                         "Refresh member info failed: ${error.message}"
@@ -418,28 +446,36 @@ class ProfileViewModel @Inject constructor(
                         }
                         return@launch
                     }
-                    userRepository.login(account, password).fold(
-                        onSuccess = {
-                            // 注册密码不默认持久化，也不沿用旧账号的自动登录设置。
-                            userRepository.saveCredentials(account, password, false, false)
-                            _uiState.update {
-                                it.copy(
-                                    isRegisterLoading = false, showRegisterDialog = false,
-                                    registeredUsername = null, toastMessage = "注册并登录成功"
+                    val loginGeneration = userRepository.sessionVersionSync()
+                    userRepository.login(account, password, expectedGeneration = loginGeneration)
+                        .fold(
+                            onSuccess = {
+                                // 注册密码不默认持久化，也不沿用旧账号的自动登录设置。
+                                userRepository.saveCredentials(
+                                    account,
+                                    password,
+                                    false,
+                                    false,
+                                    loginGeneration + 1
                                 )
+                                _uiState.update {
+                                    it.copy(
+                                        isRegisterLoading = false, showRegisterDialog = false,
+                                        registeredUsername = null, toastMessage = "注册并登录成功"
+                                    )
+                                }
+                            },
+                            onFailure = { loginError ->
+                                _uiState.update {
+                                    it.copy(
+                                        isRegisterLoading = false, showRegisterDialog = false,
+                                        showLoginDialog = true, registeredUsername = account,
+                                        loginError = "注册已成功，登录失败：${loginError.message ?: "请重试登录"}",
+                                        toastMessage = "账号已注册，请登录，无需再次注册"
+                                    )
+                                }
                             }
-                        },
-                        onFailure = { loginError ->
-                            _uiState.update {
-                                it.copy(
-                                    isRegisterLoading = false, showRegisterDialog = false,
-                                    showLoginDialog = true, registeredUsername = account,
-                                    loginError = "注册已成功，登录失败：${loginError.message ?: "请重试登录"}",
-                                    toastMessage = "账号已注册，请登录，无需再次注册"
-                                )
-                            }
-                        }
-                    )
+                        )
                 },
                 onFailure = { registerError ->
                     _uiState.update {
@@ -453,12 +489,13 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /** 登录 */
+    /** 登录页支持一次输入分别登录当前模式或两种模式。 */
     fun login(
         username: String,
         password: String,
         rememberPassword: Boolean,
-        autoLogin: Boolean
+        autoLogin: Boolean,
+        bothModes: Boolean
     ) {
         if (_uiState.value.isLoginLoading || _uiState.value.isRegisterLoading) return
         if (username.isBlank() || password.isBlank()) {
@@ -468,24 +505,48 @@ class ProfileViewModel @Inject constructor(
 
         viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoginLoading = true, loginError = null) }
-            userRepository.login(username, password).fold(
-                onSuccess = {
-                    userRepository.saveCredentials(username, password, rememberPassword, autoLogin)
+            userRepository.isAuthCacheReady().first { it }
+            val generation = userRepository.sessionVersionSync()
+            userRepository.loginWithOptions(
+                username, password, bothModes, rememberPassword, autoLogin, generation
+            ).fold(
+                onSuccess = { result ->
+                    if (userRepository.sessionVersionSync() != generation + 1) {
+                        _uiState.update {
+                            it.copy(
+                                isLoginLoading = false,
+                                loginError = "登录期间会话或网络设置已改变"
+                            )
+                        }
+                        return@fold
+                    }
+                    fun label(mode: com.rchdliang.copymanga_neo.domain.model.RequestMode) =
+                        if (mode == com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB) "网页模式" else "App 模式"
+
+                    val message = if (result.failures.isEmpty()) null else {
+                        result.successfulModes.joinToString(
+                            "、",
+                            transform = ::label
+                        ) + "登录成功；" +
+                                result.failures.entries.joinToString("；") { (mode, reason) ->
+                                    "${label(mode)}登录失败：$reason"
+                                }
+                    }
                     _uiState.update {
                         it.copy(
                             isLoginLoading = false,
-                            showLoginDialog = false,
+                            showLoginDialog = result.failures.isNotEmpty(),
                             registeredUsername = null,
-                            loginError = null
+                            loginError = message,
+                            toastMessage = "网页和 App 模式均登录成功".takeIf {
+                                bothModes && result.failures.isEmpty()
+                            }
                         )
                     }
                 },
                 onFailure = { error ->
                     _uiState.update {
-                        it.copy(
-                            isLoginLoading = false,
-                            loginError = error.message ?: "登录失败"
-                        )
+                        it.copy(isLoginLoading = false, loginError = error.message ?: "登录失败")
                     }
                 }
             )
