@@ -14,10 +14,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -75,7 +79,6 @@ import coil.request.ImageRequest
 import com.rchdliang.copymanga_neo.di.ReaderImageLoaderEntryPoint
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
-import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.domain.model.ShareTarget
@@ -107,7 +110,6 @@ fun ReaderScreen(
     val appending by viewModel.appending.collectAsStateWithLifecycle()
     val catalog by viewModel.catalog.collectAsStateWithLifecycle()
     var commentChapter by remember(comicPathWord) { mutableStateOf<String?>(null) }
-    var commentReport by remember(comicPathWord) { mutableStateOf<MangaComment?>(null) }
     var commentRefreshVersion by remember(comicPathWord) { mutableIntStateOf(0) }
     if (commentChapter != null && currentChapter != null && commentsAllowed && commentChapter !in closedChapters) {
         CommentsDialog(
@@ -115,8 +117,7 @@ fun ReaderScreen(
             title = currentChapter.chapters.firstOrNull { it.uuid == commentChapter }?.content?.chapterName
                 ?: chapterName,
             comicPathWord = comicPathWord,
-            onDismiss = { commentChapter = null; commentReport = null; commentRefreshVersion++ },
-            initialReport = commentReport
+            onDismiss = { commentChapter = null; commentRefreshVersion++ }
         )
     }
     val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
@@ -218,8 +219,7 @@ fun ReaderScreen(
                 onPageScaleChange = { viewModel.setPageScale(it) },
                 onScreenOrientationChange = { viewModel.setScreenOrientation(it) },
                 onResetPreferences = viewModel::resetComicPreferences,
-                onComments = { commentReport = null; commentChapter = it },
-                onReport = { uuid, comment -> commentChapter = uuid; commentReport = comment },
+                onComments = { commentChapter = it },
                 pendingInitialPage = pendingInitialPage,
                 sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
                 tools = tools, onToolsChange = viewModel::updateTools,
@@ -261,7 +261,6 @@ fun ReaderSuccessContent(
     modifier: Modifier = Modifier,
     onResetPreferences: () -> Unit = {},
     onComments: (String) -> Unit = {},
-    onReport: (String, MangaComment) -> Unit = { _, _ -> },
     sessionChapters: List<ReaderSessionChapter> = emptyList(),
     tools: ReaderToolsSettings = ReaderToolsSettings(),
     onToolsChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit = {},
@@ -591,10 +590,9 @@ fun ReaderSuccessContent(
             commentContent = { comment ->
                 ReaderChapterComments(
                     comment,
-                    onOpen = { automatic = false; onComments(comment.chapterUuid) },
                     onClosed = { onCloseComments(comment.chapterUuid) },
                     onShowControls = { showControls = !showControls },
-                    onReport = { automatic = false; onReport(comment.chapterUuid, it) },
+                    refreshVersion = commentRefreshVersion,
                     modifier = Modifier.fillMaxSize()
                 )
             })
@@ -618,14 +616,30 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && page != null) Text(
-            if (page.source == null) "章节评论" else "${page.page + 1}/${page.imageCount}",
-            color = Color.White, style = MaterialTheme.typography.labelSmall,
+        if (!showControls && page?.source != null) Row(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.55f))
                 .navigationBarsPadding()
-                .padding(12.dp)
-        )
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                page.chapterName,
+                modifier = Modifier.weight(1f),
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "${page.page + 1}/${page.imageCount}",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
         AnimatedVisibility(
             showControls && page != null,
             enter = fadeIn(),
@@ -673,6 +687,11 @@ fun ReaderSuccessContent(
         onScreenOrientationChange = { onScreenOrientationChange(it.name) },
         onResetPreferences = onResetPreferences,
         onDismiss = { showSettings = false },
+        leadingSettings = {
+            ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
+                onToolsChange { it.copy(inlineComments = enabled) }
+            }
+        },
         extraSettings = { ReaderToolsOptions(tools, onToolsChange) })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,

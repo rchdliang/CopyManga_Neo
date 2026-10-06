@@ -404,7 +404,7 @@ private fun SearchEntryBar(
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "搜索漫画",
+                text = "搜索 & 探索",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge
             )

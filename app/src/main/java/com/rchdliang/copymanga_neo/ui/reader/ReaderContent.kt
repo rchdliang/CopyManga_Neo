@@ -155,7 +155,7 @@ fun ReaderContent(
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(520.dp)
+                                    .fillParentMaxHeight()
                             ) { commentContent(page) }
                         } else ReaderImageItem(
                             page.page, page.source, contentScale, true,

@@ -55,7 +55,8 @@ data class CommentsUiState(
     val permissionError: String? = null,
     val message: String? = null,
     val replyPreviews: Map<String, CommentReplyPreview> = emptyMap(),
-    val previewGeneration: Long = 0
+    val previewGeneration: Long = 0,
+    val closed: Boolean = false
 )
 
 /** 一个打开的评论窗口只有一个活动请求上下文，切章、退出和切账号都会失效旧请求。 */
@@ -445,6 +446,7 @@ class CommentsViewModel @Inject constructor(
                     if (requestRevision == revision) state.update {
                         it.copy(
                             postingAllowed = it.postingAllowed && error !is CommentClosedException,
+                            closed = error is CommentClosedException,
                             feed = it.feed.copy(
                                 loading = false,
                                 refreshing = false,

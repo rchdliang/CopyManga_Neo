@@ -133,7 +133,8 @@ interface MangaApiService {
     suspend fun getOfficialChapter(
         @Path("pathWord") pathWord: String,
         @Path("chapterUuid") chapterUuid: String,
-        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders(),
+        @Header("Authorization") authorization: String? = null
     ): Response<com.rchdliang.copymanga_neo.data.remote.dto.OfficialChapterResponse>
 
     /**

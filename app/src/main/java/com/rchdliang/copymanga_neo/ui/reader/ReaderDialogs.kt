@@ -59,6 +59,7 @@ fun ReaderSettingsDialog(
     onScreenOrientationChange: (ScreenOrientationSetting) -> Unit,
     onDismiss: () -> Unit,
     onResetPreferences: () -> Unit = {},
+    leadingSettings: @Composable () -> Unit = {},
     extraSettings: @Composable () -> Unit = {}
 ) {
     AlertDialog(
@@ -72,6 +73,7 @@ fun ReaderSettingsDialog(
         },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                leadingSettings()
                 Text(
                     "修改只作用于这部漫画。恢复默认值会采用当前全局阅读设置。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -38,6 +38,11 @@ data class ProfileUiState(
     val registeredUsername: String? = null,
     val avatar: String? = null,
     val nickname: String? = null,
+    val showProfileEditor: Boolean = false,
+    val editableProfile: com.rchdliang.copymanga_neo.domain.model.EditableProfile? = null,
+    val isProfileLoading: Boolean = false,
+    val isProfileSaving: Boolean = false,
+    val profileEditError: String? = null,
     val dayDownloads: Int? = null,
     val dayDownloadsRefresh: String? = null,
     val ticket: Float? = null,
@@ -96,6 +101,80 @@ class ProfileViewModel @Inject constructor(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
+    fun showProfileEditor() {
+        if (!_uiState.value.isLoggedIn || _uiState.value.isProfileSaving) return
+        _uiState.update {
+            it.copy(
+                showProfileEditor = true, isProfileLoading = true,
+                editableProfile = null, profileEditError = null
+            )
+        }
+        viewModelScope.launch(exceptionHandler) {
+            userRepository.getEditableProfile().fold(
+                onSuccess = { profile ->
+                    _uiState.update {
+                        it.copy(
+                            isProfileLoading = false,
+                            editableProfile = profile
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isProfileLoading = false,
+                            profileEditError = error.message ?: "资料加载失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun hideProfileEditor() {
+        if (_uiState.value.isProfileSaving) return
+        _uiState.update {
+            it.copy(
+                showProfileEditor = false,
+                editableProfile = null,
+                profileEditError = null
+            )
+        }
+    }
+
+    fun saveProfile(nickname: String, avatarJpeg: ByteArray?) {
+        if (_uiState.value.isProfileSaving || !_uiState.value.isLoggedIn) return
+        _uiState.update { it.copy(isProfileSaving = true, profileEditError = null) }
+        viewModelScope.launch(exceptionHandler) {
+            userRepository.updateProfile(nickname, avatarJpeg).fold(
+                onSuccess = { info ->
+                    _uiState.update {
+                        it.copy(
+                            isProfileSaving = false,
+                            showProfileEditor = false,
+                            editableProfile = null,
+                            nickname = info.nickname,
+                            toastMessage = "资料已更新"
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update { state ->
+                        if (error is com.rchdliang.copymanga_neo.domain.repository.ProfileSavedRefreshException)
+                            state.copy(
+                                isProfileSaving = false, showProfileEditor = false,
+                                editableProfile = null, toastMessage = error.message
+                            )
+                        else state.copy(
+                            isProfileSaving = false,
+                            profileEditError = error.message ?: "资料保存失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     init {
         viewModelScope.launch(exceptionHandler) {
             combine(
@@ -126,7 +205,12 @@ class ProfileViewModel @Inject constructor(
 
         viewModelScope.launch(exceptionHandler) {
             userRepository.isLoggedIn().collect { loggedIn ->
-                _uiState.update { it.copy(isLoggedIn = loggedIn) }
+                _uiState.update {
+                    it.copy(
+                        isLoggedIn = loggedIn,
+                        showProfileEditor = it.showProfileEditor && loggedIn
+                    )
+                }
                 if (loggedIn) {
                     refreshMemberInfo()
                 }
@@ -423,6 +507,8 @@ class ProfileViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isCredentialLoading = false,
+                            isProfileLoading = false,
+                            isProfileSaving = false,
                             toastMessage = error.message ?: "导出登录凭据失败"
                         )
                     }

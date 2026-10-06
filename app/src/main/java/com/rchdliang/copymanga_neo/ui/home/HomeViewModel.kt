@@ -124,7 +124,11 @@ class HomeViewModel @Inject constructor(
             isLoading = risk == null && (state.isLoading || result.isResolving),
             filterReady = risk == null && state.toComics() == filteredSource &&
                     !result.isResolving && result.enrichmentComplete,
-            rankComics = if (risk != null || state.rankComics != filteredSource.rankComics) emptyList()
+            // 分页追加后先保留已过滤的旧前缀，避免过滤结果更新前清空列表而丢失滚动位置。
+            // 切换榜单或替换结果时前缀不匹配，仍隐藏过期榜单。
+            rankComics = if (risk != null ||
+                state.rankComics.take(filteredSource.rankComics.size) != filteredSource.rankComics
+            ) emptyList()
             else result.comics.rankComics,
             rankPositions = state.rankComics.mapIndexed { index, comic -> comic.pathWord to index + 1 }
                 .toMap(),

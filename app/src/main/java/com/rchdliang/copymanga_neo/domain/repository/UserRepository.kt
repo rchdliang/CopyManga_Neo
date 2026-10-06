@@ -4,11 +4,22 @@ import com.rchdliang.copymanga_neo.domain.model.LoginInfo
 import com.rchdliang.copymanga_neo.domain.model.MemberInfo
 import kotlinx.coroutines.flow.Flow
 
+/** 已保存但刷新失败，界面不能误导用户再次上传或提交。 */
+class ProfileSavedRefreshException(message: String, cause: Throwable) : Exception(message, cause)
+
 /**
  * 用户仓库接口
  * 处理登录/登出/认证状态
  */
 interface UserRepository {
+    /** 获取编辑用的当前资料，避免沿用上次上传但未保存的头像路径。 */
+    suspend fun getEditableProfile(): Result<com.rchdliang.copymanga_neo.domain.model.EditableProfile>
+
+    /** 头像为处理后的 JPEG；仅在用户选择新图片时上传。 */
+    suspend fun updateProfile(
+        nickname: String,
+        avatarJpeg: ByteArray?
+    ): Result<MemberInfo>
     /**
      * 登录
      * @param username 账号

@@ -4,7 +4,14 @@ package com.rchdliang.copymanga_neo.data.remote
 internal object ApiBusinessErrors {
     fun isValidation(path: String, message: String?): Boolean {
         val text = message ?: return false
+        if (Regex("/api/v3/comic/[^/]+/chapter2download/[^/]+").matches(path)) {
+            return com.rchdliang.copymanga_neo.domain.model.DownloadQuotaPolicy.isExhausted(text)
+        }
         return when (path) {
+            "/api/v3/member/update/info" -> listOf(
+                "用户頭像30天只能修改一次", "用户头像30天只能修改一次",
+                "用戶頭像30天只能修改一次"
+            ).any(text::contains)
             "/api/v3/register" -> listOf(
                 "用戶名長度", "用户名长度", "密碼長度", "密码长度",
                 "id已被佔用", "id已被占用", "賬號只能包括", "账号只能包括"

@@ -30,7 +30,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             return chain.proceed(original)
         }
         val response = chain.proceed(prepareRequest(original, settings.officialApp))
-        // 只放行已抓包确认的成功写入；读取接口仍需完整数据。
+        // 写入由仓库按业务 code 检查；读取接口仍需完整数据。
         val emptyWriteResult = permitsEmptyResult(original.method, original.url.encodedPath)
         if (response.isSuccessful && !emptyWriteResult) {
             val json = try {
@@ -108,6 +108,8 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         }
         // gzip 交给 OkHttp 透明协商和解压，避免手工设置后收到未解压响应。
         builder.removeHeader("Accept-Encoding")
+        // multipart 的 boundary 必须由请求体生成，不能使用 App 普通表单的 Content-Type。
+        if (original.body is okhttp3.MultipartBody) builder.removeHeader("Content-Type")
         if (original.header("Authorization") == null) builder.header("Authorization", "Token")
         val login = path == "/api/v3/login"
         if (!login && original.header("Authorization") == null) builder.removeHeader("X-No-Auth")
@@ -157,7 +159,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         "POST" -> path in setOf(
             "/api/v3/logout", "/api/v3/member/collect/comic",
             "/api/v3/member/comment", "/api/v3/member/roast",
-            "/api/v3/member/comment/report"
+            "/api/v3/member/comment/report", "/api/v3/member/update/info"
         )
 
         "DELETE" -> path == "/api/v3/member/browse/comics"
@@ -167,7 +169,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
     private fun requiresMemberForm(method: String, path: String): Boolean =
         (method == "POST" && path in setOf(
             "/api/v3/member/collect/comic", "/api/v3/member/comment",
-            "/api/v3/member/roast", "/api/v3/member/comment/report"
+            "/api/v3/member/roast", "/api/v3/member/comment/report", "/api/v3/member/update/info"
         )) || (method == "DELETE" && path in setOf(
             "/api/v3/member/collect/comics", "/api/v3/member/browse/comics"
         ))

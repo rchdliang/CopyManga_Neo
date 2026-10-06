@@ -11,6 +11,8 @@ import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
@@ -26,8 +28,114 @@ class UserRepositoryImpl @Inject constructor(
     private val cookieJar: PersistentCookieJar,
     private val registrationApi: com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService,
     private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
-    private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService
+    private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService,
+    private val profileApi: com.rchdliang.copymanga_neo.data.remote.api.ProfileApiService
 ) : UserRepository {
+
+    override suspend fun getEditableProfile(): Result<com.rchdliang.copymanga_neo.domain.model.EditableProfile> =
+        try {
+            val token = authDataStore.getTokenSync() ?: throw IllegalStateException("请先登录")
+            val generation = authDataStore.getAuthGeneration()
+            val networkGeneration = networkSettings.generation
+            val response = profileApi.editable("Token $token")
+            checkProfileResponse(response, response.body()?.code, response.body()?.message)
+            check(authDataStore.getAuthGeneration() == generation && networkSettings.generation == networkGeneration) {
+                "会话或网络设置已变化，请重新打开资料编辑"
+            }
+            val info = response.body()?.results?.info ?: throw IllegalStateException("账号资料为空")
+            Result.success(
+                com.rchdliang.copymanga_neo.domain.model.EditableProfile(
+                    info.nickname.orEmpty(), info.avatar, info.avatarPath, info.gender ?: 0
+                )
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+
+    override suspend fun updateProfile(
+        nickname: String,
+        avatarJpeg: ByteArray?
+    ): Result<MemberInfo> = try {
+        require(nickname.isNotBlank()) { "请输入昵称" }
+        val token = authDataStore.getTokenSync() ?: throw IllegalStateException("请先登录")
+        val generation = authDataStore.getAuthGeneration()
+        val networkGeneration = networkSettings.generation
+        fun checkSession() {
+            check(
+                authDataStore.getAuthGeneration() == generation &&
+                        authDataStore.getTokenSync() == token && networkSettings.generation == networkGeneration
+            ) {
+                "会话或网络设置已变化，请重新打开资料编辑"
+            }
+        }
+
+        val currentResponse = profileApi.editable("Token $token")
+        checkProfileResponse(
+            currentResponse,
+            currentResponse.body()?.code,
+            currentResponse.body()?.message
+        )
+        checkSession()
+        val current =
+            currentResponse.body()?.results?.info ?: throw IllegalStateException("账号资料为空")
+        val avatarPath = if (avatarJpeg != null) {
+            require(avatarJpeg.isNotEmpty() && avatarJpeg.size <= 5 * 1024 * 1024) { "头像文件为空或过大" }
+            val part = okhttp3.MultipartBody.Part.createFormData(
+                "file", "avatar.jpg",
+                avatarJpeg.toRequestBody("image/jpeg".toMediaType())
+            )
+            val upload = profileApi.uploadAvatar(part, "Token $token")
+            checkProfileResponse(upload, upload.body()?.code, upload.body()?.message)
+            checkSession()
+            upload.body()?.path?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("头像上传未返回路径")
+        } else current.avatarPath ?: current.avatar.orEmpty()
+        checkSession()
+        val saved =
+            profileApi.update(nickname.trim(), avatarPath, current.gender ?: 0, "Token $token")
+        checkProfileResponse(saved, saved.body()?.code, saved.body()?.message)
+        try {
+            checkSession()
+            val refreshed = getMemberInfo()
+            refreshed.fold(
+                onSuccess = { checkSession(); Result.success(it) },
+                onFailure = {
+                    Result.failure(
+                        com.rchdliang.copymanga_neo.domain.repository.ProfileSavedRefreshException(
+                            "资料已保存，但刷新失败，请关闭后刷新账号页", it
+                        )
+                    )
+                }
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(
+                com.rchdliang.copymanga_neo.domain.repository.ProfileSavedRefreshException(
+                    "资料已保存，会话或网络已变化，请重新查看", e
+                )
+            )
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    private fun checkProfileResponse(
+        response: retrofit2.Response<*>,
+        code: Int?,
+        message: String?
+    ) {
+        if (response.isSuccessful && code == 200) return
+        val error = response.errorBody()?.use { it.string() }
+        val detail = message ?: runCatching {
+            com.google.gson.JsonParser.parseString(error).asJsonObject.get("message")?.asString
+        }.getOrNull()
+        throw IllegalStateException(detail ?: "账号资料请求失败（HTTP ${response.code()}）")
+    }
 
     override suspend fun register(username: String, rawPassword: String):
             Result<com.rchdliang.copymanga_neo.domain.model.RegistrationInfo> {

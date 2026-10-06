@@ -162,6 +162,22 @@ object NetworkModule {
     /** 会员写入禁止连接重试、503 重放及重定向。 */
     @Provides
     @Singleton
+    fun provideProfileApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
+            com.rchdliang.copymanga_neo.data.remote.api.ProfileApiService =
+        retrofit.newBuilder().client(
+            client.newBuilder().retryOnConnectionFailure(false)
+                .followRedirects(false).followSslRedirects(false)
+                .addNetworkInterceptor { chain ->
+                    val response = chain.proceed(chain.request())
+                    if (response.code == 503) response.newBuilder().removeHeader("Retry-After")
+                        .build()
+                    else response
+                }.build()
+        ).build().create(com.rchdliang.copymanga_neo.data.remote.api.ProfileApiService::class.java)
+
+    /** 会员写入禁止连接重试、503 重放及重定向。 */
+    @Provides
+    @Singleton
     fun provideMemberWriteApiService(@ApiRetrofit retrofit: Retrofit, client: OkHttpClient):
             com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService =
         retrofit.newBuilder().client(

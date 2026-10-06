@@ -85,8 +85,11 @@ private fun commentPreviewState(): CommentsUiState {
 private fun CommentsPreview(
     dark: Boolean = false,
     state: CommentsUiState = remember { commentPreviewState() },
-    composerOpen: Boolean = false
+    composerOpen: Boolean = false,
+    embedded: Boolean = false
 ) {
+    val target =
+        if (embedded) CommentTarget(CommentKind.CHAPTER, "preview-chapter") else previewTarget
     CopyManga_NeoTheme(darkTheme = dark, dynamicColor = false) {
         Box(
             Modifier
@@ -94,9 +97,9 @@ private fun CommentsPreview(
                 .background(MaterialTheme.colorScheme.surfaceContainer)
         ) {
             CommentsContent(
-                target = previewTarget,
+                target = target,
                 title = "突然成为公寓管理员",
-                state = state,
+                state = state.copy(target = target),
                 currentTime = previewNow,
                 listState = rememberLazyListState(),
                 fabVisible = true,
@@ -112,6 +115,7 @@ private fun CommentsPreview(
                 onShowReplies = {},
                 onDraftChange = {},
                 onPost = {},
+                embedded = embedded,
             )
         }
     }
@@ -120,6 +124,18 @@ private fun CommentsPreview(
 @Preview(name = "评论区 · 手机", widthDp = 412, heightDp = 915, showBackground = true)
 @Composable
 private fun CommentsPhonePreview() = CommentsPreview()
+
+@Preview(name = "章末评论 · 手机", widthDp = 412, heightDp = 915, showBackground = true)
+@Composable
+private fun ChapterCommentsPhonePreview() = CommentsPreview(embedded = true)
+
+@Preview(name = "章末评论 · 平板横屏双列", widthDp = 1200, heightDp = 800, showBackground = true)
+@Composable
+private fun ChapterCommentsTabletPreview() = CommentsPreview(embedded = true)
+
+@Preview(name = "章末评论 · 深色", widthDp = 412, heightDp = 915, showBackground = true)
+@Composable
+private fun ChapterCommentsDarkPreview() = CommentsPreview(dark = true, embedded = true)
 
 @Preview(name = "评论区 · 深色", widthDp = 412, heightDp = 915, showBackground = true)
 @Composable

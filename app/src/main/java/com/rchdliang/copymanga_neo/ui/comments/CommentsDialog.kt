@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -66,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -80,6 +83,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -122,6 +126,28 @@ fun CommentsDialog(
     viewModel: CommentsViewModel = hiltViewModel(),
     initialReport: MangaComment? = null
 ) {
+    CommentsPanel(
+        target, title, onDismiss, postingAllowed, onLogin, comicPathWord, viewModel, initialReport
+    )
+}
+
+/** 评论弹层和章末完整评论区共用加载、发表、举报及分页逻辑。 */
+@Composable
+internal fun CommentsPanel(
+    target: CommentTarget,
+    title: String,
+    onDismiss: () -> Unit,
+    postingAllowed: Boolean = true,
+    onLogin: (() -> Unit)? = null,
+    comicPathWord: String? = null,
+    viewModel: CommentsViewModel = hiltViewModel(),
+    initialReport: MangaComment? = null,
+    embedded: Boolean = false,
+    modifier: Modifier = Modifier,
+    onFeedChanged: (CommentFeed) -> Unit = {},
+    onClosed: () -> Unit = {}
+) {
+    var columnCount by remember { mutableIntStateOf(1) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val currentTime by produceState(initialValue = ZonedDateTime.now()) {
         while (true) {
@@ -163,9 +189,18 @@ fun CommentsDialog(
         }
     }
     DisposableEffect(target, viewModel, comicPathWord) {
-        viewModel.open(target, postingAllowed, comicPathWord)
-        onDispose { viewModel.close() }
+        if (!embedded || viewModel.uiState.value.target != target) {
+            viewModel.open(target, postingAllowed, comicPathWord)
+        }
+        // 章末页离开视口后仍保留草稿；请求随阅读器的 ViewModel 生命周期结束。
+        onDispose { if (!embedded) viewModel.close() }
     }
+    LaunchedEffect(state.feed, state.target) {
+        if (state.target == target && !state.feed.loading && state.feed.error == null) {
+            onFeedChanged(state.feed)
+        }
+    }
+    LaunchedEffect(state.closed) { if (state.closed) onClosed() }
     LaunchedEffect(target, initialReport?.id, state.target) {
         if (state.target == target && initialReport != null) viewModel.openReport(initialReport)
     }
@@ -204,11 +239,12 @@ fun CommentsDialog(
         }
     }
     // 数据变更必须完成布局后才判断触底，避免分页结果回来时连续抢跑下一页。
-    LaunchedEffect(listState, target, state.parent?.id) {
+    LaunchedEffect(listState, target, state.parent?.id, columnCount) {
         snapshotFlow {
             val feed = state.feed
             val layout = listState.layoutInfo
-            val expectedItems = feed.items.size + 1 + if (state.parent != null) 1 else 0
+            val expectedItems =
+                (feed.items.size + columnCount - 1) / columnCount + 1 + if (state.parent != null) 1 else 0
             val atEnd = layout.totalItemsCount == expectedItems &&
                     layout.visibleItemsInfo.lastOrNull()?.index == expectedItems - 1
             feed.nextOffset.takeIf {
@@ -224,16 +260,11 @@ fun CommentsDialog(
             composerOpen = false
         }
     }
-    Dialog(
-        onDismissRequest = back,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
-            dismissOnBackPress = !state.posting,
-            dismissOnClickOutside = false
+    CommentsHost(embedded = embedded, onBack = back, posting = state.posting) {
+        BackHandler(
+            enabled = !state.posting && (!embedded || state.reportTarget != null || composerOpen || state.parent != null),
+            onBack = back
         )
-    ) {
-        BackHandler(enabled = !state.posting, onBack = back)
         CommentsContent(
             target = target, title = title, state = state, currentTime = currentTime,
             listState = listState, fabVisible = fabVisible, composerOpen = composerOpen,
@@ -241,7 +272,8 @@ fun CommentsDialog(
                 if (reply == null) viewModel.startComment() else viewModel.startReply(reply)
                 composerOpen = true
             },
-            onCloseComposer = closeComposer, onDismiss = dismiss,
+            onCloseComposer = closeComposer,
+            onDismiss = if (embedded) onDismiss else dismiss,
             onBackToComments = viewModel::backToComments,
             onRefresh = { viewModel.load(refresh = true, fromPullToRefresh = true) },
             onRetry = { viewModel.load(refresh = state.feed.items.isEmpty() || state.feed.refreshFailed) },
@@ -250,6 +282,9 @@ fun CommentsDialog(
             onShowReplies = viewModel::showReplies,
             onDraftChange = viewModel::setDraft, onPost = viewModel::post,
             onReport = viewModel::openReport,
+            modifier = modifier,
+            embedded = embedded,
+            onColumnCountChange = { columnCount = it },
             onLogin = if (onLogin != null) ({
                 if (viewModel.hasDraft()) {
                     loginAfterDiscard = true
@@ -288,6 +323,25 @@ fun CommentsDialog(
     }
 }
 
+@Composable
+private fun CommentsHost(
+    embedded: Boolean,
+    onBack: () -> Unit,
+    posting: Boolean,
+    content: @Composable () -> Unit
+) {
+    if (embedded) content() else Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = !posting,
+            dismissOnClickOutside = false
+        ),
+        content = content
+    )
+}
+
 /** 纯界面组件：运行时与静态 Preview 共用，不创建 ViewModel 或发起网络请求。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -312,20 +366,41 @@ internal fun CommentsContent(
     onPost: () -> Unit,
     modifier: Modifier = Modifier,
     onReport: (MangaComment) -> Unit = {},
-    onLogin: (() -> Unit)? = null
+    onLogin: (() -> Unit)? = null,
+    embedded: Boolean = false,
+    onColumnCountChange: (Int) -> Unit = {}
 ) {
+    val landscape =
+        LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val pullState = rememberPullToRefreshState()
     BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .systemBarsPadding()
+            .then(
+                if (embedded) Modifier
+                    .navigationBarsPadding()
+                    .imePadding() else Modifier.systemBarsPadding()
+            )
     ) {
         val wide = maxWidth >= 840.dp
+        val fullChapterPanel = target.kind == CommentKind.CHAPTER && wide && landscape
+        val columnCount = if (fullChapterPanel) 2 else 1
+        LaunchedEffect(columnCount) { onColumnCountChange(columnCount) }
         val fabBottomInset = with(LocalDensity.current) {
             (if (wide) 32.dp else 16.dp).roundToPx()
         } + WindowInsets.navigationBars.getBottom(LocalDensity.current)
-        val panelAlignment = if (wide) Alignment.BottomEnd else Alignment.BottomCenter
-        val panelModifier = if (wide) {
+        val panelAlignment =
+            if (embedded || fullChapterPanel) Alignment.BottomCenter else if (wide) Alignment.BottomEnd else Alignment.BottomCenter
+        val panelModifier = if (embedded) {
+            Modifier
+                .widthIn(max = 1040.dp)
+                .fillMaxSize()
+        } else if (fullChapterPanel) {
+            Modifier
+                .padding(16.dp)
+                .widthIn(max = 1040.dp)
+                .fillMaxSize()
+        } else if (wide) {
             Modifier
                 .padding(16.dp)
                 .width(480.dp)
@@ -336,7 +411,7 @@ internal fun CommentsContent(
                 .fillMaxHeight(0.92f)
         }
         // 全屏 Dialog 的窗口外没有可点击区域，在面板背后提供独立的关闭区域。
-        Box(
+        if (!embedded) Box(
             Modifier
                 .matchParentSize()
                 .clickable(
@@ -354,7 +429,7 @@ internal fun CommentsContent(
             color = MaterialTheme.colorScheme.surface
         ) {
             Column {
-                if (!wide) Box(
+                if (!wide && !embedded) Box(
                     Modifier
                         .fillMaxWidth()
                         .padding(top = 10.dp, bottom = 4.dp),
@@ -405,7 +480,9 @@ internal fun CommentsContent(
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    IconButton(onClick = onDismiss, enabled = !state.posting) {
+                    if (embedded) TextButton(onClick = onDismiss, enabled = !state.posting) {
+                        Text("阅读菜单", color = MaterialTheme.colorScheme.primary)
+                    } else IconButton(onClick = onDismiss, enabled = !state.posting) {
                         Icon(Icons.Default.Close, "关闭")
                     }
                 }
@@ -453,7 +530,7 @@ internal fun CommentsContent(
                         ) {
                             LazyColumn(
                                 state = listState, modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 96.dp)
+                                contentPadding = PaddingValues(bottom = if (embedded) 16.dp else 96.dp)
                             ) {
                                 state.parent?.let { parent ->
                                     item(key = "parent") {
@@ -479,34 +556,46 @@ internal fun CommentsContent(
                                         )
                                     }
                                 }
-                                items(state.feed.items, key = { "comment:${it.id}" }) { comment ->
-                                    val preview = state.replyPreviews[comment.id]
-                                    if (state.parent == null && comment.replyCount > 0 && target.kind == CommentKind.COMIC) {
-                                        LaunchedEffect(comment.id, state.previewGeneration) {
-                                            onLoadReplyPreview(comment)
+                                items(
+                                    state.feed.items.chunked(columnCount),
+                                    key = { "comment:${it.first().id}" }) { row ->
+                                    Row(Modifier.fillMaxWidth()) {
+                                        row.forEach { comment ->
+                                            Column(Modifier.weight(1f)) {
+                                                val preview = state.replyPreviews[comment.id]
+                                                if (state.parent == null && comment.replyCount > 0 && target.kind == CommentKind.COMIC) {
+                                                    LaunchedEffect(
+                                                        comment.id,
+                                                        state.previewGeneration
+                                                    ) {
+                                                        onLoadReplyPreview(comment)
+                                                    }
+                                                }
+                                                CommentCard(
+                                                    comment = comment,
+                                                    currentTime = currentTime,
+                                                    previews = preview?.comments.orEmpty(),
+                                                    previewTotal = preview?.total,
+                                                    threadUsername = state.parent?.username,
+                                                    onReport = onReport,
+                                                    onClick = if (state.parent == null && target.kind == CommentKind.COMIC &&
+                                                        (preview?.total ?: comment.replyCount) > 0
+                                                    ) ({
+                                                        onShowReplies(comment)
+                                                    }) else null,
+                                                    onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
+                                                        onCompose(comment)
+                                                    }) else null,
+                                                    onShowReplies = if (state.parent == null && target.kind == CommentKind.COMIC && preview?.comments?.isNotEmpty() == true) ({
+                                                        onShowReplies(comment)
+                                                    }) else null,
+                                                    enabled = !state.posting
+                                                )
+                                                CommentDivider()
+                                            }
                                         }
+                                        if (row.size < columnCount) Spacer(Modifier.weight(1f))
                                     }
-                                    CommentCard(
-                                        comment = comment,
-                                        currentTime = currentTime,
-                                        previews = preview?.comments.orEmpty(),
-                                        previewTotal = preview?.total,
-                                        threadUsername = state.parent?.username,
-                                        onReport = onReport,
-                                        onClick = if (state.parent == null && target.kind == CommentKind.COMIC &&
-                                            (preview?.total ?: comment.replyCount) > 0
-                                        ) ({
-                                            onShowReplies(comment)
-                                        }) else null,
-                                        onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
-                                            onCompose(comment)
-                                        }) else null,
-                                        onShowReplies = if (state.parent == null && target.kind == CommentKind.COMIC && preview?.comments?.isNotEmpty() == true) ({
-                                            onShowReplies(comment)
-                                        }) else null,
-                                        enabled = !state.posting
-                                    )
-                                    CommentDivider()
                                 }
                                 // 固定页脚不能成为首屏或分页加载的滚动锚点。
                                 item(key = "footer:${state.feed.items.size}") {
@@ -555,7 +644,7 @@ internal fun CommentsContent(
                         }
                     }
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = fabVisible && !composerOpen && !state.posting && state.postingAllowed && state.target == target,
+                        visible = !embedded && fabVisible && !composerOpen && !state.posting && state.postingAllowed && state.target == target,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(16.dp),
@@ -580,9 +669,20 @@ internal fun CommentsContent(
                         }
                     }
                 }
+                if (embedded && state.target == target) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    CommentComposer(
+                        state = state,
+                        onDraftChange = onDraftChange,
+                        onPost = onPost,
+                        onClose = onCloseComposer,
+                        onLogin = onLogin,
+                        compact = true
+                    )
+                }
             }
         }
-        if (composerOpen) {
+        if (composerOpen && !embedded) {
             // 关闭输入面板仅收起键盘；草稿和回复对象保留在 ViewModel 中。
             Box(
                 Modifier
@@ -829,14 +929,15 @@ private fun CommentComposer(
     onDraftChange: (String) -> Unit,
     onPost: () -> Unit,
     onClose: () -> Unit,
-    onLogin: (() -> Unit)?
+    onLogin: (() -> Unit)?,
+    compact: Boolean = false
 ) {
     val reply = state.replyTo ?: state.parent
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val inspectionMode = LocalInspectionMode.current
     LaunchedEffect(state.loggedIn, state.postingAllowed, inspectionMode) {
-        if (!inspectionMode && state.loggedIn && state.postingAllowed) {
+        if (!compact && !inspectionMode && state.loggedIn && state.postingAllowed) {
             focusRequester.requestFocus()
             keyboard?.show()
         }
@@ -848,7 +949,7 @@ private fun CommentComposer(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (reply == null) "写评论" else "回复 ${reply.username.ifBlank { "匿名用户" }}",
                 Modifier.weight(1f),
@@ -889,7 +990,8 @@ private fun CommentComposer(
                         .fillMaxWidth()
                         .focusRequester(focusRequester),
                     enabled = !state.posting,
-                    minLines = 3, maxLines = 4,
+                    minLines = if (compact) 1 else 3,
+                    maxLines = if (compact) 3 else 4,
                     shape = MaterialTheme.shapes.medium,
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,

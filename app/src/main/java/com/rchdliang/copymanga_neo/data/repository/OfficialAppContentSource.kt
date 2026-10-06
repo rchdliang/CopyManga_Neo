@@ -33,6 +33,9 @@ class OfficialAppContentSource @Inject constructor(
     )
 
     private val downloadMutex = Mutex()
+    private var exhaustedSession: Pair<Long, Long>? = null
+    private var checkedQuotaSession: Pair<Long, Long>? = null
+    private var quotaCheckedAt = 0L
     private val downloadContents =
         object : LinkedHashMap<DownloadKey, ChapterContent>(32, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<DownloadKey, ChapterContent>?) =
@@ -54,7 +57,7 @@ class OfficialAppContentSource @Inject constructor(
         }
         val detail = body.results
         if (detail.isBanned || detail.isLock) throw IOException("漫画暂不可访问")
-        val groups = detail.groups.values?.map { ChapterGroup(it.pathWord, it.total, it.name) }
+        val groups = detail.groups.values.map { ChapterGroup(it.pathWord, it.total, it.name) }
             ?: throw IOException("App 未返回章节分组")
         val chapters = linkedMapOf<String, List<ChapterInfo>>()
         for (group in groups) {
@@ -114,18 +117,60 @@ class OfficialAppContentSource @Inject constructor(
             }
             checkSession()
             downloadContents[key]?.let { return@withLock it }
+            val session = key.networkGeneration to key.authGeneration
+            if (checkedQuotaSession != session ||
+                android.os.SystemClock.elapsedRealtime() - quotaCheckedAt >= 5 * 60 * 1000L
+            ) {
+                val infoResponse = api.getMemberInfoWithCredential("Token $token")
+                checkSession()
+                if (infoResponse.isSuccessful && infoResponse.body()?.code == 200) {
+                    checkedQuotaSession = session
+                    quotaCheckedAt = android.os.SystemClock.elapsedRealtime()
+                    val remaining = infoResponse.body()?.results?.dayDownloads
+                    if (remaining == 0) exhaustedSession = session
+                    else if (remaining != null && remaining > 0) exhaustedSession = null
+                } else infoResponse.errorBody()?.close()
+            }
+            suspend fun readingContent(): ChapterContent {
+                val reading = api.getOfficialChapter(
+                    pathWord, uuid,
+                    headers = com.rchdliang.copymanga_neo.data.remote.CopyMangaNetworkConfig.noAuthApiHeaders(),
+                    authorization = "Token $token"
+                )
+                checkSession()
+                val readingBody = reading.body()
+                if (!reading.isSuccessful || readingBody?.code != 200) {
+                    reading.errorBody()?.close()
+                    throw IOException(readingBody?.message ?: "阅读接口获取下载内容失败")
+                }
+                val content =
+                    parseChapter(readingBody.results ?: throw IOException("阅读章节结果为空"), uuid)
+                downloadContents[key] = content
+                return content
+            }
+            if (exhaustedSession == session) return@withLock readingContent()
             val response = downloads.chapter(pathWord, uuid, "Token $token")
             checkSession()
             val body = response.body()
             if (!response.isSuccessful || body?.code != 200) {
-                response.errorBody()?.close()
+                val error = response.errorBody()?.use { it.string() }
+                val message = body?.message ?: runCatching {
+                    com.google.gson.JsonParser.parseString(error).asJsonObject.get("message")?.asString
+                }.getOrNull()
+                if (response.code() != 401 && body?.code != 401 &&
+                    com.rchdliang.copymanga_neo.domain.model.DownloadQuotaPolicy.isExhausted(message)
+                ) {
+                    exhaustedSession = session
+                    return@withLock readingContent()
+                }
                 throw IOException(
-                    body?.message ?: "下载授权失败（HTTP ${response.code()}），未自动重试"
+                    message ?: "下载授权失败（HTTP ${response.code()}），未自动重试"
                 )
             }
             val result = body.results ?: throw IOException("下载授权结果为空，未自动重试")
             if (result.isLogin != true) throw IOException("请先登录后下载")
             val content = parseChapter(result, uuid)
+            if (result.dayDownloads == 0) exhaustedSession = session
             checkSession()
             downloadContents[key] = content
             content

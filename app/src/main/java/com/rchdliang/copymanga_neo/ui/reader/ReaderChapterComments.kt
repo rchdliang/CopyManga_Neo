@@ -1,36 +1,19 @@
 package com.rchdliang.copymanga_neo.ui.reader
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentPage
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
-import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
-import com.rchdliang.copymanga_neo.ui.comments.CommentCard
+import com.rchdliang.copymanga_neo.ui.comments.CommentFeed
+import com.rchdliang.copymanga_neo.ui.comments.CommentsPanel
+import com.rchdliang.copymanga_neo.ui.comments.CommentsViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -38,7 +21,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.ZonedDateTime
 import javax.inject.Inject
 
 data class ReaderChapterCommentsUiState(
@@ -56,6 +38,15 @@ class ReaderChapterCommentsViewModel @Inject constructor(private val repository:
     private var job: Job? = null
     private val handler = CoroutineExceptionHandler { _, _ ->
         state.value = state.value.copy(loading = false, error = "评论加载失败")
+    }
+
+    /** 完整评论区刷新、分页或发表后同步底栏总数，避免保留旧角标。 */
+    fun updateFeed(uuid: String, feed: CommentFeed) {
+        job?.cancel()
+        chapter = uuid
+        state.value = ReaderChapterCommentsUiState(
+            page = CommentPage(feed.items, feed.total, feed.nextOffset)
+        )
     }
 
     fun load(uuid: String, more: Boolean = false, refresh: Boolean = false) {
@@ -85,86 +76,31 @@ class ReaderChapterCommentsViewModel @Inject constructor(private val repository:
     }
 }
 
+
+/** 章末直接提供完整评论内容及输入框，不再经过另一个评论入口。 */
 @Composable
 fun ReaderChapterComments(
     page: ReaderPageEntry,
-    onOpen: () -> Unit,
     onClosed: () -> Unit,
     onShowControls: () -> Unit,
-    onReport: (MangaComment) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: ReaderChapterCommentsViewModel = hiltViewModel(key = "reader-comments:${page.chapterUuid}")
+    refreshVersion: Int = 0,
+    viewModel: ReaderChapterCommentsViewModel = hiltViewModel(key = "reader-comments:${page.chapterUuid}"),
+    commentsViewModel: CommentsViewModel = hiltViewModel(key = "reader-comments-full:${page.chapterUuid}")
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(page.chapterUuid) { viewModel.load(page.chapterUuid) }
-    LaunchedEffect(state.closed) { if (state.closed) onClosed() }
-    Surface(modifier, color = MaterialTheme.colorScheme.surface) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Text(
-                    page.chapterName,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge
-                )
-                TextButton(onClick = onShowControls) {
-                    Text("阅读菜单", color = MaterialTheme.colorScheme.primary)
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "章节评论",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                TextButton(onClick = onOpen) {
-                    Text(
-                        "查看全部 / 发表",
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            HorizontalDivider()
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 100.dp)) {
-                items(state.page?.comments.orEmpty(), key = { it.id }) { comment ->
-                    CommentCard(comment, ZonedDateTime.now(), onReport = onReport)
-                    HorizontalDivider()
-                }
-                item {
-                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if (state.page?.comments?.isEmpty() == true) Text(
-                        "还没有评论",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    state.error?.let { message ->
-                        TextButton(onClick = {
-                            viewModel.load(
-                                page.chapterUuid,
-                                more = state.page?.nextOffset != null
-                            )
-                        }) {
-                            Text(
-                                message,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    if (state.page?.nextOffset != null && !state.loading) TextButton(onClick = {
-                        viewModel.load(
-                            page.chapterUuid,
-                            true
-                        )
-                    }) { Text("加载更多", color = MaterialTheme.colorScheme.primary) }
-                }
-            }
+    LaunchedEffect(refreshVersion) {
+        if (refreshVersion > 0 && commentsViewModel.uiState.value.target?.id == page.chapterUuid) {
+            commentsViewModel.load(refresh = true)
         }
     }
+    CommentsPanel(
+        target = CommentTarget(CommentKind.CHAPTER, page.chapterUuid),
+        title = page.chapterName,
+        onDismiss = onShowControls,
+        viewModel = commentsViewModel,
+        embedded = true,
+        modifier = modifier,
+        onFeedChanged = { viewModel.updateFeed(page.chapterUuid, it) },
+        onClosed = onClosed
+    )
 }

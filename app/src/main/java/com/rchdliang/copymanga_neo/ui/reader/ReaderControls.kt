@@ -233,10 +233,6 @@ fun ReaderToolsOptions(
         style = MaterialTheme.typography.titleSmall
     )
     ReaderSettingSwitch(
-        "章末显示章节评论",
-        settings.inlineComments
-    ) { enabled -> onChange { it.copy(inlineComments = enabled) } }
-    ReaderSettingSwitch(
         "跨章节连续阅读",
         settings.continuousChapters
     ) { enabled -> onChange { it.copy(continuousChapters = enabled) } }
@@ -284,7 +280,7 @@ fun ReaderToolsOptions(
 }
 
 @Composable
-private fun ReaderSettingSwitch(label: String, checked: Boolean, change: (Boolean) -> Unit) {
+internal fun ReaderSettingSwitch(label: String, checked: Boolean, change: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             label,

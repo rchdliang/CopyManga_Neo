@@ -40,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -151,6 +152,10 @@ fun ProfileScreen(
             uiState = uiState,
             onRefresh = viewModel::refresh,
             onLogout = viewModel::logout,
+            onEditProfile = viewModel::showProfileEditor,
+            onRetryProfile = viewModel::showProfileEditor,
+            onSaveProfile = viewModel::saveProfile,
+            onDismissProfile = viewModel::hideProfileEditor,
             onLoginClick = viewModel::showLoginDialog,
             savedPasswordProvider = viewModel::getSavedPasswordSync,
             onLogin = viewModel::login,
@@ -227,7 +232,11 @@ internal fun ProfileMainPage(
     onRegister: (String, String, String) -> Unit = { _, _, _ -> },
     onDismissRegister: () -> Unit = {},
     onClearRegisterError: () -> Unit = {},
-    onClearLoginError: () -> Unit = {}
+    onClearLoginError: () -> Unit = {},
+    onEditProfile: () -> Unit = {},
+    onRetryProfile: () -> Unit = {},
+    onSaveProfile: (String, ByteArray?) -> Unit = { _, _ -> },
+    onDismissProfile: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
@@ -254,9 +263,7 @@ internal fun ProfileMainPage(
                         avatar = uiState.avatar,
                         username = uiState.username,
                         nickname = uiState.nickname,
-                        dayDownloads = uiState.dayDownloads,
-                        dayDownloadsRefresh = uiState.dayDownloadsRefresh,
-                        ticket = uiState.ticket,
+                        onEditProfile = onEditProfile,
                         onLogout = onLogout,
                         onLoginClick = onLoginClick
                     )
@@ -282,9 +289,6 @@ internal fun ProfileMainPage(
                     avatar = null,
                     username = null,
                     nickname = null,
-                    dayDownloads = null,
-                    dayDownloadsRefresh = null,
-                    ticket = null,
                     onLogout = {},
                     onLoginClick = onLoginClick
                 )
@@ -329,6 +333,16 @@ internal fun ProfileMainPage(
             onClearError = onClearRegisterError
         )
     }
+
+    if (uiState.showProfileEditor) ProfileEditDialog(
+        profile = uiState.editableProfile,
+        isLoading = uiState.isProfileLoading,
+        isSaving = uiState.isProfileSaving,
+        error = uiState.profileEditError,
+        onRetry = onRetryProfile,
+        onSave = onSaveProfile,
+        onDismiss = onDismissProfile
+    )
 
     if (showExportCredentialDialog) {
         AlertDialog(
@@ -376,11 +390,9 @@ private fun AccountCard(
     avatar: String?,
     username: String?,
     nickname: String?,
-    dayDownloads: Int?,
-    dayDownloadsRefresh: String?,
-    ticket: Float?,
     onLogout: () -> Unit,
-    onLoginClick: () -> Unit
+    onLoginClick: () -> Unit,
+    onEditProfile: () -> Unit = {}
 ) {
     val isLoggedIn = avatar != null || username != null
 
@@ -415,42 +427,16 @@ private fun AccountCard(
                 )
             }
 
-            if (dayDownloads != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "今日剩余下载: $dayDownloads",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (ticket != null) {
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "点券: $ticket",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            if (dayDownloadsRefresh != null) {
-                Text(
-                    text = "下次刷新: $dayDownloadsRefresh",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
             Spacer(modifier = Modifier.height(16.dp))
+            FilledTonalButton(onClick = onEditProfile, modifier = Modifier.fillMaxWidth()) {
+                Text("编辑昵称与头像", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
             OutlinedButton(
                 onClick = onLogout,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("退出登录")
+                Text("退出登录", color = MaterialTheme.colorScheme.primary)
             }
         } else {
             Icon(

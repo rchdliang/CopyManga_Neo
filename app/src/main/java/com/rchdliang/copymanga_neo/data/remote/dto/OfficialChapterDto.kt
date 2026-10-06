@@ -13,7 +13,8 @@ data class OfficialChapterResult(
     @SerializedName("is_lock") val isLock: Boolean,
     @SerializedName("is_banned") val isBanned: Boolean,
     @SerializedName("chapter") val chapter: OfficialChapterDto?,
-    @SerializedName("is_login") val isLogin: Boolean? = null
+    @SerializedName("is_login") val isLogin: Boolean? = null,
+    @SerializedName("day_downloads") val dayDownloads: Int? = null
 )
 
 data class OfficialChapterDto(
