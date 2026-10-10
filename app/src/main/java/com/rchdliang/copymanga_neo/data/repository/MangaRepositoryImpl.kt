@@ -482,7 +482,8 @@ class MangaRepositoryImpl @Inject constructor(
                         imageUrls,
                         prevUuid,
                         nextUuid,
-                        chapterName ?: ""
+                        chapterName ?: "",
+                        navigationResolved = metadata.isSuccess
                     )
                 }
             } else {
@@ -557,7 +558,7 @@ class MangaRepositoryImpl @Inject constructor(
         return try {
             require(page >= 1)
             val pageSize = if (usesOfficialApp()) 18 else 20
-            val requestedOffset = offset ?: (page - 1) * pageSize
+            val requestedOffset = offset ?: ((page - 1) * pageSize)
             require(requestedOffset >= 0)
             val response = apiService.search(
                 query = query,

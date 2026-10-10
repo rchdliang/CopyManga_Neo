@@ -73,7 +73,7 @@ internal fun DataSettingsScreen(
             title = { Text("导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    "将覆盖主题、下载偏好、全局阅读默认值和首页排行榜偏好。账号、网络配置及漫画独立设置保持不变。",
+                    "将覆盖软件偏好，不影响账号和漫画独立设置。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -143,7 +143,7 @@ internal fun DataSettingsPage(
         }
         ProfileSectionTitle("设置备份")
         Text(
-            "备份主题、下载、阅读与首页偏好。登录凭据请通过账号菜单单独导出。",
+            "仅备份软件偏好，不含登录凭据。",
             Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
@@ -185,8 +185,8 @@ internal fun DataSettingsPage(
             },
             text = {
                 Text(
-                    if (clear) "清理可重新获取的图片缓存，保留下载漫画、账号和全部设置。"
-                    else "恢复软件偏好，保留账号、网络配置、黑名单、已下载漫画和漫画独立设置。",
+                    if (clear) "已下载漫画不受影响。"
+                    else "账号、下载和漫画独立设置不变。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

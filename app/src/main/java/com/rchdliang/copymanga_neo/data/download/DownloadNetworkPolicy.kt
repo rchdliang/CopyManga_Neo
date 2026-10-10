@@ -27,6 +27,15 @@ internal data class DownloadNetworkState(
     val network: Network? = null
 )
 
+internal fun downloadNetworkAllowed(wifiOnly: Boolean, connected: Boolean, wifi: Boolean): Boolean =
+    connected && (!wifiOnly || wifi)
+
+private data class DownloadConnection(
+    val network: Network?,
+    val connected: Boolean,
+    val wifi: Boolean
+)
+
 /** 监控实际默认网络；同时具有蜂窝传输的 VPN 不视为纯 Wi-Fi。 */
 @Singleton
 class DownloadNetworkPolicy @Inject constructor(
@@ -49,9 +58,13 @@ class DownloadNetworkPolicy @Inject constructor(
         scope.launch {
             combine(settings.settings, networks()) { preferences, connection ->
                 DownloadNetworkState(
-                    allowed = !preferences.wifiOnlyDownloads || connection.second,
+                    allowed = downloadNetworkAllowed(
+                        preferences.wifiOnlyDownloads,
+                        connection.connected,
+                        connection.wifi
+                    ),
                     wifiOnly = preferences.wifiOnlyDownloads,
-                    network = connection.first
+                    network = connection.network
                 )
             }.distinctUntilChanged().collect {
                 mutableState.value = it
@@ -60,31 +73,44 @@ class DownloadNetworkPolicy @Inject constructor(
         }
     }
 
-    private fun networks() = callbackFlow<Pair<Network?, Boolean>> {
+    private fun networks() = callbackFlow<DownloadConnection> {
         val callback = object : ConnectivityManager.NetworkCallback() {
             private var current: Network? = null
             override fun onAvailable(network: Network) {
                 current = network
-                trySend(network to false)
+                trySend(DownloadConnection(network, false, false))
             }
 
             override fun onCapabilitiesChanged(
                 network: Network,
                 capabilities: NetworkCapabilities
             ) {
-                if (current == network) trySend(network to capabilities.isWifiOnly())
+                if (current == network) trySend(
+                    DownloadConnection(
+                        network,
+                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                        capabilities.isWifiOnly()
+                    )
+                )
             }
 
             override fun onLost(network: Network) {
                 if (current == network) {
                     current = null
-                    trySend(null to false)
+                    trySend(DownloadConnection(null, false, false))
                 }
             }
         }
         // 先提供初值，再由注册后的能力回调覆盖；不在 onAvailable 中同步查询。
         val initial = connectivity.activeNetwork
-        trySend(initial to (connectivity.getNetworkCapabilities(initial)?.isWifiOnly() == true))
+        val capabilities = connectivity.getNetworkCapabilities(initial)
+        trySend(
+            DownloadConnection(
+                initial,
+                capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true,
+                capabilities?.isWifiOnly() == true
+            )
+        )
         connectivity.registerDefaultNetworkCallback(callback)
         awaitClose { connectivity.unregisterNetworkCallback(callback) }
     }

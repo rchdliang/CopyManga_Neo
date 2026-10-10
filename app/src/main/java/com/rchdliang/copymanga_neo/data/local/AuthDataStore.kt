@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Singleton
 
-/** 两种请求模式独立保存会话和登录偏好；旧认证格式直接清空，不迁移。 */
+/** 分模式保存登录偏好；同一账号只保留最近恢复的会话，避免旧模式自动登录互踢。 */
 @Singleton
 class AuthDataStore(
     private val dataStore: DataStore<Preferences>,
@@ -93,6 +94,21 @@ class AuthDataStore(
         active.value = ActiveSession(mode, sessions[mode] ?: Session())
     }
 
+    /** 已验证的新会话取代同一账号的另一模式；保留记住的密码供手动登录使用。 */
+    private fun invalidateOtherMode(mode: RequestMode, accountNames: Set<String>) {
+        RequestMode.entries.filter { it != mode }.forEach { otherMode ->
+            val old = sessions[otherMode] ?: return@forEach
+            val sameAccount = old.username in accountNames ||
+                    (old.username == null && old.savedUsername in accountNames)
+            if (sameAccount) {
+                sessions[otherMode] = old.copy(
+                    token = null, username = null, avatar = null, autoLogin = false
+                )
+                if (otherMode == RequestMode.WEB) clearWebCookies()
+            }
+        }
+    }
+
     suspend fun awaitReady() {
         ready.first { it }
     }
@@ -110,7 +126,8 @@ class AuthDataStore(
         generation: Long,
         token: String,
         username: String,
-        avatar: String?
+        avatar: String?,
+        loginUsername: String? = null
     ): Boolean {
         awaitReady()
         var saved = false
@@ -119,9 +136,13 @@ class AuthDataStore(
                 if (authGeneration == generation) {
                     val mode = active.value.mode
                     val old = sessions[mode] ?: Session()
-                    val preferences = if (old.savedUsername == username) old else Session()
+                    val accountNames =
+                        setOfNotNull(username, loginUsername).filter { it.isNotBlank() }.toSet()
+                    val preferences = if (old.savedUsername in accountNames) old else Session()
+                    invalidateOtherMode(mode, accountNames)
                     sessions[mode] =
                         preferences.copy(token = token, username = username, avatar = avatar)
+                    if (mode == RequestMode.WEB) clearWebCookies()
                     autoLoginAllowed = true
                     writeSessions(prefs)
                     publish()
@@ -133,36 +154,39 @@ class AuthDataStore(
         return saved
     }
 
-    /** 两种登录请求结束后统一保存成功的模式，避免第一个成功结果使第二个请求过期。 */
-    internal suspend fun saveLoginSessionsIfCurrent(
+    /** 仅保存当前模式的已验证会话，同时更新本次登录偏好。 */
+    internal suspend fun saveLoginSessionIfCurrent(
         generation: Long,
-        loggedIn: List<ImportedSession>,
+        loggedIn: ImportedSession,
         username: String,
         password: String,
         rememberPassword: Boolean,
-        autoLogin: Boolean
+        autoLogin: Boolean,
+        networkGeneration: Long
     ): Boolean {
-        require(loggedIn.isNotEmpty() && loggedIn.map { it.mode }.distinct().size == loggedIn.size)
         awaitReady()
         var saved = false
         dataStore.edit { prefs ->
-            synchronized(lock) {
-                if (authGeneration == generation) {
-                    loggedIn.forEach {
-                        sessions[it.mode] = Session(
-                            token = it.token, username = it.username, avatar = it.avatar,
+            networkSettings.ifCurrent(networkGeneration) {
+                synchronized(lock) {
+                    if (authGeneration == generation && loggedIn.mode == active.value.mode) {
+                        invalidateOtherMode(loggedIn.mode, setOf(username, loggedIn.username))
+                        sessions[loggedIn.mode] = Session(
+                            token = loggedIn.token,
+                            username = loggedIn.username,
+                            avatar = loggedIn.avatar,
                             rememberPassword = rememberPassword,
                             autoLogin = rememberPassword && autoLogin,
                             savedUsername = username.takeIf { rememberPassword },
                             savedPassword = password.takeIf { rememberPassword }
                         )
+                        if (loggedIn.mode == RequestMode.WEB) clearWebCookies()
+                        autoLoginAllowed = true
+                        writeSessions(prefs)
+                        publish()
+                        advanceGeneration()
+                        saved = true
                     }
-                    if (loggedIn.any { it.mode == RequestMode.WEB }) clearWebCookies()
-                    if (loggedIn.any { it.mode == active.value.mode }) autoLoginAllowed = true
-                    writeSessions(prefs)
-                    publish()
-                    advanceGeneration()
-                    saved = true
                 }
             }
         }
@@ -192,29 +216,64 @@ class AuthDataStore(
         return updated
     }
 
-    /** 全部模式验证通过后一起写入；仅替换包中包含的模式，不沿用被替换账号的密码。 */
-    internal suspend fun saveImportedSessions(
+    /** 只恢复导出模式；可选密码供手动登录使用，不继承本机原账号的密码或自动登录。 */
+    internal suspend fun saveImportedSession(
         generation: Long,
-        imported: List<ImportedSession>
-    ): Boolean {
+        imported: ImportedSession,
+        networkGeneration: Long,
+        settings: NetworkSettings,
+        savedLogin: SavedLoginCredential? = null
+    ): Long? {
+        require(imported.mode == settings.requestMode)
         awaitReady()
-        var saved = false
+        var savedGeneration: Long? = null
         dataStore.edit { prefs ->
-            synchronized(lock) {
-                if (authGeneration == generation) {
-                    imported.forEach {
-                        sessions[it.mode] = Session(it.token, it.username, it.avatar)
+            // 与网络设置变更使用相同的加锁顺序，先保存身份再公布新 Token。
+            networkSettings.ifCurrent(networkGeneration) {
+                synchronized(lock) {
+                    if (authGeneration == generation) {
+                        check(networkSettings.saveIfCurrent(networkGeneration, settings)) {
+                            "导入期间网络设置已改变"
+                        }
+                        val accountNames = setOfNotNull(imported.username, savedLogin?.username)
+                        invalidateOtherMode(imported.mode, accountNames)
+                        sessions[imported.mode] = Session(
+                            token = imported.token,
+                            username = imported.username,
+                            avatar = imported.avatar,
+                            rememberPassword = savedLogin != null,
+                            autoLogin = false,
+                            savedUsername = savedLogin?.username,
+                            savedPassword = savedLogin?.password
+                        )
+                        savedLogin?.let { login ->
+                            RequestMode.entries.filter { it != imported.mode }
+                                .forEach { otherMode ->
+                                    val old = sessions[otherMode] ?: Session()
+                                    // 不覆盖另一账号的会话或已记住的密码。
+                                    if ((old.username == null || old.username in accountNames) &&
+                                        (old.savedUsername == null || old.savedUsername in accountNames)
+                                    ) {
+                                        sessions[otherMode] = old.copy(
+                                            rememberPassword = true,
+                                            autoLogin = false,
+                                            savedUsername = login.username,
+                                            savedPassword = login.password
+                                        )
+                                    }
+                                }
+                        }
+                        autoLoginAllowed = false
+                        if (imported.mode == RequestMode.WEB) clearWebCookies()
+                        writeSessions(prefs)
+                        publish()
+                        advanceGeneration()
+                        savedGeneration = authGeneration
                     }
-                    autoLoginAllowed = false
-                    if (imported.any { it.mode == RequestMode.WEB }) clearWebCookies()
-                    writeSessions(prefs)
-                    publish()
-                    advanceGeneration()
-                    saved = true
                 }
             }
         }
-        return saved
+        return savedGeneration
     }
 
     suspend fun saveCredentials(
@@ -285,23 +344,32 @@ class AuthDataStore(
         return true
     }
 
-    /** 两种模式都存在时一起导出，否则只允许导出当前模式。 */
-    internal fun exportSessions(): LoginCredentialBundle = synchronized(lock) {
-        val mode = active.value.mode
-        fun credential(value: RequestMode): LoginCredential? {
-            val session = sessions[value] ?: return null
-            val token = session.token?.takeIf { it.isNotBlank() } ?: return null
-            val username = session.username?.takeIf { it.isNotBlank() } ?: return null
-            return LoginCredential(value, token, username)
-        }
+    /** 仅导出当前模式；旧模式中的缓存 Token 不应进入迁移包。 */
+    internal fun exportSessions(includePassword: Boolean = false): LoginCredentialBundle =
+        synchronized(lock) {
+            val mode = active.value.mode
+            fun credential(value: RequestMode): LoginCredential? {
+                val session = sessions[value] ?: return null
+                val token = session.token?.takeIf { it.isNotBlank() } ?: return null
+                val username = session.username?.takeIf { it.isNotBlank() } ?: return null
+                return LoginCredential(value, token, username)
+            }
 
-        val current = credential(mode) ?: throw IllegalStateException("当前未登录，无法导出登录凭据")
-        val all = RequestMode.entries.mapNotNull(::credential)
-        LoginCredentialBundle(
-            mode,
-            if (all.size == RequestMode.entries.size) all else listOf(current)
-        )
-    }
+            val current =
+                credential(mode) ?: throw IllegalStateException("当前未登录，无法导出登录凭据")
+            val savedLogin = if (includePassword) {
+                val session = sessions.getValue(mode)
+                check(
+                    session.rememberPassword && !session.savedUsername.isNullOrBlank() &&
+                            !session.savedPassword.isNullOrBlank()
+                ) { "当前账号未保存密码，请先登录并勾选记住密码" }
+                SavedLoginCredential(
+                    requireNotNull(session.savedUsername),
+                    requireNotNull(session.savedPassword)
+                )
+            } else null
+            LoginCredentialBundle(mode, listOf(current), savedLogin = savedLogin)
+        }
 
     fun getToken(): Flow<String?> = active.map { it.session.token }.distinctUntilChanged()
     fun getTokenSync(): String? = active.value.session.token

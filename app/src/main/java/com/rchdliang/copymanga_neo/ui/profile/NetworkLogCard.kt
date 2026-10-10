@@ -126,12 +126,7 @@ internal fun NetworkLogCard(viewModel: NetworkLogViewModel = hiltViewModel()) {
                 Switch(state.enabled, viewModel::setEnabled, enabled = !busy)
             }
             Text(
-                "出问题前开启记录，复现后关闭并导出。日志仅保存在本机，不会自动上传；Token、Cookie 和密码等凭据会隐藏。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                "保留最近约 20 MB。接口和网页正文最多记录 2 MiB，超出会标记截断；登录、个人资料和图片正文不记录。目录密文保持原样。",
+                "开启记录，复现问题后导出。登录凭据已隐藏。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )

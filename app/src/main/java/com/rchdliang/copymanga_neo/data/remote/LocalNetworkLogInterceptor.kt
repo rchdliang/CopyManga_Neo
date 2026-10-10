@@ -50,6 +50,21 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
         start.addProperty("exchange_id", exchange)
         start.addProperty("url", NetworkLogRedaction.url(request.url))
         start.addProperty("method", request.method)
+        request.tag(NetworkRequestContext::class.java)?.settings?.requestMode?.let {
+            start.addProperty("request_mode", it.name)
+        }
+        if (request.url.encodedPath == "/api/v3/member/info") {
+            start.addProperty(
+                "credential_validation", request.tag(
+                    com.rchdliang.copymanga_neo.domain.model.RequestMode::class.java
+                ) != null
+            )
+            start.addProperty(
+                "imported_app_identity", request.tag(
+                    com.rchdliang.copymanga_neo.domain.model.AppCredentialIdentity::class.java
+                ) != null
+            )
+        }
         start.add("headers", NetworkLogRedaction.headers(request.headers))
         start.addProperty("body_bytes", runCatching { request.body?.contentLength() }.getOrNull())
         (request.body as? FormBody)?.let { form ->
@@ -83,11 +98,13 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
             val type = response.body.contentType()
             val text =
                 type?.type == "text" || type?.subtype?.let { "json" in it || "xml" in it || "javascript" in it } == true
-            if (request.url.encodedPath in setOf("/api/v3/login", "/api/v3/register") ||
-                request.url.encodedPath.startsWith("/api/v3/member/info")
-            ) {
+            val privateBody =
+                request.url.encodedPath in setOf("/api/v3/login", "/api/v3/register") ||
+                        request.url.encodedPath.startsWith("/api/v3/member/info")
+            if (privateBody) {
                 result.addProperty("body_note", "登录和个人资料响应正文已隐藏")
-            } else if (text) {
+            }
+            if (text) {
                 val limit = 2 * 1024 * 1024
                 val encoding = response.header("Content-Encoding").orEmpty()
                 val raw = response.peekBody(limit.toLong() + 1).bytes()
@@ -129,15 +146,27 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
                             "JSON 超过记录上限，未保存不完整正文"
                         )
                         else try {
+                            val parsed = JsonParser.parseString(body)
                             result.add(
-                                "body",
-                                NetworkLogRedaction.json(JsonParser.parseString(body))
+                                if (privateBody) "body_summary" else "body",
+                                if (privateBody) NetworkLogRedaction.privateResponseSummary(parsed)
+                                else NetworkLogRedaction.json(parsed)
                             )
                         } catch (_: Exception) {
-                            result.addProperty("body_note", "JSON 格式异常，保留脱敏后的文本")
-                            result.addProperty("body_text", NetworkLogRedaction.text(body))
+                            if (privateBody) result.addProperty(
+                                "body_summary_error",
+                                "invalid_json"
+                            )
+                            else {
+                                result.addProperty("body_note", "JSON 格式异常，保留脱敏后的文本")
+                                result.addProperty("body_text", NetworkLogRedaction.text(body))
+                            }
                         }
-                    } else result.addProperty("body", NetworkLogRedaction.text(body))
+                    } else if (!privateBody) result.addProperty(
+                        "body",
+                        NetworkLogRedaction.text(body)
+                    )
+                    else result.addProperty("body_summary_error", "not_json")
                 }
             } else result.addProperty("body_note", "二进制响应仅记录元数据")
         } catch (e: Exception) {
@@ -150,6 +179,49 @@ class LocalNetworkLogInterceptor @Inject constructor(private val store: LocalNet
 
 /** 保留字段名和非凭据信息；响应 results 中的目录密文保持原样。 */
 internal object NetworkLogRedaction {
+    /** 账号响应只保留数值状态码和固定字段的结构，不记录 message 或任何资料值。 */
+    fun privateResponseSummary(value: JsonElement): JsonObject = JsonObject().apply {
+        fun kind(element: JsonElement?): String = when {
+            element == null -> "missing"
+            element.isJsonNull -> "null"
+            element.isJsonObject -> "object"
+            element.isJsonArray -> "array"
+            element.isJsonPrimitive -> when {
+                element.asJsonPrimitive.isNumber -> "number"
+                element.asJsonPrimitive.isBoolean -> "boolean"
+                else -> "string"
+            }
+
+            else -> "unknown"
+        }
+        addProperty("root_kind", kind(value))
+        if (!value.isJsonObject) return@apply
+        val root = value.asJsonObject
+        val code = root.get("code")
+        addProperty("code_kind", kind(code))
+        if (code?.isJsonPrimitive == true && code.asJsonPrimitive.isNumber) {
+            val number = code.asString.toIntOrNull()
+            if (number != null && number in 100..599) addProperty("code", number)
+        }
+        val results = root.get("results")
+        addProperty("results_kind", kind(results))
+        if (results?.isJsonObject == true) {
+            add("result_field_kinds", JsonObject().apply {
+                listOf(
+                    "info",
+                    "token",
+                    "user_id",
+                    "username",
+                    "nickname",
+                    "ticket",
+                    "reward_ticket",
+                    "day_downloads"
+                )
+                    .forEach { key -> addProperty(key, kind(results.asJsonObject.get(key))) }
+            })
+        }
+    }
+
     private val secrets = setOf(
         "authorization",
         "proxyauthorization",

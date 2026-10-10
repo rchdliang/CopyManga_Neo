@@ -3,6 +3,8 @@ package com.rchdliang.copymanga_neo.data.local
 import android.content.Context
 import androidx.core.content.edit
 import com.google.gson.JsonObject
+import com.rchdliang.copymanga_neo.BuildConfig
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogRepository
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,6 +35,29 @@ class LocalNetworkLogStore @Inject constructor(@ApplicationContext context: Cont
 
     fun beginCapture(): Long? =
         synchronized(lock) { generation.takeIf { mutableState.value.enabled } }
+
+    /** 只记录导入阶段和状态，不保存凭据、个人资料或异常消息。 */
+    fun credentialImport(
+        stage: String,
+        mode: RequestMode? = null,
+        status: Int? = null,
+        code: Int? = null,
+        exception: Exception? = null,
+        loggedIn: Boolean? = null
+    ) {
+        val capture = beginCapture() ?: return
+        append(capture, JsonObject().apply {
+            addProperty("timestamp_ms", System.currentTimeMillis())
+            addProperty("event", "credential_import")
+            addProperty("stage", stage)
+            addProperty("client_version", BuildConfig.VERSION_NAME)
+            mode?.let { addProperty("request_mode", it.name) }
+            status?.let { addProperty("status", it) }
+            code?.let { addProperty("code", it) }
+            exception?.let { addProperty("exception", it.javaClass.simpleName) }
+            loggedIn?.let { addProperty("logged_in", it) }
+        })
+    }
 
     fun catalogFailure(pathWord: String, error: Exception) {
         val capture = beginCapture() ?: return
@@ -103,7 +128,13 @@ class LocalNetworkLogStore @Inject constructor(@ApplicationContext context: Cont
             synchronized(lock) {
                 // 本地快照固定分卷内容；写入用户选择的目标时不持有日志锁。
                 snapshot.outputStream().use { target ->
-                    target.write(("{\"event\":\"export_info\",\"format\":\"CopyManga network log v1\",\"body_limit_bytes\":2097152,\"credentials\":\"redacted\"}\n").toByteArray())
+                    target.write((JsonObject().apply {
+                        addProperty("event", "export_info")
+                        addProperty("format", "CopyManga network log v1")
+                        addProperty("client_version", BuildConfig.VERSION_NAME)
+                        addProperty("body_limit_bytes", 2097152)
+                        addProperty("credentials", "redacted")
+                    }.toString() + "\n").toByteArray())
                     for (index in 3 downTo 0) if (file(index).exists()) file(index).inputStream()
                         .use { it.copyTo(target) }
                 }

@@ -32,25 +32,25 @@ interface UserRepository {
         expectedGeneration: Long? = null
     ): Result<LoginInfo>
 
-    /** 根据登录页选项登录当前模式或两种模式，并为成功模式保存登录偏好。 */
+    /** 仅登录并验证当前模式，成功后保存该模式的登录偏好。 */
     suspend fun loginWithOptions(
         username: String,
         rawPassword: String,
-        bothModes: Boolean,
         rememberPassword: Boolean,
         autoLogin: Boolean,
         expectedGeneration: Long
-    ): Result<com.rchdliang.copymanga_neo.domain.model.ModeLoginResult>
+    ): Result<LoginInfo>
 
     /** 只创建账号；成功后仍须登录，不把注册响应当作已登录。 */
     suspend fun register(username: String, rawPassword: String):
             Result<com.rchdliang.copymanga_neo.domain.model.RegistrationInfo>
 
-    /** 两种模式都有会话时一起导出，否则只导出当前模式。 */
-    suspend fun exportLoginCredential(): Result<String>
+    /** 验证并导出当前模式的有效会话；密码仅在用户明确选择时附带。 */
+    suspend fun exportLoginCredential(includePassword: Boolean = false): Result<String>
 
-    /** 验证并导入登录凭据；验证成功后才保存新的登录状态。 */
-    suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo>
+    /** 仅恢复包中导出时的模式；旧多模式包的其他项不验证、不导入。 */
+    suspend fun importLoginCredential(serializedCredential: String):
+            Result<com.rchdliang.copymanga_neo.domain.model.CredentialImportResult>
 
     /**
      * 获取用户信息

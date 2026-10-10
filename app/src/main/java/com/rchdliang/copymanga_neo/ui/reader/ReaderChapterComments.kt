@@ -56,6 +56,13 @@ class ReaderChapterCommentsViewModel @Inject constructor(private val repository:
         val offset = if (more) old?.nextOffset ?: return else 0
         state.value = state.value.copy(loading = true, error = null)
         job = viewModelScope.launch(handler) {
+            if (!more && old == null) {
+                val cached = repository.getDownloadedChapterComments(uuid).getOrNull()
+                ensureActive()
+                if (cached != null) state.value = state.value.copy(
+                    page = CommentPage(cached.comments, cached.total, null)
+                )
+            }
             repository.getComments(CommentTarget(CommentKind.CHAPTER, uuid), offset).fold(
                 onSuccess = { page ->
                     ensureActive()
@@ -81,6 +88,7 @@ class ReaderChapterCommentsViewModel @Inject constructor(private val repository:
 @Composable
 fun ReaderChapterComments(
     page: ReaderPageEntry,
+    comicPathWord: String,
     onClosed: () -> Unit,
     onShowControls: () -> Unit,
     modifier: Modifier = Modifier,
@@ -96,6 +104,7 @@ fun ReaderChapterComments(
     CommentsPanel(
         target = CommentTarget(CommentKind.CHAPTER, page.chapterUuid),
         title = page.chapterName,
+        comicPathWord = comicPathWord,
         onDismiss = onShowControls,
         viewModel = commentsViewModel,
         embedded = true,

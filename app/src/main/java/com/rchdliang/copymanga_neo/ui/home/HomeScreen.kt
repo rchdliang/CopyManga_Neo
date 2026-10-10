@@ -125,7 +125,7 @@ private fun HomeRiskControlDialog(
         title = { Text("已触发风控", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "当前ip被官方暂时限制访问，已停止网络请求。请等待限制解除后再试。\n如果近期频繁无故触发风控，请等待开发者更新。\n\n$reason",
+                "访问受限，已暂停联网。稍后重试。\n\n$reason",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
@@ -207,7 +207,7 @@ private fun HomeContent(
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "已暂停网络请求，请更换代理节点或等待官方解除限制。\n本地下载仍可正常阅读。",
+                            "联网已暂停，本地漫画仍可阅读。",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -819,7 +819,7 @@ private fun HomeErrorPreview() {
 private fun HomeTagWarningPreview() {
     HomePreviewContent(
         rememberHomePreviewState().copy(
-            filterWarning = "部分漫画的标签暂时无法获取，已先展示漫画。标签加载完成后会自动应用黑名单。"
+            filterWarning = "部分标签尚未加载，黑名单暂未完全生效。"
         )
     )
 }

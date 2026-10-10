@@ -24,7 +24,11 @@ object DatabaseModule {
             AppDatabase::class.java,
             "copymanga_downloads.db"
         )
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4,
+                AppDatabase.MIGRATION_4_5
+            )
             // 未发布版本的下载缓存允许随结构变更重建。
             .fallbackToDestructiveMigration(true)
             .build()
@@ -56,4 +60,9 @@ object DatabaseModule {
     fun provideDownloadedChapterDao(db: AppDatabase): DownloadedChapterDao {
         return db.downloadedChapterDao()
     }
+
+    @Provides
+    @Singleton
+    fun provideDownloadedChapterCommentsDao(db: AppDatabase): com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterCommentsDao =
+        db.downloadedChapterCommentsDao()
 }

@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rchdliang.copymanga_neo.data.local.entity.ComicThemeCacheEntity
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadQueueEntity
+import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterCommentsEntity
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
 
@@ -14,13 +15,21 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
         DownloadedComicEntity::class,
         DownloadedChapterEntity::class,
         DownloadQueueEntity::class,
-        ComicThemeCacheEntity::class
+        ComicThemeCacheEntity::class,
+        DownloadedChapterCommentsEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     companion object {
+        /** 增加章节评论快照，升级时保留现有图片、章节和下载队列。 */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS downloaded_chapter_comments (chapterUuid TEXT NOT NULL PRIMARY KEY, commentsJson TEXT NOT NULL, total INTEGER NOT NULL, complete INTEGER NOT NULL, closed INTEGER NOT NULL, savedAt INTEGER NOT NULL, FOREIGN KEY(chapterUuid) REFERENCES downloaded_chapters(uuid) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            }
+        }
+
         /** 标签长期缓存单独建表，不改动已有下载和队列。 */
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -40,4 +49,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun comicThemeCacheDao(): ComicThemeCacheDao
     abstract fun downloadedComicDao(): DownloadedComicDao
     abstract fun downloadedChapterDao(): DownloadedChapterDao
+    abstract fun downloadedChapterCommentsDao(): DownloadedChapterCommentsDao
 }

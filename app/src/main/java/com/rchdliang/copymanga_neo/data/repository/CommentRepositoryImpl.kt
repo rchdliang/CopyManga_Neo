@@ -1,8 +1,12 @@
 package com.rchdliang.copymanga_neo.data.repository
 
+import com.google.gson.Gson
 import com.google.gson.JsonElement
+import com.rchdliang.copymanga_neo.data.download.hasCompleteFiles
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
+import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterCommentsDao
+import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.remote.api.CommentApiService
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentPage
@@ -10,23 +14,105 @@ import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
 import com.rchdliang.copymanga_neo.domain.model.CommentReplyPreview
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.CommentText
+import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterComments
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.milliseconds
 
 @Singleton
 class CommentRepositoryImpl @Inject constructor(
     private val api: CommentApiService,
     private val auth: AuthDataStore,
-    private val networkSettings: NetworkSettingsStore
+    private val networkSettings: NetworkSettingsStore,
+    private val downloadedComments: DownloadedChapterCommentsDao,
+    private val downloadedChapters: DownloadedChapterDao
 ) : CommentRepository {
+    private val downloadMutex = Mutex()
+    private val gson = Gson()
+
+    override suspend fun getDownloadedChapterComments(uuid: String): Result<DownloadedChapterComments?> =
+        result {
+            if (downloadedChapters.getChapter(uuid)?.hasCompleteFiles() != true) return@result null
+            val cached = downloadedComments.get(uuid) ?: return@result null
+            DownloadedChapterComments(
+                gson.fromJson(cached.commentsJson, Array<MangaComment>::class.java).toList(),
+                cached.total, cached.complete, cached.closed, cached.savedAt
+            )
+        }
+
+    override suspend fun downloadChapterComments(uuid: String): Result<DownloadedChapterComments> =
+        result {
+            downloadMutex.withLock {
+                check(
+                    downloadedChapters.getChapter(uuid)?.hasCompleteFiles() == true
+                ) { "请先下载章节图片" }
+                val generation = networkSettings.generation
+                val target = CommentTarget(CommentKind.CHAPTER, uuid)
+                val items = linkedMapOf<String, MangaComment>()
+                var offset = 0
+                while (true) {
+                    val response = withTimeoutOrNull(15_000L.milliseconds) {
+                        readComments(
+                            target,
+                            offset,
+                            null
+                        )
+                    }
+                        ?: Result.failure(IOException("评论下载超时，可稍后重试"))
+                    check(generation == networkSettings.generation) { "网络设置已更改，请重新下载评论" }
+                    val page = response.fold(
+                        onSuccess = { it },
+                        onFailure = { error ->
+                            if (error is CommentClosedException) {
+                                val closed = DownloadedChapterComments(
+                                    emptyList(),
+                                    0,
+                                    true,
+                                    true,
+                                    System.currentTimeMillis()
+                                )
+                                saveComments(uuid, closed)
+                                return@withLock closed
+                            }
+                            throw error
+                        }
+                    )
+                    val next = page.nextOffset
+                    check(next == null || next > offset) { "评论分页未推进，请重试" }
+                    page.comments.forEach { items[it.id] = it }
+                    val snapshot = DownloadedChapterComments(
+                        items.values.toList(),
+                        page.total,
+                        next == null,
+                        savedAt = System.currentTimeMillis()
+                    )
+                    saveComments(uuid, snapshot)
+                    if (next == null) return@withLock snapshot
+                    offset = next
+                }
+                @Suppress("UNREACHABLE_CODE")
+                error("评论下载未完成")
+            }
+        }
+
+    private suspend fun saveComments(uuid: String, snapshot: DownloadedChapterComments) {
+        downloadedComments.save(
+            uuid, gson.toJson(snapshot.comments), snapshot.total,
+            snapshot.complete, snapshot.closed, snapshot.savedAt
+        )
+    }
+
     override suspend fun getReportConfig(target: CommentTarget): Result<com.rchdliang.copymanga_neo.domain.model.CommentReportConfig> =
         result {
             val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
@@ -102,7 +188,9 @@ class CommentRepositoryImpl @Inject constructor(
         target: CommentTarget,
         offset: Int,
         replyId: String?
-    ): Result<CommentPage> = readComments(target, offset, replyId)
+    ): Result<CommentPage> =
+        withTimeoutOrNull(15_000L.milliseconds) { readComments(target, offset, replyId) }
+            ?: Result.failure(IOException("评论加载超时，请重试"))
 
     override suspend fun getReplyPreview(
         target: CommentTarget,

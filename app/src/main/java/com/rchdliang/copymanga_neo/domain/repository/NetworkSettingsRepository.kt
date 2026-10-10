@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 interface NetworkSettingsRepository {
     val officialAppDefaults: com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
     val settings: StateFlow<NetworkSettings>
+    fun generatePseudoId(): String
+    fun generateUmString(): String
     suspend fun diagnoseOfficialApp(): Result<String>
     suspend fun save(settings: NetworkSettings): Result<Unit>
     suspend fun reset(): Result<Unit>

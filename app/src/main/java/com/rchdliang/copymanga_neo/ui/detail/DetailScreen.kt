@@ -237,8 +237,8 @@ fun DetailScreen(
             },
             text = {
                 Text(
-                    text = if (isBlocked) "是否取消屏蔽「${theme.name}」？首页将恢复显示包含此标签的漫画。"
-                    else "是否将「${theme.name}」加入黑名单？首页将自动隐藏包含此标签的漫画。",
+                    text = if (isBlocked) "首页将显示包含「${theme.name}」的漫画。"
+                    else "首页将隐藏包含「${theme.name}」的漫画。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

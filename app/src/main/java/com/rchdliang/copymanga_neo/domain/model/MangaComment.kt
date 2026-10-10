@@ -19,6 +19,15 @@ data class MangaComment(
 
 data class CommentPage(val comments: List<MangaComment>, val total: Int, val nextOffset: Int?)
 
+/** 本地评论不使用在线分页游标；完整性与总数分开，明确展示部分下载。 */
+data class DownloadedChapterComments(
+    val comments: List<MangaComment>,
+    val total: Int,
+    val complete: Boolean,
+    val closed: Boolean = false,
+    val savedAt: Long
+)
+
 /** 少量回复用可见数量校正；较多回复的 total 沿用 API 总数。 */
 data class CommentReplyPreview(val comments: List<MangaComment>, val total: Int? = null)
 

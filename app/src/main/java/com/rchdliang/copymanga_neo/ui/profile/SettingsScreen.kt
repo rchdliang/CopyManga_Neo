@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Restore
@@ -68,6 +69,7 @@ internal fun SettingsScreen(
         state = state,
         onThemeChange = viewModel::setThemeMode,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
+        onCredentialExportPasswordChange = viewModel::setCredentialExportPassword,
         onNavigateBack = onNavigateBack,
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToData = onNavigateToData,
@@ -98,6 +100,7 @@ internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
+    onCredentialExportPasswordChange: (Boolean) -> Unit = {},
     onNavigateBack: () -> Unit,
     onNavigateToAbout: () -> Unit = {},
     onNavigateToData: () -> Unit = {},
@@ -159,6 +162,19 @@ internal fun SettingsPage(
                     Icons.Outlined.Download, "下载与存储",
                     if (state.settings.wifiOnlyDownloads) "仅 Wi-Fi 下载 · 文件管理" else "下载偏好与文件管理",
                     index = 1, count = 2, onClick = { destination = SettingsDestination.DOWNLOADS })
+                ProfileSectionTitle("账号")
+                ProfileListItem(
+                    Icons.Outlined.Key, "导出时包含密码", "仅包含已记住的密码",
+                    index = 0, count = 1, enabled = enabled,
+                    onClick = { onCredentialExportPasswordChange(!state.settings.includePasswordInCredentialExport) },
+                    trailingContent = {
+                        Switch(
+                            checked = state.settings.includePasswordInCredentialExport,
+                            onCheckedChange = onCredentialExportPasswordChange,
+                            enabled = enabled
+                        )
+                    }
+                )
                 ProfileSectionTitle("管理")
                 ProfileListItem(
                     Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
@@ -176,7 +192,7 @@ internal fun SettingsPage(
 
             SettingsDestination.READING -> {
                 Text(
-                    "应用于首次阅读的漫画。已阅读漫画保留各自的设置，可在阅读器中单独修改。",
+                    "仅用于首次打开的漫画。",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -208,7 +224,7 @@ internal fun SettingsPage(
                     onClick = { picker = SettingsPicker.ORIENTATION })
                 ProfileSectionTitle("恢复")
                 ProfileListItem(
-                    Icons.Outlined.Restore, "恢复阅读默认值", "保留漫画已保存的独立设置",
+                    Icons.Outlined.Restore, "恢复阅读默认值", "仅恢复全局默认值",
                     index = 0, count = 1, enabled = enabled, onClick = { resetReader = true })
             }
 
@@ -239,7 +255,7 @@ internal fun SettingsPage(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    "下载队列会自动保存。重新打开应用后，可在下载页继续未完成的任务。",
+                    "未完成的任务可在下载页继续。",
                     Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -339,7 +355,7 @@ internal fun SettingsPage(
         title = { Text("恢复阅读默认值？", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "恢复为从右到左、匹配屏幕和系统默认方向，各部漫画已保存的设置保持不变。",
+                "已阅读漫画的设置不变。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },

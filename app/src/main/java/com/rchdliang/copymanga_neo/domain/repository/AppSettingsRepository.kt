@@ -9,6 +9,10 @@ interface AppSettingsRepository {
     val settings: Flow<AppSettings>
     suspend fun setThemeMode(mode: AppThemeMode): Result<Unit>
     suspend fun setWifiOnlyDownloads(enabled: Boolean): Result<Unit>
+
+    /** 仅保存是否包含密码的选择，不保存凭据内容。 */
+    suspend fun setCredentialExportPassword(enabled: Boolean): Result<Unit>
+
     suspend fun getHomeRankPreferences(): Result<HomeRankPreferences>
     suspend fun setHomeRankPreferences(preferences: HomeRankPreferences): Result<Unit>
 

@@ -278,6 +278,7 @@ internal fun CommentsPanel(
             onRefresh = { viewModel.load(refresh = true, fromPullToRefresh = true) },
             onRetry = { viewModel.load(refresh = state.feed.items.isEmpty() || state.feed.refreshFailed) },
             onRetryPermission = viewModel::retryPermission,
+            onDownloadComments = viewModel::downloadComments,
             onLoadReplyPreview = viewModel::loadReplyPreview,
             onShowReplies = viewModel::showReplies,
             onDraftChange = viewModel::setDraft, onPost = viewModel::post,
@@ -368,7 +369,8 @@ internal fun CommentsContent(
     onReport: (MangaComment) -> Unit = {},
     onLogin: (() -> Unit)? = null,
     embedded: Boolean = false,
-    onColumnCountChange: (Int) -> Unit = {}
+    onColumnCountChange: (Int) -> Unit = {},
+    onDownloadComments: () -> Unit = {}
 ) {
     val landscape =
         LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -487,6 +489,33 @@ internal fun CommentsContent(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (state.canDownloadComments) Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        when {
+                            state.downloadingComments -> "正在下载评论…"
+                            state.feed.downloaded && !state.feed.downloadComplete -> "已下载 ${state.feed.items.size} 条评论，尚未完整"
+                            state.feed.downloaded -> "显示已下载评论"
+                            else -> "下载评论后可离线查看"
+                        },
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(
+                        onClick = onDownloadComments,
+                        enabled = !state.downloadingComments && !state.posting && !state.reporting
+                    ) {
+                        Text(
+                            if (state.feed.downloaded) "更新下载" else "下载评论",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 if (!state.postingAllowed) Column(
                     Modifier
                         .fillMaxWidth()

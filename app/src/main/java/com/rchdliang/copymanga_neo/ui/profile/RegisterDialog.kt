@@ -95,11 +95,6 @@ internal fun RegisterDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(
-                    "注册 CopyManga 账号，成功后自动登录。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
                 OutlinedTextField(
                     state = account,
                     label = {

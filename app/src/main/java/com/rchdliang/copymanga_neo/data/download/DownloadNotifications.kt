@@ -172,11 +172,13 @@ internal class DownloadNotifications(private val context: Context) {
         else "${completed.last().name}等 ${completed.size} 部漫画"
         val count =
             "${completed.sumOf { it.completedChapters }}/${completed.sumOf { it.totalChapters }}"
+        val summary = if (completed.any { it.statusText.contains("部分评论") })
+            "图片下载完成 · $count 章，部分评论未完整下载" else "章节和评论下载完成 · $count 章"
         manager.notify(
             COMPLETED_ID, NotificationCompat.Builder(context, COMPLETED_CHANNEL)
                 .setSmallIcon(R.drawable.ic_download_done_notification)
                 .setContentTitle(title)
-                .setContentText("下载完成 · $count 章")
+                .setContentText(summary)
                 .setContentIntent(openDownloads())
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setAutoCancel(true)

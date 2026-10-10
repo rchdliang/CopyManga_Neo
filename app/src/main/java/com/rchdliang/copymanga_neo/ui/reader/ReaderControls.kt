@@ -327,6 +327,11 @@ fun ReaderCatalogDialog(
         text = {
             Column {
                 if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (state.downloadedOnly && state.chapters.isNotEmpty()) Text(
+                    "已下载章节",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
                 state.error?.let { message ->
                     TextButton(onClick = onRetry) {
                         Text(

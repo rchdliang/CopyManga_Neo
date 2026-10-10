@@ -17,6 +17,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -45,6 +47,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.domain.model.NetworkDefaults
 import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
 import com.rchdliang.copymanga_neo.domain.model.ProxyMode
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
@@ -104,17 +107,16 @@ internal fun NetworkSettingsScreen(
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (!advanced) NetworkCard("请求模式") {
-                    NetworkHint("切换会恢复该模式已有的登录状态；首次使用需登录一次。")
                     Column(Modifier.selectableGroup()) {
                         NetworkChoice(
-                            "网页模式（原有路径）",
+                            "网页模式",
                             draft.requestMode == RequestMode.WEB,
                             enabled
                         ) {
                             viewModel.edit { it.copy(requestMode = RequestMode.WEB) }
                         }
                         NetworkChoice(
-                            "App 模式（实验性）",
+                            "App 模式",
                             draft.requestMode == RequestMode.OFFICIAL_APP,
                             enabled
                         ) {
@@ -128,39 +130,44 @@ internal fun NetworkSettingsScreen(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("实机属性检查（离线）", color = MaterialTheme.colorScheme.primary)
+                        Text("设备信息", color = MaterialTheme.colorScheme.primary)
                     }
                     if (draft.requestMode == RequestMode.OFFICIAL_APP) {
                         OfficialAppSettingsCard(
                             draft.officialApp,
                             viewModel.officialAppDefaults,
-                            enabled
+                            enabled,
+                            onRandomizePseudoId = viewModel::randomizePseudoId,
+                            onRandomizeUmString = viewModel::randomizeUmString
                         ) { value ->
                             viewModel.edit { it.copy(officialApp = value) }
                         }
                     }
                     if (draft.requestMode == RequestMode.WEB) {
                         NetworkCard("拷贝地址") {
-                            NetworkHint("填写拷贝域名或 HTTPS 地址。网页地址同时用于章节、Origin 和 Referer；请求协议保持 Web/H5。")
                             NetworkField(
                                 draft.apiHost,
-                                "默认 API 域名",
-                                enabled
+                                "API 域名",
+                                enabled,
+                                onReset = { viewModel.edit { it.copy(apiHost = NetworkDefaults.API_HOST) } }
                             ) { value -> viewModel.edit { it.copy(apiHost = value) } }
                             NetworkField(
                                 draft.wwwHost,
                                 "网页域名",
-                                enabled
+                                enabled,
+                                onReset = { viewModel.edit { it.copy(wwwHost = NetworkDefaults.WWW_HOST) } }
                             ) { value -> viewModel.edit { it.copy(wwwHost = value) } }
                             NetworkField(
-                                draft.loginHost,
-                                "登录 API 域名（留空跟随 API）",
-                                enabled
+                                draft.loginHost.ifBlank { draft.apiHost },
+                                "登录域名",
+                                enabled,
+                                onReset = { viewModel.edit { it.copy(loginHost = "") } }
                             ) { value -> viewModel.edit { it.copy(loginHost = value) } }
                             NetworkField(
                                 draft.version,
-                                "网页请求版本",
-                                enabled
+                                "请求版本",
+                                enabled,
+                                onReset = { viewModel.edit { it.copy(version = NetworkDefaults.WEB_VERSION) } }
                             ) { value -> viewModel.edit { it.copy(version = value) } }
                         }
                         NetworkCard("线路与节点") {
@@ -185,7 +192,7 @@ internal fun NetworkSettingsScreen(
                                     }
                                 }
                             }
-                            if (draft.routes.isEmpty()) NetworkHint("尚未获取线路，可先使用默认 API。")
+                            if (draft.routes.isEmpty()) NetworkHint("暂无线路")
                             Column(Modifier.selectableGroup()) {
                                 draft.routes.forEachIndexed { index, nodes ->
                                     if (draft.selection == NetworkSelection.ROUTE) {
@@ -214,7 +221,7 @@ internal fun NetworkSettingsScreen(
                                         .format(Date(draft.discoveredAt))
                                 }"
                             )
-                            NetworkHint("使用已保存的地址获取官方网络配置；先保存地址修改。失败时保留原线路，不影响默认 API。")
+                            if (state.dirty) NetworkHint("请先保存配置")
                             OutlinedButton(
                                 onClick = viewModel::discover,
                                 enabled = enabled && !state.dirty
@@ -233,7 +240,6 @@ internal fun NetworkSettingsScreen(
                                     enabled = enabled
                                 )
                             }
-                            NetworkHint("启用后，距上次获取超过一天时尝试更新，不阻塞启动。")
                         }
                     }
                 }
@@ -254,17 +260,15 @@ internal fun NetworkSettingsScreen(
                     }
                     if (draft.proxyMode == ProxyMode.MANUAL) NetworkField(
                         draft.proxyAddress,
-                        "代理地址，例如 127.0.0.1:7890",
+                        "代理地址",
                         enabled
                     ) { value ->
                         viewModel.edit { it.copy(proxyAddress = value) }
                     }
-                    NetworkHint("对接口、封面、阅读图片和下载统一生效。直连仅忽略 HTTP 代理，不会绕过系统 VPN。手动代理暂不支持账号密码。")
                 }
                 if (advanced) NetworkCard("连接诊断") {
-                    NetworkHint("按当前填写的代理设置测量连接耗时；不验证登录或业务接口。最快项只在已发现节点中选择，保存后生效。")
                     OutlinedButton(onClick = viewModel::test, enabled = enabled) {
-                        Text("测试当前填写配置", color = MaterialTheme.colorScheme.primary)
+                        Text("连接测速", color = MaterialTheme.colorScheme.primary)
                     }
                     state.probes.forEach { probe ->
                         Row(
@@ -276,7 +280,7 @@ internal fun NetworkSettingsScreen(
                                 Modifier.weight(1f),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Text(probe.latencyMillis?.let { "$it ms" } ?: "连接失败或超时",
+                            Text(probe.latencyMillis?.let { "$it ms" } ?: "连接失败",
                                 color = if (probe.latencyMillis == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                         }
                     }
@@ -292,8 +296,7 @@ internal fun NetworkSettingsScreen(
                     if (draft.requestMode == RequestMode.WEB) "域名、线路与连接诊断" else "设备配置、服务地址与连接诊断",
                     index = 0, count = 1, onClick = { advanced = true }, enabled = enabled
                 )
-                NetworkHint(if (state.dirty) "有未保存的修改" else "当前显示已保存配置")
-                if (state.dirty) NetworkHint("保存后刷新页面，未完成的下载可在下载页继续。")
+                if (state.dirty) NetworkHint("未保存")
                 Button(
                     onClick = viewModel::save,
                     enabled = enabled && state.dirty,
@@ -347,7 +350,7 @@ internal fun NetworkSettingsScreen(
         title = { Text("恢复默认网络设置？", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "恢复内置拷贝地址与系统代理，清除发现的线路；账号、阅读记录和下载会保留。",
+                "地址、代理和线路将恢复默认设置。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
@@ -394,6 +397,8 @@ private fun NetworkField(
     value: String,
     label: String,
     enabled: Boolean,
+    onReset: (() -> Unit)? = null,
+    onRandomize: (() -> Unit)? = null,
     onChange: (String) -> Unit
 ) {
     OutlinedTextField(
@@ -403,7 +408,30 @@ private fun NetworkField(
         enabled = enabled,
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-        label = { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        label = { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailingIcon = if (onReset == null && onRandomize == null) null else {
+            {
+                Row {
+                    onReset?.let { reset ->
+                        IconButton(onClick = reset, enabled = enabled) {
+                            Icon(
+                                Icons.Outlined.Clear, "恢复默认$label",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    onRandomize?.let { randomize ->
+                        IconButton(onClick = randomize, enabled = enabled) {
+                            Icon(
+                                Icons.Outlined.Refresh, "重新生成$label",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -425,60 +453,44 @@ private fun OfficialAppSettingsCard(
     value: com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings,
     defaults: com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings,
     enabled: Boolean,
+    onRandomizePseudoId: () -> Unit,
+    onRandomizeUmString: () -> Unit,
     onChange: (com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings) -> Unit
 ) {
-    NetworkCard("App 请求与设备标识") {
-        NetworkHint("下方身份字段留空时使用默认值。SDK 标识首次随机生成后固定保存在本机；设备字段读取系统信息，buildTime 默认沿用 HAR 的 2025.05.22。填写后使用你的自定义值。")
-        NetworkField(value.apiHost, "默认 API 域名", enabled) { onChange(value.copy(apiHost = it)) }
-        NetworkField(value.loginHost, "登录 API 域名（留空跟随 API）", enabled) {
-            onChange(
-                value.copy(
-                    loginHost = it
-                )
-            )
-        }
-        NetworkField(value.version, "App 协议版本", enabled) { onChange(value.copy(version = it)) }
-        NetworkField(value.versionCode, "App versionCode", enabled) {
-            onChange(
-                value.copy(
-                    versionCode = it
-                )
-            )
-        }
+    NetworkCard("App 连接配置") {
         NetworkField(
-            value.pseudoId,
-            "pseudoID（SDK 标识）",
-            enabled
+            value.apiHost, "API 域名", enabled,
+            onReset = { onChange(value.copy(apiHost = defaults.apiHost)) }
+        ) { onChange(value.copy(apiHost = it)) }
+        NetworkField(
+            value.loginHost, "登录域名", enabled,
+            onReset = { onChange(value.copy(loginHost = defaults.loginHost)) }
+        ) { onChange(value.copy(loginHost = it)) }
+        NetworkField(
+            value.version, "App 版本", enabled,
+            onReset = { onChange(value.copy(version = defaults.version)) }
+        ) { onChange(value.copy(version = it)) }
+        NetworkField(
+            value.versionCode, "版本号", enabled,
+            onReset = { onChange(value.copy(versionCode = defaults.versionCode)) }
+        ) { onChange(value.copy(versionCode = it)) }
+        NetworkField(
+            value.pseudoId, "SDK 标识", enabled, onRandomize = onRandomizePseudoId
         ) { onChange(value.copy(pseudoId = it)) }
-        NetworkHint("留空使用：${defaults.pseudoId}")
         NetworkField(
-            value.umString,
-            "umString（SDK 标识）",
-            enabled
+            value.umString, "统计标识", enabled, onRandomize = onRandomizeUmString
         ) { onChange(value.copy(umString = it)) }
-        NetworkHint("留空使用：${defaults.umString}")
         NetworkField(
-            value.device,
-            "设备 ID / androidId（系统构建号）",
-            enabled
+            value.device, "设备构建号", enabled,
+            onReset = { onChange(value.copy(device = defaults.device)) }
         ) { onChange(value.copy(device = it)) }
-        NetworkHint("留空使用：${defaults.device}")
-        NetworkField(value.deviceInfo, "deviceInfo（型号-设备代号）", enabled) {
-            onChange(
-                value.copy(
-                    deviceInfo = it
-                )
-            )
-        }
-        NetworkHint("留空使用：${defaults.deviceInfo}")
-        NetworkField(value.buildTime, "buildTime（可自定义）", enabled) {
-            onChange(
-                value.copy(
-                    buildTime = it
-                )
-            )
-        }
-        NetworkHint("留空使用：${defaults.buildTime}")
-        NetworkHint("App 模式所需配置随安装包提供；时间戳和签名在每次请求时生成。")
+        NetworkField(
+            value.deviceInfo, "设备型号", enabled,
+            onReset = { onChange(value.copy(deviceInfo = defaults.deviceInfo)) }
+        ) { onChange(value.copy(deviceInfo = it)) }
+        NetworkField(
+            value.buildTime, "构建日期", enabled,
+            onReset = { onChange(value.copy(buildTime = defaults.buildTime)) }
+        ) { onChange(value.copy(buildTime = it)) }
     }
 }

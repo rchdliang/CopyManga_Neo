@@ -75,7 +75,7 @@ fun ReaderSettingsDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 leadingSettings()
                 Text(
-                    "修改只作用于这部漫画。恢复默认值会采用当前全局阅读设置。",
+                    "仅修改本漫画。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )

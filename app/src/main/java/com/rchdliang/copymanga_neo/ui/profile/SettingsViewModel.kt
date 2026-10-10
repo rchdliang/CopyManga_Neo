@@ -66,6 +66,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: AppThemeMode) = save { repository.setThemeMode(mode) }
     fun setWifiOnlyDownloads(enabled: Boolean) = save { repository.setWifiOnlyDownloads(enabled) }
+    fun setCredentialExportPassword(enabled: Boolean) =
+        save { repository.setCredentialExportPassword(enabled) }
+
     fun setReadingDirection(value: String) =
         save { readerPreferences.updateGlobal { it.copy(readingDirection = value) } }
 

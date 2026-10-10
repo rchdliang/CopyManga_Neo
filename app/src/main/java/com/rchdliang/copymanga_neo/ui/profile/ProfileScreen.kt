@@ -174,7 +174,7 @@ fun ProfileScreen(
             onClearRegisterError = viewModel::clearRegisterError,
             onDismissLogin = viewModel::hideLoginDialog,
             onClearLoginError = viewModel::clearLoginError,
-            onExportCredential = viewModel::exportLoginCredential,
+            onExportCredential = { viewModel.requestCredentialExport() },
             onImportCredential = {
                 val credential = runCatching {
                     clipboardManager.primaryClip
@@ -234,7 +234,7 @@ internal fun ProfileMainPage(
     onLogout: () -> Unit,
     onLoginClick: () -> Unit,
     savedPasswordProvider: () -> String?,
-    onLogin: (String, String, Boolean, Boolean, Boolean) -> Unit,
+    onLogin: (String, String, Boolean, Boolean) -> Unit,
     onDismissLogin: () -> Unit,
     onExportCredential: () -> Unit,
     onImportCredential: () -> Unit,
@@ -254,7 +254,6 @@ internal fun ProfileMainPage(
     onDismissProfile: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
-    var showExportCredentialDialog by rememberSaveable { mutableStateOf(false) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
@@ -292,7 +291,7 @@ internal fun ProfileMainPage(
                             onLogout,
                             onLoginClick,
                             onEditProfile,
-                            onExport = { showExportCredentialDialog = true },
+                            onExport = onExportCredential,
                             onImport = onImportCredential
                         )
                     }
@@ -330,8 +329,8 @@ internal fun ProfileMainPage(
             savedPasswordProvider = if (uiState.registeredUsername == null) savedPasswordProvider else ({ null }),
             rememberPassword = uiState.rememberPassword,
             autoLogin = uiState.autoLogin,
-            onLogin = { username, password, remember, auto, both ->
-                onLogin(username, password, remember, auto, both)
+            onLogin = { username, password, remember, auto ->
+                onLogin(username, password, remember, auto)
             },
             onDismiss = onDismissLogin,
             onRegister = onRegisterClick,
@@ -360,45 +359,7 @@ internal fun ProfileMainPage(
         onDismiss = onDismissProfile
     )
 
-    if (showExportCredentialDialog) {
-        AlertDialog(
-            onDismissRequest = { showExportCredentialDialog = false },
-            title = {
-                Text(
-                    text = "导出登录凭据？",
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            text = {
-                Text(
-                    text = "两种请求模式都有凭据时一起导出，否则只导出当前模式。凭据包含 Token 和用户名，等同于账号登录权限；请妥善保管，不要发送给不信任的人。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showExportCredentialDialog = false
-                        onExportCredential()
-                    }
-                ) {
-                    Text(
-                        text = "复制",
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExportCredentialDialog = false }) {
-                    Text(
-                        text = "取消",
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        )
-    }
+
 }
 
 /** 账号资料可直接编辑，其余账号操作收进菜单。 */
@@ -539,7 +500,7 @@ private fun AccountCard(
             }
             if (!uiState.isLoggedIn) {
                 Text(
-                    "登录后同步书架与阅读记录，也可一次登录两种请求模式。",
+                    "登录后同步书架与阅读记录。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -552,30 +513,6 @@ private fun AccountCard(
                         "登录",
                         color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            } else if (uiState.dayDownloads != null) {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "今日下载额度",
-                            Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            uiState.dayDownloads.toString(),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
                 }
             }
         }
@@ -596,16 +533,16 @@ private fun ProfileMenuGroup(
         ProfileMenuEntry(
             Icons.Filled.History,
             "浏览记录",
-            if (uiState.isLoggedIn) "继续查看最近阅读的漫画" else "登录后同步最近阅读的漫画",
+            if (uiState.isLoggedIn) "最近阅读" else "登录后查看",
             onClick = onNavigateToHistory
         ),
         ProfileMenuEntry(
             Icons.Outlined.Block, "标签黑名单",
-            "实验性 · " + when {
+            when {
                 uiState.isBlacklistLoading -> "正在读取标签"
                 uiState.blacklistError != null -> "读取失败，点击查看"
-                !uiState.isBlacklistEnabled -> "已停用 · 保留 ${uiState.blockedThemes.size} 个标签"
-                else -> "仅影响首页 · 屏蔽 ${uiState.blockedThemes.size} 个标签"
+                !uiState.isBlacklistEnabled -> "已停用 · ${uiState.blockedThemes.size} 个标签"
+                else -> "首页 · ${uiState.blockedThemes.size} 个标签"
             },
             onClick = onNavigateToBlacklist,
             trailingContent = {
@@ -675,7 +612,7 @@ private fun LoginDialog(
     savedPasswordProvider: () -> String?,
     rememberPassword: Boolean,
     autoLogin: Boolean,
-    onLogin: (String, String, Boolean, Boolean, Boolean) -> Unit,
+    onLogin: (String, String, Boolean, Boolean) -> Unit,
     onDismiss: () -> Unit,
     onRegister: () -> Unit = {},
     onClearError: () -> Unit = {}
@@ -685,7 +622,6 @@ private fun LoginDialog(
     var showPassword by remember { mutableStateOf(false) }
     var rememberPasswordChecked by remember { mutableStateOf(rememberPassword || autoLogin) }
     var auto by remember { mutableStateOf(autoLogin) }
-    var bothModes by rememberSaveable { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
     val username = usernameState.text.toString().trim()
     val password = passwordState.text.toString()
@@ -707,7 +643,7 @@ private fun LoginDialog(
     fun submit() {
         submitted = true
         if (!isLoading && username.isNotBlank() && password.isNotBlank()) {
-            onLogin(username, password, rememberPasswordChecked, auto, bothModes)
+            onLogin(username, password, rememberPasswordChecked, auto)
         }
     }
 
@@ -726,7 +662,7 @@ private fun LoginDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    "登录 CopyManga，同步书架和阅读记录。",
+                    "登录当前模式。登录另一模式后，原会话会失效。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -793,21 +729,14 @@ private fun LoginDialog(
                 ) {
                     Column {
                         LoginPreferenceRow(
-                            "同时登录两种模式", "一次输入账号密码，分别登录网页和 App 模式",
-                            bothModes, !isLoading
-                        ) {
-                            bothModes = it
-                            onClearError()
-                        }
-                        LoginPreferenceRow(
-                            "记住密码", "下次登录时填入账号和密码",
+                            "记住密码", "",
                             rememberPasswordChecked, !isLoading
                         ) {
                             rememberPasswordChecked = it
                             if (!it) auto = false
                         }
                         LoginPreferenceRow(
-                            "自动登录", "启动或会话失效时尝试登录",
+                            "自动登录", "",
                             auto, !isLoading
                         ) {
                             auto = it
@@ -884,7 +813,7 @@ private fun LoginPreferenceRow(
                 title, color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium
             )
-            Text(
+            if (description.isNotBlank()) Text(
                 description, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -905,15 +834,13 @@ private fun ProfileLoggedInPreview() {
                 avatar = "https://example.com/avatar.png",
                 username = "user123",
                 nickname = "旅行者",
-                dayDownloads = 5,
-                dayDownloadsRefresh = "2026-08-21 00:00",
                 ticket = 100.5f
             ),
             onRefresh = {},
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { null },
-            onLogin = { _, _, _, _, _ -> },
+            onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},
@@ -933,7 +860,7 @@ private fun ProfileNotLoggedInPreview() {
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { null },
-            onLogin = { _, _, _, _, _ -> },
+            onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},
@@ -959,7 +886,7 @@ private fun LoginDialogPreview() {
             onLogout = {},
             onLoginClick = {},
             savedPasswordProvider = { "preview_password" },
-            onLogin = { _, _, _, _, _ -> },
+            onLogin = { _, _, _, _ -> },
             onDismissLogin = {},
             onExportCredential = {},
             onImportCredential = {},

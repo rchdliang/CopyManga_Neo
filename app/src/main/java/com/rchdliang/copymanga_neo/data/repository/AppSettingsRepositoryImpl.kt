@@ -26,6 +26,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private val store = context.appSettingsDataStore
     private val themeKey = stringPreferencesKey("theme_mode")
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only_downloads")
+    private val exportPasswordKey = booleanPreferencesKey("include_password_in_credential_export")
     private val rankAudienceKey = stringPreferencesKey("home_rank_audience")
     private val rankPeriodKey = stringPreferencesKey("home_rank_period")
 
@@ -33,7 +34,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         AppSettings(
             themeMode = AppThemeMode.entries.firstOrNull { it.name == prefs[themeKey] }
                 ?: AppThemeMode.SYSTEM,
-            wifiOnlyDownloads = prefs[wifiOnlyKey] ?: false
+            wifiOnlyDownloads = prefs[wifiOnlyKey] ?: false,
+            includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false
         )
     }.distinctUntilChanged()
 
@@ -43,6 +45,10 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setWifiOnlyDownloads(enabled: Boolean) = save {
         store.edit { it[wifiOnlyKey] = enabled }
+    }
+
+    override suspend fun setCredentialExportPassword(enabled: Boolean) = save {
+        store.edit { it[exportPasswordKey] = enabled }
     }
 
     override suspend fun getHomeRankPreferences(): Result<HomeRankPreferences> = try {
@@ -87,6 +93,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         store.edit {
             it.remove(themeKey)
             it.remove(wifiOnlyKey)
+            it.remove(exportPasswordKey)
             it.remove(rankAudienceKey)
             it.remove(rankPeriodKey)
             it.remove(searchLayoutKey(true))

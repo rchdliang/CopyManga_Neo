@@ -4,7 +4,9 @@ import android.util.Base64
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.local.ImportedSession
 import com.rchdliang.copymanga_neo.data.local.LoginCredentialCodec
+import com.rchdliang.copymanga_neo.data.local.OfficialAppIdentity
 import com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
+import com.rchdliang.copymanga_neo.domain.model.CredentialImportResult
 import com.rchdliang.copymanga_neo.domain.model.LoginInfo
 import com.rchdliang.copymanga_neo.domain.model.MemberInfo
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
@@ -28,7 +30,9 @@ class UserRepositoryImpl @Inject constructor(
     private val registrationApi: com.rchdliang.copymanga_neo.data.remote.api.RegistrationApiService,
     private val networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
     private val memberWrites: com.rchdliang.copymanga_neo.data.remote.api.MemberWriteApiService,
-    private val profileApi: com.rchdliang.copymanga_neo.data.remote.api.ProfileApiService
+    private val profileApi: com.rchdliang.copymanga_neo.data.remote.api.ProfileApiService,
+    private val officialAppIdentity: OfficialAppIdentity,
+    private val networkLog: com.rchdliang.copymanga_neo.data.local.LocalNetworkLogStore
 ) : UserRepository {
 
     override suspend fun getEditableProfile(): Result<com.rchdliang.copymanga_neo.domain.model.EditableProfile> =
@@ -180,92 +184,92 @@ class UserRepositoryImpl @Inject constructor(
         username: String,
         rawPassword: String,
         expectedGeneration: Long?
-    ): Result<LoginInfo> =
-        try {
-            authDataStore.awaitReady()
-            val generation = authDataStore.getAuthGeneration()
-            val (networkGeneration, settings) = networkSettings.snapshot()
-            check(expectedGeneration == null || expectedGeneration == generation) { "登录期间会话已改变" }
-            val result = requestLogin(username, rawPassword, settings.requestMode)
-            check(authDataStore.getAuthGeneration() == generation && networkSettings.generation == networkGeneration) {
-                "登录期间会话或网络设置已改变"
-            }
-            result.fold(
-                onSuccess = { info ->
-                    val token = info.token
-                        ?: return@fold Result.failure(IllegalStateException("未能获取登录 Token"))
-                    val saved = authDataStore.saveAuthIfCurrent(
-                        generation, token, info.username ?: username, info.avatar
-                    )
-                    if (saved) Result.success(info) else Result.failure(IllegalStateException("登录期间会话已改变"))
-                },
-                onFailure = { Result.failure(it) }
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    ): Result<LoginInfo> {
+        authDataStore.awaitReady()
+        val generation = expectedGeneration ?: authDataStore.getAuthGeneration()
+        val remembered = authDataStore.getSavedUsernameSync() == username &&
+                authDataStore.getRememberPasswordSync()
+        return loginWithOptions(
+            username, rawPassword, remembered,
+            remembered && authDataStore.getAutoLoginSync(), generation
+        )
+    }
 
     override suspend fun loginWithOptions(
         username: String,
         rawPassword: String,
-        bothModes: Boolean,
         rememberPassword: Boolean,
         autoLogin: Boolean,
         expectedGeneration: Long
-    ): Result<com.rchdliang.copymanga_neo.domain.model.ModeLoginResult> = try {
+    ): Result<LoginInfo> = try {
         authDataStore.awaitReady()
         val (networkGeneration, settings) = networkSettings.snapshot()
         fun checkSession() {
             check(
                 authDataStore.getAuthGeneration() == expectedGeneration &&
                         networkSettings.generation == networkGeneration
-            ) { "登录期间会话或网络设置已改变" }
+            ) {
+                "登录期间会话或网络设置已改变"
+            }
         }
         checkSession()
-        val modes = if (bothModes) listOf(settings.requestMode) +
-                RequestMode.entries.filter { it != settings.requestMode } else listOf(settings.requestMode)
-        val successful = mutableListOf<ImportedSession>()
-        val failures = linkedMapOf<RequestMode, String>()
-        for (mode in modes) {
-            checkSession()
-            requestLogin(username, rawPassword, mode).fold(
-                onSuccess = { info ->
-                    successful += ImportedSession(
-                        mode,
-                        requireNotNull(info.token),
-                        info.username ?: username,
-                        info.avatar
-                    )
-                },
-                onFailure = { failures[mode] = it.message ?: "登录失败" }
-            )
-            checkSession()
-        }
-        if (successful.isEmpty()) {
-            val message = failures.entries.joinToString("；") { (mode, reason) ->
-                "${if (mode == RequestMode.WEB) "网页模式" else "App 模式"}登录失败：$reason"
-            }
-            Result.failure(IllegalStateException(message))
-        } else {
-            val saved = authDataStore.saveLoginSessionsIfCurrent(
-                expectedGeneration, successful, username, rawPassword, rememberPassword, autoLogin
-            )
-            check(saved) { "登录期间会话已改变" }
-            Result.success(
-                com.rchdliang.copymanga_neo.domain.model.ModeLoginResult(
-                    settings.requestMode, successful.map { it.mode }.toSet(), failures
+        requestLogin(username, rawPassword, settings.requestMode).fold(
+            onSuccess = { info ->
+                checkSession()
+                val pending = ImportedSession(
+                    settings.requestMode, requireNotNull(info.token),
+                    info.username?.takeIf { it.isNotBlank() } ?: username, info.avatar
                 )
-            )
-        }
+                verifyLoginSession(pending).fold(
+                    onSuccess = { verified ->
+                        checkSession()
+                        val saved = authDataStore.saveLoginSessionIfCurrent(
+                            expectedGeneration, verified, username, rawPassword,
+                            rememberPassword, autoLogin, networkGeneration
+                        )
+                        check(saved) { "登录期间会话或网络设置已改变" }
+                        Result.success(
+                            info.copy(
+                                username = verified.username,
+                                avatar = verified.avatar
+                            )
+                        )
+                    },
+                    onFailure = { Result.failure(it) }
+                )
+            },
+            onFailure = { Result.failure(it) }
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Result.failure(e)
     }
 
-    /** 固定目标模式，各自取得 Token；不切换全局模式，不在请求中输出原始密码。 */
+    /** 用新 Token 验证对应模式，不覆盖旧会话，也不让失败响应退出本机原有账号。 */
+    private suspend fun verifyLoginSession(session: ImportedSession): Result<ImportedSession> =
+        try {
+            val response = apiService.getMemberInfoWithCredential(
+                authorization = "Token ${session.token}", requestMode = session.mode
+            )
+            check(response.isSuccessful) {
+                "登录接口已返回，但会话验证失败（HTTP ${response.code()}），请检查该模式的登录与 API 域名"
+            }
+            val body = response.body() ?: throw IllegalStateException("登录会话验证响应为空")
+            check(body.code == 200) { body.message ?: "登录会话验证失败（code=${body.code}）" }
+            val member = body.results ?: throw IllegalStateException("登录会话验证未返回用户信息")
+            Result.success(
+                session.copy(
+                    username = member.username?.takeIf { it.isNotBlank() } ?: session.username,
+                    avatar = member.avatar ?: session.avatar
+                ))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+
+    /** 固定当前目标模式取得 Token；不切换全局模式，不在请求中输出原始密码。 */
     private suspend fun requestLogin(
         username: String,
         rawPassword: String,
@@ -293,69 +297,120 @@ class UserRepositoryImpl @Inject constructor(
         Result.failure(e)
     }
 
-    override suspend fun exportLoginCredential(): Result<String> = try {
+    override suspend fun exportLoginCredential(includePassword: Boolean): Result<String> = try {
         authDataStore.awaitReady()
-        Result.success(LoginCredentialCodec.encode(authDataStore.exportSessions()))
+        val generation = authDataStore.getAuthGeneration()
+        val (networkGeneration, settings) = networkSettings.snapshot()
+        val bundle = authDataStore.exportSessions(includePassword)
+        val current = bundle.sessions.single()
+        val identity = if (current.mode == RequestMode.OFFICIAL_APP) {
+            officialAppIdentity.credentialIdentity(settings.officialApp)
+        } else null
+        // 只校验已有 Token，不调用登录接口，避免使原设备的会话失效。
+        verifyLoginSession(
+            ImportedSession(
+                current.mode,
+                current.token,
+                current.username,
+                null
+            )
+        ).fold(
+            onSuccess = {
+                check(
+                    authDataStore.getAuthGeneration() == generation &&
+                            networkSettings.generation == networkGeneration
+                ) {
+                    "导出期间会话或网络设置已改变"
+                }
+                Result.success(LoginCredentialCodec.encode(bundle.copy(appIdentity = identity)))
+            },
+            onFailure = {
+                Result.failure(
+                    IllegalStateException(
+                        "当前模式会话验证失败，请重新登录后导出",
+                        it
+                    )
+                )
+            }
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Result.failure(e)
     }
 
-    override suspend fun importLoginCredential(serializedCredential: String): Result<MemberInfo> =
+    override suspend fun importLoginCredential(serializedCredential: String): Result<CredentialImportResult> =
         try {
             authDataStore.awaitReady()
             val generation = authDataStore.getAuthGeneration()
             val (networkGeneration, settings) = networkSettings.snapshot()
             val bundle = LoginCredentialCodec.decode(serializedCredential)
-            val selectedMode = settings.requestMode.takeIf { mode ->
-                bundle.sessions.any { it.mode == mode }
-            } ?: bundle.activeMode
-            val imported = mutableListOf<ImportedSession>()
-            var selectedInfo: MemberInfo? = null
-            for (credential in bundle.sessions) {
+            val credential = bundle.sessions.single { it.mode == bundle.activeMode }
+            networkLog.credentialImport("decoded", credential.mode)
+            fun checkSession() {
                 check(
                     networkSettings.generation == networkGeneration &&
                             authDataStore.getAuthGeneration() == generation
-                ) { "导入期间会话或网络设置已改变" }
-                // 每项通过所属模式校验，不暂时切换全局网络设置或串用另一模式 Token。
+                ) {
+                    "导入期间会话或网络设置已改变"
+                }
+            }
+            checkSession()
+            // 旧多模式包也只验证导出时的模式，不回退到另一项过期 Token。
             val response = apiService.getMemberInfoWithCredential(
                 authorization = "Token ${credential.token}",
-                requestMode = credential.mode
+                requestMode = credential.mode,
+                appIdentity = bundle.appIdentity.takeIf { credential.mode == RequestMode.OFFICIAL_APP }
             )
-                if (response.code() == 401) throw IllegalStateException("登录凭据已失效，请重新导出")
-                if (!response.isSuccessful) throw IllegalStateException("验证登录凭据失败: ${response.code()}")
-                val body = response.body() ?: throw IllegalStateException("验证登录凭据的响应为空")
-                if (body.code != 200) throw IllegalStateException(body.message ?: "登录凭据无效")
-                val member = body.results ?: throw IllegalStateException("登录凭据未返回用户信息")
-                imported += ImportedSession(
-                    credential.mode, credential.token,
-                    member.username ?: credential.username, member.avatar
+            networkLog.credentialImport("response_received", credential.mode, response.code())
+            if (response.code() == 401) throw IllegalStateException(
+                if (credential.mode == RequestMode.OFFICIAL_APP && bundle.appIdentity == null)
+                    "旧凭据缺少 App 请求身份，请在原设备更新后重新导出"
+                else "服务端拒绝此登录凭据（HTTP 401），请在原设备重新登录后导出"
             )
-                if (credential.mode == selectedMode) selectedInfo = member.toMemberInfo()
-            }
-            check(networkSettings.generation == networkGeneration) { "导入期间网络设置已改变" }
-            val saved = authDataStore.saveImportedSessions(generation, imported)
-            check(saved) { "导入期间会话已改变" }
-            check(authDataStore.getAuthGeneration() == generation + 1) { "导入期间会话已改变" }
-            // 单模式包不包含当前模式时，自动进入包中的模式；双模式包保持当前选择。
-            if (selectedMode != settings.requestMode) {
-                check(
-                    networkSettings.saveIfCurrent(
-                        networkGeneration,
-                        settings.copy(requestMode = selectedMode)
-                    )
-                ) {
-                    "导入期间网络设置已改变"
-            }
-            }
-            Result.success(selectedInfo ?: throw IllegalStateException("凭据未包含所选模式"))
+            check(response.isSuccessful) { "验证登录凭据失败: ${response.code()}" }
+            val body = response.body() ?: throw IllegalStateException("验证登录凭据的响应为空")
+            networkLog.credentialImport(
+                "response_parsed",
+                credential.mode,
+                response.code(),
+                body.code
+            )
+            check(body.code == 200) { body.message ?: "登录凭据无效" }
+            val member = body.results ?: throw IllegalStateException("登录凭据未返回用户信息")
+            val imported = ImportedSession(
+                credential.mode, credential.token,
+                member.username?.takeIf { it.isNotBlank() } ?: credential.username, member.avatar
+            )
+            checkSession()
+            networkLog.credentialImport("mode_validated", credential.mode)
+            val updatedSettings = settings.copy(
+                requestMode = credential.mode,
+                officialApp = bundle.appIdentity?.takeIf { credential.mode == RequestMode.OFFICIAL_APP }
+                    ?.applyTo(settings.officialApp) ?: settings.officialApp
+            )
+            val savedGeneration = authDataStore.saveImportedSession(
+                generation, imported, networkGeneration, updatedSettings, bundle.savedLogin
+            ) ?: throw IllegalStateException("导入期间会话或网络设置已改变")
+            check(authDataStore.getAuthGeneration() == savedGeneration) { "导入期间会话已改变" }
+            networkLog.credentialImport(
+                "sessions_saved",
+                credential.mode,
+                loggedIn = authDataStore.isLoggedInSync()
+            )
+            Result.success(
+                CredentialImportResult(
+                    member.toMemberInfo(), credential.mode, savedGeneration,
+                    bundle.sessions.map { it.mode }.filter { it != credential.mode }.toSet()
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // 不输出导入文本、Token 或原始响应。
+            // 不输出导入文本、密码、Token 或原始响应。
+            networkLog.credentialImport("import_failed", exception = e)
             Result.failure(e)
-    }
+        }
 
     override suspend fun getMemberInfo(): Result<MemberInfo> {
         return try {

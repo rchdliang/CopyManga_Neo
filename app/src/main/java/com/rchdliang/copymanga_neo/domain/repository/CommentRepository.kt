@@ -8,6 +8,11 @@ import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 class CommentClosedException(message: String) : IllegalStateException(message)
 
 interface CommentRepository {
+    suspend fun getDownloadedChapterComments(uuid: String): Result<com.rchdliang.copymanga_neo.domain.model.DownloadedChapterComments?>
+
+    /** 保存所有可获取的章节评论；失败保留已获取页，不影响已完成的图片。 */
+    suspend fun downloadChapterComments(uuid: String): Result<com.rchdliang.copymanga_neo.domain.model.DownloadedChapterComments>
+
     suspend fun getReportConfig(target: CommentTarget): Result<com.rchdliang.copymanga_neo.domain.model.CommentReportConfig>
 
     suspend fun reportComment(

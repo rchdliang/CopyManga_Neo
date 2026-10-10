@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.local
 
 import android.content.Context
 import android.os.Build
+import com.rchdliang.copymanga_neo.domain.model.AppCredentialIdentity
 import com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
@@ -19,11 +20,18 @@ class OfficialAppIdentity @Inject constructor(@ApplicationContext context: Conte
     private val random = SecureRandom()
     private fun persistent(key: String, length: Int, alphabet: String): String {
         prefs.getString(key, null)?.takeIf { it.isNotBlank() }?.let { return it }
-        val value =
-            buildString { repeat(length) { append(alphabet[random.nextInt(alphabet.length)]) } }
+        val value = randomString(length, alphabet)
         if (!prefs.edit().putString(key, value).commit()) throw IOException("无法保存 App 身份标识")
         return value
     }
+
+    fun generatePseudoId(): String =
+        randomString(16, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+
+    fun generateUmString(): String = randomString(32, "0123456789abcdef")
+
+    private fun randomString(length: Int, alphabet: String): String =
+        buildString { repeat(length) { append(alphabet[random.nextInt(alphabet.length)]) } }
 
     private val pseudoId = persistent(
         "pseudo_id",
@@ -50,5 +58,13 @@ class OfficialAppIdentity @Inject constructor(@ApplicationContext context: Conte
             device = value.device.ifBlank { base.device },
             deviceInfo = value.deviceInfo.ifBlank { base.deviceInfo },
             buildTime = value.buildTime.ifBlank { base.buildTime })
+    }
+
+    /** 必须导出已解析的值，空值在另一设备上会变成另一套随机身份。 */
+    fun credentialIdentity(value: OfficialAppSettings): AppCredentialIdentity = resolve(value).let {
+        AppCredentialIdentity(
+            it.version, it.versionCode, it.pseudoId, it.umString,
+            it.device, it.deviceInfo, it.buildTime
+        )
     }
 }

@@ -590,6 +590,7 @@ fun ReaderSuccessContent(
             commentContent = { comment ->
                 ReaderChapterComments(
                     comment,
+                    comicPathWord = shareComicPathWord.orEmpty(),
                     onClosed = { onCloseComments(comment.chapterUuid) },
                     onShowControls = { showControls = !showControls },
                     refreshVersion = commentRefreshVersion,

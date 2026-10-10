@@ -34,7 +34,9 @@ class ReaderViewModel @Inject constructor(
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
     val toolsSettings = tools.settings
     val bookmarks = tools.bookmarks
-    private val mutableCommentsAllowed = MutableStateFlow(false)
+
+    // 未确认权限时允许查看已下载评论；发表由评论区单独确认权限。
+    private val mutableCommentsAllowed = MutableStateFlow(true)
     val commentsAllowed = mutableCommentsAllowed.asStateFlow()
     private val mutableClosedChapters = MutableStateFlow<Set<String>>(emptySet())
     val closedChapters = mutableClosedChapters.asStateFlow()
@@ -88,7 +90,7 @@ class ReaderViewModel @Inject constructor(
         initialized = true
         currentComicPathWord = comicPathWord
         currentGroup = groupPathWord
-        mutableCommentsAllowed.value = false
+        mutableCommentsAllowed.value = true
         mutableClosedChapters.value = emptySet()
         policyJob?.cancel()
         policyJob = viewModelScope.launch(exceptionHandler) {
@@ -113,6 +115,9 @@ class ReaderViewModel @Inject constructor(
         // 刷新保留同一阅读会话，页码和连续滚动偏移仍由已存在的界面状态维护。
         val keepContent = preserveContent && currentComicPathWord == comicPathWord &&
                 currentChapterUuid == chapterUuid && _uiState.value is ReaderUiState.Success
+        val previousContent = (_uiState.value as? ReaderUiState.Success)
+            ?.takeIf { currentComicPathWord == comicPathWord }
+        val preserveOnFailure = keepContent || previousContent != null
         if (preferencesComic != comicPathWord) {
             preferencesJob?.cancel()
             preferencesJob = null
@@ -120,8 +125,10 @@ class ReaderViewModel @Inject constructor(
             mutablePreferences.value = null
         }
         currentComicPathWord = comicPathWord
-        currentChapterUuid = chapterUuid
-        currentGroup = group
+        if (previousContent == null) {
+            currentChapterUuid = chapterUuid
+            currentGroup = group
+        }
         appendJob?.cancel()
         if (keepContent) {
             // 同一会话内刷新一章，不打断其他已追加章节尚未完成的在线导航。
@@ -130,7 +137,9 @@ class ReaderViewModel @Inject constructor(
             navigationJobs.values.toList().forEach { it.cancel() }
             navigationJobs.clear()
             sessionRevision++
-            chain = emptyList()
+            catalogJob?.cancel()
+            mutableCatalog.value = ReaderCatalogUiState()
+            if (previousContent == null) chain = emptyList()
         }
         mutableAppending.value = false
         attemptedNext = null
@@ -138,7 +147,7 @@ class ReaderViewModel @Inject constructor(
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch(exceptionHandler) {
-            if (!keepContent) _uiState.value = ReaderUiState.Loading
+            if (!preserveOnFailure) _uiState.value = ReaderUiState.Loading
 
             try {
                 val progressOwner = readingProgress.awaitOwner()
@@ -148,7 +157,7 @@ class ReaderViewModel @Inject constructor(
                     onFailure = {
                         ensureActive()
                         if (it is CancellationException) throw it
-                        loadFailed("无法读取阅读设置：${it.message}", keepContent)
+                        loadFailed("无法读取阅读设置：${it.message}", preserveOnFailure)
                         return@launch
                     }
                 )
@@ -166,6 +175,9 @@ class ReaderViewModel @Inject constructor(
                     val allChapters = downloadRepository.getDownloadedChapters(comicPathWord)
                     ensureActive()
                     val localContent = downloadedChapter.offlineContent(allChapters)
+                    if (!keepContent) chain = emptyList()
+                    currentChapterUuid = chapterUuid
+                    currentGroup = downloadedChapter.groupPathWord ?: group
                     publish(localContent, chapterUuid, downloadedChapter.groupPathWord ?: group)
                     val resolvedGroup = downloadedChapter.groupPathWord ?: group
                     if (currentChapterUuid == chapterUuid) {
@@ -184,6 +196,9 @@ class ReaderViewModel @Inject constructor(
                 repository.getChapterContent(comicPathWord, chapterUuid, group)
                     .onSuccess { content ->
                         ensureActive()
+                        if (!keepContent) chain = emptyList()
+                        currentChapterUuid = chapterUuid
+                        currentGroup = group
                         publish(content, chapterUuid, group)
                         if (content.imageUrls.isNotEmpty() && currentChapterUuid == chapterUuid) readingProgress.recordRead(
                             progressOwner,
@@ -193,21 +208,21 @@ class ReaderViewModel @Inject constructor(
                     .onFailure { error ->
                         ensureActive()
                         if (error is CancellationException) throw error
-                        loadFailed(error.message ?: "未知错误", keepContent)
+                        loadFailed(error.message ?: "未知错误", preserveOnFailure)
                     }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("ReaderViewModel", "loadChapter failed", e)
                 ensureActive()
-                loadFailed(e.message ?: "加载失败", keepContent)
+                loadFailed(e.message ?: "加载失败", preserveOnFailure)
             }
         }
     }
 
     private fun loadFailed(message: String, keepContent: Boolean) {
         if (keepContent) {
-            _toastMessage.value = "刷新失败：$message"
+            _toastMessage.value = "章节加载失败，保留当前内容：$message"
         } else if (message == "contentKey为空" || message.startsWith("code 210:")) {
             _uiState.value = ReaderUiState.RiskControl(message)
         } else {
@@ -366,8 +381,16 @@ class ReaderViewModel @Inject constructor(
         val group = currentGroup
         mutableCatalog.value = ReaderCatalogUiState(loading = true)
         catalogJob = viewModelScope.launch {
+            var local = emptyList<ReaderChapterLink>()
             try {
+                local = downloadRepository.getDownloadedChapters(comic)
+                    .filter { (it.groupPathWord ?: "default") == group }
+                    .sortedBy { it.index }.map { ReaderChapterLink(it.uuid, it.name) }
+                ensureActive()
+                mutableCatalog.value =
+                    ReaderCatalogUiState(chapters = local, loading = true, downloadedOnly = true)
                 val catalogResult = repository.getChapterCatalog(comic)
+                ensureActive()
                 val full = catalogResult.getOrNull()?.chaptersByGroup?.get(group)
                 if (full != null) {
                     mutableCatalog.value = ReaderCatalogUiState(chapters = full.map {
@@ -379,17 +402,26 @@ class ReaderViewModel @Inject constructor(
                     return@launch
                 }
                 if (catalogResult.exceptionOrNull() is com.rchdliang.copymanga_neo.domain.repository.RiskControlException) {
-                    mutableCatalog.value = ReaderCatalogUiState(error = "访问受到限制，请稍后重试")
+                    mutableCatalog.value = ReaderCatalogUiState(
+                        chapters = local,
+                        downloadedOnly = true,
+                        error = "访问受到限制，显示已下载章节"
+                    )
                     return@launch
                 }
                 val result = mutableListOf<ReaderChapterLink>()
                 var offset = 0
                 do {
                     val pageResult = repository.getChapters(comic, group, offset, 100)
+                    ensureActive()
                     val page = pageResult.getOrNull()
                     if (page == null) {
                         mutableCatalog.value =
-                            ReaderCatalogUiState(chapters = result, error = "目录加载失败，点击重试")
+                            ReaderCatalogUiState(
+                                chapters = result.ifEmpty { local },
+                                downloadedOnly = result.isEmpty(),
+                                error = "在线目录加载失败，点击重试"
+                            )
                         return@launch
                     }
                     val fresh =
@@ -402,7 +434,11 @@ class ReaderViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                mutableCatalog.value = ReaderCatalogUiState(error = "目录加载失败，点击重试")
+                mutableCatalog.value = ReaderCatalogUiState(
+                    chapters = local,
+                    downloadedOnly = true,
+                    error = "在线目录加载失败，点击重试"
+                )
             }
         }
     }
@@ -473,7 +509,7 @@ class ReaderViewModel @Inject constructor(
         val comic = currentComicPathWord.takeIf { it.isNotBlank() } ?: return
         viewModelScope.launch(exceptionHandler) {
             prefs.resetComic(comic).fold(
-                onSuccess = { _toastMessage.value = "本漫画已恢复为当前全局默认值" },
+                onSuccess = { _toastMessage.value = "已恢复阅读默认值" },
                 onFailure = { _toastMessage.value = "恢复失败，请重试" }
             )
         }
@@ -508,5 +544,6 @@ data class ReaderPageEntry(
 data class ReaderChapterLink(val uuid: String, val name: String)
 data class ReaderCatalogUiState(
     val chapters: List<ReaderChapterLink> = emptyList(),
-    val loading: Boolean = false, val error: String? = null
+    val loading: Boolean = false, val error: String? = null,
+    val downloadedOnly: Boolean = false
 )

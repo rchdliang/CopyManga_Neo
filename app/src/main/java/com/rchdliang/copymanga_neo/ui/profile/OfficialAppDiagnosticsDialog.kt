@@ -53,7 +53,7 @@ internal fun OfficialAppDiagnosticsDialog(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    "直接读取当前设备属性，不发送网络请求。报告包含设备标识，分享前请检查内容。",
+                    "报告含设备标识，分享前请检查。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -67,6 +67,7 @@ internal fun OfficialAppDiagnosticsDialog(
                     TextButton(onClick = {
                         val clipboard =
                             context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        @Suppress("UsePropertyAccessSyntax")
                         clipboard.setPrimaryClip(ClipData.newPlainText("App 实机属性检查", report))
                         toast.showToast("报告已复制")
                     }) { Text("复制报告", color = MaterialTheme.colorScheme.primary) }

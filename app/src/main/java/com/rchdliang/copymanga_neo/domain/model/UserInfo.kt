@@ -28,9 +28,10 @@ data class MemberInfo(
     val dayDownloadsRefresh: String?
 )
 
-/** 一次输入可以登录多个模式；部分失败仍保留成功模式的独立会话。 */
-data class ModeLoginResult(
+/** 只恢复一种模式；旧多模式包的其余项向用户明确说明未导入。 */
+data class CredentialImportResult(
+    val memberInfo: MemberInfo,
     val currentMode: RequestMode,
-    val successfulModes: Set<RequestMode>,
-    val failures: Map<RequestMode, String>
+    val sessionVersion: Long,
+    val ignoredModes: Set<RequestMode> = emptySet()
 )

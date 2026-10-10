@@ -14,6 +14,7 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.supervisorScope
@@ -46,6 +47,8 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
 ) : NetworkSettingsRepository {
     override val officialAppDefaults get() = identity.defaults
     override val settings = store.settings
+    override fun generatePseudoId(): String = identity.generatePseudoId()
+    override fun generateUmString(): String = identity.generateUmString()
     private val mutation = Mutex()
 
     override suspend fun diagnoseOfficialApp(): Result<String> = result { diagnostics.report() }
@@ -76,7 +79,8 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     override suspend fun rollback(): Result<Unit> =
         result { mutation.withLock { saveConfiguration(store.previousSettings()) } }
 
-    private suspend fun saveConfiguration(value: NetworkSettings) {
+    private suspend fun saveConfiguration(configuration: NetworkSettings) {
+        val value = configuration.copy(officialApp = identity.resolve(configuration.officialApp))
         auth.awaitReady()
         val old = store.settings.value
         val appIdentityChanged = old.officialApp != value.officialApp
@@ -135,9 +139,9 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                         }
                         val oldRoute = start.routes.getOrNull(start.routeIndex)
                         val matchingRoute = routes.indexOf(oldRoute)
-                        val selection = when {
-                            start.selection == NetworkSelection.FIXED && start.fixedHost !in routes.flatten() -> NetworkSelection.DEFAULT
-                            start.selection == NetworkSelection.ROUTE && matchingRoute < 0 -> NetworkSelection.DEFAULT
+                        val selection = when (start.selection) {
+                            NetworkSelection.FIXED if start.fixedHost !in routes.flatten() -> NetworkSelection.DEFAULT
+                            NetworkSelection.ROUTE if matchingRoute < 0 -> NetworkSelection.DEFAULT
                             else -> start.selection
                         }
                         store.save(
@@ -195,7 +199,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
                             }
                         }
                     }
-                }.map { it.await() }
+                }.awaitAll()
             }
         } finally {
             client.connectionPool.evictAll()

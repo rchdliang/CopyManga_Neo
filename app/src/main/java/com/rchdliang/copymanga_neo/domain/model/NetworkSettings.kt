@@ -17,6 +17,22 @@ data class OfficialAppSettings(
     val buildTime: String = ""
 )
 
+/** 与 App 会话一起迁移的请求身份；不包含域名、代理、签名密钥或密码。 */
+data class AppCredentialIdentity(
+    val version: String,
+    val versionCode: String,
+    val pseudoId: String,
+    val umString: String,
+    val device: String,
+    val deviceInfo: String,
+    val buildTime: String
+) {
+    fun applyTo(settings: OfficialAppSettings): OfficialAppSettings = settings.copy(
+        version = version, versionCode = versionCode, pseudoId = pseudoId,
+        umString = umString, device = device, deviceInfo = deviceInfo, buildTime = buildTime
+    )
+}
+
 object NetworkDefaults {
     const val API_HOST = "api.copy4000.com"
     const val WWW_HOST = "www.copy3000.com"

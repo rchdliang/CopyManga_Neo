@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.remote
 
 import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
+import com.rchdliang.copymanga_neo.domain.model.AppCredentialIdentity
 import com.rchdliang.copymanga_neo.domain.model.NetworkSelection
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.ProxyMode
@@ -38,9 +39,14 @@ class NetworkRoutingInterceptor @Inject constructor(private val store: NetworkSe
     override fun intercept(chain: Interceptor.Chain): Response {
         val (generation, snapshot) = store.snapshot()
         val original = chain.request()
-        val settings =
+        val modeSettings =
             original.tag(RequestMode::class.java)?.let { snapshot.copy(requestMode = it) }
                 ?: snapshot
+        // 导入验证只覆盖本次请求的身份，成功保存前不改变设备的全局设置。
+        val settings = original.tag(AppCredentialIdentity::class.java)
+            ?.takeIf { modeSettings.requestMode == RequestMode.OFFICIAL_APP }
+            ?.let { modeSettings.copy(officialApp = it.applyTo(modeSettings.officialApp)) }
+            ?: modeSettings
         val api = original.url.host == CopyMangaNetworkConfig.API_HOST && original.url.encodedPath.startsWith("/api/")
         val www = original.url.host == CopyMangaNetworkConfig.WWW_HOST && !api
         val builder = original.newBuilder()

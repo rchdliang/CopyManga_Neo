@@ -19,9 +19,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
 /**
@@ -46,8 +43,6 @@ data class ProfileUiState(
     val isProfileLoading: Boolean = false,
     val isProfileSaving: Boolean = false,
     val profileEditError: String? = null,
-    val dayDownloads: Int? = null,
-    val dayDownloadsRefresh: String? = null,
     val ticket: Float? = null,
     val rewardTicket: Float? = null,
     val isRefreshing: Boolean = false,
@@ -75,7 +70,8 @@ sealed interface ProfileEvent {
 class ProfileViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val themeBlacklistRepository: ThemeBlacklistRepository,
-    private val networkSettings: com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
+    private val networkSettings: com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository,
+    private val appSettings: com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
 ) : ViewModel() {
 
     private val _uiState =
@@ -228,8 +224,7 @@ class ProfileViewModel @Inject constructor(
                 memberInfoJob?.cancel()
                 _uiState.update {
                     it.copy(
-                        isLoggedIn = loggedIn, nickname = null, dayDownloads = null,
-                        dayDownloadsRefresh = null, ticket = null, rewardTicket = null,
+                        isLoggedIn = loggedIn, nickname = null, ticket = null, rewardTicket = null,
                         showProfileEditor = false, editableProfile = null,
                         isProfileLoading = false, isProfileSaving = false, profileEditError = null,
                         isRefreshing = false
@@ -335,8 +330,6 @@ class ProfileViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             nickname = info.nickname,
-                            dayDownloads = info.dayDownloads,
-                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
                             ticket = info.ticket,
                             rewardTicket = info.rewardTicket,
                             isRefreshing = false
@@ -357,19 +350,6 @@ class ProfileViewModel @Inject constructor(
                     }
                 }
             )
-        }
-    }
-
-    private fun formatRefreshTime(isoString: String?): String? {
-        if (isoString == null) return null
-        return try {
-            val zonedDateTime = ZonedDateTime.parse(isoString)
-            val localDateTime = zonedDateTime.withZoneSameInstant(ZoneId.systemDefault())
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            localDateTime.format(formatter)
-        } catch (e: Exception) {
-            android.util.Log.e("ProfileViewModel", "Format refresh time failed: ${e.message}")
-            isoString
         }
     }
 
@@ -489,13 +469,12 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /** 登录页支持一次输入分别登录当前模式或两种模式。 */
+    /** 登录并验证当前请求模式。 */
     fun login(
         username: String,
         password: String,
         rememberPassword: Boolean,
-        autoLogin: Boolean,
-        bothModes: Boolean
+        autoLogin: Boolean
     ) {
         if (_uiState.value.isLoginLoading || _uiState.value.isRegisterLoading) return
         if (username.isBlank() || password.isBlank()) {
@@ -508,9 +487,9 @@ class ProfileViewModel @Inject constructor(
             userRepository.isAuthCacheReady().first { it }
             val generation = userRepository.sessionVersionSync()
             userRepository.loginWithOptions(
-                username, password, bothModes, rememberPassword, autoLogin, generation
+                username, password, rememberPassword, autoLogin, generation
             ).fold(
-                onSuccess = { result ->
+                onSuccess = {
                     if (userRepository.sessionVersionSync() != generation + 1) {
                         _uiState.update {
                             it.copy(
@@ -520,27 +499,11 @@ class ProfileViewModel @Inject constructor(
                         }
                         return@fold
                     }
-                    fun label(mode: com.rchdliang.copymanga_neo.domain.model.RequestMode) =
-                        if (mode == com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB) "网页模式" else "App 模式"
-
-                    val message = if (result.failures.isEmpty()) null else {
-                        result.successfulModes.joinToString(
-                            "、",
-                            transform = ::label
-                        ) + "登录成功；" +
-                                result.failures.entries.joinToString("；") { (mode, reason) ->
-                                    "${label(mode)}登录失败：$reason"
-                                }
-                    }
                     _uiState.update {
                         it.copy(
-                            isLoginLoading = false,
-                            showLoginDialog = result.failures.isNotEmpty(),
-                            registeredUsername = null,
-                            loginError = message,
-                            toastMessage = "网页和 App 模式均登录成功".takeIf {
-                                bothModes && result.failures.isEmpty()
-                            }
+                            isLoginLoading = false, showLoginDialog = false,
+                            registeredUsername = null, loginError = null,
+                            toastMessage = "当前模式登录成功"
                         )
                     }
                 },
@@ -553,29 +516,33 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
-    /** 导出当前会话凭据，成功后由界面写入系统剪切板。 */
-    fun exportLoginCredential() {
+    /** 点击后直接导出，是否附带密码使用本机保存的设置。 */
+    fun requestCredentialExport() {
         if (_uiState.value.isCredentialLoading) return
-
+        _uiState.update { it.copy(isCredentialLoading = true) }
         viewModelScope.launch(exceptionHandler) {
-            _uiState.update { it.copy(isCredentialLoading = true) }
-            userRepository.exportLoginCredential().fold(
-                onSuccess = { credential ->
-                    _uiState.update { it.copy(isCredentialLoading = false) }
-                    _events.emit(ProfileEvent.CopyLoginCredential(credential))
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            isCredentialLoading = false,
-                            isProfileLoading = false,
-                            isProfileSaving = false,
-                            toastMessage = error.message ?: "导出登录凭据失败"
-                        )
-                    }
-                }
-            )
+            val options = appSettings.settings.first()
+            copyLoginCredential(options.includePasswordInCredentialExport && canExportPassword())
         }
+    }
+
+    private fun canExportPassword(): Boolean = userRepository.getRememberPasswordSync() &&
+            !userRepository.getSavedUsernameSync().isNullOrBlank() &&
+            !userRepository.getSavedPasswordSync().isNullOrBlank()
+
+    /** 敏感凭据只经一次性事件写入剪切板。 */
+    private suspend fun copyLoginCredential(includePassword: Boolean) {
+        userRepository.exportLoginCredential(includePassword).fold(
+            onSuccess = { credential ->
+                _uiState.update { it.copy(isCredentialLoading = false) }
+                _events.emit(ProfileEvent.CopyLoginCredential(credential))
+            },
+            onFailure = { error ->
+                _uiState.update {
+                    it.copy(isCredentialLoading = false, toastMessage = error.message ?: "导出失败")
+                }
+            }
+        )
     }
 
     /** 从剪切板文本验证并导入会话凭据。 */
@@ -589,16 +556,30 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isCredentialLoading = true) }
             userRepository.importLoginCredential(serializedCredential).fold(
-                onSuccess = { info ->
+                onSuccess = { result ->
+                    if (userRepository.sessionVersionSync() != result.sessionVersion) {
+                        _uiState.update {
+                            it.copy(isCredentialLoading = false, toastMessage = "导入后会话已改变")
+                        }
+                        return@fold
+                    }
+                    val info = result.memberInfo
+                    fun label(mode: com.rchdliang.copymanga_neo.domain.model.RequestMode) =
+                        if (mode == com.rchdliang.copymanga_neo.domain.model.RequestMode.WEB) "网页模式" else "App 模式"
+
+                    val message = "${label(result.currentMode)}凭据导入成功" +
+                            if (result.ignoredModes.isEmpty()) "" else "；旧包中的其他模式凭据未导入"
                     _uiState.update {
                         it.copy(
                             isCredentialLoading = false,
+                            requestMode = result.currentMode,
+                            isLoggedIn = true,
+                            username = info.username,
+                            avatar = info.avatar,
                             nickname = info.nickname,
-                            dayDownloads = info.dayDownloads,
-                            dayDownloadsRefresh = formatRefreshTime(info.dayDownloadsRefresh),
                             ticket = info.ticket,
                             rewardTicket = info.rewardTicket,
-                            toastMessage = "登录凭据导入成功"
+                            toastMessage = message
                         )
                     }
                 },
@@ -627,8 +608,6 @@ class ProfileViewModel @Inject constructor(
                             username = null,
                             avatar = null,
                             nickname = null,
-                            dayDownloads = null,
-                            dayDownloadsRefresh = null,
                             ticket = null,
                             rewardTicket = null
                         )
@@ -643,8 +622,6 @@ class ProfileViewModel @Inject constructor(
                             username = null,
                             avatar = null,
                             nickname = null,
-                            dayDownloads = null,
-                            dayDownloadsRefresh = null,
                             ticket = null,
                             rewardTicket = null,
                             toastMessage = "登出失败"
