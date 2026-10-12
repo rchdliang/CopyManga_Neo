@@ -2,15 +2,15 @@ package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadItem
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
-import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.ChapterCatalog
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadItem
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ComicDetail
+import com.rchdliang.copymanga_neo.domain.model.ComicDownloadTask
 import com.rchdliang.copymanga_neo.domain.model.ComicInfo
 import com.rchdliang.copymanga_neo.domain.model.DisplayValue
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
@@ -83,7 +83,8 @@ data class DetailUiState(
     val hasLocalCache: Boolean = false,
     val blockedThemes: List<Theme> = emptyList(),
     val isBlacklistReady: Boolean = false,
-    val isSavingBlacklist: Boolean = false
+    val isSavingBlacklist: Boolean = false,
+    val completedChapters: Set<String> = emptySet()
 )
 
 @HiltViewModel
@@ -92,14 +93,15 @@ class DetailViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val downloadRepository: DownloadRepository,
     private val themeBlacklistRepository: ThemeBlacklistRepository,
-    private val readingProgress: ReadingProgressRepository
+    private val readingProgress: ReadingProgressRepository,
+    private val localReading: com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
     private var currentPathWord: String? = null
     private var hasManuallySelectedGroup = false
     val uiState: StateFlow<DetailUiState> =
-        combine(_uiState, readingProgress.progress) { state, progress ->
+        combine(_uiState, readingProgress.progress, localReading.snapshot) { state, progress, _ ->
             withReadingProgress(state, progress)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, DetailUiState())
 
@@ -108,14 +110,28 @@ class DetailViewModel @Inject constructor(
         progress: ReadingProgressSnapshot
     ): DetailUiState {
         val path = currentPathWord
-        val local =
-            if (progress.owner == readingProgress.currentOwner) progress.records[path] else null
-        val browse = if (local != null && path != null) local.toBrowseInfo(path) else state.browse
+        val permitsCoarse = path != null && progress.owner != null &&
+                progress.owner == readingProgress.currentOwner && localReading.permitsCoarse(
+            progress.owner,
+            "comic",
+            path
+        )
+        val local = if (permitsCoarse) progress.records[path] else null
+        val precise = if (path != null && progress.owner == readingProgress.currentOwner)
+            progress.owner?.let { localReading.latest(it, "comic", path) } else null
+        // 章节先由统一进度仓库决定（含云端更新和本机待同步保护），精确记录仅作缺失回退。
+        val browse = if (local != null && path != null) local.toBrowseInfo(path)
+        else state.browse.takeIf { permitsCoarse }
+            ?: precise?.let { BrowseInfo(null, it.path, it.chapter, it.name) }
+        val matchingPrecise = precise?.takeIf { it.chapter == browse?.chapterUuid }
         return state.copy(
             browse = browse,
             browseGroup = state.chapterCatalog?.findGroup(browse?.chapterUuid)
-                ?: local?.groupPathWord ?: local?.lastReadGroupPathWord,
-            isProgressLoading = local == null && (state.isProgressLoading || !progress.isReady)
+                ?: matchingPrecise?.group ?: local?.groupPathWord ?: local?.lastReadGroupPathWord,
+            isProgressLoading = precise == null && local == null && permitsCoarse && progress.error == null && (state.isProgressLoading || !progress.isReady),
+            completedChapters = localReading.snapshot.value.records.filter {
+                it.owner == progress.owner && it.kind == "comic" && it.path == path && it.completed
+            }.map { it.chapter }.toSet()
         )
     }
 
@@ -459,7 +475,8 @@ class DetailViewModel @Inject constructor(
 
     private suspend fun refreshDownloadStatus(pathWord: String) {
         val downloadedUuids = downloadRepository.getDownloadedChapterUuids(pathWord)
-        val task = downloadRepository.getActiveTask().value?.takeIf { it.pathWord == pathWord }
+        val task =
+            (downloadRepository.getActiveTask().value as? ComicDownloadTask)?.takeIf { it.pathWord == pathWord }
         val statuses = mutableMapOf<String, ChapterDownloadStatus>()
         val progresses = mutableMapOf<String, Float>()
 
@@ -650,16 +667,11 @@ class DetailViewModel @Inject constructor(
         if (browse?.chapterUuid != null) {
             val lastReadIndex = chapters.indexOfFirst { it.uuid == browse.chapterUuid }
             if (lastReadIndex >= 0) {
-                // 跳到下一章；若已是最后一章，停留在当前章（避免 fallback 回第一章）
+                // 本地和云端记录都表示最后停留的章节；完成状态不隐式跳章。
                 val current = chapters[lastReadIndex]
-                val next = chapters.firstOrNull { it.uuid == current.nextChapter }
-                val target = next ?: current
-                // isContinue 表示目标章节是否被阅读过：仅当已是最后一章、停留当前章时为 true
                 return StartChapterInfo(
-                    uuid = target.uuid,
-                    name = target.name,
-                    groupPathWord = target.groupPathWord ?: "default",
-                    isContinue = next == null
+                    current.uuid, current.name,
+                    current.groupPathWord ?: "default", isContinue = true
                 )
             }
         }
@@ -889,6 +901,7 @@ class DetailViewModel @Inject constructor(
             return
         }
 
+        exitBatchMode()
         viewModelScope.launch(exceptionHandler) {
             if (toCancelDownloadUuids.isNotEmpty()) {
                 downloadRepository.removeChaptersFromTask(pathWord, toCancelDownloadUuids)
@@ -901,7 +914,6 @@ class DetailViewModel @Inject constructor(
                     managedChapters.values.filter { it.uuid in toDownloadUuids }
                 enqueueChaptersDownload(detail, chaptersToDownload)
             }
-            exitBatchMode()
             refreshDownloadStatus(pathWord)
         }
     }

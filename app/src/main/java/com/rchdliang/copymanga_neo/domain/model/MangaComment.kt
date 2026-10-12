@@ -3,7 +3,7 @@ package com.rchdliang.copymanga_neo.domain.model
 data class CommentReportType(val type: Int, val name: String)
 data class CommentReportConfig(val types: List<CommentReportType>, val tip: String)
 
-enum class CommentKind { COMIC, CHAPTER }
+enum class CommentKind { COMIC, CHAPTER, NOVEL }
 
 data class CommentTarget(val kind: CommentKind, val id: String)
 

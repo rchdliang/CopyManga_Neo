@@ -6,10 +6,27 @@ import com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedChapterEntity
+import com.rchdliang.copymanga_neo.domain.model.BookDownloadTask
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadItem
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.model.ComicDownloadTask
+import com.rchdliang.copymanga_neo.domain.model.DownloadKind
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
+import com.rchdliang.copymanga_neo.domain.model.NovelCacheProgress
+import com.rchdliang.copymanga_neo.domain.model.NovelCacheStage
+import com.rchdliang.copymanga_neo.domain.model.NovelDownloadTask
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
+import com.rchdliang.copymanga_neo.domain.model.comicDownloadKey
+import com.rchdliang.copymanga_neo.domain.model.matches
+import com.rchdliang.copymanga_neo.domain.model.mergeRequest
+import com.rchdliang.copymanga_neo.domain.model.novelDownloadKey
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
+import com.rchdliang.copymanga_neo.domain.repository.NovelRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -17,6 +34,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -34,7 +52,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -58,7 +75,10 @@ class DownloadManager internal constructor(
     private val queueStore: DownloadQueueStore? = null,
     private val networkPolicy: DownloadNetworkPolicy? = null,
     networkSettings: NetworkSettingsStore? = null,
-    private val commentsRepository: CommentRepository? = null
+    private val commentsRepository: CommentRepository? = null,
+    private val localAccess: LocalDownloadAccess = LocalDownloadAccess(),
+    private val novels: NovelRepository? = null,
+    private val sessions: ReadingSessionRepository? = null
 ) {
     @Inject
     constructor(
@@ -70,10 +90,21 @@ class DownloadManager internal constructor(
         queueStore: DownloadQueueStore,
         networkPolicy: DownloadNetworkPolicy,
         networkSettings: NetworkSettingsStore,
-        commentsRepository: CommentRepository
+        commentsRepository: CommentRepository,
+        localAccess: LocalDownloadAccess,
+        novels: NovelRepository,
+        sessions: ReadingSessionRepository
     ) : this(context, mangaRepository, comicDao, chapterDao, okHttpClient, {
         DownloadService.start(context)
-    }, queueStore, networkPolicy, networkSettings, commentsRepository)
+    },
+        queueStore,
+        networkPolicy,
+        networkSettings,
+        commentsRepository,
+        localAccess,
+        novels,
+        sessions
+    )
 
     companion object {
         private const val TAG = "DownloadManager"
@@ -84,52 +115,79 @@ class DownloadManager internal constructor(
         CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
             Log.e(TAG, "下载任务处理失败", error)
         })
-    private val queue = Channel<ComicDownloadTask>(UNLIMITED)
+    private val queue = Channel<BookDownloadTask>(UNLIMITED)
     private var imageConcurrency = Semaphore(3)
 
     private val _downloadProgress = MutableStateFlow<Map<String, DownloadProgressInfo>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, DownloadProgressInfo>> =
         _downloadProgress.asStateFlow()
 
-    private val _activeTask = MutableStateFlow<ComicDownloadTask?>(null)
-    val activeTask: StateFlow<ComicDownloadTask?> = _activeTask.asStateFlow()
+    private val _activeTask = MutableStateFlow<BookDownloadTask?>(null)
+    val activeTask: StateFlow<BookDownloadTask?> = _activeTask.asStateFlow()
+
+    private val mutableTasks = MutableStateFlow<List<BookDownloadTask>>(emptyList())
+    val tasks: StateFlow<List<BookDownloadTask>> = mutableTasks.asStateFlow()
 
     // Copy-on-write 快照：所有写操作经 stateMutex 串行化；读操作无锁读取 @Volatile 引用，得到的可能稍旧但安全。
     @Volatile
-    private var currentTasks: Map<String, ComicDownloadTask> = emptyMap()
+    private var currentTasks: Map<String, BookDownloadTask> = emptyMap()
+        set(value) {
+            field = value; mutableTasks.value = value.values.toList()
+        }
 
     @Volatile
-    private var taskInfoMap: Map<String, ComicDownloadTask> = emptyMap()
-
-    @Volatile
-    private var pausedComics: Set<String> = emptySet()
+    private var pausedTasks: Set<String> = emptySet()
 
     /** 网络等待不等同于手动暂停，连接恢复时只继续此集合中的任务。 */
     @Volatile
     private var networkWaiting: Set<String> = emptySet()
 
-    /** 对 currentTasks / taskInfoMap / pausedComics 写操作的串行化锁。读不持锁，见上注释。 */
+    /** 对 currentTasks / pausedTasks 写操作的串行化锁。读不持锁，见上注释。 */
     private val stateMutex = Mutex()
+    private val pauseRevisions = mutableMapOf<String, Long>()
+    private val cacheRemovals = mutableSetOf<String>()
 
-    /** 当前漫画任务与章节的完成信号，用于让取消/删除操作等待后台 I/O 真正退出。 */
+    /** 当前作品任务与漫画章节的完成信号，用于让取消/删除操作等待后台 I/O 真正退出。 */
     private val activeTaskCompletions = mutableMapOf<String, CompletableDeferred<Unit>>()
     private val activeChapterCompletions = mutableMapOf<String, CompletableDeferred<Unit>>()
 
     /** 当前图片请求；取消漫画或章节时会主动终止对应的 OkHttp Call。 */
     private val activeCalls = ConcurrentHashMap<String, okhttp3.Call>()
-    private val activeCommentRequests = ConcurrentHashMap<String, Job>()
-    private var wifiClient: Pair<android.net.Network, OkHttpClient>? = null
+    private val activeRequests = ConcurrentHashMap<String, Job>()
+
+    private val restoration = scope.async { restoreQueue() }
 
     init {
-        networkSettings?.onChange {
-            synchronized(this) {
-                wifiClient?.second?.connectionPool?.evictAll()
-                wifiClient = null
+        networkSettings?.onChange { scope.launch { pauseNovelTasks("连接设置已变化，请确认后继续") } }
+        sessions?.let { sessionRepository ->
+            scope.launch {
+                sessionRepository.awaitReady()
+                var previous = sessionRepository.getReadingSessionSync()
+                sessionRepository.sessionChanges.collect {
+                    val next = sessionRepository.getReadingSessionSync()
+                    if (next != previous) pauseNovelTasks("账号或请求模式已变化，请确认后继续")
+                    previous = next
+                }
             }
         }
     }
 
-    private val restoration = scope.async { restoreQueue() }
+    private fun novelSessionAllowed(task: NovelDownloadTask): Boolean =
+        task.matches(sessions?.getReadingSessionSync())
+
+    private suspend fun pauseNovelTasks(reason: String) {
+        restoration.await()
+        currentTasks.values.filterIsInstance<NovelDownloadTask>().forEach { task ->
+            pauseDownload(task.taskKey).join()
+            stateMutex.withLock {
+                updateProgress(
+                    task.taskKey,
+                    status = DownloadTaskStatus.PAUSED,
+                    statusText = reason
+                )
+            }
+        }
+    }
 
     init {
         scope.launch { restoration.await(); processQueue() }
@@ -144,29 +202,36 @@ class DownloadManager internal constructor(
 
     /** 恢复为暂停状态，由用户点击继续；已完成章节只认完整的本地文件。 */
     private suspend fun restoreQueue() {
+        novels?.refreshCachedVolumes()
         val saved = queueStore?.load().orEmpty()
         stateMutex.withLock {
             saved.forEach { task ->
-                val complete = chapterDao.getChaptersOnce(task.pathWord)
-                    .filter { it.hasCompleteFiles() }.map { it.uuid }.toSet()
-                val restored = task.copy(chapters = task.chapters.map {
-                    val done = it.chapter.uuid in complete && (commentsRepository == null ||
-                            commentsRepository.getDownloadedChapterComments(it.chapter.uuid)
+                val complete = when (task) {
+                    is ComicDownloadTask -> chapterDao.getChaptersOnce(task.pathWord)
+                        .filter { it.hasCompleteFiles() }.map { it.uuid }.toSet()
+
+                    is NovelDownloadTask -> novels?.cachedVolumes?.value.orEmpty()
+                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.offlineReady }
+                        .map { it.volume.id }.toSet()
+                }
+                val restored = task.withItems(task.items.map {
+                    val done =
+                        it.id in complete && (task is NovelDownloadTask || commentsRepository == null ||
+                                commentsRepository.getDownloadedChapterComments(it.id)
                                 .getOrNull()?.complete == true)
-                    it.copy(
+                    it.withState(
                         status = if (done) ChapterDownloadStatus.DOWNLOADED else ChapterDownloadStatus.WAITING,
                         progress = if (done) 1f else 0f, errorMessage = null
                     )
                 })
-                if (restored.chapters.all { it.status == ChapterDownloadStatus.DOWNLOADED }) {
-                    queueStore?.remove(restored.pathWord)
+                if (restored.items.all { it.status == ChapterDownloadStatus.DOWNLOADED }) {
+                    queueStore?.remove(restored.taskKey)
                 } else {
-                    currentTasks = currentTasks + (restored.pathWord to restored)
-                    taskInfoMap = taskInfoMap + (restored.pathWord to restored)
-                    pausedComics = pausedComics + restored.pathWord
+                    currentTasks = currentTasks + (restored.taskKey to restored)
+                    pausedTasks = pausedTasks + restored.taskKey
                     updateProgressForTask(restored)
                     updateProgress(
-                        restored.pathWord, status = DownloadTaskStatus.PAUSED,
+                        restored.taskKey, status = DownloadTaskStatus.PAUSED,
                         statusText = "队列已恢复，点击继续下载", speedBytesPerSecond = 0L
                     )
                 }
@@ -175,18 +240,18 @@ class DownloadManager internal constructor(
     }
 
     /** 入队与修改章节时先落盘；保存失败时暂停，避免产生无法恢复的任务。 */
-    private suspend fun persistTask(task: ComicDownloadTask): Boolean = try {
+    private suspend fun persistTask(task: BookDownloadTask): Boolean = try {
         queueStore?.save(task)
         true
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Log.e(TAG, "保存下载队列失败", e)
-        pausedComics = pausedComics + task.pathWord
-        activeCalls[task.pathWord]?.cancel()
-        activeCommentRequests[task.pathWord]?.cancel()
+        pausedTasks = pausedTasks + task.taskKey
+        activeCalls[task.taskKey]?.cancel()
+        activeRequests[task.taskKey]?.cancel()
         updateProgress(
-            task.pathWord,
+            task.taskKey,
             status = DownloadTaskStatus.PAUSED,
             statusText = "队列保存失败，请重试",
             errorMessage = "无法保存下载队列",
@@ -200,37 +265,26 @@ class DownloadManager internal constructor(
     private fun waitingForNetwork() = if (networkPolicy?.state?.value?.wifiOnly != false)
         "等待 Wi-Fi 连接，连接后自动继续" else "等待网络连接，连接后自动继续"
 
-    @Synchronized
-    private fun downloadClient(): OkHttpClient {
-        val policy = networkPolicy?.state?.value
-        if (policy?.wifiOnly != true) return okHttpClient
-        if (!policy.allowed) throw DownloadNetworkUnavailableException()
-        val network = policy.network ?: throw DownloadNetworkUnavailableException()
-        wifiClient?.takeIf { it.first == network }?.let { return it.second }
-        wifiClient?.second?.connectionPool?.evictAll()
-        return okHttpClient.newBuilder().socketFactory(network.socketFactory)
-            .dns { host -> network.getAllByName(host).toList() }
-            .connectionPool(ConnectionPool()).build().also { wifiClient = network to it }
-    }
+    private fun downloadClient(): OkHttpClient = networkPolicy?.client(okHttpClient) ?: okHttpClient
 
     private suspend fun applyNetworkPolicy(allowed: Boolean) {
         if (!allowed) {
             val calls = stateMutex.withLock {
                 currentTasks.values.filter { task ->
-                    task.pathWord !in pausedComics && task.chapters.any {
+                    task.taskKey !in pausedTasks && task.items.any {
                         it.status == ChapterDownloadStatus.WAITING || it.status == ChapterDownloadStatus.DOWNLOADING
                     }
                 }.forEach { task ->
-                    networkWaiting = networkWaiting + task.pathWord
+                    networkWaiting = networkWaiting + task.taskKey
                     updateProgress(
-                        task.pathWord, status = DownloadTaskStatus.WAITING_FOR_WIFI,
+                        task.taskKey, status = DownloadTaskStatus.WAITING_FOR_WIFI,
                         statusText = waitingForNetwork(), speedBytesPerSecond = 0L
                     )
                 }
                 activeCalls.filterKeys { it in networkWaiting }.values.toList()
             }
             calls.forEach { it.cancel() }
-            activeCommentRequests.filterKeys { it in networkWaiting }.values.forEach { it.cancel() }
+            activeRequests.filterKeys { it in networkWaiting }.values.forEach { it.cancel() }
         } else {
             networkWaiting.toList().forEach { pathWord ->
                 scope.launch {
@@ -238,10 +292,10 @@ class DownloadManager internal constructor(
                     stopping?.await()
                     stateMutex.withLock {
                         val task = currentTasks[pathWord] ?: return@withLock
-                        if (!networkAllowed() || pathWord !in networkWaiting || pathWord in pausedComics) return@withLock
+                        if (!networkAllowed() || pathWord !in networkWaiting || pathWord in pausedTasks) return@withLock
                         networkWaiting = networkWaiting - pathWord
-                        val ready = task.copy(chapters = task.chapters.map {
-                            if (it.status == ChapterDownloadStatus.DOWNLOADING) it.copy(
+                        val ready = task.withItems(task.items.map {
+                            if (it.status == ChapterDownloadStatus.DOWNLOADING) it.withState(
                                 status = ChapterDownloadStatus.WAITING,
                                 progress = 0f
                             )
@@ -260,55 +314,42 @@ class DownloadManager internal constructor(
         imageConcurrency = Semaphore(count.coerceIn(1, 10))
     }
 
-    fun enqueue(task: ComicDownloadTask) {
+    fun enqueue(task: BookDownloadTask) {
         scope.launch {
             restoration.await()
             networkPolicy?.ready?.await()
             val stoppingDownloads = stateMutex.withLock {
-                val existing = currentTasks[task.pathWord]
+                val existing = currentTasks[task.taskKey]
                 if (existing == null) {
-                    listOfNotNull(activeTaskCompletions[task.pathWord])
+                    listOfNotNull(activeTaskCompletions[task.taskKey])
                 } else {
-                    val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
-                    task.chapters.filter { it.chapter.uuid !in existingUuids }
-                        .mapNotNull { activeChapterCompletions[it.chapter.uuid] }
+                    val existingUuids = existing.items.map { it.id }.toSet()
+                    task.items.filter { it.id !in existingUuids }
+                        .mapNotNull { activeChapterCompletions[it.id] }
                 }
             }
             stoppingDownloads.forEach { it.await() }
             stateMutex.withLock {
-                val existing = currentTasks[task.pathWord]
+                val existing = currentTasks[task.taskKey]
                 if (existing != null) {
                     // 合并：将新章节追加到已有任务中，避免覆盖正在下载的任务
-                    val existingUuids = existing.chapters.map { it.chapter.uuid }.toSet()
-                    val newChapters = task.chapters.filter { it.chapter.uuid !in existingUuids }
-                    val requestedUuids = task.chapters.map { it.chapter.uuid }.toSet()
-                    val retried = existing.chapters.map { item ->
-                        if (item.chapter.uuid in requestedUuids && item.status == ChapterDownloadStatus.ERROR) {
-                            item.copy(
-                                status = ChapterDownloadStatus.WAITING,
-                                progress = 0f,
-                                errorMessage = null
-                            )
-                        } else item
-                    }
-                    if (newChapters.isNotEmpty() || retried != existing.chapters) {
-                        val mergedChapters = retried + newChapters
-                        val mergedTask = existing.copy(chapters = mergedChapters)
-                        currentTasks = currentTasks + (task.pathWord to mergedTask)
-                        taskInfoMap = taskInfoMap + (task.pathWord to mergedTask)
+                    val existingUuids = existing.items.map { it.id }.toSet()
+                    val newChapters = task.items.filter { it.id !in existingUuids }
+                    val mergedTask = existing.mergeRequest(task)
+                    if (mergedTask.items != existing.items) {
+                        currentTasks = currentTasks + (task.taskKey to mergedTask)
                         if (!persistTask(mergedTask)) return@withLock
                         updateProgressForTask(mergedTask)
                         if (ensureForeground(mergedTask)) launch { queue.send(mergedTask) }
                         Log.d(
                             TAG,
-                            "enqueue (merged): ${task.name}, added ${newChapters.size} chapters, total ${mergedChapters.size}"
+                            "enqueue (merged): ${task.name}, added ${newChapters.size} items, total ${mergedTask.items.size}"
                         )
                     } else {
                         Log.d(TAG, "enqueue: ${task.name} - all chapters already in queue, skipped")
                     }
                 } else {
-                    currentTasks = currentTasks + (task.pathWord to task)
-                    taskInfoMap = taskInfoMap + (task.pathWord to task)
+                    currentTasks = currentTasks + (task.taskKey to task)
                     if (!persistTask(task)) return@withLock
                     Log.d(TAG, "enqueue: ${task.name} (${task.totalChapters} chapters)")
                     updateProgressForTask(task)
@@ -318,34 +359,36 @@ class DownloadManager internal constructor(
         }
     }
 
-    suspend fun cancelComic(pathWord: String) {
+    suspend fun cancelDownload(pathWord: String) {
         restoration.await()
         val completion = stateMutex.withLock {
             queueStore?.remove(pathWord)
             networkWaiting = networkWaiting - pathWord
-            pausedComics = pausedComics - pathWord
+            pausedTasks = pausedTasks - pathWord
             currentTasks = currentTasks - pathWord
-            taskInfoMap = taskInfoMap - pathWord
             val updated = _downloadProgress.value.toMutableMap()
             updated.remove(pathWord)
             _downloadProgress.value = updated
-            if (_activeTask.value?.pathWord == pathWord) {
-                _activeTask.value = null
-            }
             activeTaskCompletions[pathWord]
         }
         activeCalls.remove(pathWord)?.cancel()
-        activeCommentRequests.remove(pathWord)?.cancel()
+        activeRequests.remove(pathWord)?.cancel()
         completion?.await()
+        stateMutex.withLock {
+            if (_activeTask.value?.taskKey == pathWord && pathWord !in activeTaskCompletions) {
+                _activeTask.value = null
+            }
+        }
         Log.d(TAG, "cancelComic: $pathWord (background I/O stopped, downloaded chapters preserved)")
     }
 
-    fun pauseComic(pathWord: String) = scope.launch {
+    fun pauseDownload(pathWord: String, recordIntent: Boolean = true) = scope.launch {
         restoration.await()
         val call = stateMutex.withLock {
             if (pathWord !in currentTasks) return@launch
+            if (recordIntent) pauseRevisions[pathWord] = (pauseRevisions[pathWord] ?: 0L) + 1L
             networkWaiting = networkWaiting - pathWord
-            pausedComics = pausedComics + pathWord
+            pausedTasks = pausedTasks + pathWord
             Log.d(TAG, "pauseComic: $pathWord")
             updateProgress(
                 comicPathWord = pathWord,
@@ -356,17 +399,25 @@ class DownloadManager internal constructor(
             activeCalls[pathWord]
         }
         call?.cancel()
-        activeCommentRequests[pathWord]?.cancel()
+        activeRequests[pathWord]?.cancel()
     }
 
-    fun resumeComic(pathWord: String) = scope.launch {
+    fun resumeDownload(
+        pathWord: String,
+        expectedTaskId: String? = null,
+        expectedPauseRevision: Long? = null
+    ) = scope.launch {
         restoration.await()
         networkPolicy?.ready?.await()
         // 暂停会取消当前 Call；先等旧 I/O 退出，再清除暂停标记，防止取消被误判为错误。
         val stoppingTask = stateMutex.withLock { activeTaskCompletions[pathWord] }
         stoppingTask?.await()
         stateMutex.withLock {
-            pausedComics = pausedComics - pathWord
+            if (expectedTaskId != null && (currentTasks[pathWord]?.taskId != expectedTaskId ||
+                        (pauseRevisions[pathWord] ?: 0L) != expectedPauseRevision)
+            ) return@withLock
+            if (pathWord in cacheRemovals) return@withLock
+            pausedTasks = pausedTasks - pathWord
             networkWaiting = networkWaiting - pathWord
             Log.d(TAG, "resumeComic: $pathWord")
             updateProgress(
@@ -377,9 +428,9 @@ class DownloadManager internal constructor(
                 speedBytesPerSecond = 0L
             )
             currentTasks[pathWord]?.let { task ->
-                val resetChapters = task.chapters.map { chapter ->
-                    if (chapter.status == ChapterDownloadStatus.ERROR) {
-                        chapter.copy(
+                val resetChapters = task.items.map { chapter ->
+                    if (chapter.status == ChapterDownloadStatus.ERROR || chapter.status == ChapterDownloadStatus.DOWNLOADING) {
+                        chapter.withState(
                             status = ChapterDownloadStatus.WAITING,
                             progress = 0f,
                             errorMessage = null
@@ -388,9 +439,8 @@ class DownloadManager internal constructor(
                         chapter
                     }
                 }
-                val resetTask = task.copy(chapters = resetChapters)
+                val resetTask = task.withItems(resetChapters)
                 currentTasks = currentTasks + (pathWord to resetTask)
-                taskInfoMap = taskInfoMap + (pathWord to resetTask)
                 if (!persistTask(resetTask)) return@withLock
                 updateProgressForTask(resetTask)
                 if (ensureForeground(resetTask)) launch { queue.send(resetTask) }
@@ -402,9 +452,10 @@ class DownloadManager internal constructor(
     fun pauseAll(reason: String = "已暂停") = scope.launch {
         restoration.await()
         val calls = stateMutex.withLock {
-            pausedComics = pausedComics + currentTasks.keys
+            pausedTasks = pausedTasks + currentTasks.keys
             networkWaiting = emptySet()
             currentTasks.keys.forEach { pathWord ->
+                pauseRevisions[pathWord] = (pauseRevisions[pathWord] ?: 0L) + 1L
                 updateProgress(
                     pathWord,
                     status = DownloadTaskStatus.PAUSED,
@@ -416,85 +467,189 @@ class DownloadManager internal constructor(
             activeCalls.values.toList()
         }
         calls.forEach { it.cancel() }
-        activeCommentRequests.values.forEach { it.cancel() }
+        activeRequests.values.forEach { it.cancel() }
     }
 
     suspend fun resumeAll() {
         restoration.await()
-        currentTasks.keys.toList().forEach { resumeComic(it).join() }
+        currentTasks.keys.toList().forEach { resumeDownload(it).join() }
     }
 
     /** 必须先发布任务，再启动前台服务，最后将任务交给下载循环。 */
-    private fun ensureForeground(task: ComicDownloadTask): Boolean = try {
+    private fun ensureForeground(task: BookDownloadTask): Boolean {
+        if (task.taskKey in cacheRemovals) {
+            pausedTasks = pausedTasks + task.taskKey
+            updateProgress(
+                task.taskKey,
+                status = DownloadTaskStatus.PAUSED,
+                statusText = "正在清理所选缓存"
+            )
+            return false
+        }
+        if (task is NovelDownloadTask && !novelSessionAllowed(task)) {
+            pausedTasks = pausedTasks + task.taskKey
+            updateProgress(
+                task.taskKey, status = DownloadTaskStatus.PAUSED,
+                statusText = "请切换到下载所属账号和请求模式后继续"
+            )
+            return false
+        }
+        return try {
         startForegroundDownload()
         true
     } catch (e: RuntimeException) {
         Log.e(TAG, "无法启动下载前台服务", e)
-        pausedComics = pausedComics + task.pathWord
+            pausedTasks = pausedTasks + task.taskKey
         updateProgress(
-            task.pathWord, status = DownloadTaskStatus.PAUSED,
+            task.taskKey, status = DownloadTaskStatus.PAUSED,
             statusText = "后台下载暂不可用，请返回应用后继续",
             errorMessage = "系统未允许启动后台下载", speedBytesPerSecond = 0L
         )
         false
+        }
     }
 
-    fun isPaused(pathWord: String): Boolean = pathWord in pausedComics
+    fun isPaused(pathWord: String): Boolean = comicDownloadKey(pathWord) in pausedTasks
 
     suspend fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>) {
+        removeTaskItems(comicDownloadKey(comicPathWord), chapterUuids)
+    }
+
+    private data class RemovalState(
+        val taskId: String?,
+        val shouldResume: Boolean,
+        val pauseRevision: Long
+    )
+
+    /** 删除前终止并等待在途写入；小说须等缓存清理完成后才允许剩余分卷恢复。 */
+    private suspend fun removeTaskItems(
+        taskKey: String,
+        ids: Set<String>,
+        resumeRemaining: Boolean = true
+    ): RemovalState {
         restoration.await()
-        val completions = stateMutex.withLock {
-            val task = currentTasks[comicPathWord] ?: return@withLock emptyList()
-            val remainingChapters = task.chapters.filter { it.chapter.uuid !in chapterUuids }
-            if (remainingChapters.isEmpty()) {
-                queueStore?.remove(comicPathWord)
-                networkWaiting = networkWaiting - comicPathWord
-                pausedComics = pausedComics - comicPathWord
-                currentTasks = currentTasks - comicPathWord
-                taskInfoMap = taskInfoMap - comicPathWord
-                val updated = _downloadProgress.value.toMutableMap()
-                updated.remove(comicPathWord)
-                _downloadProgress.value = updated
-                if (_activeTask.value?.pathWord == comicPathWord) {
-                    _activeTask.value = null
-                }
-                Log.d(TAG, "removeChaptersFromTask: $comicPathWord cleared")
-            } else {
-                val updatedTask = task.copy(chapters = remainingChapters)
-                queueStore?.save(updatedTask)
-                currentTasks = currentTasks + (comicPathWord to updatedTask)
-                taskInfoMap = taskInfoMap + (comicPathWord to updatedTask)
-                updateProgressForTask(updatedTask)
-                Log.d(
-                    TAG,
-                    "removeChaptersFromTask: $comicPathWord, removed ${chapterUuids.size}, remaining ${remainingChapters.size}"
-                )
+        val original = stateMutex.withLock {
+            if (!resumeRemaining) cacheRemovals += taskKey
+            RemovalState(
+                currentTasks[taskKey]?.taskId,
+                taskKey !in pausedTasks,
+                pauseRevisions[taskKey] ?: 0L
+            )
+        }
+        pauseDownload(taskKey, recordIntent = false).join()
+        stateMutex.withLock { activeTaskCompletions[taskKey] }?.await()
+        stateMutex.withLock {
+            val task = currentTasks[taskKey] ?: return@withLock
+            if (task.taskId != original.taskId) return@withLock
+            val items = task.items.filterNot { it.id in ids }.map {
+                if (it.status == ChapterDownloadStatus.DOWNLOADING) it.withState(
+                    ChapterDownloadStatus.WAITING
+                ) else it
             }
-            chapterUuids.mapNotNull { activeChapterCompletions[it] }
+            if (items.isEmpty()) {
+                queueStore?.remove(taskKey)
+                currentTasks = currentTasks - taskKey
+                pausedTasks = pausedTasks - taskKey
+                networkWaiting = networkWaiting - taskKey
+                _downloadProgress.value = _downloadProgress.value - taskKey
+            } else {
+                val changed = task.withItems(items)
+                currentTasks = currentTasks + (taskKey to changed)
+                check(persistTask(changed)) { "下载队列保存失败，已保留暂停" }
+                updateProgressForTask(changed)
+            }
         }
-        if (completions.isNotEmpty()) {
-            activeCalls.remove(comicPathWord)?.cancel()
-            activeCommentRequests.remove(comicPathWord)?.cancel()
+        if (resumeRemaining) resumeAfterRemoval(taskKey, original)
+        return original
+    }
+
+    private suspend fun resumeAfterRemoval(taskKey: String, original: RemovalState) {
+        if (original.shouldResume && original.taskId != null) {
+            resumeDownload(taskKey, original.taskId, original.pauseRevision).join()
         }
-        completions.forEach { it.await() }
+    }
+
+    suspend fun removeNovelVolumes(
+        mode: RequestMode,
+        owner: String,
+        path: String,
+        ids: Set<String>
+    ): Result<Unit> {
+        val repository = novels ?: return Result.failure(IOException("小说下载尚不可用"))
+        val key = novelDownloadKey(mode, owner, path)
+        var original: RemovalState? = null
+        var removed = false
+        val result = try {
+            original = removeTaskItems(key, ids, resumeRemaining = false)
+            ids.forEach { id ->
+                repository.removeVolume(mode, owner, path, id).fold(
+                    onSuccess = {}, onFailure = { throw it })
+            }
+            removed = true
+            Result.success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Result.failure(
+                IOException(
+                    "缓存删除失败，剩余下载已暂停：${error.message ?: "请重试"}",
+                    error
+                )
+            )
+        } finally {
+            withContext(NonCancellable) {
+                stateMutex.withLock {
+                    cacheRemovals -= key
+                    if (!removed && key in currentTasks) {
+                        pausedTasks = pausedTasks + key
+                        updateProgress(
+                            key, status = DownloadTaskStatus.PAUSED,
+                            statusText = "缓存删除未完成，剩余下载已暂停"
+                        )
+                    }
+                }
+            }
+        }
+        if (removed) original?.let { resumeAfterRemoval(key, it) }
+        return result
+    }
+
+    suspend fun cancelAllNovels() {
+        restoration.await()
+        (currentTasks.values.filterIsInstance<NovelDownloadTask>().map { it.taskKey } +
+                _downloadProgress.value.values.filter { it.kind == DownloadKind.NOVEL }
+                    .map { it.taskKey })
+            .distinct().forEach { cancelDownload(it) }
     }
 
     suspend fun deleteChapterFiles(comicPathWord: String, chapterUuid: String) {
         withContext(Dispatchers.IO) {
-            val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord/$chapterUuid")
-            if (dir.exists() && !dir.deleteRecursively()) {
-                Log.w(TAG, "Failed to delete chapter directory: ${dir.absolutePath}")
+            localAccess.mutate("$comicPathWord/$chapterUuid").use {
+                val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord/$chapterUuid")
+                if (dir.exists() && !dir.deleteRecursively()) {
+                    Log.w(TAG, "Failed to delete chapter directory: ${dir.absolutePath}")
+                }
             }
         }
     }
 
     suspend fun deleteComicFiles(comicPathWord: String) {
         withContext(Dispatchers.IO) {
-            val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord")
-            if (dir.exists() && !dir.deleteRecursively()) {
-                Log.w(TAG, "Failed to delete comic directory: ${dir.absolutePath}")
+            localAccess.mutate("$comicPathWord/").use {
+                val dir = File(context.filesDir, "$DOWNLOAD_DIR/$comicPathWord")
+                if (dir.exists() && !dir.deleteRecursively()) {
+                    Log.w(TAG, "Failed to delete comic directory: ${dir.absolutePath}")
+                }
             }
         }
+    }
+
+    private fun writeChapterImage(
+        comic: String, chapter: String, file: File,
+        input: java.io.InputStream, length: Long, onBytes: (Int) -> Unit
+    ) {
+        localAccess.mutate("$comic/$chapter")
+            .use { writeDownloadedImage(file, input, length, onBytes) }
     }
 
     suspend fun cancelAll() {
@@ -503,10 +658,8 @@ class DownloadManager internal constructor(
             queueStore?.clear()
             networkWaiting = emptySet()
             currentTasks = emptyMap()
-            taskInfoMap = emptyMap()
-            pausedComics = emptySet()
+            pausedTasks = emptySet()
             _downloadProgress.value = emptyMap()
-            _activeTask.value = null
             while (queue.tryReceive().isSuccess) {
                 // 排空尚未开始的任务。
             }
@@ -514,26 +667,40 @@ class DownloadManager internal constructor(
         }
         activeCalls.values.forEach { it.cancel() }
         activeCalls.clear()
-        activeCommentRequests.values.forEach { it.cancel() }
-        activeCommentRequests.clear()
+        activeRequests.values.forEach { it.cancel() }
+        activeRequests.clear()
         completions.forEach { it.await() }
+        stateMutex.withLock { if (activeTaskCompletions.isEmpty()) _activeTask.value = null }
     }
 
-    fun getTask(pathWord: String): ComicDownloadTask? = currentTasks[pathWord]
+    fun getTask(pathWord: String): ComicDownloadTask? =
+        currentTasks[comicDownloadKey(pathWord)] as? ComicDownloadTask
+
+    suspend fun cancelComic(pathWord: String) = cancelDownload(comicDownloadKey(pathWord))
+    fun pauseComic(pathWord: String) = pauseDownload(comicDownloadKey(pathWord))
+    fun resumeComic(pathWord: String) = resumeDownload(comicDownloadKey(pathWord))
 
     private suspend fun processQueue() {
         for (task in queue) {
             val completion = CompletableDeferred<Unit>()
             val shouldProcess = stateMutex.withLock {
-                !(currentTasks[task.pathWord]?.taskId != task.taskId || task.pathWord in pausedComics) && if (!networkAllowed() || task.pathWord in networkWaiting) {
-                    networkWaiting = networkWaiting + task.pathWord
+                if (task.taskKey in cacheRemovals) pausedTasks = pausedTasks + task.taskKey
+                if (task is NovelDownloadTask && !novelSessionAllowed(task)) {
+                    pausedTasks = pausedTasks + task.taskKey
                     updateProgress(
-                        task.pathWord, status = DownloadTaskStatus.WAITING_FOR_WIFI,
+                        task.taskKey, status = DownloadTaskStatus.PAUSED,
+                        statusText = "请切换到下载所属账号和请求模式后继续"
+                    )
+                }
+                !(currentTasks[task.taskKey]?.taskId != task.taskId || task.taskKey in pausedTasks) && if (!networkAllowed() || task.taskKey in networkWaiting) {
+                    networkWaiting = networkWaiting + task.taskKey
+                    updateProgress(
+                        task.taskKey, status = DownloadTaskStatus.WAITING_FOR_WIFI,
                         statusText = waitingForNetwork(), speedBytesPerSecond = 0L
                     )
                     false
                 } else {
-                    activeTaskCompletions[task.pathWord] = completion
+                    activeTaskCompletions[task.taskKey] = completion
                     true
                 }
             }
@@ -544,28 +711,40 @@ class DownloadManager internal constructor(
 
             _activeTask.value = task
             try {
-                processComicTask(task)
+                when (task) {
+                    is ComicDownloadTask -> processComicTask(task)
+                    is NovelDownloadTask -> processNovelTask(task)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) currentCoroutineContext().ensureActive()
+                stateMutex.withLock {
+                    updateProgress(
+                        task.taskKey, status = DownloadTaskStatus.ERROR,
+                        statusText = "下载任务失败，可重试", errorMessage = error.message
+                    )
+                }
+                Log.e(TAG, "处理下载任务失败", error)
             } finally {
                 stateMutex.withLock {
-                    activeTaskCompletions.remove(task.pathWord, completion)
+                    activeTaskCompletions.remove(task.taskKey, completion)
                 }
                 completion.complete(Unit)
             }
-            if (task.pathWord in pausedComics) {
-                val updatedTask = currentTasks[task.pathWord]
+            if (task.taskKey in pausedTasks) {
+                val updatedTask = currentTasks[task.taskKey]
                 if (updatedTask != null) {
                     scope.launch { queue.send(updatedTask) }
                 }
             } else {
                 stateMutex.withLock {
-                    val remaining = currentTasks[task.pathWord]
-                    if (remaining?.taskId == task.taskId && remaining.chapters.all {
+                    val remaining = currentTasks[task.taskKey]
+                    if (remaining?.taskId == task.taskId && remaining.items.all {
                             it.status == ChapterDownloadStatus.DOWNLOADED
                         }) {
-                        currentTasks = currentTasks - task.pathWord
-                        networkWaiting = networkWaiting - task.pathWord
+                        currentTasks = currentTasks - task.taskKey
+                        networkWaiting = networkWaiting - task.taskKey
                         try {
-                            queueStore?.remove(task.pathWord)
+                            queueStore?.remove(task.taskKey)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -581,22 +760,151 @@ class DownloadManager internal constructor(
         }
     }
 
+
+    private fun comicTask(path: String): ComicDownloadTask? =
+        currentTasks[comicDownloadKey(path)] as? ComicDownloadTask
+
+    /** 仅正文/插图请求因内容种类而异，队列、暂停、网络策略与服务生命周期均共用。 */
+    private suspend fun processNovelTask(task: NovelDownloadTask) {
+        val repository = novels ?: return
+        val expectedSession = sessions?.getReadingSessionSync()
+        val key = task.taskKey
+        fun sessionValid() = expectedSession != null &&
+                sessions.getReadingSessionSync() == expectedSession && novelSessionAllowed(task)
+        while (true) {
+            if (!sessionValid()) {
+                stateMutex.withLock {
+                    if (key in currentTasks) {
+                        pausedTasks = pausedTasks + key
+                        updateProgress(
+                            key, status = DownloadTaskStatus.PAUSED,
+                            statusText = "账号或请求模式已变化，请确认后继续"
+                        )
+                    }
+                }
+                return
+            }
+            val item = stateMutex.withLock {
+                val current =
+                    (currentTasks[key] as? NovelDownloadTask)?.takeIf { it.taskId == task.taskId }
+                        ?: return@withLock null
+                if (key in pausedTasks || key in cacheRemovals || !networkAllowed() || key in networkWaiting) return@withLock null
+                val next =
+                    current.volumes.firstOrNull { it.status == ChapterDownloadStatus.WAITING }
+                        ?: return@withLock null
+                val changed = current.copy(volumes = current.volumes.map {
+                    if (it.id == next.id) it.copy(status = ChapterDownloadStatus.DOWNLOADING) else it
+                })
+                currentTasks = currentTasks + (key to changed)
+                updateProgressForTask(changed)
+                next
+            } ?: return
+            try {
+                val volume = supervisorScope {
+                    val updates = Channel<NovelCacheProgress>(Channel.CONFLATED)
+                    val publisher = launch {
+                        for (progress in updates) {
+                            stateMutex.withLock {
+                                val current = currentTasks[key]
+                                if (sessionValid() && key !in pausedTasks && key !in networkWaiting &&
+                                    key !in cacheRemovals && current?.taskId == task.taskId &&
+                                    current.items.any { it.id == item.id && it.status == ChapterDownloadStatus.DOWNLOADING }
+                                ) {
+                                    val portion = if (progress.stage == NovelCacheStage.TEXT) 0f
+                                    else (1f + progress.completedImages) / (1f + progress.totalImages)
+                                    updateProgress(
+                                        key,
+                                        status = DownloadTaskStatus.DOWNLOADING,
+                                        statusText = if (progress.stage == NovelCacheStage.TEXT) "正在下载正文"
+                                        else "正在下载插图 ${progress.completedImages}/${progress.totalImages}",
+                                        currentChapterName = item.name,
+                                        currentChapterProgress = portion,
+                                        downloadedImages = progress.completedImages,
+                                        totalImages = progress.totalImages
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    val request = async {
+                        repository.readVolume(
+                            task.mode, task.owner, task.book.path, item.id,
+                            allImages = true, forDownload = true, onProgress = { progress ->
+                                updates.trySend(progress)
+                            }).fold(onSuccess = { it }, onFailure = { throw it })
+                    }
+                    activeRequests[key] = request
+                    try {
+                        if (!sessionValid() || key in pausedTasks || !networkAllowed() ||
+                            currentTasks[key]?.items?.none { it.id == item.id } != false
+                        ) request.cancel()
+                        request.await()
+                    } finally {
+                        activeRequests.remove(key, request)
+                        request.cancel()
+                        updates.close()
+                        publisher.cancel()
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                check(volume.offlineReady) { "本卷插图未完整下载" }
+                if (!sessionValid()) continue
+                stateMutex.withLock {
+                    val current =
+                        (currentTasks[key] as? NovelDownloadTask)?.takeIf { it.taskId == task.taskId }
+                            ?: return@withLock
+                    val changed = current.copy(volumes = current.volumes.map {
+                        if (it.id == item.id) it.copy(
+                            status = ChapterDownloadStatus.DOWNLOADED,
+                            progress = 1f
+                        ) else it
+                    })
+                    currentTasks = currentTasks + (key to changed)
+                    updateProgressForTask(changed)
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) currentCoroutineContext().ensureActive()
+                stateMutex.withLock {
+                    val current =
+                        (currentTasks[key] as? NovelDownloadTask)?.takeIf { it.taskId == task.taskId }
+                            ?: return@withLock
+                    val interrupted = error is CancellationException || key in pausedTasks ||
+                            !networkAllowed() || key in networkWaiting || !sessionValid()
+                    val changed = current.copy(volumes = current.volumes.map {
+                        if (it.id == item.id) it.copy(
+                            status = if (interrupted) ChapterDownloadStatus.WAITING else ChapterDownloadStatus.ERROR,
+                            progress = 0f,
+                            errorMessage = if (interrupted) null else error.message
+                                ?: "分卷下载失败"
+                        ) else it
+                    })
+                    currentTasks = currentTasks + (key to changed)
+                    if (!sessionValid()) pausedTasks = pausedTasks + key
+                    if (!networkAllowed() && key !in pausedTasks) networkWaiting =
+                        networkWaiting + key
+                    updateProgressForTask(changed)
+                }
+                if (error is CancellationException || key in pausedTasks || key in networkWaiting || !sessionValid()) return
+            }
+        }
+    }
+
     private suspend fun processComicTask(task: ComicDownloadTask) {
         val comicPathWord = task.pathWord
 
         // 使用 while 循环每次从 currentTasks 重新读取，以支持中途合并进来的新章节
         while (true) {
-            if (!currentTasks.containsKey(comicPathWord)) {
+            if (!currentTasks.containsKey(comicDownloadKey(comicPathWord))) {
                 Log.d(TAG, "Task cancelled for $comicPathWord")
                 return
             }
-            if (comicPathWord in pausedComics) {
+            if (comicDownloadKey(comicPathWord) in pausedTasks) {
                 Log.d(TAG, "Task paused for $comicPathWord")
                 return
             }
-            if (!networkAllowed() || comicPathWord in networkWaiting) {
+            if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) {
                 stateMutex.withLock {
-                    networkWaiting = networkWaiting + comicPathWord
+                    networkWaiting = networkWaiting + comicDownloadKey(comicPathWord)
                     updateProgress(
                         comicPathWord, status = DownloadTaskStatus.WAITING_FOR_WIFI,
                         statusText = waitingForNetwork(), speedBytesPerSecond = 0L
@@ -607,9 +915,9 @@ class DownloadManager internal constructor(
 
             // 选择章节、登记 I/O 完成信号和状态变更必须原子化，避免取消后旧快照复活任务。
             val pending = stateMutex.withLock {
-                val currentTask = currentTasks[comicPathWord]
+                val currentTask = comicTask(comicPathWord)
                     ?.takeIf { it.taskId == task.taskId } ?: return@withLock null
-                if (comicPathWord in pausedComics) return@withLock null
+                if (comicDownloadKey(comicPathWord) in pausedTasks) return@withLock null
                 val chapters = currentTask.chapters
                 val idx = chapters.indexOfFirst { it.status == ChapterDownloadStatus.WAITING }
                 if (idx < 0) return@withLock null
@@ -618,7 +926,7 @@ class DownloadManager internal constructor(
                 updatedChapters[idx] =
                     chapterItem.copy(status = ChapterDownloadStatus.DOWNLOADING, progress = 0f)
                 val newTask = currentTask.copy(chapters = updatedChapters)
-                currentTasks = currentTasks + (comicPathWord to newTask)
+                currentTasks = currentTasks + (comicDownloadKey(comicPathWord) to newTask)
                 val completion = CompletableDeferred<Unit>()
                 activeChapterCompletions[chapterItem.chapter.uuid] = completion
                 updateProgressForTask(newTask)
@@ -651,7 +959,7 @@ class DownloadManager internal constructor(
 
                     // 章节内容请求返回前，用户可能已经取消整部漫画或移除了当前章节。
                     // 此时不得继续创建图片文件或回写 Room。
-                    val latestTask = currentTasks[comicPathWord] ?: return
+                    val latestTask = comicTask(comicPathWord) ?: return
                     if (latestTask.chapters.none { it.chapter.uuid == chapterItem.chapter.uuid }) {
                         continue
                     }
@@ -687,7 +995,7 @@ class DownloadManager internal constructor(
                             chapterItem.chapter.name
                         )
 
-                        if (comicPathWord in pausedComics) {
+                        if (comicDownloadKey(comicPathWord) in pausedTasks) {
                             Log.d(
                                 TAG,
                                 "Chapter $comicPathWord/${chapterItem.chapter.name} paused mid-download"
@@ -700,7 +1008,7 @@ class DownloadManager internal constructor(
                             throw IOException("章节图片不完整：${imagePaths.size}/${imageUrls.size}")
                         }
 
-                        val taskBeforeCommit = currentTasks[comicPathWord] ?: return
+                        val taskBeforeCommit = comicTask(comicPathWord) ?: return
                         if (taskBeforeCommit.chapters.none {
                                 it.chapter.uuid == chapterItem.chapter.uuid
                             }) {
@@ -722,7 +1030,7 @@ class DownloadManager internal constructor(
                             nextChapter = chapterContent.nextUuid ?: chapterItem.chapter.nextChapter
                         )
                         val committed = stateMutex.withLock {
-                            val latest = currentTasks[comicPathWord]
+                            val latest = comicTask(comicPathWord)
                             if (latest?.taskId == task.taskId && latest.chapters.any {
                                     it.chapter.uuid == chapterItem.chapter.uuid
                                 }) {
@@ -759,7 +1067,7 @@ class DownloadManager internal constructor(
                     }
                 }
 
-                val latest = currentTasks[comicPathWord]
+                val latest = comicTask(comicPathWord)
                 if (latest?.taskId != task.taskId) return
                 if (latest.chapters.none { it.chapter.uuid == chapterItem.chapter.uuid }) continue
                 updateProgress(
@@ -768,7 +1076,10 @@ class DownloadManager internal constructor(
                     speedBytesPerSecond = 0L
                 )
                 val commentResult = downloadCommentsForTask(comicPathWord, chapterItem.chapter.uuid)
-                if (comicPathWord in pausedComics || !networkAllowed() || comicPathWord in networkWaiting) {
+                if (comicDownloadKey(comicPathWord) in pausedTasks || !networkAllowed() || comicDownloadKey(
+                        comicPathWord
+                    ) in networkWaiting
+                ) {
                     markChapterWaiting(comicPathWord, chapterItem)
                     return
                 }
@@ -787,11 +1098,17 @@ class DownloadManager internal constructor(
                 )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                if (e is DownloadNetworkUnavailableException || !networkAllowed() || comicPathWord in networkWaiting) {
+                if (e is DownloadNetworkUnavailableException || !networkAllowed() || comicDownloadKey(
+                        comicPathWord
+                    ) in networkWaiting
+                ) {
                     markChapterWaiting(comicPathWord, chapterItem)
                     stateMutex.withLock {
-                        if (comicPathWord !in pausedComics && currentTasks.containsKey(comicPathWord)) {
-                            networkWaiting = networkWaiting + comicPathWord
+                        if (comicDownloadKey(comicPathWord) !in pausedTasks && currentTasks.containsKey(
+                                comicDownloadKey(comicPathWord)
+                            )
+                        ) {
+                            networkWaiting = networkWaiting + comicDownloadKey(comicPathWord)
                             updateProgress(
                                 comicPathWord,
                                 status = DownloadTaskStatus.WAITING_FOR_WIFI,
@@ -802,7 +1119,7 @@ class DownloadManager internal constructor(
                     }
                     return
                 }
-                if (comicPathWord in pausedComics) {
+                if (comicDownloadKey(comicPathWord) in pausedTasks) {
                     markChapterWaiting(comicPathWord, chapterItem)
                     return
                 }
@@ -826,11 +1143,11 @@ class DownloadManager internal constructor(
                 chapterCompletion.complete(Unit)
             }
 
-            updateProgressForTask(currentTasks[comicPathWord])
+            updateProgressForTask(comicTask(comicPathWord))
         }
 
         stateMutex.withLock {
-            val finalTask = currentTasks[comicPathWord]
+            val finalTask = comicTask(comicPathWord)
             if (finalTask?.taskId == task.taskId && finalTask.chapters.all {
                     it.status == ChapterDownloadStatus.DOWNLOADED
                 }) {
@@ -859,14 +1176,23 @@ class DownloadManager internal constructor(
                     chapter.groupPathWord ?: "default"
                 ).fold(onSuccess = { it }, onFailure = { throw it })
             }
+            val requestKey = comicDownloadKey(comicPathWord)
+            activeRequests[requestKey] = request
             val restricted =
                 networkPolicy?.let { policy -> async { policy.state.first { !it.allowed } } }
             try {
+                if (requestKey in pausedTasks ||
+                    comicTask(comicPathWord)?.chapters?.none { it.id == chapter.uuid } != false
+                ) request.cancel()
                 select {
                     request.onAwait { it }
                     restricted?.onAwait { throw DownloadNetworkUnavailableException() }
                 }
+            } catch (error: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                throw IOException("章节内容请求已暂停", error)
             } finally {
+                activeRequests.remove(requestKey, request)
                 request.cancel()
                 restricted?.cancel()
             }
@@ -881,11 +1207,11 @@ class DownloadManager internal constructor(
         ) return Result.success(Unit)
         return supervisorScope {
             val request = async { repository.downloadChapterComments(uuid).map { } }
-            activeCommentRequests[comic] = request
+            activeRequests[comicDownloadKey(comic)] = request
             val restricted =
                 networkPolicy?.let { policy -> async { policy.state.first { !it.allowed } } }
             try {
-                if (comic in pausedComics || currentTasks[comic]?.chapters?.none { it.chapter.uuid == uuid } != false) request.cancel()
+                if (comicDownloadKey(comic) in pausedTasks || comicTask(comic)?.chapters?.none { it.chapter.uuid == uuid } != false) request.cancel()
                 select {
                     request.onAwait { it }
                     restricted?.onAwait { Result.failure(IOException("等待网络连接")) }
@@ -894,7 +1220,7 @@ class DownloadManager internal constructor(
                 currentCoroutineContext().ensureActive()
                 Result.failure(IOException("评论下载已暂停", error))
             } finally {
-                activeCommentRequests.remove(comic, request)
+                activeRequests.remove(comicDownloadKey(comic), request)
                 request.cancel()
                 restricted?.cancel()
             }
@@ -921,11 +1247,11 @@ class DownloadManager internal constructor(
         var lastTick = System.currentTimeMillis()
 
         for ((i, url) in imageUrls.withIndex()) {
-            if (!networkAllowed() || comicPathWord in networkWaiting) throw DownloadNetworkUnavailableException()
-            if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+            if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
+            if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
                 throw IOException("下载已取消")
             }
-            if (comicPathWord in pausedComics) {
+            if (comicDownloadKey(comicPathWord) in pausedTasks) {
                 Log.d(TAG, "Paused during image download for $chapterUuid")
                 break
             }
@@ -938,10 +1264,10 @@ class DownloadManager internal constructor(
                 // 未提交章节的旧文件可能来自历史版本的中断写入，重试时重新获取。
                 val request = Request.Builder().url(url).build()
                 val call = client.newCall(request)
-                activeCalls[comicPathWord] = call
+                activeCalls[comicDownloadKey(comicPathWord)] = call
                 try {
-                    if (!networkAllowed() || comicPathWord in networkWaiting) throw DownloadNetworkUnavailableException()
-                    if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                    if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
+                    if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
                         call.cancel()
                     }
                     call.execute().use { response ->
@@ -980,10 +1306,18 @@ class DownloadManager internal constructor(
                         file.parentFile?.mkdirs()
 
                         body.byteStream().use { input ->
-                            writeDownloadedImage(file, input, body.contentLength()) { read ->
-                                if (!networkAllowed() || comicPathWord in networkWaiting) throw DownloadNetworkUnavailableException()
-                                if (comicPathWord in pausedComics) throw IOException("下载已暂停")
-                                if (currentTasks[comicPathWord]?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                            writeChapterImage(
+                                comicPathWord,
+                                chapterUuid,
+                                file,
+                                input,
+                                body.contentLength()
+                            ) { read ->
+                                if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
+                                if (comicDownloadKey(comicPathWord) in pausedTasks) throw IOException(
+                                    "下载已暂停"
+                                )
+                                if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
                                     throw IOException("下载已取消")
                                 }
                                 bytesSinceLastTick += read
@@ -1013,7 +1347,7 @@ class DownloadManager internal constructor(
                         paths.add(file.absolutePath)
                     }
                 } finally {
-                    activeCalls.remove(comicPathWord, call)
+                    activeCalls.remove(comicDownloadKey(comicPathWord), call)
                 }
 
                 val chapterProgress = (i + 1).toFloat() / totalImages.coerceAtLeast(1)
@@ -1062,9 +1396,9 @@ class DownloadManager internal constructor(
         message: String
     ) {
         stateMutex.withLock {
-            val task = currentTasks[comicPathWord] ?: return
+            val task = comicTask(comicPathWord) ?: return
             if (task.chapters.none { it.chapter.uuid == chapterItem.chapter.uuid }) return
-            pausedComics = pausedComics + comicPathWord
+            pausedTasks = pausedTasks + comicDownloadKey(comicPathWord)
         }
         markChapterError(comicPathWord, chapterItem, message)
         updateProgress(
@@ -1083,7 +1417,7 @@ class DownloadManager internal constructor(
         message: String
     ) {
         stateMutex.withLock {
-            val task = currentTasks[comicPathWord] ?: return@withLock
+            val task = comicTask(comicPathWord) ?: return@withLock
             val chapters = task.chapters.toMutableList()
             val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
             if (idx >= 0) {
@@ -1091,7 +1425,8 @@ class DownloadManager internal constructor(
                     status = ChapterDownloadStatus.ERROR,
                     errorMessage = message
                 )
-                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+                currentTasks =
+                    currentTasks + (comicDownloadKey(comicPathWord) to task.copy(chapters = chapters))
             }
         }
     }
@@ -1102,7 +1437,7 @@ class DownloadManager internal constructor(
         warning: String? = null
     ) {
         stateMutex.withLock {
-            val task = currentTasks[comicPathWord] ?: return@withLock
+            val task = comicTask(comicPathWord) ?: return@withLock
             val chapters = task.chapters.toMutableList()
             val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
             if (idx >= 0) {
@@ -1111,7 +1446,8 @@ class DownloadManager internal constructor(
                     progress = 1f,
                     errorMessage = warning
                 )
-                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+                currentTasks =
+                    currentTasks + (comicDownloadKey(comicPathWord) to task.copy(chapters = chapters))
             }
         }
     }
@@ -1121,7 +1457,7 @@ class DownloadManager internal constructor(
         chapterItem: ChapterDownloadItem
     ) {
         stateMutex.withLock {
-            val task = currentTasks[comicPathWord] ?: return@withLock
+            val task = comicTask(comicPathWord) ?: return@withLock
             val chapters = task.chapters.toMutableList()
             val idx = chapters.indexOfFirst { it.chapter.uuid == chapterItem.chapter.uuid }
             if (idx >= 0) {
@@ -1129,7 +1465,8 @@ class DownloadManager internal constructor(
                     status = ChapterDownloadStatus.WAITING,
                     progress = 0f
                 )
-                currentTasks = currentTasks + (comicPathWord to task.copy(chapters = chapters))
+                currentTasks =
+                    currentTasks + (comicDownloadKey(comicPathWord) to task.copy(chapters = chapters))
             }
         }
     }
@@ -1146,16 +1483,18 @@ class DownloadManager internal constructor(
         totalImages: Int? = null,
         speedBytesPerSecond: Long? = null
     ) {
-        val task = currentTasks[comicPathWord] ?: return
-        val old = _downloadProgress.value[comicPathWord]
+        val key =
+            if (comicPathWord in currentTasks) comicPathWord else comicDownloadKey(comicPathWord)
+        val task = currentTasks[key] ?: return
+        val old = _downloadProgress.value[key]
 
-        if (comicPathWord in networkWaiting && status != null && status !in setOf(
+        if (key in networkWaiting && status != null && status !in setOf(
                 DownloadTaskStatus.WAITING_FOR_WIFI, DownloadTaskStatus.PAUSED,
                 DownloadTaskStatus.PAUSED_BY_RISK, DownloadTaskStatus.COMPLETED
             )
         ) return
 
-        if (comicPathWord in pausedComics &&
+        if (key in pausedTasks &&
             status != null &&
             status != DownloadTaskStatus.PAUSED &&
             status != DownloadTaskStatus.PAUSED_BY_RISK
@@ -1174,14 +1513,14 @@ class DownloadManager internal constructor(
         } else {
             // 已尝试的章节序号包含失败项，只能累加已完成章节和当前下载章节的进度。
             val inFlight =
-                if (task.chapters.any { it.status == ChapterDownloadStatus.DOWNLOADING }) {
+                if (task.items.any { it.status == ChapterDownloadStatus.DOWNLOADING }) {
                     newChapterProgress
                 } else 0f
             ((completedChapters + inFlight) / totalChapters).coerceIn(0f, 1f)
         }
 
         val info = DownloadProgressInfo(
-            comicPathWord = comicPathWord,
+            comicPathWord = task.pathWord,
             name = task.name,
             cover = task.cover,
             completedChapters = completedChapters,
@@ -1198,25 +1537,27 @@ class DownloadManager internal constructor(
             downloadedImages = downloadedImages ?: old?.downloadedImages ?: 0,
             totalImages = totalImages ?: old?.totalImages ?: 0,
             speedBytesPerSecond = speedBytesPerSecond ?: old?.speedBytesPerSecond ?: 0L,
-            taskId = task.taskId
+            taskId = task.taskId,
+            kind = task.kind, taskKey = task.taskKey,
+            owner = (task as? NovelDownloadTask)?.owner, mode = (task as? NovelDownloadTask)?.mode
         )
 
         val updated = _downloadProgress.value.toMutableMap()
-        updated[comicPathWord] = info
+        updated[key] = info
         _downloadProgress.value = updated
-        if (_activeTask.value?.pathWord == comicPathWord) {
+        if (_activeTask.value?.taskKey == key) {
             _activeTask.value = task
         }
     }
 
-    private fun updateProgressForTask(task: ComicDownloadTask?) {
+    private fun updateProgressForTask(task: BookDownloadTask?) {
         if (task == null) return
-        val currentChapter = task.chapters.firstOrNull {
+        val currentChapter = task.items.firstOrNull {
             it.status == ChapterDownloadStatus.DOWNLOADING
         }
         val status = when {
-            task.pathWord in pausedComics -> {
-                val oldInfo = _downloadProgress.value[task.pathWord]
+            task.taskKey in pausedTasks -> {
+                val oldInfo = _downloadProgress.value[task.taskKey]
                 if (oldInfo?.status == DownloadTaskStatus.PAUSED_BY_RISK) {
                     DownloadTaskStatus.PAUSED_BY_RISK
                 } else {
@@ -1224,26 +1565,27 @@ class DownloadManager internal constructor(
                 }
             }
 
-            task.chapters.all { it.status == ChapterDownloadStatus.DOWNLOADED } -> DownloadTaskStatus.COMPLETED
-            task.pathWord in networkWaiting -> DownloadTaskStatus.WAITING_FOR_WIFI
+            task.items.all { it.status == ChapterDownloadStatus.DOWNLOADED } -> DownloadTaskStatus.COMPLETED
+            task.taskKey in networkWaiting -> DownloadTaskStatus.WAITING_FOR_WIFI
             currentChapter != null -> DownloadTaskStatus.DOWNLOADING
-            task.chapters.any { it.status == ChapterDownloadStatus.WAITING } -> DownloadTaskStatus.WAITING
+            task.items.any { it.status == ChapterDownloadStatus.WAITING } -> DownloadTaskStatus.WAITING
             task.errorCount > 0 -> DownloadTaskStatus.ERROR
             else -> DownloadTaskStatus.IDLE
         }
 
-        val old = _downloadProgress.value[task.pathWord]
+        val old = _downloadProgress.value[task.taskKey]
         val statusText = when (status) {
-            DownloadTaskStatus.COMPLETED -> if (task.chapters.any { it.errorMessage != null })
+            DownloadTaskStatus.COMPLETED -> if (task.kind == DownloadKind.NOVEL) "正文和插图下载完成"
+            else if (task.items.any { it.errorMessage != null })
                 "图片下载完成，部分评论未完整下载" else "章节和评论下载完成"
 
-            DownloadTaskStatus.ERROR -> "已完成 ${task.completedChapters}/${task.totalChapters} 章，${task.errorCount} 章失败"
+            DownloadTaskStatus.ERROR -> "已完成 ${task.completedChapters}/${task.totalChapters} ${if (task.kind == DownloadKind.NOVEL) "卷" else "章"}，${task.errorCount} 项失败"
             DownloadTaskStatus.PAUSED_BY_RISK -> old?.statusText ?: "触发风控，已暂停下载"
             DownloadTaskStatus.PAUSED -> "已暂停"
             DownloadTaskStatus.WAITING_FOR_WIFI -> waitingForNetwork()
             else -> old?.statusText
         }
-        val errorChapter = task.chapters.firstOrNull { it.status == ChapterDownloadStatus.ERROR }
+        val errorChapter = task.items.firstOrNull { it.status == ChapterDownloadStatus.ERROR }
 
         val info = DownloadProgressInfo(
             comicPathWord = task.pathWord,
@@ -1252,10 +1594,10 @@ class DownloadManager internal constructor(
             completedChapters = task.completedChapters,
             totalChapters = task.totalChapters,
             overallProgress = task.overallProgress,
-            currentChapterIndex = task.chapters.indexOfFirst {
+            currentChapterIndex = task.items.indexOfFirst {
                 it.status == ChapterDownloadStatus.DOWNLOADING
-            }.coerceAtLeast(0),
-            currentChapterName = currentChapter?.chapter?.name,
+            }.let { if (it < 0) 0 else it + 1 },
+            currentChapterName = currentChapter?.name,
             currentChapterProgress = currentChapter?.progress ?: 0f,
             status = status,
             statusText = statusText ?: "等待中",
@@ -1263,12 +1605,14 @@ class DownloadManager internal constructor(
             downloadedImages = old?.downloadedImages ?: 0,
             totalImages = old?.totalImages ?: 0,
             speedBytesPerSecond = 0L,
-            taskId = task.taskId
+            taskId = task.taskId,
+            kind = task.kind, taskKey = task.taskKey,
+            owner = (task as? NovelDownloadTask)?.owner, mode = (task as? NovelDownloadTask)?.mode
         )
         val updated = _downloadProgress.value.toMutableMap()
-        updated[task.pathWord] = info
+        updated[task.taskKey] = info
         _downloadProgress.value = updated
-        if (_activeTask.value?.pathWord == task.pathWord) {
+        if (_activeTask.value?.taskKey == task.taskKey) {
             _activeTask.value = task
         }
     }

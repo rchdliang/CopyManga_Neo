@@ -460,7 +460,7 @@ internal fun CommentsContent(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                if (state.parent != null) "评论回复" else if (target.kind == CommentKind.COMIC) "漫画评论" else "章节评论",
+                                if (state.parent != null) "评论回复" else if (target.kind != CommentKind.CHAPTER) "作品评论" else "章节评论",
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleLarge
                             )
@@ -525,6 +525,7 @@ internal fun CommentsContent(
                         when {
                             state.checkingPermission -> "正在确认评论权限…"
                             state.permissionError != null -> state.permissionError
+                            target.kind == CommentKind.NOVEL -> "小说评论暂仅支持查看、浏览回复和举报"
                             else -> "这部漫画已关闭评论发表"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -592,7 +593,7 @@ internal fun CommentsContent(
                                         row.forEach { comment ->
                                             Column(Modifier.weight(1f)) {
                                                 val preview = state.replyPreviews[comment.id]
-                                                if (state.parent == null && comment.replyCount > 0 && target.kind == CommentKind.COMIC) {
+                                                if (state.parent == null && comment.replyCount > 0 && target.kind != CommentKind.CHAPTER) {
                                                     LaunchedEffect(
                                                         comment.id,
                                                         state.previewGeneration
@@ -607,7 +608,7 @@ internal fun CommentsContent(
                                                     previewTotal = preview?.total,
                                                     threadUsername = state.parent?.username,
                                                     onReport = onReport,
-                                                    onClick = if (state.parent == null && target.kind == CommentKind.COMIC &&
+                                                    onClick = if (state.parent == null && target.kind != CommentKind.CHAPTER &&
                                                         (preview?.total ?: comment.replyCount) > 0
                                                     ) ({
                                                         onShowReplies(comment)
@@ -615,7 +616,7 @@ internal fun CommentsContent(
                                                     onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
                                                         onCompose(comment)
                                                     }) else null,
-                                                    onShowReplies = if (state.parent == null && target.kind == CommentKind.COMIC && preview?.comments?.isNotEmpty() == true) ({
+                                                    onShowReplies = if (state.parent == null && target.kind != CommentKind.CHAPTER && preview?.comments?.isNotEmpty() == true) ({
                                                         onShowReplies(comment)
                                                     }) else null,
                                                     enabled = !state.posting

@@ -1,4 +1,4 @@
-package com.rchdliang.copymanga_neo.data.remote.util
+package com.rchdliang.copymanga_neo.ui.util
 
 import android.icu.text.CompactDecimalFormat
 import java.util.Locale

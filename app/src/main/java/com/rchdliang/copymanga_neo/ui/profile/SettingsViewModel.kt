@@ -28,6 +28,7 @@ data class SettingsUiState(
     val storageUsage: StorageUsage? = null,
     val storageLoading: Boolean = true,
     val clearingCache: Boolean = false,
+    val clearingNovelCache: Boolean = false,
     val storageError: String? = null,
     val message: String? = null
 )
@@ -112,16 +113,22 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun clearImageCache() {
+    fun clearImageCache() = clearCache(false, "图片缓存已清理") { storage.clearImageCache() }
+
+    fun clearNovelCache() =
+        clearCache(true, "小说正文、插图和接口缓存已清理") { storage.clearNovelCache() }
+
+    private fun clearCache(novel: Boolean, success: String, action: suspend () -> Result<Unit>) {
         if (uiState.value.clearingCache) return
-        mutableState.update { it.copy(clearingCache = true) }
+        mutableState.update { it.copy(clearingCache = true, clearingNovelCache = novel) }
         viewModelScope.launch(errors) {
-            storage.clearImageCache().fold(
+            action().fold(
                 onSuccess = {
                     mutableState.update {
                         it.copy(
                             clearingCache = false,
-                            message = "图片缓存已清理"
+                            clearingNovelCache = false,
+                            message = success
                         )
                     }
                 },
@@ -129,7 +136,8 @@ class SettingsViewModel @Inject constructor(
                     mutableState.update {
                         it.copy(
                             clearingCache = false,
-                            message = "清理缓存失败，请重试"
+                            clearingNovelCache = false,
+                            message = it.message ?: "清理缓存失败，请重试"
                         )
                     }
                 }

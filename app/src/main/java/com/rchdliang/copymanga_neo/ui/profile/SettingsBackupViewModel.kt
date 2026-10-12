@@ -54,7 +54,7 @@ class SettingsBackupViewModel @Inject constructor(
         val input = context.contentResolver.openInputStream(uri) ?: error("无法打开文件")
         // 仅读取有限长度，避免意外选择图片或大型文件时耗尽内存。
         val bytes = input.use { stream ->
-            val buffer = ByteArray(64 * 1024 + 1)
+            val buffer = ByteArray(SettingsBackupRepository.MAX_BYTES + 1)
             var count = 0
             while (count < buffer.size) {
                 val read = stream.read(buffer, count, buffer.size - count)
@@ -63,9 +63,9 @@ class SettingsBackupViewModel @Inject constructor(
             }
             buffer.copyOf(count)
         }
-        if (bytes.size > 64 * 1024) return@operate "设置文件过大，请选择有效的备份"
+        if (bytes.size > SettingsBackupRepository.MAX_BYTES) return@operate "设置文件过大，请选择有效的备份"
         repository.importSettings(bytes.toString(Charsets.UTF_8)).fold(
-            onSuccess = { "软件设置已导入" },
+            onSuccess = { "设置及本地阅读数据已导入" },
             onFailure = {
                 when (it.message) {
                     "导入失败，已恢复原设置", "导入未完成，请检查设置后重试" -> it.message!!

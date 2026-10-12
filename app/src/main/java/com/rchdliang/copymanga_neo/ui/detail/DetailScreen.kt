@@ -1,61 +1,36 @@
 package com.rchdliang.copymanga_neo.ui.detail
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Comment
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Pending
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Update
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,21 +39,16 @@ import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -89,29 +59,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -120,12 +80,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImagePainter
-import coil.compose.SubcomposeAsyncImage
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
-import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterGroup
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.ComicInfo
@@ -138,16 +95,27 @@ import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.model.blocks
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
+import com.rchdliang.copymanga_neo.ui.components.BookDetailActions
+import com.rchdliang.copymanga_neo.ui.components.BookDetailAuthor
+import com.rchdliang.copymanga_neo.ui.components.BookDetailBrief
+import com.rchdliang.copymanga_neo.ui.components.BookDetailCatalogueHeader
+import com.rchdliang.copymanga_neo.ui.components.BookDetailHeader
+import com.rchdliang.copymanga_neo.ui.components.BookDetailLayout
+import com.rchdliang.copymanga_neo.ui.components.BookDetailRefresh
+import com.rchdliang.copymanga_neo.ui.components.BookDetailStatus
+import com.rchdliang.copymanga_neo.ui.components.BookDetailSurface
+import com.rchdliang.copymanga_neo.ui.components.BookDetailTag
+import com.rchdliang.copymanga_neo.ui.components.BookDetailTags
+import com.rchdliang.copymanga_neo.ui.components.BookDetailToolbar
 import com.rchdliang.copymanga_neo.ui.components.ChapterItem
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.ui.components.ShareAction
-import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
+import com.rchdliang.copymanga_neo.ui.components.bookDetailCoverWidth
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.currentComicTransitionData
 import com.rchdliang.copymanga_neo.ui.components.isComicSharedTransitionActive
 import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
-import com.rchdliang.copymanga_neo.ui.preview.PreviewImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
+import com.rchdliang.copymanga_neo.ui.util.toCompactLocale
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
@@ -161,7 +129,8 @@ fun DetailScreen(
     onChapterClick: (String, String, String, String) -> Unit,
     onNavigateBack: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
-    onThemeClick: (Theme) -> Unit = {}
+    onThemeClick: (Theme) -> Unit = {},
+    onAuthorClick: (Author) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val detailGridState = rememberLazyGridState()
@@ -185,10 +154,7 @@ fun DetailScreen(
     val transitionData = currentComicTransitionData(pathWord)
     val sharedTransitionKey = transitionData?.transitionKey ?: pathWord
     val isSharedTransitionActive = isComicSharedTransitionActive(pathWord)
-    val density = LocalDensity.current
-    val containerSize = LocalWindowInfo.current.containerSize
-    val windowWidthDp = with(density) { containerSize.width.toDp() }
-    val detailCoverWidth = if (windowWidthDp >= 840.dp) 180.dp else 144.dp
+    val detailCoverWidth = bookDetailCoverWidth()
     var keepTransitionCover by remember(pathWord, transitionData) {
         mutableStateOf(transitionData != null)
     }
@@ -261,200 +227,166 @@ fun DetailScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .comicContainerSharedBounds(sharedTransitionKey, hideOnExit = true)
-                .matchParentSize()
-        ) {}
-
-        PullToRefreshBox(
-        isRefreshing = uiState.isLoading,
-        onRefresh = { viewModel.refreshDetail() },
-        state = pullToRefreshState,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = pullToRefreshState,
-                isRefreshing = uiState.isLoading,
-                modifier = Modifier.align(Alignment.TopCenter),
-            )
-        },
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-        ) {
+    BookDetailSurface(sharedTransitionKey, Modifier.fillMaxSize()) {
+        BookDetailRefresh(uiState.isLoading, onRefresh = { viewModel.refreshDetail() }) {
             when {
-            uiState.error != null && uiState.comicDetail == null -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .statusBarsPadding(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "错误",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "加载失败：${uiState.error}",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 32.dp),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    FilledTonalButton(
-                        onClick = { viewModel.loadDetail(pathWord) },
-                    ) { Text("重试") }
-                }
-            }
-
-            uiState.riskControlReason != null && uiState.comicDetail == null -> {
-                val reason = uiState.riskControlReason.orEmpty()
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Block,
-                        contentDescription = "风控",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "触发风控",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = reason,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    )
-                }
-            }
-
-            uiState.comicDetail != null -> {
-                val stableOnGroupSelect =
-                    remember { { group: String -> viewModel.selectGroup(group) } }
-                val stableOnToggleSortOrder =
-                    remember { { viewModel.toggleSortOrder() } }
-                val stableOnToggleShelf = remember(uiState.isLoggedIn) {
-                    {
-                        if (uiState.isLoggedIn) {
-                            viewModel.toggleShelf()
-                        } else {
-                            onNavigateToProfile()
-                        }
-                    }
-                }
-                val stableOnStartReading = remember {
-                    {
-                        val info = viewModel.getStartChapter()
-                        if (info != null) {
-                            onChapterClick(
-                                info.uuid,
-                                uiState.comicDetail!!.pathWord,
-                                info.name,
-                                info.groupPathWord
-                            )
-                        }
-                    }
-                }
-                // 计算点击"继续/开始阅读"后跳转的目标章节，用于按钮文案展示
-                val startChapterInfo =
-                    remember(
-                        uiState.chapters,
-                        uiState.browse,
-                        uiState.browseGroup,
-                        uiState.sortAscending,
-                        uiState.isProgressLoading,
-                        uiState.isLoading,
-                        uiState.isLoadingChapters,
-                        uiState.isChapterCatalogReady
+                uiState.error != null && uiState.comicDetail == null -> {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        viewModel.getStartChapter()
+                        BookDetailStatus(
+                            false,
+                            "加载失败：${uiState.error}",
+                            onRetry = { viewModel.loadDetail(pathWord) })
                     }
-                val onChapterToggleSelect = remember {
-                    { uuid: String -> viewModel.toggleChapterSelection(uuid) }
                 }
-                val onEnterManageMode = remember {
-                    { viewModel.enterManageMode() }
+
+                uiState.riskControlReason != null && uiState.comicDetail == null -> {
+                    val reason = uiState.riskControlReason.orEmpty()
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Block,
+                            contentDescription = "风控",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "触发风控",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = reason,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        )
+                    }
                 }
-                val onConfirmBatchAction = remember {
-                    { viewModel.confirmBatchAction() }
-                }
-                DetailContent(
-                    comicDetail = uiState.comicDetail!!,
-                    onComments = { showComments = true },
-                    blockedThemes = uiState.blockedThemes,
-                    onThemeClick = { theme ->
-                        if (theme.pathWord.isNullOrBlank()) {
-                            toastHost.showToast("此标签缺少标识，暂时无法跳转")
-                        } else {
-                            onThemeClick(theme)
+
+                uiState.comicDetail != null -> {
+                    val stableOnGroupSelect =
+                        remember { { group: String -> viewModel.selectGroup(group) } }
+                    val stableOnToggleSortOrder =
+                        remember { { viewModel.toggleSortOrder() } }
+                    val stableOnToggleShelf = remember(uiState.isLoggedIn) {
+                        {
+                            if (uiState.isLoggedIn) {
+                                viewModel.toggleShelf()
+                            } else {
+                                onNavigateToProfile()
+                            }
                         }
-                    },
-                    onThemeLongClick = { theme ->
-                        if (uiState.isBlacklistReady && !uiState.isSavingBlacklist) {
-                            pendingTheme = theme
-                        } else {
-                            toastHost.showToast("标签黑名单尚未就绪，请稍后重试")
+                    }
+                    val stableOnStartReading = remember {
+                        {
+                            val info = viewModel.getStartChapter()
+                            if (info != null) {
+                                onChapterClick(
+                                    info.uuid,
+                                    uiState.comicDetail!!.pathWord,
+                                    info.name,
+                                    info.groupPathWord
+                                )
+                            }
                         }
-                    },
-                    chapters = uiState.chapters,
-                    groups = uiState.groups,
-                    selectedGroup = uiState.selectedGroup,
-                    sortAscending = uiState.sortAscending,
-                    isLoggedIn = uiState.isLoggedIn,
-                    isInShelf = uiState.isInShelf,
-                    isShelfLoading = uiState.isShelfLoading,
-                    browse = uiState.browse,
-                    startChapterName = startChapterInfo?.name,
-                    startChapterIsContinue = startChapterInfo?.isContinue ?: false,
-                    batchSelection = uiState.batchSelection,
-                    chapterDownloadStatuses = uiState.chapterDownloadStatuses,
-                    chapterDownloadProgresses = uiState.chapterDownloadProgresses,
-                    onChapterClick = onChapterClick,
-                    onChapterLongPress = { uuid ->
-                        viewModel.enterManageMode(uuid)
-                    },
-                    onChapterToggleSelect = onChapterToggleSelect,
-                    onGroupSelect = stableOnGroupSelect,
-                    onToggleSortOrder = stableOnToggleSortOrder,
-                    onToggleShelf = stableOnToggleShelf,
-                    onStartReading = stableOnStartReading,
-                    onNavigateBack = onNavigateBack,
-                    onExitBatchMode = { viewModel.exitBatchMode() },
-                    onSelectAll = { viewModel.selectAll() },
-                    onInvertSelection = { viewModel.invertSelection() },
-                    onSelectToLatest = { viewModel.selectToLatest() },
-                    onUnselectToLatest = { viewModel.unselectToLatest() },
-                    onSelectToFirst = { viewModel.selectToFirst() },
-                    onUnselectToFirst = { viewModel.unselectToFirst() },
-                    onSelectBetween = { viewModel.selectBetween() },
-                    onUnselectBetween = { viewModel.unselectBetween() },
-                    canSelectBetween = { viewModel.canSelectBetween() },
-                    onClearSelection = { viewModel.clearSelection() },
-                    onEnterManageMode = onEnterManageMode,
-                    onConfirmBatchAction = onConfirmBatchAction,
-                    detailCoverWidth = detailCoverWidth,
-                    transitionPathWord = sharedTransitionKey,
-                    hideCoverDuringTransition = showTransitionCover,
-                    gridState = detailGridState,
-                    modifier = Modifier.fillMaxSize()
-                )
+                    }
+                    // 计算点击"继续/开始阅读"后跳转的目标章节，用于按钮文案展示
+                    val startChapterInfo =
+                        remember(
+                            uiState.chapters,
+                            uiState.browse,
+                            uiState.browseGroup,
+                            uiState.sortAscending,
+                            uiState.isProgressLoading,
+                            uiState.isLoading,
+                            uiState.isLoadingChapters,
+                            uiState.isChapterCatalogReady
+                        ) {
+                            viewModel.getStartChapter()
+                        }
+                    val onChapterToggleSelect = remember {
+                        { uuid: String -> viewModel.toggleChapterSelection(uuid) }
+                    }
+                    val onEnterManageMode = remember {
+                        { viewModel.enterManageMode() }
+                    }
+                    val onConfirmBatchAction = remember {
+                        { viewModel.confirmBatchAction() }
+                    }
+                    DetailContent(
+                        comicDetail = uiState.comicDetail!!,
+                        onComments = { showComments = true },
+                        onAuthorClick = onAuthorClick,
+                        blockedThemes = uiState.blockedThemes,
+                        onThemeClick = { theme ->
+                            if (theme.pathWord.isNullOrBlank()) {
+                                toastHost.showToast("此标签缺少标识，暂时无法跳转")
+                            } else {
+                                onThemeClick(theme)
+                            }
+                        },
+                        onThemeLongClick = { theme ->
+                            if (uiState.isBlacklistReady && !uiState.isSavingBlacklist) {
+                                pendingTheme = theme
+                            } else {
+                                toastHost.showToast("标签黑名单尚未就绪，请稍后重试")
+                            }
+                        },
+                        chapters = uiState.chapters,
+                        groups = uiState.groups,
+                        selectedGroup = uiState.selectedGroup,
+                        sortAscending = uiState.sortAscending,
+                        isLoggedIn = uiState.isLoggedIn,
+                        isInShelf = uiState.isInShelf,
+                        isShelfLoading = uiState.isShelfLoading,
+                        browse = uiState.browse,
+                        completedChapters = uiState.completedChapters,
+                        startChapterName = startChapterInfo?.name,
+                        startChapterIsContinue = startChapterInfo?.isContinue ?: false,
+                        batchSelection = uiState.batchSelection,
+                        chapterDownloadStatuses = uiState.chapterDownloadStatuses,
+                        chapterDownloadProgresses = uiState.chapterDownloadProgresses,
+                        onChapterClick = onChapterClick,
+                        onChapterLongPress = { uuid ->
+                            viewModel.enterManageMode(uuid)
+                        },
+                        onChapterToggleSelect = onChapterToggleSelect,
+                        onGroupSelect = stableOnGroupSelect,
+                        onToggleSortOrder = stableOnToggleSortOrder,
+                        onToggleShelf = stableOnToggleShelf,
+                        onStartReading = stableOnStartReading,
+                        onNavigateBack = onNavigateBack,
+                        onExitBatchMode = { viewModel.exitBatchMode() },
+                        onSelectAll = { viewModel.selectAll() },
+                        onInvertSelection = { viewModel.invertSelection() },
+                        onSelectToLatest = { viewModel.selectToLatest() },
+                        onUnselectToLatest = { viewModel.unselectToLatest() },
+                        onSelectToFirst = { viewModel.selectToFirst() },
+                        onUnselectToFirst = { viewModel.unselectToFirst() },
+                        onSelectBetween = { viewModel.selectBetween() },
+                        onUnselectBetween = { viewModel.unselectBetween() },
+                        canSelectBetween = { viewModel.canSelectBetween() },
+                        onClearSelection = { viewModel.clearSelection() },
+                        onEnterManageMode = onEnterManageMode,
+                        onConfirmBatchAction = onConfirmBatchAction,
+                        detailCoverWidth = detailCoverWidth,
+                        transitionPathWord = sharedTransitionKey,
+                        hideCoverDuringTransition = showTransitionCover,
+                        gridState = detailGridState,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
-        }
         }
 
         transitionData?.takeIf { showTransitionCover }?.let { coverData ->
@@ -546,6 +478,7 @@ fun DetailScreen(
 private fun DetailContent(
     comicDetail: ComicInfo,
     onComments: () -> Unit = {},
+    onAuthorClick: (Author) -> Unit = {},
     blockedThemes: List<Theme> = emptyList(),
     onThemeClick: (Theme) -> Unit = {},
     onThemeLongClick: (Theme) -> Unit = {},
@@ -583,11 +516,12 @@ private fun DetailContent(
     onClearSelection: () -> Unit,
     onEnterManageMode: () -> Unit,
     onConfirmBatchAction: () -> Unit,
-    detailCoverWidth: Dp = 120.dp,
+    detailCoverWidth: Dp = bookDetailCoverWidth(),
     transitionPathWord: String? = null,
     hideCoverDuringTransition: Boolean = false,
     modifier: Modifier,
-    gridState: LazyGridState = rememberLazyGridState()
+    gridState: LazyGridState = rememberLazyGridState(),
+    completedChapters: Set<String> = emptySet()
 ) {
 
     val currentPathWord = comicDetail.pathWord
@@ -600,57 +534,23 @@ private fun DetailContent(
     val isInBatchMode = batchSelection != null
     val managedChapterUuids = batchSelection?.managedChapters(chapters)?.keys.orEmpty()
     val density = LocalDensity.current
-    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    var titleHeight by remember(currentPathWord) { mutableIntStateOf(1) }
     var bottomBarHeight by remember { mutableIntStateOf(0) }
-    var expandReadingButton by rememberSaveable(currentPathWord) { mutableStateOf(true) }
-    val showAppBarTitle by remember(gridState) {
-        derivedStateOf {
-            val header =
-                gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "comic_header" }
-            if (header == null) gridState.firstVisibleItemIndex > 0
-            else -header.offset.y >= titleHeight.coerceAtLeast(1)
-        }
-    }
-    val atTop by remember(gridState) { derivedStateOf { !gridState.canScrollBackward } }
-    val scrollDirection = remember(density) {
-        object : NestedScrollConnection {
-            var distance = 0f
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && available.y != 0f) {
-                    if (distance * available.y < 0f) distance = 0f
-                    distance += available.y
-                    if (kotlin.math.abs(distance) >= with(density) { 8.dp.toPx() }) {
-                        expandReadingButton = distance > 0f
-                        distance = 0f
-                    }
-                }
-                return Offset.Zero
-            }
-        }
-    }
     val displayedChapters = remember(chapters, sortAscending) {
         if (sortAscending) chapters else chapters.reversed()
     }
     val hasReadingTarget = !startChapterName.isNullOrBlank()
     val readingAction = if (startChapterIsContinue) "继续阅读" else "开始阅读"
     val readingLabel = if (hasReadingTarget) "$readingAction：$startChapterName" else readingAction
-    val bottomPadding = when {
-        isInBatchMode -> with(density) { bottomBarHeight.toDp() } + 16.dp
-        hasReadingTarget -> 104.dp + navigationBottom
-        else -> 16.dp + navigationBottom
-    }
 
     BackHandler(enabled = isInBatchMode, onBack = onExitBatchMode)
-    Box(modifier = modifier.background(MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxSize()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = if (atTop) 0.dp else 3.dp
-            ) {
-                if (isInBatchMode) {
-                    val selectedCount =
-                        managedChapterUuids.count { it in batchSelection.selectedChapterUuids }
+    BookDetailLayout(
+        bookKey = currentPathWord, title = comicDetail.name, onBack = onNavigateBack,
+        readingLabel = readingLabel, readingTargetName = startChapterName, onRead = onStartReading,
+        modifier = modifier, gridState = gridState, headerKey = "comic_header",
+        topBar = if (isInBatchMode) {
+            {
+                val selectedCount =
+                    managedChapterUuids.count { it in batchSelection.selectedChapterUuids }
                 SelectionTopRow(
                     selectedCount = selectedCount,
                     canSelectBetween = canSelectBetween(),
@@ -665,313 +565,73 @@ private fun DetailContent(
                     onUnselectBetween = onUnselectBetween,
                     onClearSelection = onClearSelection
                 )
-                } else {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .heightIn(min = 48.dp)
-                            .padding(horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Box(Modifier.weight(1f)) {
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = showAppBarTitle,
-                                enter = fadeIn(),
-                                exit = fadeOut()
-                            ) {
-                                Text(
-                                    comicDetail.name, color = MaterialTheme.colorScheme.onSurface,
-                                    style = MaterialTheme.typography.titleLarge, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        ShareAction(ShareTarget.comic(comicDetail.pathWord, comicDetail.name))
-                        IconButton(onClick = onComments, enabled = comicDetail.uuid.isNotBlank()) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.Comment,
-                                contentDescription = "漫画评论",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        if (chapters.isNotEmpty()) {
-                            IconButton(onClick = onEnterManageMode) {
-                                Icon(
-                                    Icons.Default.Download, contentDescription = "管理下载",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                }
             }
-
-            // 漫画信息与章节共用一个滚动容器，避免嵌套纵向滚动挤压目录。
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 90.dp),
-                state = gridState,
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomPadding),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .nestedScroll(scrollDirection)
-            ) {
-                item(
-                    key = "comic_header",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "comic_header"
-                ) {
-                    Column(Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 0.dp)
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                if (LocalInspectionMode.current) {
-                    PreviewImage(
-                        contentDescription = comicDetail.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = coverTransitionModifier
-                            .width(detailCoverWidth)
-                            .aspectRatio(3f / 4f)
-                            .clip(MaterialTheme.shapes.medium)
-                            .alpha(if (hideCoverDuringTransition) 0f else 1f)
-                    )
-                } else {
-                    SubcomposeAsyncImage(
-                        model = comicDetail.cover,
-                        contentDescription = comicDetail.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = coverTransitionModifier
-                            .width(detailCoverWidth)
-                            .aspectRatio(3f / 4f)
-                            .clip(MaterialTheme.shapes.medium)
-                            .alpha(if (hideCoverDuringTransition) 0f else 1f)
-                    ) {
-                        when (painter.state) {
-                            is AsyncImagePainter.State.Loading -> {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    LoadingIndicator(
-                                        modifier = Modifier
-                                            .width(32.dp)
-                                            .aspectRatio(1f),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-
-                            is AsyncImagePainter.State.Error -> {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(MaterialTheme.colorScheme.surfaceContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Image(
-                                        imageVector = Icons.Default.BrokenImage,
-                                        contentDescription = "加载失败",
-                                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant),
-                                        modifier = Modifier.padding(16.dp)
-                                    )
-                                }
-                            }
-
-                            is AsyncImagePainter.State.Success -> {
-                                Image(
-                                    painter = painter,
-                                    contentDescription = comicDetail.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-
-                            else -> Unit
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = comicDetail.name,
-                        modifier = Modifier.onSizeChanged { titleHeight = it.height },
-                        style = MaterialTheme.typography.headlineSmallEmphasized,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = "作者",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        comicDetail.author?.let { authors ->
-                            Text(
-                                text = authors.joinToString { author -> author.name },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Pending,
-                            contentDescription = "状态",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = if (comicDetail.status.value == 1) "已完结" else "连载中",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Update,
-                            contentDescription = "最后更新",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = comicDetail.lastUpdate ?: "--",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.LocalFireDepartment,
-                            contentDescription = "热度",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = comicDetail.popular?.toCompactLocale() ?: "--",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+        } else null,
+        actions = {
+            BookDetailToolbar(
+                ShareTarget.comic(comicDetail.pathWord, comicDetail.name),
+                onComments, commentsEnabled = comicDetail.uuid.isNotBlank(),
+                onDownload = onEnterManageMode.takeIf { chapters.isNotEmpty() }
+            )
+        },
+        bottomPaddingOverride = if (isInBatchMode) with(density) { bottomBarHeight.toDp() } + 16.dp else null,
+        bottomBar = if (isInBatchMode) {
+            {
+                val changes = chapterDownloadChanges(
+                    managedChapterUuids,
+                    batchSelection.selectedChapterUuids,
+                    chapterDownloadStatuses
+                )
+                ManageBottomBar(
+                    changes.download.size,
+                    changes.delete.size,
+                    changes.cancel.size,
+                    onConfirmBatchAction,
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .onSizeChanged { bottomBarHeight = it.height })
             }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onToggleShelf,
-                    modifier = Modifier.weight(1f),
-                    enabled = !isShelfLoading && isLoggedIn
-                ) {
-                    Text(
-                        if (isInShelf) "已在书架" else "加入书架",
-                        color = LocalContentColor.current, maxLines = 1
+        } else null,
+        header = { titleModifier ->
+            BookDetailHeader(
+                title = comicDetail.name,
+                cover = comicDetail.cover,
+                authors = comicDetail.author.orEmpty().map {
+                    BookDetailAuthor(it.name, it.pathWord?.takeIf(String::isNotBlank) ?: it.name)
+                },
+                status = if (comicDetail.status.value == 1) "已完结" else "连载中",
+                updated = comicDetail.lastUpdate ?: "--",
+                popularity = comicDetail.popular?.toCompactLocale() ?: "--",
+                coverWidth = detailCoverWidth,
+                coverModifier = coverTransitionModifier.alpha(if (hideCoverDuringTransition) 0f else 1f),
+                titleModifier = titleModifier,
+                onAuthor = { path ->
+                    comicDetail.author.orEmpty().firstOrNull {
+                        (it.pathWord?.takeIf(String::isNotBlank) ?: it.name) == path
+                    }?.let(onAuthorClick)
+                }
+            )
+            BookDetailActions(
+                readingLabel,
+                hasReadingTarget,
+                onStartReading,
+                if (isInShelf) "已在书架" else "加入书架",
+                !isShelfLoading && isLoggedIn,
+                onToggleShelf
+            )
+            val themes = comicDetail.theme.orEmpty()
+            BookDetailTags(
+                themes.mapIndexed { index, theme ->
+                    BookDetailTag(
+                        theme.name,
+                        index.toString(),
+                        blockedThemes.blocks(theme)
                     )
-                }
-                Button(
-                    onClick = onStartReading,
-                    modifier = Modifier.weight(1f),
-                    enabled = hasReadingTarget
-                ) {
-                    Text(
-                        readingLabel, color = LocalContentColor.current,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            comicDetail.theme?.let { themes ->
-                if (themes.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 0.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        themes.forEach { theme ->
-                            val isBlocked = blockedThemes.blocks(theme)
-                            Box(
-                                modifier = Modifier
-                                    .clip(MaterialTheme.shapes.large)
-                                    .background(
-                                        if (isBlocked) MaterialTheme.colorScheme.errorContainer
-                                        else MaterialTheme.colorScheme.secondaryContainer
-                                    )
-                                    .combinedClickable(
-                                        role = Role.Button,
-                                        onClickLabel = "查看${theme.name}漫画",
-                                        onLongClickLabel = if (isBlocked) "取消屏蔽此标签" else "屏蔽此标签",
-                                        onClick = { onThemeClick(theme) },
-                                        onLongClick = { onThemeLongClick(theme) }
-                                    )
-                                    //.minimumInteractiveComponentSize()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = theme.name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (isBlocked) MaterialTheme.colorScheme.onErrorContainer
-                                    else MaterialTheme.colorScheme.onSecondaryContainer,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-                        comicDetail.brief?.trim()?.let { brief ->
-                var expanded by remember { mutableStateOf(false) }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { expanded = !expanded }
-                        .animateContentSize()
-                        .padding(horizontal = 0.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = brief,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = if (expanded) Int.MAX_VALUE else 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
+                },
+                onClick = { tag -> onThemeClick(themes[tag.key.toInt()]) },
+                onLongClick = { tag -> onThemeLongClick(themes[tag.key.toInt()]) }
+            )
+            comicDetail.brief?.let { BookDetailBrief(comicDetail.pathWord, it) }
             if (groups.size > 1) {
                 Row(
                     modifier = Modifier
@@ -1002,107 +662,36 @@ private fun DetailContent(
                     }
                 }
             }
-
-
-                    }
-                }
-                item(
-                    key = "chapter_controls",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "chapter_controls"
-                ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "章节列表", color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        TextButton(
-                            onClick = onToggleSortOrder,
-                            modifier = Modifier.semantics {
-                                stateDescription = if (sortAscending) "正序" else "倒序"
-                            }
-                        ) {
-                            val total = groups.firstOrNull { it.pathWord == selectedGroup }?.total
-                                ?: chapters.size
-                            Text(
-                                "共 $total 话 · ${if (sortAscending) "正序" else "倒序"}",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Default.SwapVert, contentDescription = null)
-                        }
-                    }
-                }
-                items(
-                    count = displayedChapters.size,
-                    key = { displayedChapters[it].uuid },
-                    contentType = { "chapter" }) { index ->
-                    val chapter = displayedChapters[index]
-                    ChapterItem(
-                        chapter = chapter,
-                        isSelected = batchSelection?.selectedChapterUuids?.contains(chapter.uuid) == true,
-                        isSelectionMode = isInBatchMode,
-                        downloadStatus = chapterDownloadStatuses[chapter.uuid],
-                        downloadProgress = chapterDownloadProgresses[chapter.uuid],
-                        onClick = {
-                            if (isInBatchMode) currentOnChapterToggleSelect(chapter.uuid)
-                            else currentOnChapterClick(
-                                chapter.uuid, currentPathWord, chapter.name,
-                                chapter.groupPathWord ?: "default"
-                            )
-                        },
-                        onLongPress = { currentOnChapterLongPress(chapter.uuid) }
-                    )
-                }
-            }
         }
-
-        if (isInBatchMode) {
-            val changes = chapterDownloadChanges(
-                managedChapterUuids,
-                batchSelection.selectedChapterUuids,
-                chapterDownloadStatuses
-            )
-            ManageBottomBar(
-                changes.download.size,
-                changes.delete.size,
-                changes.cancel.size,
-                onConfirmBatchAction,
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .onSizeChanged { bottomBarHeight = it.height })
-        } else if (hasReadingTarget) {
-            val expanded = atTop || expandReadingButton
-            ExtendedFloatingActionButton(
-                onClick = onStartReading,
-                expanded = expanded,
-                icon = {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = if (expanded) null else readingLabel
+    ) {
+        item(
+            key = "chapter_controls",
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = "chapter_controls"
+        ) {
+            val total = groups.firstOrNull { it.pathWord == selectedGroup }?.total ?: chapters.size
+            BookDetailCatalogueHeader("章节列表", "共 $total 话", sortAscending, onToggleSortOrder)
+        }
+        items(
+            count = displayedChapters.size,
+            key = { displayedChapters[it].uuid },
+            contentType = { "chapter" }) { index ->
+            val chapter = displayedChapters[index]
+            ChapterItem(
+                chapter = chapter,
+                isReadCompleted = chapter.uuid in completedChapters,
+                isSelected = batchSelection?.selectedChapterUuids?.contains(chapter.uuid) == true,
+                isSelectionMode = isInBatchMode,
+                downloadStatus = chapterDownloadStatuses[chapter.uuid],
+                downloadProgress = chapterDownloadProgresses[chapter.uuid],
+                onClick = {
+                    if (isInBatchMode) currentOnChapterToggleSelect(chapter.uuid)
+                    else currentOnChapterClick(
+                        chapter.uuid, currentPathWord, chapter.name,
+                        chapter.groupPathWord ?: "default"
                     )
                 },
-                text = {
-                    Text(
-                        startChapterName,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-                    .widthIn(max = 280.dp)
+                onLongPress = { currentOnChapterLongPress(chapter.uuid) }
             )
         }
     }

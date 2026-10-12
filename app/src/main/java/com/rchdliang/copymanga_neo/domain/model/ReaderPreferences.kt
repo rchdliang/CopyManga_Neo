@@ -14,3 +14,6 @@ data class ReaderPreferences(
             ?: "SYSTEM_DEFAULT"
     )
 }
+
+/** Raw per-book import delta; rollback retains edits made after the import. */
+data class ComicPreferencesChange(val before: Map<String, String>, val applied: Map<String, String>)

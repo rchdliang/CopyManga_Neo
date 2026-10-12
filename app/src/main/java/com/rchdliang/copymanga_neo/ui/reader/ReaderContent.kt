@@ -75,7 +75,8 @@ fun ReaderContent(
     tools: ReaderToolsSettings,
     onUserInteraction: () -> Unit,
     commentContent: @Composable (ReaderPageEntry) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onImageReady: (String) -> Unit = {}
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -160,7 +161,9 @@ fun ReaderContent(
                         } else ReaderImageItem(
                             page.page, page.source, contentScale, true,
                             index == visibleIndex, false, zoomState = zoom,
-                            imageLoader = imageLoader, tools = tools
+                            imageLoader = imageLoader,
+                            tools = tools,
+                            onReady = { onImageReady(page.key) }
                         )
                     }
                 }
@@ -193,7 +196,7 @@ fun ReaderContent(
                     index == pagerState.currentPage, true,
                     zoomState = zoomStates.getOrPut(page.key) { ReaderZoomState() },
                     isContentScrolling = { pagerState.isScrollInProgress },
-                    imageLoader = imageLoader, tools = tools
+                    imageLoader = imageLoader, tools = tools, onReady = { onImageReady(page.key) }
                 )
             }
         }
@@ -211,7 +214,8 @@ private fun ReaderImageItem(
     zoomState: ReaderZoomState = remember(path) { ReaderZoomState() },
     isContentScrolling: () -> Boolean = { false },
     imageLoader: ImageLoader,
-    tools: ReaderToolsSettings
+    tools: ReaderToolsSettings,
+    onReady: () -> Unit = {}
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
@@ -303,6 +307,10 @@ private fun ReaderImageItem(
             }
 
             is AsyncImagePainter.State.Success -> {
+                LaunchedEffect(
+                    path,
+                    retryKey
+                ) { androidx.compose.runtime.withFrameNanos { }; onReady() }
                 val currentPainter = painter
                 if (enableZoom) {
                     // 分页模式：单个图片缩放

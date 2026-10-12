@@ -13,6 +13,9 @@ interface ReaderPreferencesRepository {
         transform: (ReaderPreferences) -> ReaderPreferences
     ): Result<Unit>
 
+    suspend fun exportComicPreferences(): Result<Map<String, ReaderPreferences>>
+    suspend fun mergeComicPreferences(values: Map<String, ReaderPreferences>): Result<com.rchdliang.copymanga_neo.domain.model.ComicPreferencesChange>
+    suspend fun rollbackComicPreferences(change: com.rchdliang.copymanga_neo.domain.model.ComicPreferencesChange): Result<Unit>
     suspend fun resetGlobal(): Result<Unit>
     suspend fun resetComic(comicPathWord: String): Result<Unit>
 }

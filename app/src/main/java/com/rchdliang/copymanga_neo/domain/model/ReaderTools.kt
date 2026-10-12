@@ -24,5 +24,6 @@ data class ReaderBookmark(
     val chapterName: String,
     val group: String,
     val page: Int,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val fraction: Double = 0.0
 )

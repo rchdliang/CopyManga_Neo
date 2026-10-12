@@ -10,6 +10,7 @@ import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
 import com.rchdliang.copymanga_neo.domain.repository.ReaderPreferencesRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,6 +71,50 @@ class ReaderPreferencesStore @Inject constructor(
         require(comicPathWord.isNotBlank())
         dataStore.edit { prefs -> prefs[comicKey(comicPathWord)] = encode(readGlobal(prefs)) }
     }
+
+    override suspend fun exportComicPreferences(): Result<Map<String, ReaderPreferences>> = result {
+        dataStore.data.first()
+            .asMap().entries.filter { it.key.name.startsWith("comic_preferences:") }
+            .associate { (key, raw) ->
+                val path = key.name.removePrefix("comic_preferences:")
+                require(path.isNotBlank() && raw is String) { "逐漫画阅读设置损坏，原数据已保留" }
+                path to ComicPreferencesCodec.decode(raw)
+            }
+    }
+
+    override suspend fun mergeComicPreferences(values: Map<String, ReaderPreferences>): Result<com.rchdliang.copymanga_neo.domain.model.ComicPreferencesChange> =
+        result {
+            val applied = values.mapValues { (path, value) ->
+                require(path.isNotBlank()); ComicPreferencesCodec.encode(value)
+            }
+            val before = linkedMapOf<String, String>()
+            dataStore.edit { prefs ->
+                applied.forEach { (path, raw) ->
+                    prefs[comicKey(path)]?.let { before[path] = it }
+                    prefs[comicKey(path)] = raw
+                }
+            }
+            com.rchdliang.copymanga_neo.domain.model.ComicPreferencesChange(before, applied)
+        }
+
+    override suspend fun rollbackComicPreferences(change: com.rchdliang.copymanga_neo.domain.model.ComicPreferencesChange): Result<Unit> =
+        result {
+            dataStore.edit { prefs ->
+                val current =
+                    change.applied.keys.mapNotNull { path -> prefs[comicKey(path)]?.let { path to it } }
+                        .toMap()
+                val restored =
+                    com.rchdliang.copymanga_neo.domain.reading.ImportRollbackPolicy.restore(
+                        change.before,
+                        change.applied,
+                        current
+                    )
+                change.applied.keys.forEach { path ->
+                    val raw = restored[path]
+                    if (raw == null) prefs.remove(comicKey(path)) else prefs[comicKey(path)] = raw
+                }
+            }
+        }
 
     private fun readGlobal(prefs: Preferences) = ReaderPreferences(
         prefs[KEY_READING_DIRECTION] ?: "RIGHT_TO_LEFT",

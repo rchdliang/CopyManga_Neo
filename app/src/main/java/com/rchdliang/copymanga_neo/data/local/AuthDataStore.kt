@@ -27,7 +27,7 @@ class AuthDataStore(
     private val dataStore: DataStore<Preferences>,
     private val networkSettings: NetworkSettingsStore,
     private val clearWebCookies: () -> Unit = {}
-) {
+) : com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository {
     private data class Session(
         val token: String? = null,
         val username: String? = null,
@@ -49,8 +49,8 @@ class AuthDataStore(
     private var authGeneration = 0L
     private var autoLoginAllowed = true
 
-    val cacheReadyFlow: Flow<Boolean> = ready.asStateFlow()
-    val sessionChanges: Flow<Long> = revision.asStateFlow()
+    override val cacheReadyFlow: Flow<Boolean> = ready.asStateFlow()
+    override val sessionChanges: Flow<Long> = revision.asStateFlow()
 
     init {
         networkSettings.onChange {
@@ -109,11 +109,24 @@ class AuthDataStore(
         }
     }
 
-    suspend fun awaitReady() {
+    override suspend fun awaitReady() {
         ready.first { it }
     }
 
     fun isCacheReady(): Boolean = ready.value
+    override fun getReadingSessionSync(): com.rchdliang.copymanga_neo.domain.model.LocalReadingSession? =
+        synchronized(lock) {
+            if (!ready.value) null else {
+                val snapshot = active.value
+                com.rchdliang.copymanga_neo.domain.model.LocalReadingSession(
+                    snapshot.mode,
+                    com.rchdliang.copymanga_neo.domain.model.readingProgressOwner(
+                        snapshot.session.token != null,
+                        snapshot.session.username
+                    ), authGeneration
+                )
+            }
+        }
     fun getAuthGeneration(): Long = synchronized(lock) { authGeneration }
     fun getRequestModeSync(): RequestMode = active.value.mode
 
@@ -397,7 +410,7 @@ class AuthDataStore(
 
     fun getSavedPasswordSync(): String? = active.value.session.savedPassword
     fun isLoggedIn(): Flow<Boolean> = active.map { it.session.token != null }.distinctUntilChanged()
-    fun isLoggedInSync(): Boolean = active.value.session.token != null
+    override fun isLoggedInSync(): Boolean = active.value.session.token != null
 
     private fun readSession(prefs: Preferences, mode: RequestMode): Session {
         val username = prefs[stringKey(mode, "username")]?.takeIf { it.isNotBlank() }

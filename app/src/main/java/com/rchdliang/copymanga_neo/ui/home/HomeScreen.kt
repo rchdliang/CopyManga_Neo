@@ -5,6 +5,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,6 +59,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.NovelTransitionCard
 import com.rchdliang.copymanga_neo.ui.components.TopicCard
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -76,7 +78,10 @@ fun HomeScreen(
     onNavigateToExplore: (String) -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
     onNavigateToTopic: (String, String) -> Unit = { _, _ -> },
+    onNavigateToNovel: (String?) -> Unit = {},
 ) {
+    val novelViewModel: HomeNovelViewModel = hiltViewModel()
+    val novels by novelViewModel.state.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
 
@@ -102,7 +107,10 @@ fun HomeScreen(
         onNavigateToExplore = onNavigateToExplore,
         onNavigateToTopic = onNavigateToTopic,
         onLoadMoreTopics = viewModel::loadMoreTopics,
-        onRefresh = viewModel::loadComics,
+        onRefresh = { viewModel.loadComics(); novelViewModel.retry() },
+        novels = novels, onNovelRetry = novelViewModel::retry,
+        onNovelClick = { onNavigateToNovel(it) },
+        onMoreNovels = { onNavigateToNovel(null) },
         onViewportChanged = viewModel::onShelfViewportChanged,
         onLoadMore = viewModel::loadMore,
         onRankAudienceSelected = viewModel::selectRankAudience,
@@ -162,9 +170,16 @@ private fun HomeContent(
     onRankAudienceSelected: (String) -> Unit = {},
     onRankPeriodSelected: (String) -> Unit = {},
     onRetryAfterRisk: () -> Unit = {},
-    onNavigateToDownloads: () -> Unit = {}
+    onNavigateToDownloads: () -> Unit = {},
+    novels: HomeNovelUiState = HomeNovelUiState(loading = false),
+    onNovelRetry: () -> Unit = {},
+    onNovelClick: (String) -> Unit = {},
+    onMoreNovels: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+    val isRefreshing = uiState.isLoading || novels.loading
+    // 网络结果与过滤流分开发布；过滤未就绪时保留固定分区，避免晚到内容插到当前锚点上方。
+    val awaitingComics = uiState.error == null && (uiState.isLoading || !uiState.filterReady)
 
     Column(modifier = modifier.fillMaxSize()) {
         SearchEntryBar(
@@ -175,13 +190,13 @@ private fun HomeContent(
         )
 
         PullToRefreshBox(
-            isRefreshing = uiState.isLoading,
+            isRefreshing = isRefreshing,
             onRefresh = onRefresh,
             state = pullToRefreshState,
             indicator = {
                 PullToRefreshDefaults.LoadingIndicator(
                     state = pullToRefreshState,
-                    isRefreshing = uiState.isLoading,
+                    isRefreshing = isRefreshing,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             },
@@ -226,7 +241,8 @@ private fun HomeContent(
                 }
 
                 (uiState.error != null && uiState.recComicList.isEmpty() &&
-                        uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty()) -> {
+                        uiState.hotComics.isEmpty() && uiState.newComics.isEmpty() && uiState.finishComics.isEmpty() &&
+                        novels.books.isEmpty()) -> {
                     val errorMsg = uiState.error
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -289,7 +305,12 @@ private fun HomeContent(
                                 }
                             }
                         }
-                        if (uiState.recComicList.isNotEmpty() || HomeShelf.RECOMMENDED in uiState.paging) item(
+                        if (showHomeSection(
+                                uiState.recComicList.size,
+                                awaitingComics,
+                                uiState.paging[HomeShelf.RECOMMENDED]
+                            )
+                        ) item(
                             key = "recommended"
                         ) {
                             HomeComicSection(
@@ -300,20 +321,34 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("recommended") },
                                 shelf = HomeShelf.RECOMMENDED,
                                 paging = uiState.paging[HomeShelf.RECOMMENDED],
+                                initialLoading = awaitingComics,
                                 filterReady = uiState.filterReady,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
                             )
                         }
-                        if (uiState.hotComics.isNotEmpty()) item(key = "hot") {
+                        item(key = "novels") {
+                            HomeNovelSection(novels, onNovelClick, onMoreNovels, onNovelRetry)
+                        }
+                        if (showHomeSection(
+                                uiState.hotComics.size,
+                                awaitingComics
+                            )
+                        ) item(key = "hot") {
                             HomeComicSection(
                                 "热门更新",
                                 uiState.hotComics,
                                 "home-hot",
-                                onComicClick
+                                onComicClick,
+                                initialLoading = awaitingComics
                             )
                         }
-                        if (uiState.newComics.isNotEmpty() || HomeShelf.NEWEST in uiState.paging) item(
+                        if (showHomeSection(
+                                uiState.newComics.size,
+                                awaitingComics,
+                                uiState.paging[HomeShelf.NEWEST]
+                            )
+                        ) item(
                             key = "newest"
                         ) {
                             HomeComicSection(
@@ -324,12 +359,18 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("newest") },
                                 shelf = HomeShelf.NEWEST,
                                 paging = uiState.paging[HomeShelf.NEWEST],
+                                initialLoading = awaitingComics,
                                 filterReady = uiState.filterReady,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
                             )
                         }
-                        if (uiState.rankComics.isNotEmpty() || HomeShelf.RANKS in uiState.paging) item(
+                        if (showHomeSection(
+                                uiState.rankComics.size,
+                                awaitingComics,
+                                uiState.paging[HomeShelf.RANKS]
+                            )
+                        ) item(
                             key = "ranks"
                         ) {
                             HomeComicSection(
@@ -340,6 +381,7 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("ranks?audience=${uiState.rankAudience}&period=${uiState.rankPeriod}") },
                                 shelf = HomeShelf.RANKS,
                                 paging = uiState.paging[HomeShelf.RANKS],
+                                initialLoading = awaitingComics,
                                 filterReady = uiState.filterReady,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore,
@@ -351,15 +393,26 @@ private fun HomeContent(
                                 onRankPeriodSelected = onRankPeriodSelected
                             )
                         }
-                        if (uiState.topics.isNotEmpty()) item(key = "topics") {
+                        if (showHomeSection(
+                                uiState.topics.size,
+                                awaitingComics,
+                                uiState.topicPaging
+                            )
+                        ) item(key = "topics") {
                             HomeTopicsSection(
                                 topics = uiState.topics,
                                 paging = uiState.topicPaging,
+                                initialLoading = awaitingComics,
                                 onLoadMore = onLoadMoreTopics,
                                 onTopicClick = { onNavigateToTopic(it.pathWord, it.title) },
                                 onMore = { onNavigateToExplore("topics") })
                         }
-                        if (uiState.finishComics.isNotEmpty() || HomeShelf.FINISHED in uiState.paging) item(
+                        if (showHomeSection(
+                                uiState.finishComics.size,
+                                awaitingComics,
+                                uiState.paging[HomeShelf.FINISHED]
+                            )
+                        ) item(
                             key = "finished"
                         ) {
                             HomeComicSection(
@@ -370,6 +423,7 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("finished") },
                                 shelf = HomeShelf.FINISHED,
                                 paging = uiState.paging[HomeShelf.FINISHED],
+                                initialLoading = awaitingComics,
                                 filterReady = uiState.filterReady,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
@@ -412,6 +466,30 @@ private fun SearchEntryBar(
     }
 }
 
+/** 漫画、小说和专题共用分区表面与内容留白。 */
+@Composable
+private fun HomeSectionContainer(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp), content = content)
+    }
+}
+
+/** 漫画和小说预览使用相同的封面尺寸与列数。 */
+private fun homeBookColumns(width: Dp): Int =
+    floor(((width + 8.dp) / 128.dp).toDouble()).toInt().coerceAtLeast(3)
+
+/** 完成且无内容、无后续页的分区不保留空骨架；分页对象存在本身不代表还有内容。 */
+private fun showHomeSection(
+    count: Int,
+    awaitingContent: Boolean,
+    paging: HomeShelfPaging? = null
+): Boolean =
+    count > 0 || awaitingContent || paging?.nextOffset != null || paging?.isLoading == true || paging?.error != null
+
 /** 分区容器将标题、跳转入口和首页预览统一包裹。 */
 @Composable
 private fun HomeComicSection(
@@ -430,84 +508,78 @@ private fun HomeComicSection(
     rankAudience: String = "male",
     rankPeriod: String = "day",
     onRankAudienceSelected: (String) -> Unit = {},
-    onRankPeriodSelected: (String) -> Unit = {}
+    onRankPeriodSelected: (String) -> Unit = {},
+    initialLoading: Boolean = false
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            HomeSectionHeader(
-                title,
-                onMore,
-                if (ranked) rankAudience else null,
-                onRankAudienceSelected
+    HomeSectionContainer {
+        HomeSectionHeader(
+            title,
+            onMore,
+            if (ranked) rankAudience else null,
+            onRankAudienceSelected
+        )
+        if (ranked) {
+            HomeRankChoices(
+                rankPeriod,
+                onRankPeriodSelected
             )
-            if (ranked) {
-                HomeRankChoices(
-                    rankPeriod,
-                    onRankPeriodSelected
-                )
+        }
+        Spacer(Modifier.height(12.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val visibleCards = homeBookColumns(maxWidth)
+            val cardWidth = (maxWidth - 8.dp * (visibleCards - 1)) / visibleCards
+            val listState = rememberLazyListState()
+            LaunchedEffect(shelf, visibleCards) {
+                if (shelf != null) onViewportChanged(shelf, visibleCards)
             }
-            Spacer(Modifier.height(12.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val visibleCards = floor(((maxWidth + 8.dp) / 128.dp).toDouble())
-                    .toInt().coerceAtLeast(3)
-                val cardWidth = (maxWidth - 8.dp * (visibleCards - 1)) / visibleCards
-                val listState = rememberLazyListState()
-                LaunchedEffect(shelf, visibleCards) {
-                    if (shelf != null) onViewportChanged(shelf, visibleCards)
-                }
-                LaunchedEffect(
-                    shelf, visibleCards, comics.size, filterReady,
-                    paging?.nextOffset, paging?.isLoading, paging?.error, paging?.requiredCount
+            LaunchedEffect(
+                shelf, visibleCards, comics.size, filterReady,
+                paging?.nextOffset, paging?.isLoading, paging?.error, paging?.requiredCount
+            ) {
+                if (shelf != null && filterReady && paging?.nextOffset != null &&
+                    !paging.isLoading && paging.error == null &&
+                    comics.size < maxOf(visibleCards + 1, paging.requiredCount)
                 ) {
-                    if (shelf != null && filterReady && paging?.nextOffset != null &&
-                        !paging.isLoading && paging.error == null &&
-                        comics.size < maxOf(visibleCards + 1, paging.requiredCount)
-                    ) {
-                        onLoadMore(shelf, true)
+                    onLoadMore(shelf, true)
+                }
+            }
+            LaunchedEffect(rankAudience, rankPeriod) {
+                if (ranked) listState.scrollToItem(0)
+            }
+            LaunchedEffect(
+                shelf,
+                comics.size,
+                filterReady,
+                paging?.nextOffset,
+                paging?.isLoading,
+                paging?.error
+            ) {
+                if (shelf != null && filterReady && paging?.nextOffset != null && !paging.isLoading && paging.error == null) {
+                    snapshotFlow {
+                        listState.firstVisibleItemIndex > 0 &&
+                                (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                                    ?: -1) >= comics.lastIndex - 1
+                    }.distinctUntilChanged().collect { nearEnd ->
+                        if (nearEnd) onLoadMore(shelf, false)
                     }
                 }
-                LaunchedEffect(rankAudience, rankPeriod) {
-                    if (ranked) listState.scrollToItem(0)
-                }
-                LaunchedEffect(
-                    shelf,
-                    comics.size,
-                    filterReady,
-                    paging?.nextOffset,
-                    paging?.isLoading,
-                    paging?.error
-                ) {
-                    if (shelf != null && filterReady && paging?.nextOffset != null && !paging.isLoading && paging.error == null) {
-                        snapshotFlow {
-                            listState.firstVisibleItemIndex > 0 &&
-                                    (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-                                        ?: -1) >= comics.lastIndex - 1
-                        }.distinctUntilChanged().collect { nearEnd ->
-                            if (nearEnd) onLoadMore(shelf, false)
-                        }
-                    }
-                }
-                ComicGrid(
-                    comics = comics,
-                    transitionGroupKey = transitionGroupKey,
-                    onComicClick = onComicClick,
-                    ranked = ranked,
-                    rankPositions = rankPositions,
-                    cardWidth = cardWidth,
-                    placeholderCount = if (paging?.nextOffset != null || paging?.isLoading == true)
-                        (visibleCards - comics.size).coerceAtLeast(0) else 0,
-                    state = listState,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
-            if (paging?.error != null) {
-                TextButton(onClick = { if (shelf != null) onLoadMore(shelf, false) }) {
-                    Text("加载更多失败，点击重试", color = MaterialTheme.colorScheme.primary)
-                }
+            ComicGrid(
+                comics = comics,
+                transitionGroupKey = transitionGroupKey,
+                onComicClick = onComicClick,
+                ranked = ranked,
+                rankPositions = rankPositions,
+                cardWidth = cardWidth,
+                placeholderCount = if (initialLoading || paging?.nextOffset != null || paging?.isLoading == true)
+                    (visibleCards - comics.size).coerceAtLeast(0) else 0,
+                state = listState,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        if (paging?.error != null) {
+            TextButton(onClick = { if (shelf != null) onLoadMore(shelf, false) }) {
+                Text("加载更多失败，点击重试", color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -591,58 +663,58 @@ private fun HomeTopicsSection(
     paging: HomeShelfPaging,
     onLoadMore: () -> Unit,
     onTopicClick: (ComicTopic) -> Unit,
-    onMore: () -> Unit
+    onMore: () -> Unit,
+    initialLoading: Boolean = false
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            HomeSectionHeader("漫画专题", onMore)
-            Spacer(Modifier.height(12.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val visibleCards = ((maxWidth + 12.dp) / 280.dp).toInt().coerceAtLeast(1)
-                val cardWidth = if (visibleCards == 1 && topics.size > 1)
-                    (maxWidth * 0.9f).coerceAtMost(360.dp)
-                else (maxWidth - 12.dp * (visibleCards - 1)) / visibleCards
-                val listState = rememberLazyListState()
-                LaunchedEffect(
-                    topics.size,
-                    visibleCards,
-                    paging.nextOffset,
-                    paging.isLoading,
-                    paging.error
-                ) {
-                    if (paging.nextOffset != null && !paging.isLoading && paging.error == null) {
-                        snapshotFlow {
-                            val layout = listState.layoutInfo
-                            layout.visibleItemsInfo.isNotEmpty() &&
-                                    (topics.size <= visibleCards || listState.firstVisibleItemIndex > 0) &&
-                                    (layout.visibleItemsInfo.lastOrNull()?.index
-                                        ?: -1) >= topics.lastIndex - 1
-                        }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
+    HomeSectionContainer {
+        HomeSectionHeader("漫画专题", onMore)
+        Spacer(Modifier.height(12.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val visibleCards = ((maxWidth + 12.dp) / 280.dp).toInt().coerceAtLeast(1)
+            val cardWidth = if (visibleCards == 1 && topics.size > 1)
+                (maxWidth * 0.9f).coerceAtMost(360.dp)
+            else (maxWidth - 12.dp * (visibleCards - 1)) / visibleCards
+            val listState = rememberLazyListState()
+            LaunchedEffect(
+                topics.size,
+                visibleCards,
+                paging.nextOffset,
+                paging.isLoading,
+                paging.error
+            ) {
+                if (paging.nextOffset != null && !paging.isLoading && paging.error == null) {
+                    snapshotFlow {
+                        val layout = listState.layoutInfo
+                        layout.visibleItemsInfo.isNotEmpty() &&
+                                (topics.size <= visibleCards || listState.firstVisibleItemIndex > 0) &&
+                                (layout.visibleItemsInfo.lastOrNull()?.index
+                                    ?: -1) >= topics.lastIndex - 1
+                    }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
+                }
+            }
+            LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (topics.isEmpty() && (initialLoading || paging.nextOffset != null || paging.isLoading)) {
+                    items(visibleCards, key = { "topic-placeholder-$it" }) {
+                        HomeBookPlaceholder(cardWidth, aspectRatio = 16f / 9f)
                     }
                 }
-                LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(topics, key = { it.pathWord }) { topic ->
-                        TopicCard(
-                            topic,
-                            onClick = { onTopicClick(topic) },
-                            modifier = Modifier.width(cardWidth)
-                        )
-                    }
-                    if (paging.isLoading || paging.error != null) item(key = "topic-pagination") {
-                        Column(
-                            Modifier
-                                .width(128.dp)
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            if (paging.isLoading) CircularProgressIndicator(Modifier.size(28.dp))
-                            else TextButton(onClick = onLoadMore) {
-                                Text("加载失败，重试", color = MaterialTheme.colorScheme.primary)
-                            }
+                items(topics, key = { it.pathWord }) { topic ->
+                    TopicCard(
+                        topic,
+                        onClick = { onTopicClick(topic) },
+                        modifier = Modifier.width(cardWidth)
+                    )
+                }
+                if (paging.isLoading || paging.error != null) item(key = "topic-pagination") {
+                    Column(
+                        Modifier
+                            .width(128.dp)
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (paging.isLoading) CircularProgressIndicator(Modifier.size(28.dp))
+                        else TextButton(onClick = onLoadMore) {
+                            Text("加载失败，重试", color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -686,15 +758,20 @@ private fun ComicGrid(
             )
         }
         items(placeholderCount, key = { "placeholder-$it" }) {
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier
-                    .width(cardWidth)
-                    .aspectRatio(3f / 4f)
-            ) {}
+            HomeBookPlaceholder(cardWidth)
         }
     }
+}
+
+@Composable
+private fun HomeBookPlaceholder(cardWidth: Dp, aspectRatio: Float = 3f / 4f) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .width(cardWidth)
+            .aspectRatio(aspectRatio)
+    ) {}
 }
 
 /** Preview 只传入静态状态，封面沿用 ComicCard 的本地预览资源。 */
@@ -729,6 +806,7 @@ private fun rememberHomePreviewState(): HomeUiState {
             newComics = comics.reversed().take(5),
             finishComics = comics.takeLast(5),
             rankComics = comics,
+            filterReady = true,
             topics = listOf(
                 ComicTopic("preview-summer", "夏番漫畫2026 必看熱門漫畫推薦第41期", null, null),
                 ComicTopic(
@@ -751,14 +829,18 @@ private fun rememberHomePreviewState(): HomeUiState {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HomePreviewContent(uiState: HomeUiState) {
+private fun HomePreviewContent(
+    uiState: HomeUiState,
+    novels: HomeNovelUiState = HomeNovelUiState(loading = false)
+) {
     CopyManga_NeoTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             HomeContent(
                 uiState = uiState,
                 onComicClick = {},
                 onNavigateToSearch = {},
-                onRefresh = {}
+                onRefresh = {},
+                novels = novels
             )
             if (uiState.showRiskDialog) {
                 HomeRiskControlDialog(
@@ -794,6 +876,48 @@ private fun HomeScreenPreview() {
 private fun HomeLoadingPreview() {
     HomePreviewContent(HomeUiState(isLoading = true))
 }
+
+/** 小说先返回时，漫画分区从第一帧占据自己的位置。 */
+@Preview(name = "首页 · 小说先加载完成", showBackground = true, widthDp = 1000, heightDp = 840)
+@Composable
+private fun HomeNovelReadyBeforeComicsPreview() {
+    HomePreviewContent(
+        HomeUiState(isLoading = true),
+        homeLoadedNovelPreviewState()
+    )
+}
+
+/** 网络已返回但过滤尚未就绪，推荐分区不能暂时消失。 */
+@Preview(name = "首页 · 漫画过滤待定", showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun HomeFilteringPendingPreview() {
+    HomePreviewContent(
+        HomeUiState(isLoading = false, filterReady = false),
+        homeLoadedNovelPreviewState()
+    )
+}
+
+/** 已确认的空分区不留标题和骨架，也不挡住已返回的小说。 */
+@Preview(name = "首页 · 漫画空结果", showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun HomeEmptyComicSectionsPreview() {
+    HomePreviewContent(
+        HomeUiState(
+            filterReady = true,
+            paging = HomeShelf.entries.associateWith { HomeShelfPaging() }),
+        homeLoadedNovelPreviewState()
+    )
+}
+
+private fun homeLoadedNovelPreviewState() = HomeNovelUiState(
+    books = listOf(
+        com.rchdliang.copymanga_neo.domain.model.NovelBook(
+            "spice-and-wolf", "狼与香辛料", "preview://novel-cover",
+            listOf(com.rchdliang.copymanga_neo.domain.model.NovelTag("支仓冻砂", ""))
+        )
+    ),
+    loading = false
+)
 
 @Preview(
     showBackground = true,
@@ -905,4 +1029,57 @@ private fun HomeRiskControlPreview() {
 @Composable
 private fun HomeRiskDialogPreview() {
     HomePreviewContent(homeRiskPreviewState(showDialog = true))
+}
+
+/** 与漫画分区共用标题、间距和封面卡，不创建额外专题。 */
+@Composable
+private fun HomeNovelSection(
+    state: HomeNovelUiState, onOpen: (String) -> Unit, onMore: () -> Unit, onRetry: () -> Unit
+) {
+    HomeSectionContainer {
+        HomeSectionHeader("轻小说", onMore)
+        Spacer(Modifier.height(12.dp))
+        when {
+            state.books.isNotEmpty() || state.loading -> BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val count = homeBookColumns(maxWidth)
+                val width = (maxWidth - 8.dp * (count - 1)) / count
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(state.books, key = { it.path }) { book ->
+                        NovelTransitionCard(
+                            book = book, source = "home",
+                            modifier = Modifier.width(width), onClick = { onOpen(book.path) })
+                    }
+                    if (state.books.isEmpty()) items(count, key = { "placeholder-$it" }) {
+                        HomeBookPlaceholder(width)
+                    }
+                }
+            }
+
+            state.error == null -> Text(
+                "暂无轻小说",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (state.error != null) {
+            TextButton(onClick = onRetry) {
+                Text("${state.error}，点击重试", color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Preview(name = "首页 · 轻小说", showBackground = true, widthDp = 840)
+@Composable
+private fun HomeNovelPreview() {
+    CopyManga_NeoTheme {
+        HomeNovelSection(
+            HomeNovelUiState(
+                books = listOf(
+                    com.rchdliang.copymanga_neo.domain.model.NovelBook(
+                        "spice-and-wolf", "狼与香辛料", "preview://novel-cover",
+                        listOf(com.rchdliang.copymanga_neo.domain.model.NovelTag("支仓冻砂", ""))
+                    )
+                ), loading = false
+            ), {}, {}, {})
+    }
 }

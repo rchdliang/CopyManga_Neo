@@ -171,7 +171,9 @@ fun ReaderImageActionDialog(
     currentImageUrl: String?,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
-    viewModel: ReaderImageActionsViewModel = hiltViewModel()
+    viewModel: ReaderImageActionsViewModel = hiltViewModel(),
+    onExportChapter: (() -> Unit)? = null,
+    chapterExportEnabled: Boolean = false
 ) {
     val context = LocalContext.current
     val toastHost = LocalToastHost.current
@@ -270,6 +272,12 @@ fun ReaderImageActionDialog(
                     enabled = !state.busy && currentImageUrl != null
                 ) {
                     viewModel.perform(ReaderImageAction.SAVE_AS, currentImageUrl, title)
+                }
+                if (onExportChapter != null) {
+                    ActionRow(
+                        icon = Icons.Default.SaveAlt, label = "导出本章",
+                        enabled = !state.busy && chapterExportEnabled, onClick = onExportChapter
+                    )
                 }
                 if (state.busy) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

@@ -3,9 +3,11 @@ package com.rchdliang.copymanga_neo.ui.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
+import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
 import com.rchdliang.copymanga_neo.domain.model.offlineContent
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
+import com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReaderPreferencesRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
@@ -16,8 +18,13 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -27,13 +34,73 @@ class ReaderViewModel @Inject constructor(
     private val prefs: ReaderPreferencesRepository,
     private val downloadRepository: DownloadRepository,
     private val readingProgress: ReadingProgressRepository,
-    private val tools: com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository
+    private val tools: com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository,
+    private val localReading: LocalReadingRepository,
+    private val auth: com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
     val toolsSettings = tools.settings
-    val bookmarks = tools.bookmarks
+    val bookmarks = combine(localReading.snapshot, readingProgress.progress) { local, progress ->
+        local.bookmarks.filter { it.owner == progress.owner && it.kind == "comic" }.map {
+            com.rchdliang.copymanga_neo.domain.model.ReaderBookmark(
+                it.path,
+                it.chapter,
+                it.name,
+                it.group,
+                it.page,
+                it.updatedAt,
+                it.fraction
+            )
+        }.sortedByDescending { it.createdAt }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val localReadingError = localReading.error
+    private var readerOwner: String? = null
+    fun savedPosition(chapter: String) =
+        readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
+            ?.let { localReading.position(it, "comic", currentComicPathWord, chapter) }
+
+    fun recordPosition(chapter: String, page: Int, fraction: Double, completed: Boolean) {
+        val owner =
+            readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
+                ?: return
+        val item = chain.firstOrNull { it.uuid == chapter } ?: return
+        localReading.record(
+            LocalReadingRecord(
+                owner,
+                "comic",
+                currentComicPathWord,
+                chapter,
+                item.content.chapterName,
+                group = item.group,
+                title = comicTitle,
+                cover = comicCover,
+                authors = comicAuthors,
+                page = page,
+                fraction = fraction,
+                completed = completed
+            )
+        )
+        if (currentChapterUuid != chapter || lastReportedChapter != chapter) {
+            readingProgress.recordRead(
+                owner,
+                currentComicPathWord,
+                chapter,
+                item.content.chapterName,
+                item.group
+            )
+            lastReportedChapter = chapter
+        }
+    }
+
+    fun completeChapter(chapter: String) {
+        readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
+            ?.let { localReading.complete(it, currentComicPathWord, chapter) }
+    }
+
+    fun flushPosition() = localReading.flushAsync()
+    private var lastReportedChapter: String? = null
 
     // 未确认权限时允许查看已下载评论；发表由评论区单独确认权限。
     private val mutableCommentsAllowed = MutableStateFlow(true)
@@ -73,8 +140,27 @@ class ReaderViewModel @Inject constructor(
     private var initialized = false
     private var loadJob: Job? = null
     private var currentComicPathWord: String = ""
+    private var comicTitle: String = ""
+    private var comicCover: String = ""
+    private var comicAuthors: String = ""
     private var currentChapterUuid: String = ""
     private var currentGroup: String = "default"
+
+    private var openedInitialChapter: String? = null
+
+    init {
+        viewModelScope.launch {
+            readingProgress.progress.map { it.owner }.distinctUntilChanged().collect { owner ->
+                if (owner != null && readerOwner != null && owner != readerOwner) {
+                    loadJob?.cancel(); appendJob?.cancel(); policyJob?.cancel(); catalogJob?.cancel()
+                    navigationJobs.values.forEach { it.cancel() }; navigationJobs.clear()
+                    initialized = false; readerOwner = null; chain = emptyList()
+                    mutableCommentsAllowed.value = false
+                    _uiState.value = ReaderUiState.Error("阅读会话已改变，请返回并重新打开")
+                }
+            }
+        }
+    }
 
     fun openReader(
         comicPathWord: String,
@@ -83,25 +169,51 @@ class ReaderViewModel @Inject constructor(
     ) {
         if (initialized &&
             currentComicPathWord == comicPathWord &&
-            currentGroup == groupPathWord
+            currentGroup == groupPathWord && openedInitialChapter == initialChapterPathWord
         ) {
             return
         }
         initialized = true
+        if (currentComicPathWord != comicPathWord) {
+            comicTitle = ""; comicCover = ""; comicAuthors = ""
+        }
+        openedInitialChapter = initialChapterPathWord
         currentComicPathWord = comicPathWord
         currentGroup = groupPathWord
         mutableCommentsAllowed.value = true
         mutableClosedChapters.value = emptySet()
         policyJob?.cancel()
         policyJob = viewModelScope.launch(exceptionHandler) {
+            val owner = readingProgress.awaitOwner()
+            downloadRepository.getDownloadedComic(comicPathWord)?.let { cached ->
+                comicTitle = cached.name
+                comicCover = cached.cover.orEmpty()
+                comicAuthors = cached.authorNames
+            }
             repository.getComicDetail(comicPathWord).fold(
                 onSuccess = { detail ->
                     ensureActive()
                     if (currentComicPathWord == comicPathWord) mutableCommentsAllowed.value =
                         !detail.comic.closeRoast
+                    if (currentComicPathWord == comicPathWord && readingProgress.currentOwner == owner) {
+                        comicTitle = detail.comic.name
+                        comicCover = detail.comic.cover.orEmpty()
+                        comicAuthors = detail.comic.author.orEmpty().joinToString(" / ") { it.name }
+                    }
                 },
                 onFailure = { ensureActive() }
             )
+            if (currentComicPathWord == comicPathWord && readingProgress.currentOwner == owner) {
+                localReading.updateMetadata(
+                    owner,
+                    "comic",
+                    comicPathWord,
+                    comicTitle,
+                    comicCover,
+                    comicAuthors
+                )
+                    .onFailure { if (it is CancellationException) throw it }
+            }
         }
         loadChapter(comicPathWord, initialChapterPathWord, groupPathWord)
     }
@@ -151,6 +263,9 @@ class ReaderViewModel @Inject constructor(
 
             try {
                 val progressOwner = readingProgress.awaitOwner()
+                val loadedProgress = readingProgress.awaitReady(progressOwner)
+                loadedProgress.error?.let { _toastMessage.value = it }
+                readerOwner = progressOwner
                 // 先加载漫画的完整设置，再展示图片，避免方向或缩放先闪回全局值。
                 prefs.initializeComic(comicPathWord).fold(
                     onSuccess = { ensureActive(); mutablePreferences.value = it },
@@ -180,13 +295,6 @@ class ReaderViewModel @Inject constructor(
                     currentGroup = downloadedChapter.groupPathWord ?: group
                     publish(localContent, chapterUuid, downloadedChapter.groupPathWord ?: group)
                     val resolvedGroup = downloadedChapter.groupPathWord ?: group
-                    if (currentChapterUuid == chapterUuid) {
-                        currentGroup = resolvedGroup
-                        readingProgress.recordRead(
-                            progressOwner, comicPathWord, chapterUuid,
-                            localContent.chapterName, resolvedGroup
-                        )
-                    }
                     refreshDownloadedNavigation(
                         comicPathWord, chapterUuid, resolvedGroup, revision
                     )
@@ -200,10 +308,7 @@ class ReaderViewModel @Inject constructor(
                         currentChapterUuid = chapterUuid
                         currentGroup = group
                         publish(content, chapterUuid, group)
-                        if (content.imageUrls.isNotEmpty() && currentChapterUuid == chapterUuid) readingProgress.recordRead(
-                            progressOwner,
-                            comicPathWord, chapterUuid, content.chapterName, group
-                        )
+
                     }
                     .onFailure { error ->
                         ensureActive()
@@ -303,15 +408,7 @@ class ReaderViewModel @Inject constructor(
         currentChapterUuid = uuid
         currentGroup = chapter.group
         _uiState.value = ReaderUiState.Success(chapter.content, uuid, chain)
-        readingProgress.currentOwner?.let { owner ->
-            readingProgress.recordRead(
-                owner,
-                currentComicPathWord,
-                uuid,
-                chapter.content.chapterName,
-                chapter.group
-            )
-        }
+
     }
 
     /** 每次只追加下一章；同一个失败目标不因滚动重组被反复请求。 */
@@ -452,18 +549,28 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun toggleBookmark(chapterUuid: String, page: Int) {
+    fun toggleBookmark(chapterUuid: String, page: Int, fraction: Double) {
         val chapter = chain.firstOrNull { it.uuid == chapterUuid } ?: return
+        val owner =
+            readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
+                ?: return
         viewModelScope.launch(exceptionHandler) {
-            tools.toggleBookmark(
-                com.rchdliang.copymanga_neo.domain.model.ReaderBookmark(
+            val result = localReading.toggleBookmark(
+                LocalReadingRecord(
+                    owner,
+                    "comic",
                     currentComicPathWord,
                     chapterUuid,
                     chapter.content.chapterName,
-                    chapter.group,
-                    page
+                    group = chapter.group,
+                    title = comicTitle,
+                    cover = comicCover,
+                    authors = comicAuthors,
+                    page = page,
+                    fraction = fraction
                 )
-            ).fold(onSuccess = {}, onFailure = { _toastMessage.value = "书签保存失败" })
+            )
+            result.fold(onSuccess = {}, onFailure = { _toastMessage.value = "书签保存失败" })
         }
     }
 

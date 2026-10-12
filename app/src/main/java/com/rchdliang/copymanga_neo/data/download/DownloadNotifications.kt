@@ -14,6 +14,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.rchdliang.copymanga_neo.MainActivity
 import com.rchdliang.copymanga_neo.R
+import com.rchdliang.copymanga_neo.domain.model.DownloadKind
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 
 /** 下载过程静音更新；完成时独立提醒，快捷操作交给下载服务处理。 */
 internal class DownloadNotifications(private val context: Context) {
@@ -58,7 +61,7 @@ internal class DownloadNotifications(private val context: Context) {
                 "下载完成",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "漫画下载完成时提醒，可在系统设置中单独关闭声音"
+                description = "漫画和小说下载完成时提醒，可在系统设置中单独关闭声音"
             })
     }
 
@@ -71,12 +74,13 @@ internal class DownloadNotifications(private val context: Context) {
             else -> "下载队列已清空"
         }
         val chapterCount = current?.let { "${it.completedChapters}/${it.totalChapters}" }
+        val unit = if (current?.kind == DownloadKind.NOVEL) "卷" else "章"
         val detail = if (current?.status == DownloadTaskStatus.COMPLETED) {
-            "下载完成 · $chapterCount 章"
+            "下载完成 · $chapterCount $unit"
         } else if (current?.status == DownloadTaskStatus.WAITING_FOR_WIFI) {
-            "等待 Wi-Fi · $chapterCount 章"
+            "等待网络 · $chapterCount $unit"
         } else if (current != null) {
-            "$chapterCount 章 · ${
+            "$chapterCount $unit · ${
                 Formatter.formatShortFileSize(
                     context,
                     current.speedBytesPerSecond
@@ -165,14 +169,17 @@ internal class DownloadNotifications(private val context: Context) {
     private fun notifyCompleted(items: List<DownloadProgressInfo>) {
         val completed = items.filter {
             it.status == DownloadTaskStatus.COMPLETED && it.totalChapters > 0 &&
-                    announcedCompletions[it.comicPathWord] != (it.taskId to it.totalChapters)
+                    announcedCompletions[it.taskKey] != (it.taskId to it.totalChapters)
         }
         if (completed.isEmpty()) return
         val title = if (completed.size == 1) completed.single().name
-        else "${completed.last().name}等 ${completed.size} 部漫画"
+        else "${completed.last().name}等 ${completed.size} 部作品"
         val count =
             "${completed.sumOf { it.completedChapters }}/${completed.sumOf { it.totalChapters }}"
-        val summary = if (completed.any { it.statusText.contains("部分评论") })
+        val summary =
+            if (completed.all { it.kind == DownloadKind.NOVEL }) "正文和插图下载完成 · $count 卷"
+            else if (completed.any { it.kind == DownloadKind.NOVEL }) "作品下载完成 · $count 项"
+            else if (completed.any { it.statusText.contains("部分评论") })
             "图片下载完成 · $count 章，部分评论未完整下载" else "章节和评论下载完成 · $count 章"
         manager.notify(
             COMPLETED_ID, NotificationCompat.Builder(context, COMPLETED_CHANNEL)
@@ -188,7 +195,7 @@ internal class DownloadNotifications(private val context: Context) {
                 .setRequestPromotedOngoing(false)
                 .build()
         )
-        completed.forEach { announcedCompletions[it.comicPathWord] = it.taskId to it.totalChapters }
+        completed.forEach { announcedCompletions[it.taskKey] = it.taskId to it.totalChapters }
     }
 
     fun update(state: DownloadNotificationState) {

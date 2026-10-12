@@ -65,6 +65,7 @@ internal fun DataSettingsScreen(
         { exporter.launch("CopyManga-Neo-settings.json") },
         { importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
         settings::resetGlobalDefaults,
+        onClearNovelCache = settings::clearNovelCache,
         logsContent = { NetworkLogCard() }
     )
     pendingImport?.let { selected ->
@@ -73,7 +74,7 @@ internal fun DataSettingsScreen(
             title = { Text("导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    "将覆盖软件偏好，不影响账号和漫画独立设置。",
+                    "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -97,7 +98,7 @@ internal fun DataSettingsScreen(
     }
 }
 
-private enum class DataSettingsAction { CLEAR_CACHE, RESET_DEFAULTS }
+private enum class DataSettingsAction { CLEAR_CACHE, CLEAR_NOVEL_CACHE, RESET_DEFAULTS }
 
 @Composable
 internal fun DataSettingsPage(
@@ -109,6 +110,7 @@ internal fun DataSettingsPage(
     onExport: () -> Unit = {},
     onImport: () -> Unit = {},
     onResetDefaults: () -> Unit = {},
+    onClearNovelCache: () -> Unit = {},
     logsContent: @Composable () -> Unit = {}
 ) {
     var showLogs by rememberSaveable { mutableStateOf(false) }
@@ -123,17 +125,40 @@ internal fun DataSettingsPage(
         state.storageUsage?.imageCacheBytes?.let { Formatter.formatShortFileSize(context, it) }
             ?: if (state.storageLoading) "正在统计" else "暂不可用"
     val enabled = !state.isLoading && !state.isSaving && !backupBusy
+    val novelCache =
+        state.storageUsage?.novelCacheBytes?.let { Formatter.formatShortFileSize(context, it) }
+            ?: if (state.storageLoading) "正在统计" else "暂不可用"
     ProfileSettingsScaffold(
         "数据管理", onNavigateBack, state.storageLoading,
         onRefresh = { if (!state.storageLoading && !state.clearingCache) onRefreshStorage() }
     ) {
-        ProfileSectionTitle("图片缓存")
+        ProfileSectionTitle("缓存与下载")
         ProfileListItem(
             Icons.Outlined.DeleteSweep, "清理图片缓存",
-            if (state.clearingCache) "正在清理" else "$cache · 保留已下载漫画",
-            index = 0, count = 1,
+            if (state.clearingCache && !state.clearingNovelCache) "正在清理" else "$cache · 保留下载内容",
+            index = 0, count = 2,
             enabled = !state.clearingCache && !state.storageLoading && state.storageUsage != null,
             onClick = { confirmation = DataSettingsAction.CLEAR_CACHE })
+        ProfileListItem(
+            Icons.Outlined.DeleteSweep, "清理小说缓存",
+            if (state.clearingNovelCache) "正在清理" else "$novelCache · ${state.storageUsage?.novelCachedVolumes ?: 0} 卷正文及插图",
+            index = 1, count = 2,
+            enabled = !state.clearingCache && !state.storageLoading && state.storageUsage != null,
+            onClick = { confirmation = DataSettingsAction.CLEAR_NOVEL_CACHE }
+        )
+        state.storageUsage?.let { usage ->
+            Text(
+                "已下载漫画 ${
+                    Formatter.formatShortFileSize(
+                        context,
+                        usage.downloadBytes
+                    )
+                } · 可用空间 ${Formatter.formatShortFileSize(context, usage.availableBytes)}",
+                Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
         state.storageError?.let {
             Text(
                 it,
@@ -143,18 +168,18 @@ internal fun DataSettingsPage(
         }
         ProfileSectionTitle("设置备份")
         Text(
-            "仅备份软件偏好，不含登录凭据。",
+            "备份软件偏好、漫画/小说本地历史和书签。保留游客及各账号记录；不含登录凭据、下载文件和小说缓存。",
             Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
         if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
         ProfileListItem(
-            Icons.Outlined.FileUpload, "导出软件设置", "保存为备份文件",
+            Icons.Outlined.FileUpload, "导出设置与阅读数据", "保存为备份文件",
             index = 0, count = 2, enabled = enabled, onClick = onExport
         )
         ProfileListItem(
-            Icons.Outlined.FileDownload, "导入软件设置", "从备份文件恢复偏好",
+            Icons.Outlined.FileDownload, "导入设置与阅读数据", "恢复当前版本备份，合并阅读记录",
             index = 1, count = 2, enabled = enabled, onClick = onImport
         )
         ProfileSectionTitle("维护")
@@ -174,18 +199,20 @@ internal fun DataSettingsPage(
         }
     }
     confirmation?.let { action ->
-        val clear = action == DataSettingsAction.CLEAR_CACHE
+        val clear = action != DataSettingsAction.RESET_DEFAULTS
+        val clearNovel = action == DataSettingsAction.CLEAR_NOVEL_CACHE
         AlertDialog(
             onDismissRequest = { confirmation = null },
             title = {
                 Text(
-                    if (clear) "清理图片缓存？" else "恢复默认偏好？",
+                    if (clearNovel) "清理全部小说缓存？" else if (clear) "清理图片缓存？" else "恢复默认偏好？",
                     color = MaterialTheme.colorScheme.onSurface
                 )
             },
             text = {
                 Text(
-                    if (clear) "已下载漫画不受影响。"
+                    if (clearNovel) "将取消小说下载任务并删除本机所有账号的小说正文、插图和接口缓存。阅读记录、书签与漫画下载保留；离线阅读需要重新下载。"
+                    else if (clear) "已下载漫画和小说不受影响。"
                     else "账号、下载和漫画独立设置不变。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -193,7 +220,11 @@ internal fun DataSettingsPage(
             confirmButton = {
                 TextButton(onClick = {
                     confirmation = null
-                    if (clear) onClearCache() else onResetDefaults()
+                    when (action) {
+                        DataSettingsAction.CLEAR_CACHE -> onClearCache()
+                        DataSettingsAction.CLEAR_NOVEL_CACHE -> onClearNovelCache()
+                        DataSettingsAction.RESET_DEFAULTS -> onResetDefaults()
+                    }
                 }, enabled = enabled && !state.clearingCache) {
                     Text(if (clear) "清理" else "恢复", color = MaterialTheme.colorScheme.primary)
                 }

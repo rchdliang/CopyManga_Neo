@@ -41,6 +41,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,21 +73,28 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.imageLoader
 import coil.request.ImageRequest
 import com.rchdliang.copymanga_neo.di.ReaderImageLoaderEntryPoint
+import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
+import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.domain.model.ShareTarget
+import com.rchdliang.copymanga_neo.domain.reading.ReadingPositionPolicy
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.export.ComicExportDialogs
+import com.rchdliang.copymanga_neo.ui.export.ComicExportViewModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
@@ -99,8 +107,14 @@ fun ReaderScreen(
     chapterName: String,
     groupPathWord: String = "default",
     onNavigateBack: () -> Unit,
-    viewModel: ReaderViewModel = hiltViewModel()
+    viewModel: ReaderViewModel = hiltViewModel(),
+    exportViewModel: ComicExportViewModel = hiltViewModel(),
+    initialPage: Int = -1,
+    initialFraction: Double = 0.0
 ) {
+    val exportable by exportViewModel.availableChapters.collectAsStateWithLifecycle()
+    LaunchedEffect(comicPathWord) { exportViewModel.watchLocalChapters(comicPathWord) }
+    ComicExportDialogs(exportViewModel)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentChapter = uiState as? ReaderUiState.Success
     val tools by viewModel.toolsSettings.collectAsStateWithLifecycle()
@@ -125,6 +139,7 @@ fun ReaderScreen(
     val pageScalePref = preferences?.pageScale ?: "FIT_SCREEN"
     val screenOrientationPref = preferences?.screenOrientation ?: "SYSTEM_DEFAULT"
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+    val storageError by viewModel.localReadingError.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -155,19 +170,32 @@ fun ReaderScreen(
         onDispose { insetsController.show(WindowInsetsCompat.Type.statusBars()) }
     }
 
-    LaunchedEffect(comicPathWord, groupPathWord) {
+    LaunchedEffect(comicPathWord, chapterPathWord, groupPathWord) {
         viewModel.openReader(comicPathWord, chapterPathWord, groupPathWord)
     }
 
+    // 章节切换时的目标页码：null=保持当前页（方向切换/刷新），非null=跳转到指定页（切章/撤回）
+    val pendingInitialPage = remember { mutableStateOf<Int?>(initialPage.takeIf { it >= 0 }) }
+    val pendingInitialFraction =
+        remember { mutableStateOf<Double?>(initialFraction.takeIf { initialPage >= 0 }) }
+    val pendingInitialChapter =
+        remember { mutableStateOf<String?>(chapterPathWord.takeIf { initialPage >= 0 }) }
+
+
+    DisposableEffect(viewModel) { onDispose { viewModel.flushPosition() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.flushPosition() }
+    LaunchedEffect(storageError) { storageError?.let { toastHost.showToast(it) } }
     LaunchedEffect(toastMessage) {
         toastMessage?.let {
+            if (it.startsWith("加载失败") || it.startsWith("无法读取")) {
+                pendingInitialPage.value = null; pendingInitialFraction.value =
+                    null; pendingInitialChapter.value = null
+            }
             toastHost.showToast(it)
             viewModel.clearToastMessage()
         }
     }
 
-    // 章节切换时的目标页码：null=保持当前页（方向切换/刷新），非null=跳转到指定页（切章/撤回）
-    val pendingInitialPage = remember { mutableStateOf<Int?>(null) }
 
     Box(
         modifier = Modifier
@@ -221,20 +249,39 @@ fun ReaderScreen(
                 onResetPreferences = viewModel::resetComicPreferences,
                 onComments = { commentChapter = it },
                 pendingInitialPage = pendingInitialPage,
+                pendingInitialFraction = pendingInitialFraction,
+                pendingInitialChapter = pendingInitialChapter,
+                activeChapterUuid = state.chapterUuid,
                 sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
                 tools = tools, onToolsChange = viewModel::updateTools,
                 commentsAllowed = commentsAllowed, closedChapters = closedChapters,
                 commentRefreshVersion = commentRefreshVersion,
                 onCloseComments = viewModel::closeChapterComments,
                 onActivateChapter = viewModel::activateChapter,
+                savedPosition = viewModel.savedPosition(state.chapterUuid),
+                onPosition = viewModel::recordPosition,
+                onCompleted = viewModel::completeChapter,
                 onAppendNext = { viewModel.appendNextChapter(it) }, appending = appending,
                 bookmarks = readerBookmarks.filter { it.comicPathWord == comicPathWord },
                 onToggleBookmark = viewModel::toggleBookmark,
-                onBookmarkSelected = viewModel::jumpToBookmark,
+                onBookmarkSelected = { mark ->
+                    pendingInitialChapter.value = mark.chapterUuid
+                    pendingInitialFraction.value = mark.fraction
+                    viewModel.jumpToBookmark(mark)
+                },
                 onBack = onNavigateBack, catalog = catalog,
                 onLoadCatalog = viewModel::loadCatalog,
                 onSelectCatalog = viewModel::selectCatalogChapter,
-                shareComicPathWord = comicPathWord
+                shareComicPathWord = comicPathWord,
+                exportableChapters = exportable,
+                onExportChapter = {
+                    exportViewModel.prepare(
+                        ComicExportRequest(
+                            listOf(comicPathWord),
+                            setOf(it)
+                        )
+                    )
+                }
             )
         }
     }
@@ -272,13 +319,21 @@ fun ReaderSuccessContent(
     onAppendNext: (Boolean) -> Unit = {},
     appending: Boolean = false,
     bookmarks: List<ReaderBookmark> = emptyList(),
-    onToggleBookmark: (String, Int) -> Unit = { _, _ -> },
+    onToggleBookmark: (String, Int, Double) -> Unit = { _, _, _ -> },
     onBookmarkSelected: (ReaderBookmark) -> Unit = {},
     onBack: () -> Unit = {},
     catalog: ReaderCatalogUiState = ReaderCatalogUiState(),
     onLoadCatalog: () -> Unit = {},
     onSelectCatalog: (String) -> Unit = {},
-    shareComicPathWord: String? = null
+    shareComicPathWord: String? = null,
+    exportableChapters: Set<String> = emptySet(),
+    onExportChapter: (String) -> Unit = {},
+    savedPosition: LocalReadingRecord? = null,
+    onPosition: (String, Int, Double, Boolean) -> Unit = { _, _, _, _ -> },
+    onCompleted: (String) -> Unit = {},
+    pendingInitialFraction: MutableState<Double?>? = null,
+    pendingInitialChapter: MutableState<String?>? = null,
+    activeChapterUuid: String? = null
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -331,7 +386,10 @@ fun ReaderSuccessContent(
             }
         }
     }
-    val initial = (pendingInitialPage.value ?: 0).coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+    val initial = (pendingInitialPage.value ?: savedPosition?.page ?: 0).coerceIn(
+        0,
+        pages.lastIndex.coerceAtLeast(0)
+    )
     val pager =
         rememberPagerState(initialPage = initial, pageCount = { pages.size.coerceAtLeast(1) })
     val list = rememberLazyListState(initialFirstVisibleItemIndex = initial)
@@ -347,11 +405,12 @@ fun ReaderSuccessContent(
     } else null
     val chapterCommentsState =
         chapterCommentsViewModel?.uiState?.collectAsStateWithLifecycle()?.value
-    var anchor by rememberSaveable { mutableStateOf<String?>(null) }
-    var anchorChapter by rememberSaveable { mutableStateOf<String?>(null) }
-    var anchorPage by rememberSaveable { mutableIntStateOf(0) }
-    var anchorScrollOffset by rememberSaveable { mutableIntStateOf(0) }
-    var previousContinuous by remember { mutableStateOf(isContinuous) }
+    var anchor by rememberSaveable { mutableStateOf(savedPosition?.let { "${it.chapter}:image:${it.page}" }) }
+    var anchorChapter by rememberSaveable { mutableStateOf(savedPosition?.chapter) }
+    var anchorPage by rememberSaveable { mutableIntStateOf(savedPosition?.page ?: 0) }
+    var anchorFraction by rememberSaveable { mutableStateOf(savedPosition?.fraction ?: 0.0) }
+    val readyImages = remember { mutableStateMapOf<String, Boolean>() }
+    var restoring by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
@@ -359,6 +418,7 @@ fun ReaderSuccessContent(
     var showImageMenu by rememberSaveable { mutableStateOf(false) }
     var selectedSource by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTitle by rememberSaveable { mutableStateOf("") }
+    var selectedChapter by rememberSaveable { mutableStateOf("") }
     var automatic by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     var sliderPreview by remember { mutableFloatStateOf(0f) }
@@ -386,31 +446,98 @@ fun ReaderSuccessContent(
     }
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
-    LaunchedEffect(pages, isContinuous) {
+    LaunchedEffect(
+        pages, isContinuous, pendingInitialPage.value, pendingInitialChapter?.value,
+        if (pendingInitialChapter?.value != null) activeChapterUuid else null
+    ) {
         if (pages.isEmpty()) return@LaunchedEffect
-        val target = resolveReaderPageIndex(pages, anchor, anchorChapter, anchorPage, initial)
-        val offset =
-            if (isContinuous && previousContinuous) anchorScrollOffset else 0
-        previousContinuous = isContinuous
-        if (isContinuous) list.scrollToItem(
-            target.coerceIn(pages.indices),
-            offset
-        ) else pager.scrollToPage(
-            target.coerceIn(pages.indices)
-        )
+        val requestedChapter = pendingInitialChapter?.value
+        if (requestedChapter != null && requestedChapter != activeChapterUuid) return@LaunchedEffect
+        val explicit = pendingInitialPage.value
+        val target = if (explicit != null)
+            resolveReaderPageIndex(
+                pages,
+                null,
+                requestedChapter ?: activeChapterUuid ?: pages.first().chapterUuid,
+                explicit,
+                initial
+            )
+        else resolveReaderPageIndex(pages, anchor, anchorChapter, anchorPage, initial)
+        val fraction =
+            if (!isContinuous) 0.0 else if (explicit != null) pendingInitialFraction?.value
+                ?: 0.0 else anchorFraction
+        restoring = true
+        if (isContinuous) {
+            list.scrollToItem(target)
+            if (fraction > 0) {
+                val size = snapshotFlow {
+                    if (!restoring) 0 else list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
+                        ?.takeIf { readyImages[pages[target].key] == true }?.size
+                }.first { it != null && it >= 0 } ?: 0
+                if (restoring) list.scrollToItem(
+                    target,
+                    ReadingPositionPolicy.offset(fraction, size)
+                )
+            }
+        } else pager.scrollToPage(target)
+        val finalIndex = if (restoring) target else visibleIndex.coerceIn(pages.indices)
+        val finalPage = pages[finalIndex]
+        anchor = finalPage.key; anchorChapter = finalPage.chapterUuid; anchorPage = finalPage.page
+        anchorFraction = if (restoring) fraction else if (isContinuous) {
+            val size =
+                list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == finalIndex }?.size ?: 0
+            ReadingPositionPolicy.fraction(list.firstVisibleItemScrollOffset, size)
+        } else 0.0
+        restoring = false
+        pendingInitialChapter?.value = null
+        pendingInitialFraction?.value = null
         pendingInitialPage.value = null
-        // 先恢复位置再观察可见页，避免移除评论页时把旧索引误认作下一章。
+        // Placeholder heights and pages seen only while swiping cannot complete a chapter.
         snapshotFlow {
-            visibleIndex to if (isContinuous) list.firstVisibleItemScrollOffset else 0
-        }.collect { (index, scrollOffset) ->
+            val index = if (isContinuous) list.firstVisibleItemIndex else pager.settledPage
+            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            Triple(
+                index, if (isContinuous) list.firstVisibleItemScrollOffset else 0,
+                listOf(
+                    item?.size ?: 0, list.layoutInfo.viewportEndOffset,
+                    if (list.isScrollInProgress || pager.isScrollInProgress) 1 else 0,
+                    if (readyImages[pages.getOrNull(index)?.key] == true) 1 else 0,
+                    list.layoutInfo.visibleItemsInfo.hashCode()
+                )
+            )
+        }.collect { (index, scrollOffset, metrics) ->
+            if (restoring) return@collect
             pages.getOrNull(index)?.let {
-                anchor = it.key
-                anchorChapter = it.chapterUuid
-                anchorPage = it.page
-                anchorScrollOffset = scrollOffset
+                val sameImage = anchor == it.key
+                anchor = it.key; anchorChapter = it.chapterUuid; anchorPage = it.page
+                if (!sameImage && readyImages[it.key] != true) anchorFraction = 0.0
+                if (!isContinuous || readyImages[it.key] == true)
+                    anchorFraction = if (isContinuous) ReadingPositionPolicy.fraction(
+                        scrollOffset,
+                        metrics[0]
+                    ) else 0.0
+                if (it.source == null) anchorFraction = if (isContinuous) 1.0 else 0.0
                 onActivateChapter(it.chapterUuid)
                 if (!dragging) sliderPreview = it.page.toFloat()
                 if (it.source == null) automatic = false
+                val bottomVisible =
+                    !isContinuous || list.layoutInfo.visibleItemsInfo.any { item ->
+                        val entry = pages.getOrNull(item.index)
+                        entry?.chapterUuid == it.chapterUuid && entry.page == it.imageCount - 1 &&
+                                entry.source != null && readyImages[entry.key] == true && item.offset + item.size <= metrics[1]
+                    }
+                val complete = ReadingPositionPolicy.completed(
+                    it.page, it.imageCount, metrics[2] == 0,
+                    bottomVisible && (it.source == null || readyImages[it.key] == true)
+                )
+                onPosition(it.chapterUuid, it.page, anchorFraction, complete)
+                if (isContinuous && metrics[2] == 0) list.layoutInfo.visibleItemsInfo.forEach { item ->
+                    pages.getOrNull(item.index)?.takeIf { entry ->
+                        entry.source != null &&
+                                readyImages[entry.key] == true && entry.page == entry.imageCount - 1 &&
+                                item.offset + item.size <= metrics[1]
+                    }?.let { entry -> onCompleted(entry.chapterUuid) }
+                }
             }
         }
     }
@@ -579,6 +706,7 @@ fun ReaderSuccessContent(
             ::backward,
             onShowMenu = { showControls = !showControls },
             onImageLongPress = { selected ->
+                selectedChapter = selected.chapterUuid
                 automatic = false; selectedSource = selected.source
                 selectedTitle =
                     "${selected.chapterName} - 第${selected.page + 1}页"; showImageMenu = true
@@ -586,7 +714,8 @@ fun ReaderSuccessContent(
             onBottomAreaTap = { showControls = !showControls },
             imageLoader = loader,
             tools = tools,
-            onUserInteraction = { automatic = false; pendingChapter = null },
+            onUserInteraction = { automatic = false; pendingChapter = null; restoring = false },
+            onImageReady = { readyImages[it] = true },
             commentContent = { comment ->
                 ReaderChapterComments(
                     comment,
@@ -609,7 +738,7 @@ fun ReaderSuccessContent(
                     ?: false,
                 onBack = onBack, onBookmark = {
                     if (page?.source == null) toast.showToast("返回图片页后可添加书签")
-                    else onToggleBookmark(page.chapterUuid, page.page)
+                    else onToggleBookmark(page.chapterUuid, page.page, anchorFraction)
                 }, onSettings = { showSettings = true },
                 shareTarget = page?.let { current ->
                     shareComicPathWord?.let { comic ->
@@ -689,6 +818,10 @@ fun ReaderSuccessContent(
         onResetPreferences = onResetPreferences,
         onDismiss = { showSettings = false },
         leadingSettings = {
+            androidx.compose.material3.TextButton(
+                onClick = { showSettings = false; page?.let { onExportChapter(it.chapterUuid) } },
+                enabled = page?.chapterUuid in exportableChapters
+            ) { Text("导出本章", color = MaterialTheme.colorScheme.primary) }
             ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
@@ -708,7 +841,10 @@ fun ReaderSuccessContent(
         onRetry = onLoadCatalog, onDismiss = { showCatalog = false })
     if (showImageMenu) ReaderImageActionDialog(
         selectedTitle, selectedSource,
-        onRefresh = { showImageMenu = false; onRefresh() }, onDismiss = { showImageMenu = false })
+        onRefresh = { showImageMenu = false; onRefresh() }, onDismiss = { showImageMenu = false },
+        onExportChapter = { showImageMenu = false; onExportChapter(selectedChapter) },
+        chapterExportEnabled = selectedChapter in exportableChapters
+    )
 }
 
 // ── RiskControl ────────────────────────────────────────────────────

@@ -77,7 +77,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,7 +94,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rchdliang.copymanga_neo.data.remote.util.toCompactLocale
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterDefaults
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
@@ -103,6 +101,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.ui.components.GridLoadMoreEffect
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.ShareAction
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
@@ -111,7 +110,7 @@ import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionClick
 import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
-import kotlinx.coroutines.flow.distinctUntilChanged
+import com.rchdliang.copymanga_neo.ui.util.toCompactLocale
 
 @Composable
 fun SearchScreen(
@@ -233,9 +232,9 @@ fun SearchScreen(
 /** 恢复原来的 Material SearchBar，搜索命令只放在输入框内部。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchInput(
+internal fun SearchInput(
     query: String, onChange: (String) -> Unit, onSearch: (String) -> Unit,
-    onClear: () -> Unit, onBack: () -> Unit
+    onClear: () -> Unit, onBack: () -> Unit, placeholder: String = "搜索漫画"
 ) {
     val text = rememberTextFieldState(query)
     val state = rememberSearchBarState()
@@ -254,7 +253,7 @@ private fun SearchInput(
                 textFieldState = text, searchBarState = state, onSearch = { submit() },
                 placeholder = {
                     Text(
-                        "搜索漫画",
+                        placeholder,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 },
@@ -330,10 +329,11 @@ private fun SearchCategorySelector(selected: QueryType?, onSelected: (QueryType?
 }
 
 @Composable
-private fun SearchOptionRow(
+internal fun SearchOptionRow(
     title: String, options: List<ComicFilterOption>, selected: ComicFilterOption?,
     onSelected: (ComicFilterOption?) -> Unit, onAllTags: (() -> Unit)? = null,
-    promotedPath: String? = null
+    promotedPath: String? = null,
+    allLabel: String = "全部"
 ) {
     val list = rememberLazyListState()
     // 仅详情页传入的题材置顶；页内选择不改变标签顺序或滚动位置。
@@ -361,7 +361,7 @@ private fun SearchOptionRow(
                         selected = selected == null, onClick = { onSelected(null) },
                         label = {
                             Text(
-                                "全部",
+                                allLabel,
                                 color = if (selected == null) MaterialTheme.colorScheme.onSecondaryContainer
                                 else MaterialTheme.colorScheme.onSurface
                             )
@@ -415,7 +415,11 @@ private fun SearchOptionRow(
 }
 
 @Composable
-private fun DiscoveryOrdering(ordering: String, onChange: (String) -> Unit) {
+internal fun DiscoveryOrdering(
+    ordering: String,
+    onChange: (String) -> Unit,
+    allowAscending: Boolean = true
+) {
     val field = ordering.removePrefix("-")
     val descending = ordering.startsWith("-")
     Row(
@@ -427,13 +431,14 @@ private fun DiscoveryOrdering(ordering: String, onChange: (String) -> Unit) {
             FilterChip(
                 selected = selected,
                 onClick = {
-                    onChange(if (selected && descending) key else "-$key")
+                    onChange(if (allowAscending && selected && descending) key else "-$key")
                 },
                 trailingIcon = if (selected) {
                     {
                         Icon(
                             if (descending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
-                            contentDescription = if (descending) "降序，点击切换为升序" else "升序，点击切换为降序",
+                            contentDescription = if (!allowAscending) "按降序排列"
+                            else if (descending) "降序，点击切换为升序" else "升序，点击切换为降序",
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
@@ -455,7 +460,7 @@ private fun DiscoveryOrdering(ordering: String, onChange: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchToolButton(title: String, icon: ImageVector, onClick: () -> Unit) {
+internal fun SearchToolButton(title: String, icon: ImageVector, onClick: () -> Unit) {
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
         state = rememberTooltipState(),
@@ -495,21 +500,12 @@ private fun SearchResultsContent(
     ) {
         grid.scrollToItem(0)
     }
-    LaunchedEffect(
-        state.hasMore,
-        state.isLoading,
-        state.isLoadingMore,
-        state.loadMoreError,
-        state.searchResults.size
-    ) {
-        if (state.hasMore && !state.isLoading && !state.isLoadingMore && state.loadMoreError == null && state.error == null) {
-            snapshotFlow {
-                val layout = grid.layoutInfo
-                layout.totalItemsCount > 0 && (layout.visibleItemsInfo.lastOrNull()?.index
-                    ?: -1) >= layout.totalItemsCount - 3
-            }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onMore() }
-        }
-    }
+    GridLoadMoreEffect(
+        grid,
+        state.hasMore && !state.isLoading && !state.isLoadingMore &&
+                state.loadMoreError == null && state.error == null,
+        state.searchResults.size, onMore
+    )
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = if (state.compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
         else GridCells.Adaptive(360.dp)
@@ -653,10 +649,24 @@ private fun SearchResultsContent(
 
 @Composable
 private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
-    val transitionKey = "search:${comic.pathWord}"
-    val authors = comic.author?.joinToString { it.name }.orEmpty()
+    SearchBookRow(
+        name = comic.name, cover = comic.cover,
+        authors = comic.author?.joinToString { it.name }.orEmpty(),
+        transitionKey = "search:${comic.pathWord}", pathWord = comic.pathWord,
+        onClick = onClick,
+        popularity = comic.popular?.toCompactLocale() ?: "--"
+    )
+}
+
+/** 漫画和小说搜索共用横向封面行；没有热度数据时省略该行。 */
+@Composable
+internal fun SearchBookRow(
+    name: String, cover: String?, authors: String,
+    transitionKey: String, pathWord: String, onClick: () -> Unit,
+    popularity: String? = null
+) {
     val click = rememberComicSharedTransitionClick(
-        transitionKey, comic.pathWord, comic.cover, comic.name, authors, onClick
+        transitionKey, pathWord, cover, name, authors, onClick
     )
     Box(
         Modifier
@@ -678,7 +688,7 @@ private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             PreviewAwareAsyncImage(
-                model = comic.cover, contentDescription = comic.name,
+                model = cover, contentDescription = name,
                 modifier = Modifier
                     .width(84.dp)
                     .aspectRatio(3f / 4f)
@@ -694,7 +704,7 @@ private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    comic.name, color = MaterialTheme.colorScheme.onSurface,
+                    name, color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
@@ -706,7 +716,7 @@ private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.weight(1f))
-                Row(
+                if (popularity != null) Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -715,7 +725,7 @@ private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        comic.popular?.toCompactLocale() ?: "--",
+                        popularity,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium
                     )

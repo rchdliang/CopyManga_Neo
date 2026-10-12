@@ -1,16 +1,18 @@
 package com.rchdliang.copymanga_neo.data.repository
 
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
-import com.rchdliang.copymanga_neo.data.download.ComicDownloadTask
 import com.rchdliang.copymanga_neo.data.download.DownloadManager
-import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.data.download.LocalDownloadAccess
 import com.rchdliang.copymanga_neo.data.download.hasCompleteFiles
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedChapterDao
 import com.rchdliang.copymanga_neo.data.local.db.DownloadedComicDao
 import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
+import com.rchdliang.copymanga_neo.domain.model.BookDownloadTask
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +27,8 @@ import javax.inject.Singleton
 class DownloadRepositoryImpl @Inject constructor(
     private val comicDao: DownloadedComicDao,
     private val chapterDao: DownloadedChapterDao,
-    private val downloadManager: DownloadManager
+    private val downloadManager: DownloadManager,
+    private val localAccess: LocalDownloadAccess = LocalDownloadAccess()
 ) : DownloadRepository {
 
     override fun getAllDownloadedComics(): Flow<List<DownloadedComicInfo>> {
@@ -96,24 +99,35 @@ class DownloadRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteComic(pathWord: String) {
-        downloadManager.cancelComic(pathWord)
-        downloadManager.deleteComicFiles(pathWord)
-        comicDao.deleteComic(pathWord)
+        localAccess.mutate("$pathWord/").use {
+            downloadManager.cancelComic(pathWord)
+            downloadManager.deleteComicFiles(pathWord)
+            comicDao.deleteComic(pathWord)
+        }
     }
 
     override suspend fun deleteChapters(comicPathWord: String, uuids: List<String>) {
-        downloadManager.removeChaptersFromTask(comicPathWord, uuids.toSet())
-        uuids.forEach { downloadManager.deleteChapterFiles(comicPathWord, it) }
-        chapterDao.deleteChaptersByUuids(uuids)
-        val remainingCount = chapterDao.getChapterUuids(comicPathWord).size
-        comicDao.updateChapterCount(comicPathWord, remainingCount)
+        // 先取得所有写租约再执行，避免多章删除只执行一半后遇到导出中的章节。
+        val leases = mutableListOf<java.io.Closeable>()
+        try {
+            uuids.forEach { leases += localAccess.mutate("$comicPathWord/$it") }
+            downloadManager.removeChaptersFromTask(comicPathWord, uuids.toSet())
+            uuids.forEach { downloadManager.deleteChapterFiles(comicPathWord, it) }
+            chapterDao.deleteChaptersByUuids(uuids)
+            val remainingCount = chapterDao.getChapterUuids(comicPathWord).size
+            comicDao.updateChapterCount(comicPathWord, remainingCount)
+        } finally {
+            leases.asReversed().forEach { it.close() }
+        }
     }
 
     override suspend fun deleteComicAndChapters(pathWord: String) {
-        downloadManager.cancelComic(pathWord)
-        downloadManager.deleteComicFiles(pathWord)
-        chapterDao.deleteChaptersByComic(pathWord)
-        comicDao.deleteComic(pathWord)
+        localAccess.mutate("$pathWord/").use {
+            downloadManager.cancelComic(pathWord)
+            downloadManager.deleteComicFiles(pathWord)
+            chapterDao.deleteChaptersByComic(pathWord)
+            comicDao.deleteComic(pathWord)
+        }
     }
 
     override suspend fun removeChaptersFromTask(comicPathWord: String, chapterUuids: Set<String>) {
@@ -129,7 +143,7 @@ class DownloadRepositoryImpl @Inject constructor(
         return downloadManager.downloadProgress
     }
 
-    override fun getActiveTask(): StateFlow<ComicDownloadTask?> {
+    override fun getActiveTask(): StateFlow<BookDownloadTask?> {
         return downloadManager.activeTask
     }
 
@@ -145,7 +159,26 @@ class DownloadRepositoryImpl @Inject constructor(
         return downloadManager.isPaused(pathWord)
     }
 
-    override fun enqueueDownload(task: ComicDownloadTask) {
+    override fun getTasks(): StateFlow<List<BookDownloadTask>> = downloadManager.tasks
+    override fun pauseDownload(taskKey: String) {
+        downloadManager.pauseDownload(taskKey)
+    }
+
+    override fun resumeDownload(taskKey: String) {
+        downloadManager.resumeDownload(taskKey)
+    }
+
+    override suspend fun cancelDownload(taskKey: String) = downloadManager.cancelDownload(taskKey)
+    override suspend fun cancelAllNovels() = downloadManager.cancelAllNovels()
+    override suspend fun removeNovelVolumes(
+        mode: RequestMode,
+        owner: String,
+        path: String,
+        volumeIds: Set<String>
+    ): Result<Unit> =
+        downloadManager.removeNovelVolumes(mode, owner, path, volumeIds)
+
+    override fun enqueueDownload(task: BookDownloadTask) {
         downloadManager.enqueue(task)
     }
 

@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.ui.downloads
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,21 +18,28 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,37 +49,75 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
-import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
+import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
+import com.rchdliang.copymanga_neo.domain.model.DownloadKind
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
+import com.rchdliang.copymanga_neo.domain.model.displayBookTitle
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.NovelSharedTransitionProvider
+import com.rchdliang.copymanga_neo.ui.components.novelTransitionPath
+import com.rchdliang.copymanga_neo.ui.export.ComicExportDialogs
+import com.rchdliang.copymanga_neo.ui.export.ComicExportViewModel
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 @Composable
 fun DownloadsScreen(
     onComicClick: (String) -> Unit = {},
-    viewModel: DownloadsViewModel = hiltViewModel()
+    viewModel: DownloadsViewModel = hiltViewModel(),
+    exportViewModel: ComicExportViewModel = hiltViewModel(),
+    onNovelClick: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val exportState by exportViewModel.progress.collectAsStateWithLifecycle()
+    val toast = LocalToastHost.current
+    LaunchedEffect(uiState.message) {
+        uiState.message?.let { toast.showToast(it); viewModel.clearMessage() }
+    }
+    ComicExportDialogs(exportViewModel)
 
     DownloadsContent(
         uiState = uiState,
         onComicClick = onComicClick,
+        onNovelClick = onNovelClick,
+        onKindSelected = viewModel::selectKind,
         onExitSelectionMode = viewModel::exitSelectionMode,
         onSelectAll = viewModel::selectAll,
         onInvertSelection = viewModel::invertSelection,
-        onPause = viewModel::pauseComic,
-        onResume = viewModel::resumeComic,
-        onCancel = viewModel::cancelComic,
+        onPause = {
+            if (uiState.kind == DownloadKind.NOVEL) viewModel.pauseNovel(it) else viewModel.pauseComic(
+                it
+            )
+        },
+        onResume = {
+            if (uiState.kind == DownloadKind.NOVEL) viewModel.resumeNovel(it) else viewModel.resumeComic(
+                it
+            )
+        },
+        onCancel = {
+            if (uiState.kind == DownloadKind.NOVEL) viewModel.cancelNovel(it) else viewModel.cancelComic(
+                it
+            )
+        },
         onToggleSelection = viewModel::toggleSelection,
         onEnterSelectionMode = viewModel::enterSelectionMode,
-        onDeleteSelected = viewModel::deleteSelected
+        onDeleteSelected = viewModel::deleteSelected,
+        onExportSelected = {
+            val request = ComicExportRequest(uiState.selectedPathWords.toList())
+            viewModel.exitSelectionMode()
+            exportViewModel.prepare(request)
+        },
+        exportingComics = if (exportState.running) exportState.plan?.comics?.map { it.pathWord }
+            ?.toSet().orEmpty() else emptySet()
     )
 }
 
 /**
  * 下载页纯 UI 内容，Preview 可直接传入下载状态而无需初始化数据库和 Hilt。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DownloadsContent(
     uiState: DownloadsUiState,
@@ -85,10 +131,21 @@ private fun DownloadsContent(
     onToggleSelection: (String) -> Unit,
     onEnterSelectionMode: (String) -> Unit,
     onDeleteSelected: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onExportSelected: () -> Unit = {},
+    exportingComics: Set<String> = emptySet(),
+    onNovelClick: (String) -> Unit = {},
+    onKindSelected: (DownloadKind) -> Unit = {}
 ) {
-    val hasActive = uiState.activeDownloads.isNotEmpty()
-    val hasDownloaded = uiState.downloadedComics.isNotEmpty()
+    val showingNovels = uiState.kind == DownloadKind.NOVEL
+    val activeDownloads =
+        if (showingNovels) uiState.activeNovelDownloads else uiState.activeDownloads
+    val downloadedCount =
+        if (showingNovels) uiState.downloadedNovels.size else uiState.downloadedComics.size
+    val hasActive = activeDownloads.isNotEmpty()
+    val hasDownloaded = downloadedCount > 0
+    val comicGridState = rememberLazyGridState()
+    val novelGridState = rememberLazyGridState()
     val density = LocalDensity.current
     val windowWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     val isWide = windowWidth >= 840.dp
@@ -97,8 +154,25 @@ private fun DownloadsContent(
     val cardMinWidth = if (isWide) 184.dp else 168.dp
     val bottomPadding = if (uiState.isSelectionMode) 104.dp else 24.dp
 
+    Column(modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = if (showingNovels) 1 else 0) {
+            listOf(
+                DownloadKind.COMIC to "漫画",
+                DownloadKind.NOVEL to "轻小说"
+            ).forEach { (kind, label) ->
+                val selected = kind == uiState.kind
+                Tab(selected = selected, onClick = { onKindSelected(kind) }, text = {
+                    Text(
+                        label,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                })
+            }
+        }
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth(),
         contentAlignment = Alignment.TopCenter
     ) {
         BackHandler(enabled = uiState.isSelectionMode) {
@@ -106,6 +180,7 @@ private fun DownloadsContent(
         }
 
         LazyVerticalGrid(
+            state = if (showingNovels) novelGridState else comicGridState,
             columns = GridCells.Adaptive(cardMinWidth),
             modifier = Modifier
                 .widthIn(max = 1120.dp)
@@ -165,13 +240,14 @@ private fun DownloadsContent(
             item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
                 DownloadsSectionHeader(
                     title = "正在下载",
-                    countText = "${uiState.activeDownloads.size} 个任务"
+                    countText = "${activeDownloads.size} 个任务"
                 )
             }
 
             if (hasActive) {
-                uiState.activeDownloads.entries.forEach { (pathWord, progressInfo) ->
-                    val paused = pathWord in uiState.pausedComics
+                activeDownloads.entries.forEach { (pathWord, progressInfo) ->
+                    val paused =
+                        progressInfo.status == DownloadTaskStatus.PAUSED || progressInfo.status == DownloadTaskStatus.PAUSED_BY_RISK
                     val isError = progressInfo.status == DownloadTaskStatus.ERROR
                     item(span = { GridItemSpan(maxLineSpan) }, key = "active_$pathWord") {
                         Box(
@@ -182,6 +258,7 @@ private fun DownloadsContent(
                                 name = progressInfo.name,
                                 cover = progressInfo.cover,
                                 progressInfo = progressInfo,
+                                unitLabel = if (showingNovels) "卷" else "章",
                                 isPaused = paused,
                                 onPauseResume = {
                                     if (paused) onResume(pathWord)
@@ -211,12 +288,32 @@ private fun DownloadsContent(
             item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_header") {
                 DownloadsSectionHeader(
                     title = "已下载",
-                    countText = "${uiState.downloadedComics.size} 部"
+                    countText = "$downloadedCount 部"
                 )
             }
 
             if (hasDownloaded) {
-                items(
+                if (showingNovels) items(
+                    uiState.downloadedNovels,
+                    key = { "novel:${it.book.path}" }) { downloaded ->
+                    val book = downloaded.book
+                    val complete = downloaded.volumes.count { it.offlineReady }
+                    NovelSharedTransitionProvider {
+                        ComicCard(
+                            name = displayBookTitle(book.path, book.name), cover = book.cover,
+                            subtitle = "本地 ${downloaded.volumes.size} 卷 · 完整 $complete 卷",
+                            isSelected = book.path in uiState.selectedPathWords,
+                            sharedTransitionKey = "novel:downloads:${book.path}",
+                            comicPathWord = novelTransitionPath(book.path),
+                            onClick = {
+                                if (uiState.isSelectionMode) onToggleSelection(book.path) else onNovelClick(
+                                    book.path
+                                )
+                            },
+                            onLongClick = { onEnterSelectionMode(book.path) }
+                        )
+                    }
+                } else items(
                     items = uiState.downloadedComics,
                     key = { it.pathWord }
                 ) { comic ->
@@ -254,11 +351,26 @@ private fun DownloadsContent(
                     .fillMaxWidth(),
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 actions = {
+                    if (!showingNovels) Button(
+                        onClick = onExportSelected,
+                        enabled = uiState.selectedPathWords.isNotEmpty() && exportingComics.isEmpty(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 16.dp, end = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Save, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "导出 ${uiState.selectedPathWords.size} 部",
+                            color = LocalContentColor.current
+                        )
+                    }
                     Button(
                         onClick = onDeleteSelected,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                            .weight(1f)
+                            .padding(start = 4.dp, end = 16.dp),
+                        enabled = uiState.selectedPathWords.isNotEmpty() && (showingNovels || uiState.selectedPathWords.none { it in exportingComics }),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError
@@ -268,12 +380,13 @@ private fun DownloadsContent(
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = "删除 ${uiState.selectedPathWords.size} 部",
-                            color = MaterialTheme.colorScheme.onError
+                            color = LocalContentColor.current
                         )
                     }
                 }
             )
         }
+    }
     }
 }
 

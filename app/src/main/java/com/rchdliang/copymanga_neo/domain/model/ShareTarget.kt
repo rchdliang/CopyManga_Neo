@@ -10,6 +10,9 @@ data class ShareTarget(
         fun comic(pathWord: String, title: String) =
             ShareTarget(title, listOf("comic", pathWord))
 
+        fun novel(pathWord: String, title: String) =
+            ShareTarget(title, listOf("book", pathWord))
+
         fun chapter(comic: String, chapter: String, title: String) =
             ShareTarget(title, listOf("comic", comic, "chapter", chapter))
 

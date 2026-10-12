@@ -10,10 +10,11 @@ import com.rchdliang.copymanga_neo.domain.model.SettingsBackup
 
 /** 先校验完整文件，再允许写入；拒绝未知版本、缺失字段与非法枚举。 */
 internal object SettingsBackupCodec {
-    const val MAX_BYTES = 64 * 1024
+    const val MAX_BYTES =
+        com.rchdliang.copymanga_neo.domain.repository.SettingsBackupRepository.MAX_BYTES
     fun encode(value: SettingsBackup): String = JsonObject().apply {
         addProperty("format", "copymanga-neo-settings")
-        addProperty("version", 1)
+        addProperty("version", 2)
         add("settings", JsonObject().apply {
             addProperty("themeMode", value.settings.themeMode.name)
             addProperty("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
@@ -27,7 +28,16 @@ internal object SettingsBackupCodec {
             addProperty("audience", value.homeRank.audience)
             addProperty("period", value.homeRank.period)
         })
+        add("localReading", JsonParser.parseString(value.localReading))
+        add("readerTools", JsonParser.parseString(value.readerTools))
+        add("comicPreferences", JsonObject().apply {
+            value.comicPreferences.forEach { (path, preferences) ->
+                require(path.isNotBlank()) { "漫画标识为空" }
+                add(path, JsonParser.parseString(ComicPreferencesCodec.encode(preferences)))
+            }
+        })
     }.toString()
+        .also { require(it.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "设置文件过大" } }
 
     fun decode(serialized: String): SettingsBackup {
         require(serialized.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "设置文件过大" }
@@ -36,7 +46,7 @@ internal object SettingsBackupCodec {
         val version = root.get("version")
         require(
             version?.isJsonPrimitive == true && version.asJsonPrimitive.isNumber &&
-                    version.asString == "1"
+                    version.asString == "2"
         ) { "不支持的备份版本" }
         val settings = root.getAsJsonObject("settings")
         val wifiOnly = settings.get("wifiOnlyDownloads")
@@ -53,7 +63,14 @@ internal object SettingsBackupCodec {
         require(homeRank == homeRank.normalized()) { "排行榜设置无效" }
         return SettingsBackup(
             AppSettings(AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean),
-            defaults, homeRank
+            defaults, homeRank,
+            root.getAsJsonObject("localReading").toString().also { LocalReadingCodec.decode(it) },
+            root.getAsJsonObject("readerTools").toString()
+                .also { ReaderToolsBackupCodec.decode(it) },
+            root.getAsJsonObject("comicPreferences").entrySet().associate { (path, value) ->
+                require(path.isNotBlank()) { "漫画标识为空" }
+                path to ComicPreferencesCodec.decode(value.toString())
+            }
         )
     }
 

@@ -1,8 +1,11 @@
 package com.rchdliang.copymanga_neo.domain.model
 
-/** 软件偏好备份；不包含账号、网络身份及漫画数据。 */
+/** 偏好和本地阅读备份；不包含登录凭据、网络身份或下载文件。 */
 data class SettingsBackup(
     val settings: AppSettings,
     val readerDefaults: ReaderPreferences,
-    val homeRank: HomeRankPreferences
+    val homeRank: HomeRankPreferences,
+    val localReading: String,
+    val readerTools: String,
+    val comicPreferences: Map<String, ReaderPreferences>
 )

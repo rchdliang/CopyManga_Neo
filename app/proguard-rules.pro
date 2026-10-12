@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# 导出任务和章节快照跨进程以 Gson 保存，字段名在混淆构建中必须保持稳定。
+-keep class com.rchdliang.copymanga_neo.domain.model.ComicExport** { *; }

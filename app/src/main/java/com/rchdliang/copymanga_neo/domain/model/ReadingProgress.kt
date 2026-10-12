@@ -15,7 +15,10 @@ data class ReadingProgress(
 data class ReadingProgressSnapshot(
     val owner: String? = null,
     val records: Map<String, ReadingProgress> = emptyMap(),
-    val isReady: Boolean = false
+    /** Ready means the read attempt finished; error distinguishes an incomplete migration from success. */
+    val isReady: Boolean = false,
+    val error: String? = null,
+    val loadVersion: Long = 0L
 )
 
 fun readingProgressOwner(loggedIn: Boolean, username: String?): String? = when {

@@ -1,6 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.detail
 
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 
 /** 提示与执行共用本次多选已访问组的范围，跨组汇总且不影响未访问组。 */
 internal data class ChapterDownloadChanges(

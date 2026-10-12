@@ -19,6 +19,36 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindLocalReadingRepository(
+        implementation: com.rchdliang.copymanga_neo.data.local.LocalReadingStore
+    ): com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReadingSessionRepository(
+        implementation: com.rchdliang.copymanga_neo.data.local.AuthDataStore
+    ): com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNovelRepository(
+        implementation: com.rchdliang.copymanga_neo.data.novel.OfficialNovelRepository
+    ): com.rchdliang.copymanga_neo.domain.repository.NovelRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindNovelShelfRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.NovelShelfRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindComicExportRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.ComicExportRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
+
+    @Binds
+    @Singleton
     abstract fun bindShareLinkRepository(
         implementation: com.rchdliang.copymanga_neo.data.repository.ShareLinkRepositoryImpl
     ): com.rchdliang.copymanga_neo.domain.repository.ShareLinkRepository

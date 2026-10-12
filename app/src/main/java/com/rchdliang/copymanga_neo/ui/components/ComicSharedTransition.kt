@@ -20,6 +20,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 
 private val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
+
+/** 页面内小说转场复用导航的共享布局，但使用独立的可见性与选择状态。 */
+@Composable
+internal fun currentBookSharedTransitionScope(): SharedTransitionScope? =
+    LocalSharedTransitionScope.current
+
+@Composable
+internal fun currentBookTransitionVisibility(): AnimatedVisibilityScope? =
+    LocalAnimatedVisibilityScope.current
+
+@Composable
+internal fun currentBookTransitionSelection(): ComicSharedTransitionState? =
+    LocalComicSharedTransitionState.current
 private val LocalAnimatedVisibilityScope =
     staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
 private val LocalComicSharedTransitionState =

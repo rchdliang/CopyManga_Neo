@@ -34,6 +34,11 @@
             android:name=".data.download.DownloadNotificationDismissReceiver"
             android:exported="false" />
         <service
+            android:name=".data.export.ComicExportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+        <service
             android:name=".data.download.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync"

@@ -34,8 +34,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.rchdliang.copymanga_neo.data.download.DownloadProgressInfo
-import com.rchdliang.copymanga_neo.data.download.DownloadTaskStatus
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import java.util.Locale
@@ -49,7 +49,8 @@ fun DownloadingCard(
     onPauseResume: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
-    onRetry: (() -> Unit)? = null
+    onRetry: (() -> Unit)? = null,
+    unitLabel: String = "章"
 ) {
     val animatedOverallProgress by animateFloatAsState(
         targetValue = progressInfo.overallProgress.coerceIn(0f, 1f),
@@ -77,14 +78,14 @@ fun DownloadingCard(
     }
 
     val chapterText = when (progressInfo.status) {
-        DownloadTaskStatus.COMPLETED -> "下载完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章"
+        DownloadTaskStatus.COMPLETED -> "下载完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} $unitLabel"
 
         else -> {
             val current = progressInfo.currentChapterIndex.takeIf { it > 0 }
             if (current != null && progressInfo.totalChapters > 0) {
-                "第 $current/${progressInfo.totalChapters} 章 · 已完成 ${progressInfo.completedChapters} 章"
+                "第 $current/${progressInfo.totalChapters} $unitLabel · 已完成 ${progressInfo.completedChapters} $unitLabel"
             } else {
-                "已完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} 章"
+                "已完成 ${progressInfo.completedChapters}/${progressInfo.totalChapters} $unitLabel"
             }
         }
     }

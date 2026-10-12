@@ -14,6 +14,34 @@ import retrofit2.http.Query
 
 /** 漫画评论与章节吐槽分别使用官方接口；读取不依赖登录。 */
 interface CommentApiService {
+    @GET("api/v3/bookcomments")
+    suspend fun novelComments(
+        @Query("book_id") bookId: String,
+        @Query("reply_id") replyId: String = "",
+        @Query("offset") offset: Int = 0,
+        @Query("limit") limit: Int = 20,
+        @HeaderMap headers: Map<String, String> = headers()
+    ): Response<CommentResponseDto>
+
+    @GET("api/v3/bookcomment/config")
+    suspend fun novelReportConfig(
+        @Query("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = headers()
+    ): Response<com.rchdliang.copymanga_neo.data.remote.dto.CommentReportConfigResponseDto>
+
+    @FormUrlEncoded
+    @POST("api/v3/member/bookcomment/report")
+    suspend fun reportNovelComment(
+        @Field("book_id") bookId: String,
+        @Field("comment_id") commentId: String,
+        @Field("report_type") type: Int,
+        @Field("report_reason") reason: String,
+        @Header("Authorization") authorization: String,
+        @Field("_update") update: Boolean = true,
+        @HeaderMap headers: Map<String, String> = postHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
+    ): Response<CommentPostResponseDto>
+
     @GET("api/v3/roast/config")
     suspend fun chapterReportConfig(
         @Query("_update") update: Boolean = true,

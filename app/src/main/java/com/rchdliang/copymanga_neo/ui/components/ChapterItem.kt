@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
@@ -25,11 +26,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rchdliang.copymanga_neo.data.download.ChapterDownloadStatus
+import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ChapterInfo
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
@@ -73,7 +76,27 @@ fun ChapterItem(
     isSelected: Boolean = false,
     isSelectionMode: Boolean = false,
     downloadStatus: ChapterDownloadStatus? = null,
-    downloadProgress: Float? = null
+    downloadProgress: Float? = null,
+    isReadCompleted: Boolean = false
+) {
+    ChapterTitleItem(
+        chapter.name, onClick, onLongPress, modifier, isSelected,
+        isSelectionMode, downloadStatus, downloadProgress, isReadCompleted
+    )
+}
+
+/** 漫画章节与小说分卷共用；章名原文与阅读、下载状态分别绘制。 */
+@Composable
+fun ChapterTitleItem(
+    name: String,
+    onClick: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    downloadStatus: ChapterDownloadStatus? = null,
+    downloadProgress: Float? = null,
+    isReadCompleted: Boolean = false
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = downloadProgress ?: 0f,
@@ -144,6 +167,7 @@ fun ChapterItem(
             .height(40.dp)
             .clip(MaterialTheme.shapes.small)
             .background(bgColor)
+            .semantics { if (isReadCompleted) stateDescription = "已读完" }
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -153,12 +177,21 @@ fun ChapterItem(
             .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
         Text(
-            text = chapter.name,
+            text = name,
             style = MaterialTheme.typography.bodySmall,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        if (isReadCompleted) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .width(16.dp)
+                    .height(2.dp)
+                    .background(contentColor.copy(alpha = 0.6f), MaterialTheme.shapes.small)
+            )
+        }
 
         if (marker != null) {
             Text(
@@ -243,6 +276,7 @@ private fun ChapterDownloadStatesPreview() {
         Column(Modifier.padding(8.dp)) {
             ChapterItem(
                 chapter = previewChapter,
+                isReadCompleted = true,
                 onClick = {},
                 onLongPress = {},
                 modifier = Modifier.fillMaxWidth()
@@ -257,6 +291,7 @@ private fun ChapterDownloadStatesPreview() {
             )
             ChapterItem(
                 chapter = previewChapter.copy(name = "第 126 话"),
+                isReadCompleted = true,
                 downloadStatus = ChapterDownloadStatus.DOWNLOADED,
                 onClick = {},
                 onLongPress = {},
@@ -267,6 +302,27 @@ private fun ChapterDownloadStatesPreview() {
                 downloadStatus = ChapterDownloadStatus.ERROR,
                 onClick = {},
                 onLongPress = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true, name = "组件 - 已读原章名与独立下载标记", widthDp = 110)
+@Composable
+private fun ChapterReadStatusPreview() {
+    CopyManga_NeoTheme {
+        Column(Modifier.padding(8.dp)) {
+            ChapterItem(
+                previewChapter.copy(name = "第299话"), {}, {}, isReadCompleted = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            ChapterItem(
+                previewChapter.copy(name = "第298话"),
+                {},
+                {},
+                isReadCompleted = true,
+                downloadStatus = ChapterDownloadStatus.DOWNLOADED,
                 modifier = Modifier.fillMaxWidth()
             )
         }

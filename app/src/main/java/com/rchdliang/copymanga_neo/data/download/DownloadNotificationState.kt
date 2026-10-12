@@ -1,5 +1,8 @@
 package com.rchdliang.copymanga_neo.data.download
 
+import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
+
 /** 通知和服务共享的队列快照；活动 I/O 退出前不提前释放前台服务。 */
 internal data class DownloadNotificationState(
     val items: List<DownloadProgressInfo>,
@@ -11,7 +14,7 @@ internal data class DownloadNotificationState(
         it.status == DownloadTaskStatus.WAITING || it.status == DownloadTaskStatus.WAITING_FOR_WIFI || it.status == DownloadTaskStatus.IDLE ||
                 it.status == DownloadTaskStatus.REQUESTING_PAGE || it.status == DownloadTaskStatus.DOWNLOADING
     }
-    val primary = unfinished.firstOrNull { it.comicPathWord == activePathWord }
+    val primary = unfinished.firstOrNull { it.taskKey == activePathWord }
         ?: unfinished.firstOrNull { it.status == DownloadTaskStatus.DOWNLOADING }
         ?: unfinished.firstOrNull()
         ?: items.lastOrNull { it.status == DownloadTaskStatus.COMPLETED }

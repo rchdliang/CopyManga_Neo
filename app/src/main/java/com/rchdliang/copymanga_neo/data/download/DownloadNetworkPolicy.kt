@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import okhttp3.ConnectionPool
+import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,6 +48,23 @@ class DownloadNetworkPolicy @Inject constructor(
     private val mutableState = MutableStateFlow(DownloadNetworkState())
     internal val state = mutableState.asStateFlow()
     internal val ready = CompletableDeferred<Unit>()
+    private var wifiClient: Triple<Network, OkHttpClient, OkHttpClient>? = null
+
+    /** 漫画图片与小说正文共用网络约束，Wi-Fi 模式禁止复用蜂窝连接。 */
+    @Synchronized
+    internal fun client(base: OkHttpClient): OkHttpClient {
+        val policy = state.value
+        if (!policy.allowed) throw java.io.IOException("当前网络不允许下载")
+        if (!policy.wifiOnly) return base
+        val network = policy.network ?: throw java.io.IOException("Wi-Fi 网络尚未就绪")
+        wifiClient?.takeIf { it.first == network && it.second === base }?.let { return it.third }
+        wifiClient?.third?.connectionPool?.evictAll()
+        return base.newBuilder().socketFactory(network.socketFactory)
+            .dns { host -> network.getAllByName(host).toList() }
+            .connectionPool(ConnectionPool()).build()
+            .also { wifiClient = Triple(network, base, it) }
+    }
+
     private val scope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
             android.util.Log.e("DownloadNetworkPolicy", "读取下载网络策略失败", error)

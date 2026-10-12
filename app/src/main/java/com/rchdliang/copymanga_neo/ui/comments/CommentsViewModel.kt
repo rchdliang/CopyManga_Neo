@@ -377,7 +377,7 @@ class CommentsViewModel @Inject constructor(
     fun loadReplyPreview(comment: MangaComment) {
         val current = state.value
         val target = current.target ?: return
-        if (target.kind != CommentKind.COMIC || current.parent != null || comment.replyCount <= 0 ||
+        if (target.kind == CommentKind.CHAPTER || current.parent != null || comment.replyCount <= 0 ||
             comment.id in current.replyPreviews || comment.id in previewJobs
         ) return
         val generation = previewGeneration
@@ -417,7 +417,7 @@ class CommentsViewModel @Inject constructor(
 
     fun showReplies(comment: MangaComment) {
         val current = state.value
-        if (current.posting || current.target?.kind != CommentKind.COMIC) return
+        if (current.posting || current.target == null || current.target.kind == CommentKind.CHAPTER) return
         if (current.parent == null) {
             saveDraft()
             rootFeed = current.feed.copy(loading = false, refreshing = false)

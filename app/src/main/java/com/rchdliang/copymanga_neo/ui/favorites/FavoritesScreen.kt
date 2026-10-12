@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Close
@@ -30,12 +31,16 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -56,7 +61,9 @@ import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.ui.components.GridLoadMoreEffect
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.ui.components.NovelTransitionCard
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
 /**
@@ -66,7 +73,8 @@ import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 fun FavoritesScreen(
     viewModel: FavoritesViewModel = hiltViewModel(),
     onComicClick: (String) -> Unit,
-    onNavigateToProfile: () -> Unit = {}
+    onNavigateToProfile: () -> Unit = {},
+    onNovelClick: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
@@ -82,7 +90,11 @@ fun FavoritesScreen(
         uiState = uiState,
         onComicClick = onComicClick,
         onNavigateToProfile = onNavigateToProfile,
-        onRefresh = viewModel::loadFavorites,
+        onRefresh = viewModel::refreshSelectedShelf,
+        onKindSelected = viewModel::selectKind,
+        onNovelClick = onNovelClick,
+        onMoreNovels = viewModel::loadMoreNovels,
+        onRetryMoreNovels = viewModel::retryMoreNovels,
         onExitSelectionMode = viewModel::exitSelectionMode,
         onSelectAll = viewModel::selectAll,
         onInvertSelection = viewModel::invertSelection,
@@ -95,7 +107,7 @@ fun FavoritesScreen(
 /**
  * 收藏页纯 UI 内容，Preview 可覆盖登录、空态、列表和多选状态。
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun FavoritesContent(
     uiState: FavoritesUiState,
@@ -108,121 +120,212 @@ private fun FavoritesContent(
     onToggleSelection: (Int) -> Unit,
     onEnterSelectionMode: (Int) -> Unit,
     onRemoveSelected: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onKindSelected: (FavoritesKind) -> Unit = {},
+    onNovelClick: (String) -> Unit = {},
+    onMoreNovels: () -> Unit = {},
+    onRetryMoreNovels: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
     BackHandler(enabled = uiState.isSelectionMode, onBack = onExitSelectionMode)
+    val showingNovels = uiState.selectedKind == FavoritesKind.NOVEL
+    val isLoading = if (showingNovels) uiState.novelsLoading else uiState.isLoading
+    val error = if (showingNovels) uiState.novelsError else uiState.error
+    val isEmpty = if (showingNovels) uiState.novels.isEmpty() else uiState.favorites.isEmpty()
+    val comicGrid = rememberLazyGridState()
+    val novelGrid = rememberLazyGridState()
+    GridLoadMoreEffect(
+        novelGrid,
+        showingNovels && uiState.isLoggedIn && uiState.novelsHaveMore &&
+                !uiState.novelsLoading && !uiState.novelsLoadingMore && !uiState.isDeleting &&
+                uiState.novelsError == null && uiState.novelLoadMoreError == null,
+        uiState.novels.size, onMoreNovels
+    )
 
     // 选择模式下底部留出 BottomAppBar 的空间
     val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
 
-    PullToRefreshBox(
-        isRefreshing = uiState.isLoading,
-        onRefresh = onRefresh,
-        modifier = modifier.fillMaxSize(),
-        state = pullToRefreshState,
-        contentAlignment = Alignment.TopCenter,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = pullToRefreshState,
-                isRefreshing = uiState.isLoading,
-                modifier = Modifier.align(Alignment.TopCenter),
-            )
-        },
-    ) {
-        when {
-            !uiState.isLoggedIn -> {
-                NotLoggedInContent(onNavigateToProfile = onNavigateToProfile)
-            }
-
-            uiState.error != null && uiState.favorites.isEmpty() -> {
-                ErrorContent(
-                    error = uiState.error,
-                    onRetry = onRefresh
+    Column(modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal) {
+            FavoritesKind.entries.forEach { kind ->
+                val selected = uiState.selectedKind == kind
+                Tab(
+                    selected = selected,
+                    enabled = !uiState.isDeleting,
+                    onClick = { onKindSelected(kind) },
+                    text = {
+                        Text(
+                            kind.label,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 )
             }
-
-            uiState.favorites.isEmpty() -> {
-                Text(
-                    text = "暂无收藏，快去添加喜欢的漫画吧！",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.Center)
+        }
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = onRefresh,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            state = pullToRefreshState,
+            contentAlignment = Alignment.TopCenter,
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = pullToRefreshState,
+                    isRefreshing = isLoading,
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
-            }
+            },
+        ) {
+            when {
+                !uiState.isLoggedIn -> {
+                    NotLoggedInContent(onNavigateToProfile = onNavigateToProfile)
+                }
 
-            else -> {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(120.dp),
-                        contentPadding = PaddingValues(
-                            start = 8.dp,
-                            end = 8.dp,
-                            top = 8.dp,
-                            bottom = bottomPadding
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // 选择模式顶栏
-                        if (uiState.isSelectionMode) {
-                            item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
-                                SelectionTopBar(
-                                    selectedCount = uiState.selectedIds.size,
-                                    onClose = onExitSelectionMode,
-                                    onSelectAll = onSelectAll,
-                                    onInvert = onInvertSelection
+                error != null && isEmpty -> {
+                    ErrorContent(
+                        error = error,
+                        onRetry = onRefresh
+                    )
+                }
+
+                isEmpty && isLoading -> {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
+
+                isEmpty -> {
+                    Text(
+                        text = "暂无收藏，快去添加喜欢的${uiState.selectedKind.label}吧！",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
+                else -> {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyVerticalGrid(
+                            state = if (showingNovels) novelGrid else comicGrid,
+                            columns = GridCells.Adaptive(120.dp),
+                            contentPadding = PaddingValues(
+                                start = 8.dp,
+                                end = 8.dp,
+                                top = 8.dp,
+                                bottom = bottomPadding
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            if (error != null) item(
+                                span = { GridItemSpan(maxLineSpan) },
+                                key = "refresh_error"
+                            ) {
+                                TextButton(onClick = onRefresh) {
+                                    Text(
+                                        "$error，点击重试",
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            // 选择模式顶栏
+                            if (uiState.isSelectionMode) {
+                                item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
+                                    SelectionTopBar(
+                                        selectedCount = uiState.selectedIds.size,
+                                        onClose = onExitSelectionMode,
+                                        onSelectAll = onSelectAll,
+                                        onInvert = onInvertSelection
+                                    )
+                                }
+                            }
+
+                            if (showingNovels) {
+                                items(uiState.novels, key = { "novel:${it.collectId}" }) { entry ->
+                                    val book = entry.book
+                                    NovelTransitionCard(
+                                        book = book, source = "bookshelf",
+                                        isSelected = entry.collectId in uiState.selectedIds,
+                                        selectionMode = uiState.isSelectionMode,
+                                        onClick = {
+                                            if (uiState.isSelectionMode) onToggleSelection(entry.collectId)
+                                            else onNovelClick(book.path)
+                                        },
+                                        onLongClick = { onEnterSelectionMode(entry.collectId) }
+                                    )
+                                }
+                                if (uiState.novelsLoadingMore || uiState.novelLoadMoreError != null) {
+                                    item(
+                                        span = { GridItemSpan(maxLineSpan) },
+                                        key = "novel_pagination"
+                                    ) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (uiState.novelsLoadingMore) CircularProgressIndicator(
+                                                Modifier.size(28.dp)
+                                            )
+                                            else TextButton(onClick = onRetryMoreNovels) {
+                                                Text(
+                                                    "加载更多失败，点击重试",
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else items(
+                                items = uiState.favorites,
+                                key = { it.comic.pathWord }
+                            ) { favorite ->
+                                val isSelected = favorite.uuid in uiState.selectedIds
+                                val comic = favorite.comic
+                                val (statusText, statusColor) = rememberReadingStatus(comic)
+                                ComicCard(
+                                    name = comic.name,
+                                    cover = comic.cover,
+                                    subtitle = comic.author?.firstOrNull()?.name,
+                                    statusText = statusText,
+                                    statusColor = statusColor,
+                                    isSelected = isSelected,
+                                    sharedTransitionKey = "bookshelf:${comic.pathWord}",
+                                    comicPathWord = comic.pathWord,
+                                    onClick = {
+                                        if (uiState.isSelectionMode) {
+                                            onToggleSelection(favorite.uuid)
+                                        } else {
+                                            onComicClick(comic.pathWord)
+                                        }
+                                    },
+                                    onLongClick = { onEnterSelectionMode(favorite.uuid) }
                                 )
                             }
                         }
 
-                        items(
-                            items = uiState.favorites,
-                            key = { it.comic.pathWord }
-                        ) { favorite ->
-                            val isSelected = favorite.uuid in uiState.selectedIds
-                            val comic = favorite.comic
-                            val (statusText, statusColor) = rememberReadingStatus(comic)
-                            ComicCard(
-                                name = comic.name,
-                                cover = comic.cover,
-                                subtitle = comic.author?.firstOrNull()?.name,
-                                statusText = statusText,
-                                statusColor = statusColor,
-                                isSelected = isSelected,
-                                sharedTransitionKey = "bookshelf:${comic.pathWord}",
-                                comicPathWord = comic.pathWord,
-                                onClick = {
-                                    if (uiState.isSelectionMode) {
-                                        onToggleSelection(favorite.uuid)
-                                    } else {
-                                        onComicClick(comic.pathWord)
-                                    }
-                                },
-                                onLongClick = { onEnterSelectionMode(favorite.uuid) }
+                        // 删除中遮罩
+                        if (uiState.isDeleting) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
+                            }
+                        }
+
+                        // 选择模式底栏
+                        if (uiState.isSelectionMode) {
+                            SelectionBottomBar(
+                                selectedCount = uiState.selectedIds.size,
+                                onDelete = onRemoveSelected,
+                                modifier = Modifier.align(Alignment.BottomCenter)
                             )
                         }
-                    }
-
-                    // 删除中遮罩
-                    if (uiState.isDeleting) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
-
-                    // 选择模式底栏
-                    if (uiState.isSelectionMode) {
-                        SelectionBottomBar(
-                            selectedCount = uiState.selectedIds.size,
-                            onDelete = onRemoveSelected,
-                            modifier = Modifier.align(Alignment.BottomCenter)
-                        )
                     }
                 }
             }
@@ -251,13 +354,13 @@ private fun NotLoggedInContent(onNavigateToProfile: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "登录后即可收藏和管理漫画",
+            text = "登录后即可查看收藏的漫画与轻小说",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(16.dp))
         FilledTonalButton(onClick = onNavigateToProfile) {
-            Text("前往登录")
+            Text("前往登录", color = MaterialTheme.colorScheme.onSecondaryContainer)
         }
     }
 }
@@ -284,7 +387,12 @@ private fun ErrorContent(error: String, onRetry: () -> Unit) {
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(16.dp))
-        FilledTonalButton(onClick = onRetry) { Text("重试") }
+        FilledTonalButton(onClick = onRetry) {
+            Text(
+                "重试",
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
     }
 }
 
@@ -354,7 +462,7 @@ private fun SelectionBottomBar(
             ) {
                 Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("移除 $selectedCount 部")
+                Text("移除 $selectedCount 部", color = MaterialTheme.colorScheme.onError)
             }
         }
     )

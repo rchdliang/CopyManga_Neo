@@ -70,10 +70,12 @@ class SearchViewModel @Inject constructor(
     private val initialQueryType = QueryType.entries.firstOrNull {
         it.value == savedStateHandle.get<String>("queryType")
     }
+    private val initialSubmittedQuery = savedStateHandle.get<String>("submittedQuery")
+        ?: savedStateHandle.get<String>("query").orEmpty()
     private val _uiState = MutableStateFlow(
         SearchUiState(
             compactLayout = savedStateHandle.get<Boolean>(
-                if (savedStateHandle.get<String>("submittedQuery").isNullOrBlank())
+                if (initialSubmittedQuery.isBlank())
                     "discoveryCompactLayout" else "searchCompactLayout"
             ) ?: savedStateHandle.get<Boolean>("compactLayout") ?: false,
             promotedDiscoveryThemePath = savedStateHandle.get<String>("themePathWord"),
@@ -88,7 +90,7 @@ class SearchViewModel @Inject constructor(
                 }
                 ?: "-datetime_updated",
             query = savedStateHandle.get<String>("query").orEmpty(),
-            submittedQuery = savedStateHandle.get<String>("submittedQuery").orEmpty(),
+            submittedQuery = initialSubmittedQuery,
             submittedQueryType = initialQueryType,
             queryType = initialQueryType,
             selectedDiscoveryTheme = initialTheme,
@@ -144,6 +146,8 @@ class SearchViewModel @Inject constructor(
     }
 
     init {
+        // 路由关键词仅首次自动提交；后续重建仍区分输入草稿和已提交的查询。
+        savedStateHandle["submittedQuery"] = initialSubmittedQuery
         viewModelScope.launch(exceptionHandler) {
             for (keywordSearch in listOf(false, true)) {
                 appSettings.getSearchCompactLayout(keywordSearch).fold(

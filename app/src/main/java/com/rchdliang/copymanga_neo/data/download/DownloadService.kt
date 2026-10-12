@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -98,7 +99,7 @@ class DownloadService : Service() {
                 downloads.activeTask,
                 commands
             ) { progress, active, pending ->
-                DownloadNotificationState(progress.values.toList(), active?.pathWord, pending)
+                DownloadNotificationState(progress.values.toList(), active?.taskKey, pending)
             }.conflate().collect { state ->
                 updateWakeLock(state)
                 notifications.update(state)
@@ -107,7 +108,7 @@ class DownloadService : Service() {
                     delay(500.milliseconds)
                     val latest = DownloadNotificationState(
                         downloads.downloadProgress.value.values.toList(),
-                        downloads.activeTask.value?.pathWord, commands.value
+                        downloads.activeTask.value?.taskKey, commands.value
                     )
                     if (!latest.isRunning) {
                         val completedStartId = lastStartId

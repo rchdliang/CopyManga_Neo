@@ -51,8 +51,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 25
-        versionName = "0.10.10.0"
+        versionCode = 27
+        versionName = "0.10.12"
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
@@ -120,6 +120,7 @@ hilt {
 }
 
 dependencies {
+    testImplementation(libs.junit)
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)

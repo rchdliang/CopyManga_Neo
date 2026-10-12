@@ -2,10 +2,6 @@ package com.rchdliang.copymanga_neo.data.local
 
 import android.annotation.SuppressLint
 import android.content.Context
-import com.google.gson.JsonArray
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -20,7 +16,7 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** 固定 JSON 字段避免混淆漂移；设置修改和书签写入串行提交。 */
+/** 阅读工具偏好串行提交；书签由统一的本地阅读仓库管理。 */
 @Singleton
 class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context) :
     ReaderToolsRepository {
@@ -38,8 +34,6 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
         ).normalized()
     )
     override val settings = mutableSettings.asStateFlow()
-    private val mutableBookmarks = MutableStateFlow(readBookmarks())
-    override val bookmarks = mutableBookmarks.asStateFlow()
 
     // KTX edit 不返回 commit 的成败，这里必须在写入成功后发布状态。
     @SuppressLint("UseKtx")
@@ -58,53 +52,6 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
                 mutableSettings.value = next
             }
         }
-
-    @SuppressLint("UseKtx")
-    override suspend fun toggleBookmark(bookmark: ReaderBookmark): Result<Unit> = result {
-        mutex.withLock {
-            val old = mutableBookmarks.value
-            val match: (ReaderBookmark) -> Boolean = {
-                it.comicPathWord == bookmark.comicPathWord && it.chapterUuid == bookmark.chapterUuid && it.page == bookmark.page
-            }
-            val next =
-                if (old.any(match)) old.filterNot(match) else (old + bookmark).sortedByDescending { it.createdAt }
-            val json = JsonArray().apply {
-                next.forEach { mark ->
-                    add(JsonObject().apply {
-                        addProperty("comic", mark.comicPathWord); addProperty(
-                        "chapter",
-                        mark.chapterUuid
-                    )
-                        addProperty("name", mark.chapterName); addProperty("group", mark.group)
-                        addProperty("page", mark.page); addProperty("at", mark.createdAt)
-                    })
-                }
-            }
-            if (!prefs.edit().putString("bookmarks", json.toString())
-                    .commit()
-            ) throw IOException("书签保存失败")
-            mutableBookmarks.value = next
-        }
-    }
-
-    private fun readBookmarks(): List<ReaderBookmark> = try {
-        JsonParser.parseString(
-            prefs.getString(
-                "bookmarks",
-                "[]"
-            )
-        ).asJsonArray.mapNotNull { element ->
-            runCatching {
-                val item = element.asJsonObject
-                ReaderBookmark(
-                    item["comic"].asString, item["chapter"].asString, item["name"].asString,
-                    item["group"].asString, item["page"].asInt.coerceAtLeast(0), item["at"].asLong
-                )
-            }.getOrNull()
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
 
     private suspend fun result(block: suspend () -> Unit): Result<Unit> =
         withContext(Dispatchers.IO) {

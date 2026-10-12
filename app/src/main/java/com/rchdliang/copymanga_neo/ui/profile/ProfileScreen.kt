@@ -105,7 +105,8 @@ private enum class ProfilePage {
     BLACKLIST,
     NETWORK,
     ABOUT,
-    DATA
+    DATA,
+    LOCAL_LIBRARY
 }
 
 /**
@@ -115,7 +116,9 @@ private enum class ProfilePage {
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     onComicClick: (String) -> Unit = {},
-    onHistoryCleared: () -> Unit = {}
+    onHistoryCleared: () -> Unit = {},
+    onReadComic: (String, String, String, String, Int, Double) -> Unit = { _, _, _, _, _, _ -> },
+    onNavigateToNovel: (String?, com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord?) -> Unit = { _, _ -> }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var currentPage by rememberSaveable { mutableStateOf(ProfilePage.MAIN) }
@@ -185,15 +188,22 @@ fun ProfileScreen(
                 }.getOrNull()
                 viewModel.importLoginCredential(credential.orEmpty())
             },
-            onNavigateToHistory = { currentPage = ProfilePage.HISTORY },
+            onNavigateToHistory = { currentPage = ProfilePage.LOCAL_LIBRARY },
             onNavigateToSettings = { currentPage = ProfilePage.SETTINGS },
             onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
             onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
             onBlacklistEnabledChange = viewModel::setBlacklistEnabled
         )
 
+        ProfilePage.LOCAL_LIBRARY -> com.rchdliang.copymanga_neo.ui.library.LocalLibraryScreen(
+            onBack = { currentPage = ProfilePage.MAIN },
+            onCloud = { currentPage = ProfilePage.HISTORY },
+            onComic = onReadComic,
+            onNovel = { onNavigateToNovel(null, it) }
+        )
+
         ProfilePage.HISTORY -> HistoryScreen(
-            onNavigateBack = { currentPage = ProfilePage.MAIN },
+            onNavigateBack = { currentPage = ProfilePage.LOCAL_LIBRARY },
             onComicClick = onComicClick,
             onHistoryCleared = onHistoryCleared,
             onLoginClick = {
@@ -298,7 +308,7 @@ internal fun ProfileMainPage(
                     val menus: @Composable () -> Unit = {
                         ProfileMenuGroup(
                             uiState,
-                            onNavigateToHistory = { if (uiState.isLoggedIn) onNavigateToHistory() else onLoginClick() },
+                            onNavigateToHistory = onNavigateToHistory,
                             onNavigateToSettings,
                             onNavigateToNetwork,
                             onNavigateToBlacklist,
@@ -532,8 +542,8 @@ private fun ProfileMenuGroup(
     val common = listOf(
         ProfileMenuEntry(
             Icons.Filled.History,
-            "浏览记录",
-            if (uiState.isLoggedIn) "最近阅读" else "登录后查看",
+            "本地阅读、书签与小说",
+            "本地历史和书签 · 官方轻小说 · 云端历史",
             onClick = onNavigateToHistory
         ),
         ProfileMenuEntry(

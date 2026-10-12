@@ -8,6 +8,8 @@ interface ReadingProgressRepository {
     val progress: StateFlow<ReadingProgressSnapshot>
     val currentOwner: String?
     suspend fun awaitOwner(): String
+    suspend fun awaitReady(owner: String, minimumLoadVersion: Long = 0L): ReadingProgressSnapshot
+    fun retryLoading(): Long
     fun requestVersion(): Long
     fun recordRead(
         owner: String,

@@ -70,7 +70,8 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         }
         // HAR 中详情、目录和章节内容使用这些参数；状态 query 接口没有这两个参数。
         if (Regex("/api/v3/comic2/[^/]+$").matches(path) ||
-            path.contains("/chapter2/") || path.endsWith("/chapters")
+            path.contains("/chapter2/") || path.endsWith("/chapters") ||
+            Regex("/api/v3/book/[^/]+(?:/volume/[^/]+)?$").matches(path)
         ) {
             url.setQueryParameter("in_mainland", "false").setQueryParameter("request_id", "")
         }
@@ -157,9 +158,14 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
     /** 方法和路径同时匹配，避免把读取或尚未验证的接口当作成功空结果。 */
     private fun permitsEmptyResult(method: String, path: String): Boolean = when (method) {
         "POST" -> path in setOf(
-            "/api/v3/logout", "/api/v3/member/collect/comic",
-            "/api/v3/member/comment", "/api/v3/member/roast",
-            "/api/v3/member/comment/report", "/api/v3/member/update/info"
+            "/api/v3/logout",
+            "/api/v3/member/collect/comic",
+            "/api/v3/member/collect/book",
+            "/api/v3/member/comment",
+            "/api/v3/member/roast",
+            "/api/v3/member/comment/report",
+            "/api/v3/member/bookcomment/report",
+            "/api/v3/member/update/info"
         )
 
         "DELETE" -> path == "/api/v3/member/browse/comics"
@@ -168,10 +174,17 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
 
     private fun requiresMemberForm(method: String, path: String): Boolean =
         (method == "POST" && path in setOf(
-            "/api/v3/member/collect/comic", "/api/v3/member/comment",
-            "/api/v3/member/roast", "/api/v3/member/comment/report", "/api/v3/member/update/info"
+            "/api/v3/member/collect/comic",
+            "/api/v3/member/collect/book",
+            "/api/v3/member/comment",
+            "/api/v3/member/roast",
+            "/api/v3/member/comment/report",
+            "/api/v3/member/bookcomment/report",
+            "/api/v3/member/update/info"
         )) || (method == "DELETE" && path in setOf(
-            "/api/v3/member/collect/comics", "/api/v3/member/browse/comics"
+            "/api/v3/member/collect/comics",
+            "/api/v3/member/collect/books",
+            "/api/v3/member/browse/comics"
         ))
 
 }

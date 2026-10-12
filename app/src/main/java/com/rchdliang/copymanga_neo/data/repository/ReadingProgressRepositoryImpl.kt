@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -31,11 +32,11 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -64,14 +65,19 @@ class ReadingProgressRepositoryImpl @Inject constructor(
             .distinctUntilChanged().collect { emit(it) }
     }.stateIn(scope, SharingStarted.Eagerly, null)
 
+    private val loads = MutableStateFlow(0L)
+    private val loadVersions = AtomicLong(0L)
     override val currentOwner: String? get() = owners.value
-    override val progress = owners.flatMapLatest { owner ->
-        flow {
-            emit(ReadingProgressSnapshot(owner))
-            if (owner != null) store.data.map { decode(it, owner) }.collect {
-                emit(ReadingProgressSnapshot(owner, it, isReady = true))
-            }
-        }
+    override val progress = combine(
+        owners,
+        loads
+    ) { owner, version -> owner to version }.flatMapLatest { (owner, version) ->
+        com.rchdliang.copymanga_neo.data.local.readingProgressLoadFlow(
+            owner,
+            version,
+            store.data,
+            decode = ::decode
+        )
     }.stateIn(scope, SharingStarted.Eagerly, ReadingProgressSnapshot())
 
     init {
@@ -80,12 +86,35 @@ class ReadingProgressRepositoryImpl @Inject constructor(
             owners.collectLatest { owner ->
                 if (owner == null) return@collectLatest
                 syncRequests.trySend(Unit)
-                for (ignored in syncRequests) syncMutex.withLock { syncPending(owner) }
+                for (ignored in syncRequests) syncMutex.withLock {
+                    try {
+                        syncPending(owner)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("ReadingProgress", "同步读取失败，保留原数据并等待重试", e)
+                    }
+                }
             }
         }
     }
 
-    override suspend fun awaitOwner(): String = owners.filterNotNull().first()
+    override suspend fun awaitOwner(): String =
+        withTimeoutOrNull(15_000) { owners.filterNotNull().first() }
+            ?: error("账号状态读取超时，请重试")
+
+    override suspend fun awaitReady(
+        owner: String,
+        minimumLoadVersion: Long
+    ): ReadingProgressSnapshot =
+        com.rchdliang.copymanga_neo.data.local.awaitReadingProgress(
+            progress,
+            owner,
+            minimumLoadVersion
+        )
+
+    override fun retryLoading(): Long = loadVersions.incrementAndGet().also { loads.value = it }
+
     override fun requestVersion(): Long =
         versions.updateAndGet { maxOf(it + 1, System.currentTimeMillis()) }
 
@@ -133,8 +162,8 @@ class ReadingProgressRepositoryImpl @Inject constructor(
                 if (uuid == null) local.remove(path) else {
                     local[path] = ReadingProgress(
                         uuid, browse.chapterName.orEmpty().ifBlank {
-                        previous?.takeIf { it.chapterUuid == uuid }?.chapterName.orEmpty()
-                    }, previous?.takeIf { it.chapterUuid == uuid }?.groupPathWord,
+                            previous?.takeIf { it.chapterUuid == uuid }?.chapterName.orEmpty()
+                        }, previous?.takeIf { it.chapterUuid == uuid }?.groupPathWord,
                         requestVersion, pendingSync = false,
                         lastReadGroupPathWord = previous?.lastReadGroupPathWord
                     )
@@ -195,7 +224,7 @@ class ReadingProgressRepositoryImpl @Inject constructor(
                 entry["chapter"].asString, entry["name"].asString,
                 entry["group"]?.takeUnless { it.isJsonNull }?.asString, entry["version"].asLong,
                 entry["pending"].asBoolean,
-                (entry["last_read_group"] ?: entry["group"])?.takeUnless { it.isJsonNull }?.asString
+                entry["last_read_group"]?.takeUnless { it.isJsonNull }?.asString
             )
         }
     }

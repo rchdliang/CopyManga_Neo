@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
@@ -66,6 +67,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -84,15 +86,22 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.SubcomposeAsyncImage
+import com.google.gson.Gson
 import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
+import com.rchdliang.copymanga_neo.data.export.ComicExportService
 import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
+import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
+import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.model.Theme
+import com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
 import com.rchdliang.copymanga_neo.ui.components.AppToastHost
 import com.rchdliang.copymanga_neo.ui.components.ComicSharedTransitionProvider
@@ -101,9 +110,12 @@ import com.rchdliang.copymanga_neo.ui.detail.DetailScreen
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadNotificationPermission
 import com.rchdliang.copymanga_neo.ui.downloads.DownloadsScreen
 import com.rchdliang.copymanga_neo.ui.explore.ComicExploreScreen
+import com.rchdliang.copymanga_neo.ui.export.ComicExportDialogs
+import com.rchdliang.copymanga_neo.ui.export.ComicExportViewModel
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesViewModel
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
+import com.rchdliang.copymanga_neo.ui.novel.NovelScreen
 import com.rchdliang.copymanga_neo.ui.profile.ProfileScreen
 import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
 import com.rchdliang.copymanga_neo.ui.search.SearchScreen
@@ -117,10 +129,25 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
     @Inject
     lateinit var riskControl: RiskControlRepository
+
+    @Inject
+    lateinit var exports: ComicExportRepository
     private var openDownloads by mutableStateOf(false)
+    private var retryExportId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        retryExportId =
+            if (savedInstanceState != null) savedInstanceState.getString("retryExportId")
+            else intent.takeIf { it.action == ComicExportService.RETRY }
+                ?.getStringExtra(ComicExportService.TASK_ID)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                exports.messages.collect { message ->
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         riskControl.resetForAppLaunch(isFreshActivity = savedInstanceState == null)
         openDownloads = savedInstanceState?.getBoolean("openDownloads")
             ?: (intent.action == DownloadNotifications.OPEN_DOWNLOADS)
@@ -148,9 +175,17 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             CopyManga_NeoTheme(darkTheme = darkTheme) {
+                val exportViewModel: ComicExportViewModel = hiltViewModel()
+                val exportState by exports.state.collectAsStateWithLifecycle()
+                LaunchedEffect(retryExportId) {
+                    retryExportId?.let { exportViewModel.retry(it); retryExportId = null }
+                }
                 CopyManga_NeoApp(
-                    mainViewModel = mainViewModel, openDownloads = openDownloads,
+                    mainViewModel = mainViewModel,
+                    openDownloads = openDownloads,
+                    hasExports = exportState.running,
                     onDownloadsOpened = { openDownloads = false })
+                ComicExportDialogs(exportViewModel)
             }
         }
     }
@@ -164,10 +199,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.action == DownloadNotifications.OPEN_DOWNLOADS) openDownloads = true
+        if (intent.action == ComicExportService.RETRY)
+            retryExportId = intent.getStringExtra(ComicExportService.TASK_ID)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("openDownloads", openDownloads)
+        outState.putString("retryExportId", retryExportId)
         super.onSaveInstanceState(outState)
     }
 }
@@ -178,25 +216,44 @@ class MainActivity : ComponentActivity() {
 sealed class Screen(val route: String) {
     object Main : Screen("main")
     object Home : Screen("home")
+    object Novel : Screen("novel?path={path}&resume={resume}") {
+        fun createRoute(path: String? = null, resume: LocalReadingRecord? = null) =
+            "novel?path=${Uri.encode(path.orEmpty())}&resume=${
+                Uri.encode(resume?.let {
+                    Gson().toJson(
+                        it
+                    )
+                }.orEmpty())
+            }"
+    }
     object Detail : Screen("detail/{pathWord}") {
         fun createRoute(pathWord: String) = "detail/$pathWord"
     }
 
     object Reader :
-        Screen("reader/{comicPathWord}/{chapterPathWord}/{chapterName}/{groupPathWord}") {
+        Screen("reader/{comicPathWord}/{chapterPathWord}/{chapterName}/{groupPathWord}?page={page}&fraction={fraction}") {
         fun createRoute(
             comicPathWord: String,
             chapterPathWord: String,
             chapterName: String,
-            groupPathWord: String = "default"
+            groupPathWord: String = "default",
+            page: Int = -1,
+            fraction: Double = 0.0
         ) =
-            "reader/$comicPathWord/$chapterPathWord/${chapterName.replace("/", "_")}/$groupPathWord"
+            "reader/${Uri.encode(comicPathWord)}/${Uri.encode(chapterPathWord)}/${
+                Uri.encode(
+                    chapterName.ifBlank { "阅读章节" })
+            }/${Uri.encode(groupPathWord)}?page=$page&fraction=$fraction"
     }
 
-    object Search : Screen("search?themePathWord={themePathWord}&themeName={themeName}") {
+    object Search :
+        Screen("search?themePathWord={themePathWord}&themeName={themeName}&query={query}&queryType={queryType}") {
         fun createRoute(theme: Theme? = null): String = if (theme == null) "search" else
             "search?themePathWord=${Uri.encode(theme.pathWord.orEmpty())}" +
                     "&themeName=${Uri.encode(theme.name)}"
+
+        fun createAuthorRoute(name: String): String =
+            "search?query=${Uri.encode(name)}&queryType=${QueryType.AUTHOR.value}"
     }
 
     object Explore :
@@ -230,12 +287,13 @@ sealed class Screen(val route: String) {
 fun CopyManga_NeoApp(
     mainViewModel: MainViewModel = hiltViewModel(),
     openDownloads: Boolean = false,
+    hasExports: Boolean = false,
     onDownloadsOpened: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     var mainDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
     val downloads by mainViewModel.downloadProgress.collectAsStateWithLifecycle()
-    DownloadNotificationPermission(hasDownloads = downloads.isNotEmpty())
+    DownloadNotificationPermission(hasDownloads = downloads.isNotEmpty() || hasExports)
     LaunchedEffect(openDownloads) {
         if (openDownloads) {
             mainDestination = AppDestinations.DOWNLOADS
@@ -288,6 +346,26 @@ fun CopyManga_NeoApp(
                                 val isLoggedIn by mainViewModel.isLoggedIn.collectAsStateWithLifecycle()
                                 val avatar by mainViewModel.avatar.collectAsStateWithLifecycle()
                                 MainScreen(
+                                    onNavigateToNovel = { path, resume ->
+                                        navController.navigate(
+                                            Screen.Novel.createRoute(
+                                                path,
+                                                resume
+                                            )
+                                        )
+                                    },
+                                    onReadComic = { path, chapter, name, group, page, fraction ->
+                                        navController.navigate(
+                                            Screen.Reader.createRoute(
+                                                path,
+                                                chapter,
+                                                name,
+                                                group,
+                                                page,
+                                                fraction
+                                            )
+                                        )
+                                    },
                                     currentDestination = mainDestination,
                                     onDestinationSelected = { mainDestination = it },
                                     isLoggedIn = isLoggedIn,
@@ -315,6 +393,38 @@ fun CopyManga_NeoApp(
                         }
                     }
 
+                    // 小说页与漫画详情同级，独立覆盖底栏和宽屏侧栏。
+                    composable(
+                        route = Screen.Novel.route,
+                        arguments = listOf(
+                            navArgument("path") { type = NavType.StringType; defaultValue = "" },
+                            navArgument("resume") { type = NavType.StringType; defaultValue = "" }
+                        )
+                    ) { entry ->
+                        val initialPath =
+                            entry.arguments?.getString("path")?.takeIf { it.isNotBlank() }
+                        val initialResume = remember(entry) {
+                            entry.arguments?.getString("resume")?.takeIf { it.isNotBlank() }?.let {
+                                runCatching {
+                                    Gson().fromJson(
+                                        it,
+                                        LocalReadingRecord::class.java
+                                    )
+                                }.getOrNull()
+                            }
+                        }
+                        ComicSharedTransitionProvider(
+                            sharedTransitionScope,
+                            this,
+                            comicSharedTransitionState
+                        ) {
+                            NovelScreen(
+                                onBack = { navController.popBackStack() },
+                                initialPath = initialPath, initialResume = initialResume
+                            )
+                        }
+                    }
+
                     // 搜索页（全屏覆盖，无底部导航）
                     composable(
                         route = Screen.Search.route,
@@ -323,6 +433,12 @@ fun CopyManga_NeoApp(
                                 type = NavType.StringType; nullable = true; defaultValue = null
                             },
                             navArgument("themeName") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("query") {
+                                type = NavType.StringType; nullable = true; defaultValue = null
+                            },
+                            navArgument("queryType") {
                                 type = NavType.StringType; nullable = true; defaultValue = null
                             }
                         )
@@ -432,6 +548,13 @@ fun CopyManga_NeoApp(
                                     },
                                     onThemeClick = { theme ->
                                         navController.navigate(Screen.Search.createRoute(theme))
+                                    },
+                                    onAuthorClick = { author ->
+                                        navController.navigate(
+                                            Screen.Search.createAuthorRoute(
+                                                author.name
+                                            )
+                                        )
                                     }
                                 )
                             }
@@ -447,6 +570,10 @@ fun CopyManga_NeoApp(
                             navArgument("chapterName") { type = NavType.StringType },
                             navArgument("groupPathWord") {
                                 type = NavType.StringType; defaultValue = "default"
+                            },
+                            navArgument("page") { type = NavType.IntType; defaultValue = -1 },
+                            navArgument("fraction") {
+                                type = NavType.StringType; defaultValue = "0.0"
                             }
                         )
                     ) { backStackEntry ->
@@ -462,7 +589,11 @@ fun CopyManga_NeoApp(
                             comicPathWord = comicPathWord,
                             chapterName = chapterName,
                             groupPathWord = groupPathWord,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            initialPage = backStackEntry.arguments?.getInt("page") ?: -1,
+                            initialFraction = backStackEntry.arguments?.getString("fraction")
+                                ?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..1.0 }
+                                ?: 0.0
                         )
                     }
                 } // NavHost
@@ -482,7 +613,9 @@ fun MainScreen(
     onNavigateToTopic: (String, String) -> Unit,
     currentDestination: AppDestinations,
     onDestinationSelected: (AppDestinations) -> Unit,
-    favoritesViewModel: FavoritesViewModel = hiltViewModel()
+    favoritesViewModel: FavoritesViewModel = hiltViewModel(),
+    onReadComic: (String, String, String, String, Int, Double) -> Unit = { _, _, _, _, _, _ -> },
+    onNavigateToNovel: (String?, LocalReadingRecord?) -> Unit = { _, _ -> }
 ) {
     // 主界面创建共享书架状态，登录后即可在导航栏提示更新。
     val favoritesState by favoritesViewModel.uiState.collectAsStateWithLifecycle()
@@ -518,7 +651,9 @@ fun MainScreen(
             onNavigateToSearch = onNavigateToSearch,
             onNavigateToExplore = onNavigateToExplore,
             onNavigateToTopic = onNavigateToTopic,
-            onNavigateToProfile = { onDestinationSelected(AppDestinations.PROFILE) }
+            onNavigateToProfile = { onDestinationSelected(AppDestinations.PROFILE) },
+            onReadComic = onReadComic,
+            onNavigateToNovel = onNavigateToNovel
         )
     } else {
         NavigationSuiteScaffold(
@@ -563,7 +698,9 @@ fun MainScreen(
                     onNavigateToExplore = onNavigateToExplore,
                     onNavigateToTopic = onNavigateToTopic,
                     onNavigateToProfile = { onDestinationSelected(AppDestinations.PROFILE) },
-                    onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
+                    onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) },
+                    onReadComic = onReadComic,
+                    onNavigateToNovel = onNavigateToNovel
                 )
             }
         }
@@ -582,7 +719,9 @@ private fun WideScreenLayout(
     onNavigateToSearch: () -> Unit,
     onNavigateToExplore: (String) -> Unit,
     onNavigateToTopic: (String, String) -> Unit,
-    onNavigateToProfile: () -> Unit
+    onNavigateToProfile: () -> Unit,
+    onReadComic: (String, String, String, String, Int, Double) -> Unit,
+    onNavigateToNovel: (String?, LocalReadingRecord?) -> Unit
 ) {
     val railState = rememberWideNavigationRailState(
         initialValue = WideNavigationRailValue.Collapsed
@@ -698,7 +837,9 @@ private fun WideScreenLayout(
                 onNavigateToExplore = onNavigateToExplore,
                 onNavigateToTopic = onNavigateToTopic,
                 onNavigateToProfile = onNavigateToProfile,
-                onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) }
+                onNavigateToDownloads = { onDestinationSelected(AppDestinations.DOWNLOADS) },
+                onReadComic = onReadComic,
+                onNavigateToNovel = onNavigateToNovel
             )
         }
     }
@@ -715,7 +856,9 @@ private fun MainDestinationContent(
     onNavigateToExplore: (String) -> Unit,
     onNavigateToTopic: (String, String) -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToDownloads: () -> Unit
+    onNavigateToDownloads: () -> Unit,
+    onReadComic: (String, String, String, String, Int, Double) -> Unit,
+    onNavigateToNovel: (String?, LocalReadingRecord?) -> Unit
 ) {
     val saveableStateHolder = rememberSaveableStateHolder()
 
@@ -748,6 +891,7 @@ private fun MainDestinationContent(
         saveableStateHolder.SaveableStateProvider(destination.name) {
             when (destination) {
                 AppDestinations.HOME -> HomeScreen(
+                    onNavigateToNovel = { onNavigateToNovel(it, null) },
                     onComicClick = onNavigateToDetail,
                     onNavigateToSearch = onNavigateToSearch,
                     onNavigateToExplore = onNavigateToExplore,
@@ -755,17 +899,23 @@ private fun MainDestinationContent(
                     onNavigateToDownloads = onNavigateToDownloads
                 )
 
-                AppDestinations.DOWNLOADS -> DownloadsScreen(onComicClick = onNavigateToDetail)
+                AppDestinations.DOWNLOADS -> DownloadsScreen(
+                    onComicClick = onNavigateToDetail,
+                    onNovelClick = { onNavigateToNovel(it, null) }
+                )
 
                 AppDestinations.BOOKSHELF -> FavoritesScreen(
                     viewModel = favoritesViewModel,
                     onComicClick = onNavigateToDetail,
+                    onNovelClick = { onNavigateToNovel(it, null) },
                     onNavigateToProfile = onNavigateToProfile
                 )
 
                 AppDestinations.PROFILE -> ProfileScreen(
                     onComicClick = onNavigateToDetail,
-                    onHistoryCleared = favoritesViewModel::loadFavorites
+                    onHistoryCleared = favoritesViewModel::loadFavorites,
+                    onReadComic = onReadComic,
+                    onNavigateToNovel = onNavigateToNovel
                 )
             }
         }
