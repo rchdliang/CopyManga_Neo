@@ -182,6 +182,10 @@ class DownloadRepositoryImpl @Inject constructor(
         downloadManager.enqueue(task)
     }
 
+    override suspend fun cancelNovelVolumes(
+        mode: RequestMode, owner: String, path: String, volumeIds: Set<String>
+    ): Result<Unit> = downloadManager.cancelNovelVolumes(mode, owner, path, volumeIds)
+
     override suspend fun cancelComic(pathWord: String) {
         downloadManager.cancelComic(pathWord)
     }

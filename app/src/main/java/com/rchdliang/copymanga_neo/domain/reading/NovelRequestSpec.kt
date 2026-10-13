@@ -34,4 +34,11 @@ object NovelRequestSpec {
             put("offset", offset.toString())
         }
     }
+
+    /** 全部题材保留零作品条目；Web 请求刷新标记，App 使用 platform=3。 */
+    fun themeCounts(app: Boolean, offset: Int): Map<String, String> =
+        page(app, offset, 500).apply {
+            put("free_type", "1")
+            if (!app) put("_update", "true")
+        }
 }

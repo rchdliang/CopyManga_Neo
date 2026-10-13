@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.ui.search
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,11 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -30,21 +27,17 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -54,18 +47,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberSearchBarState
@@ -85,9 +74,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -103,7 +89,6 @@ import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.GridLoadMoreEffect
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.ui.components.ShareAction
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
@@ -177,55 +162,17 @@ fun SearchScreen(
         uiState.selectedDiscoveryTop?.pathWord,
         uiState.ordering
     )
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
-        topBar = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TopAppBar(
-                    modifier = Modifier.widthIn(max = 1040.dp),
-                    title = {
-                        Text(
-                            "搜索",
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    actions = { share?.let { ShareAction(it) } }
-                )
-            }
-        }
-    ) { padding ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding(),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            Column(
-                Modifier
-                    .widthIn(max = 1040.dp)
-                    .fillMaxSize()
-            ) {
-                SearchInput(uiState.query, onQueryChange, onSearch, onClear, onNavigateBack)
-                PullToRefreshBox(
-                    isRefreshing = uiState.isRefreshing, onRefresh = onRefresh,
-                    state = pullToRefreshState, modifier = Modifier.weight(1f)
-                ) {
-                    SearchResultsContent(
-                        uiState,
-                        onQueryTypeChange,
-                        onDiscoveryThemeSelected,
-                        onDiscoveryTopSelected,
-                        onComicClick,
-                        onLoadMore,
-                        onRefresh,
-                        { allTags = true },
-                        onLayoutToggle,
-                        onOrderingSelected
-                    )
-                }
-            }
-        }
+    SearchPage(
+        query = uiState.query, onQueryChange = onQueryChange, onSearch = onSearch,
+        onClear = onClear, onBack = onNavigateBack, shareTarget = share,
+        isRefreshing = uiState.isRefreshing, onRefresh = onRefresh,
+        pullToRefreshState = pullToRefreshState
+    ) {
+        SearchResultsContent(
+            uiState, onQueryTypeChange, onDiscoveryThemeSelected, onDiscoveryTopSelected,
+            onComicClick, onLoadMore, onRefresh, { allTags = true },
+            onLayoutToggle, onOrderingSelected
+        )
     }
 }
 
@@ -292,40 +239,6 @@ internal fun SearchInput(
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
     ) {}
-}
-
-@Composable
-private fun SearchCategorySelector(selected: QueryType?, onSelected: (QueryType?) -> Unit) {
-    val choices = listOf(
-        "全部" to null,
-        "名称" to QueryType.NAME,
-        "作者" to QueryType.AUTHOR,
-        "汉化组" to QueryType.LOCAL
-    )
-    Row(
-        Modifier
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
-    ) {
-        choices.forEachIndexed { index, (label, type) ->
-            ToggleButton(
-                checked = selected == type,
-                onCheckedChange = { if (it) onSelected(type) },
-                shapes = when (index) {
-                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    choices.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                },
-                modifier = Modifier.semantics { role = Role.RadioButton }
-            ) {
-                Text(
-                    label, style = MaterialTheme.typography.labelLarge,
-                    color = androidx.compose.material3.LocalContentColor.current
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -518,33 +431,10 @@ private fun SearchResultsContent(
             item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SearchCategorySelector(state.queryType, onType)
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                if (state.isKeywordSearch) "搜索结果" else "发现",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                            state.total?.let {
-                                Text(
-                                    "共 $it 部漫画",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
-                        }
-                        if (!state.isKeywordSearch) DiscoveryOrdering(state.ordering, onOrdering)
-                        SearchToolButton(
-                            if (state.compactLayout) "切换为列表布局" else "切换为紧凑布局",
-                            if (state.compactLayout) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                            onLayoutToggle
-                        )
-                    }
+                    SearchResultsHeader(
+                        state.isKeywordSearch, state.total, "漫画", state.compactLayout,
+                        onLayoutToggle, ordering = state.ordering, onOrdering = onOrdering
+                    )
                     if (!state.isKeywordSearch) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             SearchOptionRow(

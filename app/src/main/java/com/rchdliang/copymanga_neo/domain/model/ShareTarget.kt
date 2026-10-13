@@ -51,5 +51,19 @@ data class ShareTarget(
             "搜索：$query", listOf("search"),
             mapOf("q" to query, "q_type" to type?.value.orEmpty())
         )
+
+        /** H5 搜索页只声明内容类型；关键词及查询类型保留在分享文字中。 */
+        fun novelSearch(query: String, type: QueryType?): ShareTarget {
+            require(query.isNotBlank() && type != QueryType.LOCAL)
+            val typeLabel = when (type) {
+                QueryType.NAME -> "名称"
+                QueryType.AUTHOR -> "作者"
+                else -> "全部"
+            }
+            return ShareTarget(
+                "轻小说搜索（$typeLabel）：$query", listOf("h5", "searchContent"),
+                mapOf("type" to "novel")
+            )
+        }
     }
 }

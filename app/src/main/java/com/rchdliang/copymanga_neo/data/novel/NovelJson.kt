@@ -14,8 +14,24 @@ internal object NovelJson {
         o[key]?.takeUnless { it.isJsonNull }?.asString ?: fallback
 
     fun tags(o: JsonObject, key: String) = o.getAsJsonArray(key)
-        ?.map { e -> e.asJsonObject.let { NovelTag(text(it, "name"), text(it, "path_word")) } }
+        ?.map { e ->
+            e.asJsonObject.let {
+                NovelTag(
+                    text(it, "name"), text(it, "path_word"),
+                    it["count"]?.takeUnless { value -> value.isJsonNull }?.asInt
+                )
+            }
+        }
         .orEmpty()
+
+    fun themeCounts(o: JsonObject): List<NovelTag> {
+        require(o.getAsJsonArray("list") != null) { "小说题材目录缺少列表" }
+        return tags(o, "list").onEach {
+            require(it.name.isNotBlank() && it.path.isNotBlank() && it.count != null && it.count >= 0) {
+                "小说题材目录缺少有效数量"
+            }
+        }
+    }
 
     fun book(o: JsonObject) = NovelBook(
         text(o, "path_word"),

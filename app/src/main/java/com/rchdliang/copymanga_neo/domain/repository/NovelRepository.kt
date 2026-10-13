@@ -32,6 +32,8 @@ interface NovelRepository {
     ): Result<NovelPage>
 
     suspend fun tags(mode: RequestMode, owner: String): Result<List<NovelTag>>
+    fun cachedTags(mode: RequestMode): List<NovelTag> =
+        com.rchdliang.copymanga_neo.domain.model.NovelThemeDefaults.themes
     suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook>
     suspend fun volumes(mode: RequestMode, owner: String, path: String): Result<List<NovelVolume>>
     suspend fun readVolume(

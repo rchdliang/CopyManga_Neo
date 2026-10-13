@@ -2,35 +2,26 @@ package com.rchdliang.copymanga_neo.ui.novel
 
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -54,21 +45,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
-import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.NovelBook
 import com.rchdliang.copymanga_neo.domain.model.NovelTag
 import com.rchdliang.copymanga_neo.domain.model.NovelVolume
+import com.rchdliang.copymanga_neo.domain.model.QueryType
 import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.domain.model.displayBookTitle
 import com.rchdliang.copymanga_neo.ui.comments.CommentsDialog
@@ -85,6 +77,8 @@ import com.rchdliang.copymanga_neo.ui.components.BookDetailTag
 import com.rchdliang.copymanga_neo.ui.components.BookDetailTags
 import com.rchdliang.copymanga_neo.ui.components.BookDetailToolbar
 import com.rchdliang.copymanga_neo.ui.components.ChapterTitleItem
+import com.rchdliang.copymanga_neo.ui.components.DownloadManageBottomBar
+import com.rchdliang.copymanga_neo.ui.components.DownloadSelectionTopBar
 import com.rchdliang.copymanga_neo.ui.components.GridLoadMoreEffect
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.NovelAnimatedContent
@@ -95,12 +89,11 @@ import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
 import com.rchdliang.copymanga_neo.ui.components.currentComicTransitionData
 import com.rchdliang.copymanga_neo.ui.components.isComicSharedTransitionActive
 import com.rchdliang.copymanga_neo.ui.components.novelTransitionPath
-import com.rchdliang.copymanga_neo.ui.downloads.DownloadingCard
 import com.rchdliang.copymanga_neo.ui.search.AllTagsScreen
-import com.rchdliang.copymanga_neo.ui.search.DiscoveryOrdering
-import com.rchdliang.copymanga_neo.ui.search.SearchInput
+import com.rchdliang.copymanga_neo.ui.search.SearchCategorySelector
 import com.rchdliang.copymanga_neo.ui.search.SearchOptionRow
-import com.rchdliang.copymanga_neo.ui.search.SearchToolButton
+import com.rchdliang.copymanga_neo.ui.search.SearchPage
+import com.rchdliang.copymanga_neo.ui.search.SearchResultsHeader
 import com.rchdliang.copymanga_neo.ui.util.toCompactLocale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -132,11 +125,12 @@ fun NovelScreen(
     val toast = LocalToastHost.current
     var showTags by rememberSaveable { mutableStateOf(false) }
     var directDetailEntry by rememberSaveable(initialPath) { mutableStateOf(initialPath != null) }
-    LaunchedEffect(state.view) {
-        if (state.view == NovelView.BROWSE) directDetailEntry = false
+    LaunchedEffect(state.view, state.browseOriginPath) {
+        if (state.view == NovelView.BROWSE && state.browseOriginPath == null) directDetailEntry =
+            false
     }
     fun back() {
-        if (directDetailEntry && state.view == NovelView.DETAIL) onBack()
+        if (directDetailEntry && state.view == NovelView.DETAIL && state.browseOriginPath == null) onBack()
         else if (!viewModel.back()) onBack()
     }
     BackHandler {
@@ -151,7 +145,7 @@ fun NovelScreen(
     LaunchedEffect(state.notice) { state.notice?.let { toast.showToast(it); viewModel.clearNotice() } }
     if (showTags) {
         AllTagsScreen(
-            tags = state.tags.map { ComicFilterOption(it.name, it.path) },
+            tags = state.tags.map { ComicFilterOption(it.name, it.path, it.count) },
             selectedPath = state.theme.takeIf { it.isNotBlank() },
             onSelect = { tag ->
                 showTags = false; viewModel.filter(
@@ -161,7 +155,11 @@ fun NovelScreen(
                 tag?.pathWord.orEmpty()
             )
             },
-            onBack = { showTags = false }
+            onBack = { showTags = false },
+            bookLabel = "轻小说",
+            isLoading = state.tagsLoading,
+            error = state.tagsError,
+            onRefresh = viewModel::refreshTags
         )
         return
     }
@@ -216,21 +214,26 @@ fun NovelScreen(
                             },
                             onOpen = viewModel::openBook, onMore = viewModel::loadMore,
                             onRetry = viewModel::retryPage,
-                            onTags = { showTags = true }, onBack = ::back,
-                            onSort = viewModel::sortDiscovery
+                            onTags = { showTags = true; viewModel.refreshTags() }, onBack = ::back,
+                            onSort = viewModel::sortDiscovery,
+                            onRefresh = viewModel::refresh,
+                            onRefreshTags = viewModel::refreshTags
                         )
 
                         NovelView.DETAIL -> NovelDetailContent(
                             state, local.records,
                             onContinue = viewModel::continueBook,
-                            onAuthor = { viewModel.filter("", "", state.ordering, "", it) },
+                            onAuthor = viewModel::selectAuthor,
                             onTheme = viewModel::selectTheme,
                             onAddToShelf = viewModel::toggleShelf,
-                            onDownload = viewModel::downloadVolumes,
-                            onCancelDownload = viewModel::cancelDownloads,
-                            onPauseDownload = viewModel::pauseDownloads,
-                            onResumeDownload = viewModel::resumeDownloads,
-                            onDeleteDownloads = viewModel::removeDownloadedVolumes,
+                            onEnterDownloadMode = viewModel::enterDownloadManagement,
+                            onExitDownloadMode = viewModel::exitDownloadManagement,
+                            onToggleVolumeSelection = viewModel::toggleVolumeSelection,
+                            onSelectAllVolumes = viewModel::selectAllVolumes,
+                            onInvertVolumeSelection = viewModel::invertVolumeSelection,
+                            onClearVolumeSelection = viewModel::clearVolumeSelection,
+                            onSelectVolumeRange = viewModel::selectVolumeRange,
+                            onApplyVolumeChanges = viewModel::applyVolumeDownloadChanges,
                             onVolume = { id -> viewModel.openVolume(state.detailPath, id) },
                             onRetryInfo = viewModel::retryBookInfo,
                             onRetryVolumes = viewModel::retryVolumes,
@@ -280,15 +283,18 @@ fun NovelScreen(
 }
 
 /** 复用漫画搜索框、封面卡及题材页面，请求模式由全局设置决定。 */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun NovelDiscovery(
     state: NovelUiState,
     onFilter: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onOpen: (String) -> Unit = {}, onMore: () -> Unit = {},
     onTags: () -> Unit = {}, onBack: () -> Unit = {}, onRetry: () -> Unit = {},
-    onSort: (String) -> Unit = {}
+    onSort: (String) -> Unit = {}, onRefresh: () -> Unit = {},
+    onRefreshTags: () -> Unit = {}
 ) {
+    val resultMode = state.query.isNotBlank()
+    val queryType = QueryType.entries.firstOrNull { it.value == state.searchType }
     var query by rememberSaveable(state.query) { mutableStateOf(state.query) }
     var compactLayout by rememberSaveable { mutableStateOf(false) }
     val grid = rememberLazyGridState()
@@ -305,12 +311,15 @@ private fun NovelDiscovery(
         state.books.size, onMore
     )
     val submit: (String) -> Unit = { onFilter(it.trim(), state.searchType, state.ordering, "") }
-    Column(Modifier.fillMaxSize()) {
-        SearchInput(
-            query, { query = it }, submit,
-            { query = ""; onFilter("", "", state.ordering, "") }, onBack, placeholder = "搜索轻小说"
-        )
-        BoxWithConstraints(Modifier.weight(1f)) {
+    val share = if (resultMode) ShareTarget.novelSearch(state.query, queryType) else null
+    SearchPage(
+        query = query, onQueryChange = { query = it }, onSearch = submit,
+        onClear = { query = ""; onFilter("", "", state.ordering, "") },
+        onBack = onBack, shareTarget = share, placeholder = "搜索轻小说",
+        isRefreshing = state.busy && state.books.isNotEmpty(), onRefresh = onRefresh,
+        applySystemInsets = false
+    ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 state = grid,
                 columns = if (compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
@@ -321,50 +330,28 @@ private fun NovelDiscovery(
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.query.isNotBlank()) {
-                            val types = listOf(
-                                ComicFilterOption("书名", "name"),
-                                ComicFilterOption("作者", "author")
-                            )
-                            SearchOptionRow(
-                                "搜索",
-                                types,
-                                types.firstOrNull { it.pathWord == state.searchType },
+                        if (resultMode) {
+                            SearchCategorySelector(
+                                queryType,
                                 onSelected = {
                                     onFilter(
                                         query.trim(),
-                                        it?.pathWord.orEmpty(),
+                                        it?.value.orEmpty(),
                                         state.ordering,
                                         ""
                                     )
                                 },
-                                allLabel = "综合"
+                                queryTypes = listOf(QueryType.NAME, QueryType.AUTHOR)
                             )
                         }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                if (state.query.isNotBlank()) "搜索结果" else if (state.author.isNotBlank()) "作者作品" else "发现",
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (state.query.isBlank()) DiscoveryOrdering(
-                                state.ordering,
-                                onChange = onSort,
-                                allowAscending = false
-                            )
-                            SearchToolButton(
-                                if (compactLayout) "切换为列表布局" else "切换为紧凑布局",
-                                if (compactLayout) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView
-                            ) { compactLayout = !compactLayout }
-                        }
-                        if (state.query.isBlank()) {
-                            val themes = state.tags.map { ComicFilterOption(it.name, it.path) }
+                        SearchResultsHeader(
+                            resultMode, state.total, "轻小说", compactLayout,
+                            onLayoutToggle = { compactLayout = !compactLayout },
+                            ordering = state.ordering, onOrdering = onSort, allowAscending = false
+                        )
+                        if (!resultMode) {
+                            val themes =
+                                state.tags.map { ComicFilterOption(it.name, it.path, it.count) }
                             SearchOptionRow(
                                 "题材", themes, themes.firstOrNull { it.pathWord == state.theme },
                                 onSelected = {
@@ -378,6 +365,14 @@ private fun NovelDiscovery(
                                 onAllTags = onTags,
                                 promotedPath = state.promotedTheme?.path
                             )
+                            state.tagsError?.let {
+                                TextButton(onClick = onRefreshTags) {
+                                    Text(
+                                        "题材数量更新失败，点击重试",
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -437,13 +432,17 @@ private fun NovelDiscovery(
 @Composable
 private fun NovelDetailContent(
     state: NovelUiState, records: List<LocalReadingRecord>,
-    onContinue: () -> Unit = {}, onAuthor: (String) -> Unit = {},
+    onContinue: () -> Unit = {}, onAuthor: (NovelTag) -> Unit = {},
     onTheme: (NovelTag) -> Unit = {}, onVolume: (String) -> Unit = {},
-    onAddToShelf: () -> Unit = {}, onDownload: (Set<String>) -> Unit = {},
-    onCancelDownload: () -> Unit = {},
-    onPauseDownload: () -> Unit = {},
-    onResumeDownload: () -> Unit = {},
-    onDeleteDownloads: (Set<String>) -> Unit = {},
+    onAddToShelf: () -> Unit = {},
+    onEnterDownloadMode: (String?) -> Unit = {},
+    onExitDownloadMode: () -> Unit = {},
+    onToggleVolumeSelection: (String) -> Unit = {},
+    onSelectAllVolumes: () -> Unit = {},
+    onInvertVolumeSelection: () -> Unit = {},
+    onClearVolumeSelection: () -> Unit = {},
+    onSelectVolumeRange: (List<String>, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
+    onApplyVolumeChanges: () -> Unit = {},
     onRetryInfo: () -> Unit = {}, onRetryVolumes: () -> Unit = {},
     onBack: () -> Unit = {}, onRefresh: () -> Unit = {}
 ) {
@@ -451,12 +450,22 @@ private fun NovelDetailContent(
     val path = book?.path ?: state.detailPath
     val grid = rememberLazyGridState()
     var showComments by rememberSaveable(path) { mutableStateOf(false) }
-    var showDownloads by rememberSaveable(path) { mutableStateOf(false) }
+    val isInBatchMode = state.selectedVolumeIds != null
+    val density = LocalDensity.current
+    var bottomBarHeight by remember(path) { mutableIntStateOf(0) }
     var ascending by rememberSaveable(path) { mutableStateOf(true) }
     val volumes = remember(
         state.volumes,
         ascending
     ) { if (ascending) state.volumes else state.volumes.reversed() }
+    val displayedIds = volumes.map { it.id }
+    val selectedIndices =
+        displayedIds.indices.filter { displayedIds[it] in state.selectedVolumeIds.orEmpty() }
+    val canSelectBetween = selectedIndices.size >= 2 &&
+            selectedIndices.last() - selectedIndices.first() + 1 > selectedIndices.size
+    val statuses = novelVolumeStatuses(state)
+    val changes = novelDownloadChanges(state)
+    BackHandler(enabled = isInBatchMode, onBack = onExitDownloadMode)
     val saved = records.filter { it.owner == state.owner && it.kind == "novel" && it.path == path }
         .maxByOrNull { it.updatedAt }
     val target = saved?.let { record -> state.volumes.firstOrNull { it.id == record.chapter } }
@@ -471,16 +480,6 @@ private fun NovelDetailContent(
             postingAllowed = false,
             onDismiss = { showComments = false }
         )
-    }
-    if (showDownloads) {
-        NovelDownloadDialog(
-            state,
-            onDownload,
-            onPauseDownload,
-            onResumeDownload,
-            onCancelDownload,
-            onDeleteDownloads
-        ) { showDownloads = false }
     }
     NovelSharedTransitionProvider {
         val transitionPath = novelTransitionPath(path)
@@ -497,20 +496,96 @@ private fun NovelDetailContent(
         BookDetailSurface(transitionKey, Modifier.fillMaxSize()) {
             BookDetailRefresh(
                 state.busy && book != null,
-                onRefresh = { if (!state.busy) onRefresh() }) {
+                onRefresh = { if (!state.busy && !state.applyingDownloads) onRefresh() }) {
                 BookDetailLayout(
                     bookKey = path, title = displayBookTitle(path, headerBook?.name),
                     onBack = onBack, readingLabel = readingLabel,
                     readingTargetName = target?.name?.takeIf { book != null }, onRead = onContinue,
                     modifier = Modifier.fillMaxSize(), gridState = grid,
+                    topBar = if (isInBatchMode) {
+                        {
+                            DownloadSelectionTopBar(
+                                selectedCount = state.selectedVolumeIds.orEmpty()
+                                    .intersect(state.managedVolumeIds).size,
+                                canSelectBetween = canSelectBetween,
+                                onExit = onExitDownloadMode,
+                                onSelectAll = onSelectAllVolumes,
+                                onInvertSelection = onInvertVolumeSelection,
+                                onSelectToLatest = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        true,
+                                        true,
+                                        true
+                                    )
+                                },
+                                onUnselectToLatest = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        true,
+                                        true,
+                                        false
+                                    )
+                                },
+                                onSelectToFirst = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        false,
+                                        false,
+                                        true
+                                    )
+                                },
+                                onUnselectToFirst = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        false,
+                                        false,
+                                        false
+                                    )
+                                },
+                                onSelectBetween = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        true,
+                                        false,
+                                        true
+                                    )
+                                },
+                                onUnselectBetween = {
+                                    onSelectVolumeRange(
+                                        displayedIds,
+                                        true,
+                                        false,
+                                        false
+                                    )
+                                },
+                                onClearSelection = onClearVolumeSelection,
+                                unitLabel = "卷"
+                            )
+                        }
+                    } else null,
+                    bottomPaddingOverride = if (isInBatchMode)
+                        with(density) { bottomBarHeight.toDp() } + 16.dp else null,
+                    bottomBar = if (isInBatchMode) {
+                        {
+                            DownloadManageBottomBar(
+                                changes.download.size, changes.delete.size, changes.cancel.size,
+                                onApplyVolumeChanges,
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .onSizeChanged { bottomBarHeight = it.height },
+                                unitLabel = "卷"
+                            )
+                        }
+                    } else null,
                     actions = {
                         BookDetailToolbar(
                             ShareTarget.novel(path, displayBookTitle(path, headerBook?.name)),
                             onComments = { showComments = true },
                             commentsEnabled = !book?.uuid.isNullOrBlank(),
                             onDownload = {
-                                showDownloads = true
-                            }.takeIf { state.volumes.isNotEmpty() }
+                                onEnterDownloadMode(null)
+                            }.takeIf { state.volumes.isNotEmpty() && book != null && !state.applyingDownloads }
                         )
                     },
                     header = { titleModifier ->
@@ -523,7 +598,10 @@ private fun NovelDetailContent(
                             status = headerBook.status,
                             updated = headerBook.updated,
                             popularity = headerBook.popular?.toCompactLocale() ?: "--",
-                            onAuthor = onAuthor
+                            onAuthor = { authorPath ->
+                                headerBook.authors.firstOrNull { it.path == authorPath }
+                                    ?.let(onAuthor)
+                            }
                         )
                         if (book == null) BookDetailStatus(
                             loading = state.bookLoading,
@@ -534,7 +612,7 @@ private fun NovelDetailContent(
                         if (book != null) {
                             BookDetailActions(
                                 readingLabel, target != null, onContinue,
-                                if (state.shelfLoading) "处理中…" else if (state.isInShelf) "取消收藏" else "加入书架",
+                                state.isInShelf,
                                 state.isLoggedIn && !state.shelfLoading && book.uuid.isNotBlank(),
                                 onAddToShelf
                             )
@@ -544,10 +622,10 @@ private fun NovelDetailContent(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
-                            if (state.downloading) {
+                            if (state.applyingDownloads) {
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
                                 Text(
-                                    state.downloadProgress.orEmpty(),
+                                    "正在应用下载更改…",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.labelMedium
                                 )
@@ -600,12 +678,18 @@ private fun NovelDetailContent(
                         }
                         ChapterTitleItem(
                             name = volume.name, isReadCompleted = completed,
-                            downloadStatus = if (state.cachedVolumes.any { it.volume.id == volume.id && it.offlineReady })
-                                ChapterDownloadStatus.DOWNLOADED
-                            else state.downloadTask?.volumes?.firstOrNull { it.volume.id == volume.id }?.status,
+                            isSelected = volume.id in state.selectedVolumeIds.orEmpty(),
+                            isSelectionMode = isInBatchMode,
+                            downloadStatus = statuses[volume.id],
                             downloadProgress = state.downloadTask?.volumes?.firstOrNull { it.volume.id == volume.id }?.progress
                                 ?: 0f,
-                            onClick = { onVolume(volume.id) }, modifier = Modifier.fillMaxWidth()
+                            onClick = {
+                                if (isInBatchMode) onToggleVolumeSelection(volume.id) else onVolume(
+                                    volume.id
+                                )
+                            },
+                            onLongPress = { onEnterDownloadMode(volume.id) }.takeIf { book != null && !state.applyingDownloads },
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
@@ -614,115 +698,6 @@ private fun NovelDetailContent(
     }
 }
 
-/** 分卷选择、任务控制与下载页共用同一队列和进度卡。 */
-@Composable
-private fun NovelDownloadDialog(
-    state: NovelUiState,
-    onDownload: (Set<String>) -> Unit,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onCancel: () -> Unit,
-    onDelete: (Set<String>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var selected by remember(state.detailPath) { mutableStateOf(emptySet<String>()) }
-    val downloaded = state.cachedVolumes.filter { it.offlineReady }.map { it.volume.id }.toSet()
-    val cached = state.cachedVolumes.map { it.volume.id }.toSet()
-    val toDownload = selected - downloaded
-    val toDelete = selected.intersect(cached)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("分卷下载", color = MaterialTheme.colorScheme.onSurface) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.downloadInfo?.takeIf { it.status != DownloadTaskStatus.COMPLETED }
-                    ?.let { info ->
-                        val paused =
-                            info.status == DownloadTaskStatus.PAUSED || info.status == DownloadTaskStatus.PAUSED_BY_RISK
-                        DownloadingCard(
-                            info.name, info.cover, info, paused,
-                            onPauseResume = { if (paused) onResume() else onPause() },
-                            onCancel = onCancel, onRetry = onResume, unitLabel = "卷"
-                        )
-                    }
-                Text(
-                    "已完整下载 ${downloaded.size}/${state.volumes.size} 卷；离开详情后下载仍会继续。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TextButton(onClick = {
-                        selected = if (selected.size == state.volumes.size) emptySet()
-                        else state.volumes.map { it.id }.toSet()
-                    }) {
-                        Text(
-                            if (selected.size == state.volumes.size) "取消全选" else "全选",
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (toDelete.isNotEmpty()) TextButton(onClick = {
-                        onDelete(toDelete); selected = emptySet()
-                    }) {
-                        Text("删除所选下载", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                LazyColumn(Modifier.heightIn(max = 280.dp)) {
-                    items(state.volumes, key = { it.id }) { volume ->
-                        val checked = volume.id in selected
-                        val item =
-                            state.downloadTask?.volumes?.firstOrNull { it.volume.id == volume.id }
-                        val local = state.cachedVolumes.firstOrNull { it.volume.id == volume.id }
-                        val label = when {
-                            local?.offlineReady == true -> "已下载"
-                            item?.status == ChapterDownloadStatus.ERROR -> item.errorMessage
-                                ?: "下载失败"
-
-                            item?.status == ChapterDownloadStatus.DOWNLOADING -> "下载中"
-                            item?.status == ChapterDownloadStatus.WAITING -> "等待下载"
-                            local != null -> "正文已保存 · 插图 ${local.cachedImages}/${local.totalImages}"
-                            else -> "未下载"
-                        }
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selected =
-                                        if (checked) selected - volume.id else selected + volume.id
-                                }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(checked, onCheckedChange = null)
-                            Column(Modifier.weight(1f)) {
-                                Text(volume.name, color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    label, style = MaterialTheme.typography.labelSmall,
-                                    color = if (item?.status == ChapterDownloadStatus.ERROR) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onDownload(toDownload); selected = emptySet() },
-                enabled = toDownload.isNotEmpty()
-            ) {
-                Text("下载（${toDownload.size}）", color = MaterialTheme.colorScheme.primary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    "关闭",
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    )
-}
 
 @Preview(name = "小说发现 · 手机", showBackground = true, widthDp = 412, heightDp = 900)
 @Preview(

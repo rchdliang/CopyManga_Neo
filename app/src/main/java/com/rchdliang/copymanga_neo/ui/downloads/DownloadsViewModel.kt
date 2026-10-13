@@ -9,6 +9,7 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingSession
 import com.rchdliang.copymanga_neo.domain.model.NovelBook
 import com.rchdliang.copymanga_neo.domain.model.NovelCachedVolume
+import com.rchdliang.copymanga_neo.domain.model.comicDownloadKey
 import com.rchdliang.copymanga_neo.domain.model.novelDownloadKey
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelRepository
@@ -26,17 +27,35 @@ import javax.inject.Inject
 
 data class DownloadedNovelInfo(val book: NovelBook, val volumes: List<NovelCachedVolume>)
 
+/** 多选使用完整下载身份，漫画与小说即使 path 相同也不会串项。 */
+sealed interface DownloadedBookItem {
+    val key: String
+    val updatedAt: Long
+
+    data class Comic(val info: DownloadedComicInfo) : DownloadedBookItem {
+        override val key get() = comicDownloadKey(info.pathWord)
+        override val updatedAt get() = info.downloadAt
+    }
+
+    data class Novel(val info: DownloadedNovelInfo) : DownloadedBookItem {
+        val mode get() = info.volumes.first().mode
+        val owner get() = info.volumes.first().owner
+        override val key get() = novelDownloadKey(mode, owner, info.book.path)
+        override val updatedAt get() = info.volumes.maxOf { it.lastAccessedAt }
+    }
+}
+
 data class DownloadsUiState(
-    val downloadedComics: List<DownloadedComicInfo> = emptyList(),
+    val downloadedBooks: List<DownloadedBookItem> = emptyList(),
     val activeDownloads: Map<String, DownloadProgressInfo> = emptyMap(),
-    val pausedComics: Set<String> = emptySet(),
     val isSelectionMode: Boolean = false,
-    val selectedPathWords: Set<String> = emptySet(),
-    val message: String? = null,
-    val kind: DownloadKind = DownloadKind.COMIC,
-    val downloadedNovels: List<DownloadedNovelInfo> = emptyList(),
-    val activeNovelDownloads: Map<String, DownloadProgressInfo> = emptyMap()
-)
+    val selectedKeys: Set<String> = emptySet(),
+    val message: String? = null
+) {
+    val selectedComicPathWords: Set<String>
+        get() = downloadedBooks.filterIsInstance<DownloadedBookItem.Comic>()
+            .filter { it.key in selectedKeys }.map { it.info.pathWord }.toSet()
+}
 
 @HiltViewModel
 class DownloadsViewModel @Inject constructor(
@@ -44,10 +63,14 @@ class DownloadsViewModel @Inject constructor(
     private val novels: NovelRepository,
     private val sessions: ReadingSessionRepository
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
     private var displayedSession: LocalReadingSession? = null
+
+    private data class Contents(
+        val session: LocalReadingSession?,
+        val books: List<DownloadedBookItem>
+    )
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("DownloadsViewModel", "Unhandled coroutine exception", throwable)
@@ -56,65 +79,55 @@ class DownloadsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
-            combine(
-                downloadRepository.getAllDownloadedComics(),
-                downloadRepository.getDownloadProgress(),
-                downloadRepository.getActiveTask()
-            ) { comics, progress, _ ->
-                val comicProgress = progress.values.filter { it.kind == DownloadKind.COMIC }
-                    .associateBy { it.comicPathWord }
-                val paused = comicProgress.filter {
-                    it.value.status == DownloadTaskStatus.PAUSED ||
-                            it.value.status == DownloadTaskStatus.PAUSED_BY_RISK
-                }.keys
-                Triple(comics, comicProgress, paused)
-            }.collect { (comics, progress, paused) ->
-                _uiState.update {
-                    it.copy(
-                        downloadedComics = comics,
-                        activeDownloads = progress.filterValues { info ->
-                            info.status != DownloadTaskStatus.COMPLETED
-                        },
-                        pausedComics = paused
-                    )
-                }
-            }
-        }
-        viewModelScope.launch(exceptionHandler) {
-            combine(
-                novels.cachedVolumes, downloadRepository.getDownloadProgress(),
+            val contents = combine(
+                downloadRepository.getAllDownloadedComics(), novels.cachedVolumes,
                 sessions.cacheReadyFlow, sessions.sessionChanges
-            ) { cached, progress, ready, _ ->
+            ) { comics, cached, ready, _ ->
                 val session = if (ready) sessions.getReadingSessionSync() else null
-                val owned = cached.filter { it.owner == session?.owner && it.mode == session.mode }
-                val books = owned.groupBy { it.book.path }.values.map { volumes ->
-                    DownloadedNovelInfo(
-                        volumes.maxBy { it.lastAccessedAt }.book,
-                        volumes.sortedBy { it.volume.index })
+                val owned = if (session?.owner == null) emptyList() else cached.filter {
+                    it.owner == session.owner && it.mode == session.mode
                 }
-                val tasks = progress.filterValues {
-                    it.kind == DownloadKind.NOVEL && it.owner == session?.owner && it.mode == session?.mode &&
-                            it.status != DownloadTaskStatus.COMPLETED
-                }
-                Triple(session, books, tasks)
-            }.collect { (session, books, tasks) ->
-                val changedSession = displayedSession != session
-                displayedSession = session
+                val books = comics.map { DownloadedBookItem.Comic(it) } +
+                        owned.groupBy { it.book.path }.values.map { volumes ->
+                            DownloadedBookItem.Novel(
+                                DownloadedNovelInfo(
+                                    volumes.maxBy { it.lastAccessedAt }.book,
+                                    volumes.sortedBy { it.volume.index })
+                            )
+                        }
+                Contents(session, books.sortedByDescending { it.updatedAt })
+            }
+            combine(contents, downloadRepository.getDownloadProgress()) { content, progress ->
+                content to progress.values.filter {
+                    it.status != DownloadTaskStatus.COMPLETED &&
+                            (it.kind == DownloadKind.COMIC ||
+                                    (content.session?.owner != null && it.owner == content.session.owner &&
+                                            it.mode == content.session.mode))
+                }.associateBy { it.taskKey }
+            }.collect { (content, progress) ->
+                val changedSession = displayedSession != content.session
+                displayedSession = content.session
+                val validKeys = content.books.map { it.key }.toSet()
+                val comicKeys =
+                    content.books.filterIsInstance<DownloadedBookItem.Comic>().map { it.key }
+                        .toSet()
                 _uiState.update { state ->
+                    val selected =
+                        state.selectedKeys.intersect(if (changedSession) comicKeys else validKeys)
                     state.copy(
-                        downloadedNovels = books, activeNovelDownloads = tasks,
-                        isSelectionMode = state.isSelectionMode && (!changedSession || state.kind != DownloadKind.NOVEL),
-                        selectedPathWords = if (changedSession && state.kind == DownloadKind.NOVEL) emptySet()
-                        else if (state.kind == DownloadKind.NOVEL)
-                            state.selectedPathWords.intersect(books.map { it.book.path }
-                                .toSet()) else state.selectedPathWords
+                        downloadedBooks = content.books,
+                        activeDownloads = progress,
+                        selectedKeys = selected,
+                        isSelectionMode = state.isSelectionMode && content.books.isNotEmpty() &&
+                                (!changedSession || selected.isNotEmpty())
                     )
                 }
             }
         }
         viewModelScope.launch(exceptionHandler) {
             novels.refreshCachedVolumes().fold(
-                onSuccess = {}, onFailure = { error ->
+                onSuccess = {},
+                onFailure = { error ->
                     if (error is CancellationException) throw error
                     _uiState.update { it.copy(message = error.message ?: "小说下载目录加载失败") }
                 }
@@ -122,104 +135,89 @@ class DownloadsViewModel @Inject constructor(
         }
     }
 
-    fun selectKind(kind: DownloadKind) {
-        _uiState.update {
-            it.copy(
-                kind = kind,
-                isSelectionMode = false,
-                selectedPathWords = emptySet()
-            )
-        }
-    }
-
-    fun pauseNovel(key: String) = downloadRepository.pauseDownload(key)
-    fun resumeNovel(key: String) = downloadRepository.resumeDownload(key)
-    fun cancelNovel(key: String) {
+    fun pauseTask(key: String) = downloadRepository.pauseDownload(key)
+    fun resumeTask(key: String) = downloadRepository.resumeDownload(key)
+    fun cancelTask(key: String) {
         viewModelScope.launch(exceptionHandler) { downloadRepository.cancelDownload(key) }
     }
-
     fun setImageConcurrency(count: Int) = downloadRepository.setImageConcurrency(count)
     fun clearMessage() {
         _uiState.update { it.copy(message = null) }
     }
-    fun pauseComic(pathWord: String) = downloadRepository.pauseComic(pathWord)
-    fun resumeComic(pathWord: String) = downloadRepository.resumeComic(pathWord)
-    fun cancelComic(pathWord: String) {
-        viewModelScope.launch(exceptionHandler) { downloadRepository.cancelComic(pathWord) }
-    }
-
     fun cancelAll() {
         viewModelScope.launch(exceptionHandler) { downloadRepository.cancelAll() }
     }
 
-    fun enterSelectionMode(pathWord: String) {
-        _uiState.update { it.copy(isSelectionMode = true, selectedPathWords = setOf(pathWord)) }
+    fun enterSelectionMode(key: String) {
+        if (_uiState.value.downloadedBooks.none { it.key == key }) return
+        _uiState.update { it.copy(isSelectionMode = true, selectedKeys = setOf(key)) }
     }
-
     fun exitSelectionMode() {
-        _uiState.update { it.copy(isSelectionMode = false, selectedPathWords = emptySet()) }
+        _uiState.update { it.copy(isSelectionMode = false, selectedKeys = emptySet()) }
     }
 
-    fun toggleSelection(pathWord: String) {
+    fun toggleSelection(key: String) {
         _uiState.update { state ->
-            val set = state.selectedPathWords.toMutableSet()
-            if (set.contains(pathWord)) set.remove(pathWord) else set.add(pathWord)
-            state.copy(selectedPathWords = set)
+            if (state.downloadedBooks.none { it.key == key }) state
+            else state.copy(selectedKeys = if (key in state.selectedKeys) state.selectedKeys - key else state.selectedKeys + key)
         }
     }
-
     fun selectAll() {
-        _uiState.update { state ->
-            val all =
-                if (state.kind == DownloadKind.NOVEL) state.downloadedNovels.map { it.book.path }
-                else state.downloadedComics.map { it.pathWord }
-            state.copy(selectedPathWords = all.toSet())
+        _uiState.update {
+            it.copy(selectedKeys = it.downloadedBooks.map { book -> book.key }.toSet())
         }
     }
-
     fun invertSelection() {
         _uiState.update { state ->
-            val all =
-                (if (state.kind == DownloadKind.NOVEL) state.downloadedNovels.map { it.book.path }
-                else state.downloadedComics.map { it.pathWord }).toSet()
-            state.copy(selectedPathWords = all - state.selectedPathWords)
+            state.copy(selectedKeys = state.downloadedBooks.map { it.key }
+                .toSet() - state.selectedKeys)
         }
     }
 
     fun clearSelection() {
-        _uiState.update { it.copy(selectedPathWords = emptySet()) }
+        _uiState.update { it.copy(selectedKeys = emptySet()) }
     }
 
+    /** 混合批量删除按各项身份执行，小说账号或模式变化时保留该项数据。 */
     fun deleteSelected() {
-        val selected = _uiState.value
+        val selected =
+            _uiState.value.downloadedBooks.filter { it.key in _uiState.value.selectedKeys }
         val session = sessions.getReadingSessionSync()
-        val pathWords = selected.selectedPathWords.toList()
-        if (pathWords.isEmpty()) return
+        if (selected.isEmpty()) return
         exitSelectionMode()
         viewModelScope.launch(exceptionHandler) {
-            pathWords.forEach { pathWord ->
-                if (selected.kind == DownloadKind.NOVEL) {
-                    if (session == null || sessions.getReadingSessionSync() != session) return@launch
-                    val owner = session.owner ?: return@launch
-                    downloadRepository.cancelDownload(
-                        novelDownloadKey(
-                            session.mode,
-                            owner,
-                            pathWord
+            var removed = 0
+            val failures = mutableListOf<String>()
+            selected.forEach { item ->
+                try {
+                    when (item) {
+                        is DownloadedBookItem.Comic -> downloadRepository.deleteComicAndChapters(
+                            item.info.pathWord
                         )
-                    )
-                    novels.removeBook(session.mode, owner, pathWord).fold(
-                        onSuccess = {}, onFailure = { error ->
-                            if (error is CancellationException) throw error
-                            _uiState.update {
-                                it.copy(
-                                    message = error.message ?: "删除小说下载失败"
-                                )
-                            }
-                            return@launch
+
+                        is DownloadedBookItem.Novel -> {
+                            check(
+                                session != null && session.owner == item.owner && session.mode == item.mode &&
+                                        sessions.getReadingSessionSync() == session
+                            ) { "账号或请求模式已变化，小说下载已保留" }
+                            downloadRepository.cancelDownload(item.key)
+                            check(sessions.getReadingSessionSync() == session) { "账号或请求模式已变化，小说缓存已保留" }
+                            novels.removeBook(item.mode, item.owner, item.info.book.path)
+                                .fold(onSuccess = {}, onFailure = { throw it })
                         }
-                    )
-                } else downloadRepository.deleteComicAndChapters(pathWord)
+                    }
+                    removed++
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    failures += error.message ?: "删除失败"
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    message = if (failures.isEmpty()) "已删除 $removed 部下载"
+                    else "已删除 $removed 部，${failures.size} 部未完成：${failures.first()}"
+                )
             }
         }
     }

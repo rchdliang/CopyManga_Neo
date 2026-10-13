@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.ui.downloads
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,9 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +51,7 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadKind
 import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
+import com.rchdliang.copymanga_neo.domain.model.comicDownloadKey
 import com.rchdliang.copymanga_neo.domain.model.displayBookTitle
 import com.rchdliang.copymanga_neo.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
@@ -82,30 +80,17 @@ fun DownloadsScreen(
         uiState = uiState,
         onComicClick = onComicClick,
         onNovelClick = onNovelClick,
-        onKindSelected = viewModel::selectKind,
         onExitSelectionMode = viewModel::exitSelectionMode,
         onSelectAll = viewModel::selectAll,
         onInvertSelection = viewModel::invertSelection,
-        onPause = {
-            if (uiState.kind == DownloadKind.NOVEL) viewModel.pauseNovel(it) else viewModel.pauseComic(
-                it
-            )
-        },
-        onResume = {
-            if (uiState.kind == DownloadKind.NOVEL) viewModel.resumeNovel(it) else viewModel.resumeComic(
-                it
-            )
-        },
-        onCancel = {
-            if (uiState.kind == DownloadKind.NOVEL) viewModel.cancelNovel(it) else viewModel.cancelComic(
-                it
-            )
-        },
+        onPause = viewModel::pauseTask,
+        onResume = viewModel::resumeTask,
+        onCancel = viewModel::cancelTask,
         onToggleSelection = viewModel::toggleSelection,
         onEnterSelectionMode = viewModel::enterSelectionMode,
         onDeleteSelected = viewModel::deleteSelected,
         onExportSelected = {
-            val request = ComicExportRequest(uiState.selectedPathWords.toList())
+            val request = ComicExportRequest(uiState.selectedComicPathWords.toList())
             viewModel.exitSelectionMode()
             exportViewModel.prepare(request)
         },
@@ -134,18 +119,14 @@ private fun DownloadsContent(
     modifier: Modifier = Modifier,
     onExportSelected: () -> Unit = {},
     exportingComics: Set<String> = emptySet(),
-    onNovelClick: (String) -> Unit = {},
-    onKindSelected: (DownloadKind) -> Unit = {}
+    onNovelClick: (String) -> Unit = {}
 ) {
-    val showingNovels = uiState.kind == DownloadKind.NOVEL
-    val activeDownloads =
-        if (showingNovels) uiState.activeNovelDownloads else uiState.activeDownloads
-    val downloadedCount =
-        if (showingNovels) uiState.downloadedNovels.size else uiState.downloadedComics.size
+    val activeDownloads = uiState.activeDownloads
+    val downloadedCount = uiState.downloadedBooks.size
+    val selectedComics = uiState.selectedComicPathWords
     val hasActive = activeDownloads.isNotEmpty()
     val hasDownloaded = downloadedCount > 0
-    val comicGridState = rememberLazyGridState()
-    val novelGridState = rememberLazyGridState()
+    val gridState = rememberLazyGridState()
     val density = LocalDensity.current
     val windowWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
     val isWide = windowWidth >= 840.dp
@@ -154,25 +135,8 @@ private fun DownloadsContent(
     val cardMinWidth = if (isWide) 184.dp else 168.dp
     val bottomPadding = if (uiState.isSelectionMode) 104.dp else 24.dp
 
-    Column(modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = if (showingNovels) 1 else 0) {
-            listOf(
-                DownloadKind.COMIC to "漫画",
-                DownloadKind.NOVEL to "轻小说"
-            ).forEach { (kind, label) ->
-                val selected = kind == uiState.kind
-                Tab(selected = selected, onClick = { onKindSelected(kind) }, text = {
-                    Text(
-                        label,
-                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                })
-            }
-        }
     Box(
-        modifier = Modifier
-            .weight(1f)
-            .fillMaxWidth(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
         BackHandler(enabled = uiState.isSelectionMode) {
@@ -180,7 +144,7 @@ private fun DownloadsContent(
         }
 
         LazyVerticalGrid(
-            state = if (showingNovels) novelGridState else comicGridState,
+            state = gridState,
             columns = GridCells.Adaptive(cardMinWidth),
             modifier = Modifier
                 .widthIn(max = 1120.dp)
@@ -213,7 +177,7 @@ private fun DownloadsContent(
                                 )
                             }
                             Text(
-                                "已选 ${uiState.selectedPathWords.size} 部",
+                                "已选 ${uiState.selectedKeys.size} 部",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -255,10 +219,10 @@ private fun DownloadsContent(
                             contentAlignment = Alignment.CenterStart
                         ) {
                             DownloadingCard(
-                                name = progressInfo.name,
+                                name = "${if (progressInfo.kind == DownloadKind.NOVEL) "轻小说" else "漫画"} · ${progressInfo.name}",
                                 cover = progressInfo.cover,
                                 progressInfo = progressInfo,
-                                unitLabel = if (showingNovels) "卷" else "章",
+                                unitLabel = if (progressInfo.kind == DownloadKind.NOVEL) "卷" else "章",
                                 isPaused = paused,
                                 onPauseResume = {
                                     if (paused) onResume(pathWord)
@@ -293,48 +257,45 @@ private fun DownloadsContent(
             }
 
             if (hasDownloaded) {
-                if (showingNovels) items(
-                    uiState.downloadedNovels,
-                    key = { "novel:${it.book.path}" }) { downloaded ->
-                    val book = downloaded.book
-                    val complete = downloaded.volumes.count { it.offlineReady }
-                    NovelSharedTransitionProvider {
-                        ComicCard(
-                            name = displayBookTitle(book.path, book.name), cover = book.cover,
-                            subtitle = "本地 ${downloaded.volumes.size} 卷 · 完整 $complete 卷",
-                            isSelected = book.path in uiState.selectedPathWords,
-                            sharedTransitionKey = "novel:downloads:${book.path}",
-                            comicPathWord = novelTransitionPath(book.path),
-                            onClick = {
-                                if (uiState.isSelectionMode) onToggleSelection(book.path) else onNovelClick(
-                                    book.path
+                items(uiState.downloadedBooks, key = { it.key }) { item ->
+                    when (item) {
+                        is DownloadedBookItem.Novel -> {
+                            val downloaded = item.info
+                            val book = downloaded.book
+                            val complete = downloaded.volumes.count { it.offlineReady }
+                            NovelSharedTransitionProvider {
+                                ComicCard(
+                                    name = displayBookTitle(book.path, book.name),
+                                    cover = book.cover,
+                                    subtitle = "轻小说 · 本地 ${downloaded.volumes.size} 卷 · 完整 $complete 卷",
+                                    isSelected = item.key in uiState.selectedKeys,
+                                    sharedTransitionKey = if (uiState.isSelectionMode) null else "novel:downloads:${book.path}",
+                                    comicPathWord = novelTransitionPath(book.path),
+                                    onClick = {
+                                        if (uiState.isSelectionMode) onToggleSelection(item.key)
+                                        else onNovelClick(book.path)
+                                    },
+                                    onLongClick = { onEnterSelectionMode(item.key) }
                                 )
-                            },
-                            onLongClick = { onEnterSelectionMode(book.path) }
-                        )
-                    }
-                } else items(
-                    items = uiState.downloadedComics,
-                    key = { it.pathWord }
-                ) { comic ->
-                    ComicCard(
-                        name = comic.name,
-                        cover = comic.cover,
-                        subtitle = "本地 ${comic.downloadedChapters} 章",
-                        isSelected = comic.pathWord in uiState.selectedPathWords,
-                        sharedTransitionKey = "downloads:${comic.pathWord}",
-                        comicPathWord = comic.pathWord,
-                        onClick = {
-                            if (uiState.isSelectionMode) {
-                                onToggleSelection(comic.pathWord)
-                            } else {
-                                onComicClick(comic.pathWord)
                             }
-                        },
-                        onLongClick = {
-                            onEnterSelectionMode(comic.pathWord)
                         }
-                    )
+
+                        is DownloadedBookItem.Comic -> {
+                            val comic = item.info
+                            ComicCard(
+                                name = comic.name, cover = comic.cover,
+                                subtitle = "漫画 · 本地 ${comic.downloadedChapters} 章",
+                                isSelected = item.key in uiState.selectedKeys,
+                                sharedTransitionKey = if (uiState.isSelectionMode) null else "downloads:${comic.pathWord}",
+                                comicPathWord = comic.pathWord,
+                                onClick = {
+                                    if (uiState.isSelectionMode) onToggleSelection(item.key)
+                                    else onComicClick(comic.pathWord)
+                                },
+                                onLongClick = { onEnterSelectionMode(item.key) }
+                            )
+                        }
+                    }
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
@@ -351,9 +312,9 @@ private fun DownloadsContent(
                     .fillMaxWidth(),
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 actions = {
-                    if (!showingNovels) Button(
+                    if (selectedComics.isNotEmpty()) Button(
                         onClick = onExportSelected,
-                        enabled = uiState.selectedPathWords.isNotEmpty() && exportingComics.isEmpty(),
+                        enabled = exportingComics.isEmpty(),
                         modifier = Modifier
                             .weight(1f)
                             .padding(start = 16.dp, end = 4.dp)
@@ -361,7 +322,7 @@ private fun DownloadsContent(
                         Icon(Icons.Default.Save, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "导出 ${uiState.selectedPathWords.size} 部",
+                            "导出 ${selectedComics.size} 部漫画",
                             color = LocalContentColor.current
                         )
                     }
@@ -370,7 +331,7 @@ private fun DownloadsContent(
                         modifier = Modifier
                             .weight(1f)
                             .padding(start = 4.dp, end = 16.dp),
-                        enabled = uiState.selectedPathWords.isNotEmpty() && (showingNovels || uiState.selectedPathWords.none { it in exportingComics }),
+                        enabled = uiState.selectedKeys.isNotEmpty() && selectedComics.none { it in exportingComics },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError
@@ -379,14 +340,13 @@ private fun DownloadsContent(
                         Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "删除 ${uiState.selectedPathWords.size} 部",
+                            text = "删除 ${uiState.selectedKeys.size} 部",
                             color = LocalContentColor.current
                         )
                     }
                 }
             )
         }
-    }
     }
 }
 
@@ -481,11 +441,11 @@ private fun previewDownloadsUiState(selectionMode: Boolean = false): DownloadsUi
         )
     }
     return DownloadsUiState(
-        downloadedComics = downloaded,
+        downloadedBooks = downloaded.map { DownloadedBookItem.Comic(it) },
         activeDownloads = mapOf(active.comicPathWord to active),
         isSelectionMode = selectionMode,
-        selectedPathWords = if (selectionMode) {
-            downloaded.take(2).map { it.pathWord }.toSet()
+        selectedKeys = if (selectionMode) {
+            downloaded.take(2).map { comicDownloadKey(it.pathWord) }.toSet()
         } else {
             emptySet()
         }

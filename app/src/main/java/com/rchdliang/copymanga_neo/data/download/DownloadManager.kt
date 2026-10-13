@@ -569,6 +569,23 @@ class DownloadManager internal constructor(
         }
     }
 
+    /** 只移除所选分卷任务，已保存的正文与插图保留供离线阅读或继续下载。 */
+    suspend fun cancelNovelVolumes(
+        mode: RequestMode, owner: String, path: String, ids: Set<String>
+    ): Result<Unit> = try {
+        if (ids.isNotEmpty()) removeTaskItems(novelDownloadKey(mode, owner, path), ids)
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(
+            IOException(
+                "取消下载失败，剩余任务已暂停：${error.message ?: "请重试"}",
+                error
+            )
+        )
+    }
+
     suspend fun removeNovelVolumes(
         mode: RequestMode,
         owner: String,

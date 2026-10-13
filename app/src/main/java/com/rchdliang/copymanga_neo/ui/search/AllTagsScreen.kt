@@ -16,14 +16,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,7 +49,11 @@ fun AllTagsScreen(
     tags: List<ComicFilterOption>,
     selectedPath: String?,
     onSelect: (ComicFilterOption?) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    bookLabel: String = "漫画",
+    isLoading: Boolean = false,
+    error: String? = null,
+    onRefresh: (() -> Unit)? = null
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     BackHandler(onBack = onBack)
@@ -66,6 +73,16 @@ fun AllTagsScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
+                },
+                actions = {
+                    onRefresh?.let { refresh ->
+                        IconButton(onClick = refresh, enabled = !isLoading) {
+                            Icon(
+                                Icons.Default.Refresh, "刷新题材数量",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             )
         }
@@ -79,6 +96,19 @@ fun AllTagsScreen(
                     .fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                error?.let {
+                    TextButton(
+                        onClick = { onRefresh?.invoke() },
+                        enabled = onRefresh != null && !isLoading,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            "题材数量更新失败，保留已有目录，点击重试",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = query, onValueChange = { query = it }, singleLine = true,
                     modifier = Modifier
@@ -116,14 +146,14 @@ fun AllTagsScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (query.isBlank()) item(key = "all") {
-                        TagChoice(ComicFilterOption("全部", ""), selectedPath == null) {
+                        TagChoice(ComicFilterOption("全部", ""), selectedPath == null, bookLabel) {
                             onSelect(
                                 null
                             )
                         }
                     }
                     items(visible, key = { it.pathWord }) { tag ->
-                        TagChoice(tag, tag.pathWord == selectedPath) { onSelect(tag) }
+                        TagChoice(tag, tag.pathWord == selectedPath, bookLabel) { onSelect(tag) }
                     }
                     if (visible.isEmpty()) item {
                         Text(
@@ -138,7 +168,12 @@ fun AllTagsScreen(
 }
 
 @Composable
-private fun TagChoice(tag: ComicFilterOption, selected: Boolean, onClick: () -> Unit) {
+private fun TagChoice(
+    tag: ComicFilterOption,
+    selected: Boolean,
+    bookLabel: String,
+    onClick: () -> Unit
+) {
     val color = when {
         !tag.enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         selected -> MaterialTheme.colorScheme.onSecondaryContainer
@@ -157,7 +192,11 @@ private fun TagChoice(tag: ComicFilterOption, selected: Boolean, onClick: () -> 
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 tag.count?.let {
-                    Text("$it 部漫画", color = color, style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "$it 部$bookLabel",
+                        color = color,
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }

@@ -24,3 +24,5 @@ reasonix.toml
 /docs/
 /app/src/main/assets/official_app_identity_har.json
 /tools/
+/.codex/
+/.codex-remote-attachments/

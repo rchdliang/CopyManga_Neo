@@ -57,7 +57,8 @@ class OfficialNovelRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val client: OkHttpClient,
     private val auth: AuthDataStore,
-    private val downloadNetwork: DownloadNetworkPolicy
+    private val downloadNetwork: DownloadNetworkPolicy,
+    private val themeCatalog: NovelThemeCatalogStore
 ) : NovelRepository {
     private val cache = NovelCacheStore(File(context.filesDir, "official_novel_cache"))
     private val mutex = Mutex()
@@ -120,8 +121,31 @@ class OfficialNovelRepository @Inject constructor(
     }
 
     override suspend fun tags(mode: RequestMode, owner: String): Result<List<NovelTag>> = result {
-        NovelJson.tags(api(mode, owner, listOf("h5", "filter", "book", "tags")), "theme")
+        val readingSession = session(mode, owner)
+        val tags = mutableListOf<NovelTag>()
+        var offset = 0
+        do {
+            val response = api(
+                mode, owner, listOf("theme", "book", "count"),
+                NovelRequestSpec.themeCounts(mode == RequestMode.OFFICIAL_APP, offset)
+            )
+            require(response["offset"]?.asInt == offset) { "小说题材分页位置无效" }
+            val total = requireNotNull(response["total"]).asInt
+            require(total >= 0)
+            val page = NovelJson.themeCounts(response)
+            tags += page
+            offset += page.size
+            if (offset >= total) break
+            require(page.isNotEmpty()) { "小说题材目录未返回完整数据" }
+            ensureSession(readingSession)
+        } while (true)
+        val complete = tags.distinctBy { it.path }
+        ensureSession(readingSession)
+        themeCatalog.save(mode, complete)
+        complete
     }
+
+    override fun cachedTags(mode: RequestMode): List<NovelTag> = themeCatalog.get(mode)
 
     override suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook> =
         result {

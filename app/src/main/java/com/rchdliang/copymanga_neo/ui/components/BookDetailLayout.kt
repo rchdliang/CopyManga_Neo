@@ -286,7 +286,7 @@ fun RowScope.BookDetailToolbar(
 @Composable
 fun BookDetailActions(
     readingLabel: String, canRead: Boolean, onRead: () -> Unit,
-    secondaryLabel: String, secondaryEnabled: Boolean, onSecondary: () -> Unit
+    isInShelf: Boolean, secondaryEnabled: Boolean, onSecondary: () -> Unit
 ) {
     Row(
         Modifier
@@ -299,7 +299,10 @@ fun BookDetailActions(
             modifier = Modifier.weight(1f),
             enabled = secondaryEnabled
         ) {
-            Text(secondaryLabel, color = LocalContentColor.current, maxLines = 1)
+            Text(
+                if (isInShelf) "已在书架" else "加入书架",
+                color = LocalContentColor.current, maxLines = 1
+            )
         }
         Button(onClick = onRead, modifier = Modifier.weight(1f), enabled = canRead) {
             Text(

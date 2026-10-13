@@ -2,7 +2,7 @@ package com.rchdliang.copymanga_neo.domain.model
 
 import com.rchdliang.copymanga_neo.domain.reading.NovelTextDocument
 
-data class NovelTag(val name: String, val path: String)
+data class NovelTag(val name: String, val path: String, val count: Int? = null)
 data class NovelBook(
     val path: String,
     val name: String,

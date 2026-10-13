@@ -52,7 +52,10 @@ data class NovelUiState(
     val error: String? = null,
     val notice: String? = null,
     val books: List<NovelBook> = emptyList(),
+    val total: Int? = null,
     val tags: List<NovelTag> = emptyList(),
+    val tagsLoading: Boolean = false,
+    val tagsError: String? = null,
     val hasMore: Boolean = false,
     val loadingMore: Boolean = false,
     val loadMoreError: String? = null,
@@ -63,6 +66,7 @@ data class NovelUiState(
     val theme: String = "",
     val promotedTheme: NovelTag? = null,
     val author: String = "",
+    val browseOriginPath: String? = null,
     val isLoggedIn: Boolean = false,
     val isInShelf: Boolean = false,
     val shelfLoading: Boolean = false,
@@ -78,6 +82,9 @@ data class NovelUiState(
     val bookError: String? = null,
     val volumesError: String? = null,
     val volumes: List<NovelVolume> = emptyList(),
+    val selectedVolumeIds: Set<String>? = null,
+    val managedVolumeIds: Set<String> = emptySet(),
+    val applyingDownloads: Boolean = false,
     val reader: NovelReadingVolume? = null,
     val restore: LocalReadingRecord? = null,
     val anchorRevision: Int = 0
@@ -92,7 +99,12 @@ class NovelViewModel @Inject constructor(
     private val auth: ReadingSessionRepository,
     private val downloads: DownloadRepository
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(NovelUiState(mode = network.settings.value.requestMode))
+    private val mutable = MutableStateFlow(
+        NovelUiState(
+            mode = network.settings.value.requestMode,
+            tags = repository.cachedTags(network.settings.value.requestMode)
+        )
+    )
     val state = combine(
         mutable, repository.cachedVolumes, downloads.getTasks(), downloads.getDownloadProgress()
     ) { ui, cached, tasks, progressMap ->
@@ -119,9 +131,15 @@ class NovelViewModel @Inject constructor(
     private var cacheJob: Job? = null
     private var shelfJob: Job? = null
     private var metadataJob: Job? = null
+    private var tagsJob: Job? = null
+    private var downloadChangesJob: Job? = null
     private var requestedBook: String? = null
     private var requestedVolume: Triple<String, String, LocalReadingRecord?>? = null
     private var offset = 0
+
+    private data class BrowseOrigin(val state: NovelUiState, val nextOffset: Int)
+
+    private val browseOrigins = ArrayDeque<BrowseOrigin>()
     private val entryGate = NovelEntryGate()
     private var sessionOwner: String? = null
     private var lastPosition: LocalReadingRecord? = null
@@ -143,6 +161,9 @@ class NovelViewModel @Inject constructor(
             }.distinctUntilChanged().collect { session ->
                 val previous = mutable.value
                 val previousPosition = currentPosition()
+                browseOrigins.clear()
+                downloadChangesJob?.cancel()
+                tagsJob?.cancel()
                 job?.cancel(); cacheJob?.cancel(); shelfJob?.cancel(); metadataJob?.cancel(); lastPosition =
                 null
                 sessionOwner = session?.owner
@@ -155,10 +176,19 @@ class NovelViewModel @Inject constructor(
                     downloadProgress = null,
                     mode = session?.mode ?: network.settings.value.requestMode,
                     books = emptyList(),
-                    tags = emptyList(),
+                    total = null,
+                    browseOriginPath = null,
+                    tags = repository.cachedTags(
+                        session?.mode ?: network.settings.value.requestMode
+                    ),
+                    tagsLoading = false,
+                    tagsError = null,
                     promotedTheme = null,
                     book = null,
                     volumes = emptyList(),
+                    selectedVolumeIds = null,
+                    managedVolumeIds = emptySet(),
+                    applyingDownloads = false,
                     reader = null,
                     restore = null,
                     busy = false,
@@ -210,7 +240,7 @@ class NovelViewModel @Inject constructor(
                 repository.readVolume(selected.mode, owner, reader.book.path, reader.volume.id)
                     .fold(
                         onSuccess = { updated ->
-                            ensureActive()
+                            this@launch.ensureActive()
                             if (current(owner, selected.mode)) mutable.update {
                                 if (it.reader?.book?.path == reader.book.path && it.reader.volume.id == reader.volume.id)
                                     it.copy(
@@ -259,7 +289,10 @@ class NovelViewModel @Inject constructor(
         }
     }
 
-    fun filter(query: String, type: String, order: String, theme: String, author: String = "") {
+    fun filter(
+        query: String, type: String, order: String, theme: String,
+        author: String = ""
+    ) {
         val previous = mutable.value
         val changed = previous.query != query || previous.searchType != type ||
                 previous.ordering != order || previous.theme != theme || previous.author != author
@@ -270,14 +303,29 @@ class NovelViewModel @Inject constructor(
                 ordering = order,
                 theme = theme,
                 author = author,
-                books = if (changed) emptyList() else it.books
+                books = if (changed) emptyList() else it.books,
+                total = if (changed) null else it.total
             )
         }
         refresh()
     }
 
+    /** 作者入口与手动搜索使用同一查询类型，返回时恢复原作品详情。 */
+    fun selectAuthor(author: NovelTag) {
+        rememberBrowseOrigin()
+        filter(author.name, "author", mutable.value.ordering, "")
+    }
+
+    private fun rememberBrowseOrigin() {
+        val selected = mutable.value
+        if (selected.view != NovelView.DETAIL) return
+        browseOrigins.addLast(BrowseOrigin(selected, offset))
+        mutable.update { it.copy(browseOriginPath = selected.detailPath) }
+    }
+
     /** 详情跳转保留标签名称，并只把这一入口的题材置前；页内筛选维持现有顺序。 */
     fun selectTheme(tag: NovelTag) {
+        rememberBrowseOrigin()
         mutable.update {
             it.copy(promotedTheme = tag, tags = (it.tags + tag).distinctBy { value -> value.path })
         }
@@ -309,6 +357,38 @@ class NovelViewModel @Inject constructor(
         } else refresh()
     }
 
+    /** 目录刷新独立于作品分页，打开全部题材或选择条件不会取消数量请求。 */
+    fun refreshTags() {
+        val owner = sessionOwner ?: return
+        val mode = mutable.value.mode
+        if (tagsJob?.isActive == true) return
+        mutable.update { it.copy(tagsLoading = true, tagsError = null) }
+        tagsJob = viewModelScope.launch(errors) {
+            val result = repository.tags(mode, owner)
+            ensureActive()
+            if (!current(owner, mode)) return@launch
+            result.fold(
+                onSuccess = { tags ->
+                    mutable.update {
+                        it.copy(
+                            tags = (tags + listOfNotNull(it.promotedTheme)).distinctBy { tag -> tag.path },
+                            tagsLoading = false, tagsError = null
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    mutable.update {
+                        it.copy(
+                            tagsLoading = false,
+                            tagsError = error.message ?: "题材数量更新失败"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     private fun loadPage(append: Boolean) {
         val selected = mutable.value
         val owner = sessionOwner ?: return
@@ -323,18 +403,8 @@ class NovelViewModel @Inject constructor(
                 hasMore = append && it.hasMore
             )
         }
+        if (!append && selected.query.isBlank() && selected.author.isBlank()) refreshTags()
         job = viewModelScope.launch(errors) {
-            if (!append) launch {
-                repository.tags(selected.mode, owner).fold(
-                    onSuccess = { tags ->
-                        ensureActive()
-                        if (current(owner, selected.mode)) mutable.update {
-                            it.copy(tags = (tags + listOfNotNull(it.promotedTheme)).distinctBy { tag -> tag.path })
-                        }
-                    },
-                    onFailure = { error -> if (error is CancellationException) throw error }
-                )
-            }
             val result = if (selected.query.isBlank()) repository.discover(
                 selected.mode,
                 owner,
@@ -354,6 +424,7 @@ class NovelViewModel @Inject constructor(
                         it.copy(
                             busy = false, loadingMore = false,
                             books = (if (append) it.books + page.books else page.books).distinctBy { book -> book.path },
+                            total = page.total,
                             hasMore = page.hasMore && page.nextOffset > requestedOffset
                         )
                     }
@@ -415,6 +486,7 @@ class NovelViewModel @Inject constructor(
                 volumes = it.volumes.takeIf { _ -> it.detailPath == path && it.volumes.isNotEmpty() }
                     ?: local.map { cached -> cached.volume }.sortedBy { volume -> volume.index },
                 isInShelf = it.isInShelf && it.detailPath == path, shelfLoading = false,
+                selectedVolumeIds = null, managedVolumeIds = emptySet(),
                 bookLoading = reloadInfo, volumesLoading = reloadVolumes,
                 bookError = if (reloadInfo) null else it.bookError,
                 volumesError = if (reloadVolumes) null else it.volumesError,
@@ -829,7 +901,7 @@ class NovelViewModel @Inject constructor(
                         it.copy(
                             isInShelf = collected,
                             shelfLoading = false,
-                            notice = if (collected) "已加入书架" else "已取消收藏"
+                            notice = if (collected) "已添加到书架" else "已从书架中删除"
                         )
                     }
                 },
@@ -839,7 +911,7 @@ class NovelViewModel @Inject constructor(
                         it.copy(
                             shelfLoading = false,
                             notice = error.message
-                                ?: if (collected) "加入书架失败" else "取消收藏失败"
+                                ?: if (collected) "添加失败" else "删除失败"
                         )
                     }
                 }
@@ -852,6 +924,149 @@ class NovelViewModel @Inject constructor(
         val selected = mutable.value
         val book = selected.book ?: return
         enqueueVolumes(book, selected.volumes.filter { it.id in ids })
+    }
+
+    /** 管理按钮保留已有下载；长按额外选中目标卷，后续长按仅切换该卷。 */
+    fun enterDownloadManagement(volumeId: String? = null) {
+        val selected = state.value
+        if (selected.book == null || selected.volumes.isEmpty() || selected.applyingDownloads) return
+        val managed = selected.volumes.map { it.id }.toSet()
+        if (volumeId != null && volumeId !in managed) return
+        if (selected.selectedVolumeIds != null) {
+            volumeId?.let(::toggleVolumeSelection)
+            return
+        }
+        val existing = novelVolumeStatuses(selected).filterValues {
+            it == ChapterDownloadStatus.DOWNLOADED || it == ChapterDownloadStatus.WAITING ||
+                    it == ChapterDownloadStatus.DOWNLOADING
+        }.keys intersect managed
+        mutable.update {
+            it.copy(
+                managedVolumeIds = managed,
+                selectedVolumeIds = existing + listOfNotNull(volumeId)
+            )
+        }
+    }
+
+    fun exitDownloadManagement() {
+        mutable.update { it.copy(selectedVolumeIds = null, managedVolumeIds = emptySet()) }
+    }
+
+    fun toggleVolumeSelection(id: String) {
+        mutable.update {
+            val selected = it.selectedVolumeIds ?: return@update it
+            if (id !in it.managedVolumeIds) it else it.copy(
+                selectedVolumeIds = if (id in selected) selected - id else selected + id
+            )
+        }
+    }
+
+    fun selectAllVolumes() {
+        mutable.update {
+            if (it.selectedVolumeIds == null) it
+            else it.copy(selectedVolumeIds = it.managedVolumeIds)
+        }
+    }
+
+    fun invertVolumeSelection() {
+        mutable.update {
+            if (it.selectedVolumeIds == null) it
+            else it.copy(selectedVolumeIds = it.managedVolumeIds - it.selectedVolumeIds)
+        }
+    }
+
+    fun clearVolumeSelection() {
+        mutable.update { if (it.selectedVolumeIds == null) it else it.copy(selectedVolumeIds = emptySet()) }
+    }
+
+    /** 区间采用当前显示顺序，与漫画详情一致；排序改变不会清空勾选。 */
+    fun selectVolumeRange(
+        displayedIds: List<String>,
+        fromFirst: Boolean,
+        toEnd: Boolean,
+        checked: Boolean
+    ) {
+        mutable.update {
+            val selected = it.selectedVolumeIds ?: return@update it
+            val visible = displayedIds.filter { id -> id in it.managedVolumeIds }
+            val anchors = visible.indices.filter { index -> visible[index] in selected }
+            if (anchors.isEmpty()) return@update it
+            val start = if (fromFirst) anchors.first() else 0
+            val end = if (toEnd) visible.lastIndex else anchors.last()
+            val range = visible.subList(start, end + 1).toSet()
+            it.copy(selectedVolumeIds = if (checked) selected + range else selected - range)
+        }
+    }
+
+    /** 提示与执行读取同一份状态，按顺序取消、删除、追加，并立即退出多选。 */
+    fun applyVolumeDownloadChanges() {
+        val selected = state.value
+        val book = selected.book ?: return
+        val owner = sessionOwner ?: return
+        if (selected.selectedVolumeIds == null || selected.applyingDownloads || !current(
+                owner,
+                selected.mode
+            )
+        ) return
+        val changes = novelDownloadChanges(selected)
+        exitDownloadManagement()
+        if (changes.download.isEmpty() && changes.delete.isEmpty() && changes.cancel.isEmpty()) return
+        mutable.update { it.copy(applyingDownloads = true) }
+        downloadChangesJob = viewModelScope.launch(errors) {
+            try {
+                if (changes.cancel.isNotEmpty()) {
+                    downloads.cancelNovelVolumes(selected.mode, owner, book.path, changes.cancel)
+                        .fold(onSuccess = {}, onFailure = { throw it })
+                }
+                ensureActive()
+                if (!current(owner, selected.mode)) return@launch
+                if (changes.delete.isNotEmpty()) {
+                    downloads.removeNovelVolumes(selected.mode, owner, book.path, changes.delete)
+                        .fold(onSuccess = {}, onFailure = { throw it })
+                }
+                ensureActive()
+                if (!current(owner, selected.mode)) return@launch
+                if (changes.delete.isNotEmpty()) mutable.update {
+                    val reader = it.reader
+                    if (reader?.book?.path == book.path && reader.volume.id in changes.delete)
+                        it.copy(
+                            reader = reader.copy(
+                                cachedImages = emptyMap(),
+                                offlineReady = false
+                            )
+                        )
+                    else it
+                }
+                if (changes.download.isNotEmpty()) {
+                    downloads.enqueueDownload(
+                        NovelDownloadTask(
+                            selected.mode, owner, book,
+                            selected.volumes.filter { it.id in changes.download }
+                                .map { NovelDownloadItem(it) })
+                    )
+                }
+                if (mutable.value.detailPath == book.path) mutable.update {
+                    val summary = buildList {
+                        if (changes.download.isNotEmpty()) add("下载 ${changes.download.size} 卷")
+                        if (changes.cancel.isNotEmpty()) add("取消任务 ${changes.cancel.size} 卷")
+                        if (changes.delete.isNotEmpty()) add("删除本地 ${changes.delete.size} 卷")
+                    }.joinToString(" · ")
+                    it.copy(notice = "已应用下载更改：$summary")
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (current(owner, selected.mode)) mutable.update {
+                    it.copy(notice = error.message ?: "下载更改未完成，请重试")
+                }
+            } finally {
+                if (current(
+                        owner,
+                        selected.mode
+                    )
+                ) mutable.update { it.copy(applyingDownloads = false) }
+            }
+        }
     }
 
     private fun enqueueVolumes(book: NovelBook, volumes: List<NovelVolume>) {
@@ -931,7 +1146,17 @@ class NovelViewModel @Inject constructor(
                 }; true
             }
 
-            NovelView.BROWSE -> false
+            NovelView.BROWSE -> {
+                val origin = browseOrigins.removeLastOrNull() ?: return false
+                offset = origin.nextOffset
+                mutable.value = origin.state.copy(
+                    tags = (s.tags + listOfNotNull(origin.state.promotedTheme)).distinctBy { it.path },
+                    tagsLoading = s.tagsLoading, tagsError = s.tagsError,
+                    applyingDownloads = s.applyingDownloads
+                )
+                openBook(origin.state.detailPath)
+                true
+            }
         }
     }
 

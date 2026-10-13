@@ -42,6 +42,9 @@ interface DownloadRepository {
         path: String,
         volumeIds: Set<String>
     ): Result<Unit>
+    suspend fun cancelNovelVolumes(
+        mode: RequestMode, owner: String, path: String, volumeIds: Set<String>
+    ): Result<Unit>
     fun pauseComic(pathWord: String)
     fun resumeComic(pathWord: String)
     fun isPaused(pathWord: String): Boolean
