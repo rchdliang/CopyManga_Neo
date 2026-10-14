@@ -59,9 +59,42 @@ class ReadingCoreTest {
         assertThrows(IllegalArgumentException::class.java) {
             NovelTextDocument.decode(
                 byteArrayOf(),
-                "UTF-16"
+                "not-a-real-encoding"
             )
         }
+    }
+
+    @Test
+    fun gb18030FourByteCharactersKeepOfficialLinesAndUtf16Anchors() {
+        // “中文”后接 GB18030 四字节字符 U+10000，不能以 GBK 代替解码。
+        val raw = byteArrayOf(
+            0xd6.toByte(), 0xd0.toByte(), 0xce.toByte(), 0xc4.toByte(),
+            0x90.toByte(), 0x30, 0x81.toByte(), 0x30,
+            0x0d, 0x0a, 0x0d, 0x0a, 0x65, 0x6e, 0x64, 0x0d, 0x0a
+        )
+        for (encoding in listOf("GB18030", " gb18030 ", "GB-18030", "gb_18030")) {
+            val document = NovelTextDocument.decode(raw, encoding)
+            assertEquals(listOf("中文\uD800\uDC00", "", "end", ""), document.lines)
+            assertEquals(2, document.clampCharacter(0, 3))
+            assertEquals(4, document.clampCharacter(0, 4))
+            document.validateRange(0, 4)
+        }
+        assertThrows(CharacterCodingException::class.java) {
+            NovelTextDocument.decode(byteArrayOf(0x90.toByte(), 0x30, 0x81.toByte()), "GB18030")
+        }
+    }
+
+    @Test
+    fun systemCharsetsDecodeUtf16BomAndLatin1WithoutAWhitelist() {
+        val utf16 = byteArrayOf(
+            0xff.toByte(), 0xfe.toByte(),
+            0x32, 0x75, 0x0d, 0x00, 0x0a, 0x00,
+            0x59, 0x4e, 0x0d, 0x00, 0x0a, 0x00
+        )
+        assertEquals(listOf("甲", "乙", ""), NovelTextDocument.decode(utf16, "UTF-16").lines)
+        assertEquals(listOf("甲", "乙", ""), NovelTextDocument.decode(utf16, "UTF-16LE").lines)
+        val latin1 = byteArrayOf(0x43, 0x61, 0x66, 0xe9.toByte(), 0x0a)
+        assertEquals(listOf("Café", ""), NovelTextDocument.decode(latin1, "ISO-8859-1").lines)
     }
 
     @Test

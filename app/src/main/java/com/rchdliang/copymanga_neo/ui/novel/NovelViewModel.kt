@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.novel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
@@ -7,20 +8,29 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingSession
+import com.rchdliang.copymanga_neo.domain.model.NovelAnnotation
 import com.rchdliang.copymanga_neo.domain.model.NovelBook
 import com.rchdliang.copymanga_neo.domain.model.NovelCachedVolume
 import com.rchdliang.copymanga_neo.domain.model.NovelDownloadItem
 import com.rchdliang.copymanga_neo.domain.model.NovelDownloadTask
+import com.rchdliang.copymanga_neo.domain.model.NovelReaderPreferences
 import com.rchdliang.copymanga_neo.domain.model.NovelReadingVolume
 import com.rchdliang.copymanga_neo.domain.model.NovelTag
+import com.rchdliang.copymanga_neo.domain.model.NovelTextSelection
 import com.rchdliang.copymanga_neo.domain.model.NovelVolume
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.model.novelDownloadKey
 import com.rchdliang.copymanga_neo.domain.model.safeBookTitle
 import com.rchdliang.copymanga_neo.domain.model.withFallback
+import com.rchdliang.copymanga_neo.domain.reading.NovelBookMatch
+import com.rchdliang.copymanga_neo.domain.reading.NovelSearchScope
+import com.rchdliang.copymanga_neo.domain.reading.searchNovelVolumes
+import com.rchdliang.copymanga_neo.domain.reading.textIn
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
 import com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository
+import com.rchdliang.copymanga_neo.domain.repository.NovelAnnotationRepository
+import com.rchdliang.copymanga_neo.domain.repository.NovelReaderPreferencesRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
@@ -29,15 +39,20 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import java.util.UUID
 import javax.inject.Inject
 
 enum class NovelView { BROWSE, DETAIL, READER }
@@ -97,7 +112,9 @@ class NovelViewModel @Inject constructor(
     private val reading: LocalReadingRepository, private val progress: ReadingProgressRepository,
     private val network: NetworkSettingsRepository,
     private val auth: ReadingSessionRepository,
-    private val downloads: DownloadRepository
+    private val downloads: DownloadRepository,
+    private val readerSettings: NovelReaderPreferencesRepository,
+    private val annotationStore: NovelAnnotationRepository
 ) : ViewModel() {
     private val mutable = MutableStateFlow(
         NovelUiState(
@@ -127,10 +144,40 @@ class NovelViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, mutable.value)
     val localData = reading.snapshot
+    val annotations = annotationStore.annotations.catch { error ->
+        if (error is CancellationException) throw error
+        Log.e("NovelReader", "标注读取失败", error)
+        mutable.update { it.copy(notice = "标注暂时无法读取") }
+        emit(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val mutableReaderPreferences = MutableStateFlow(NovelReaderPreferences())
+    val readerPreferences = mutableReaderPreferences.asStateFlow()
+    private val readerPreferenceWrites = Channel<NovelReaderPreferences>(Channel.CONFLATED)
+    private var readerPreferencesEdited = false
+
+    fun updateReaderPreferences(value: NovelReaderPreferences) {
+        readerPreferencesEdited = true
+        val normalized = value.normalized()
+        mutableReaderPreferences.value = normalized
+        readerPreferenceWrites.trySend(normalized)
+    }
+
+    private val mutableReaderSearch = MutableStateFlow(NovelReaderSearchUiState())
+    val readerSearch = mutableReaderSearch.asStateFlow()
+    private var readerSearchJob: Job? = null
+    private var readerSearchGeneration = 0
+
+    private data class ReaderSearchKey(val session: LocalReadingSession, val path: String)
+
+    private var readerSearchKey: ReaderSearchKey? = null
+    private var readerSearchCatalogue: Pair<ReaderSearchKey, List<NovelVolume>>? = null
+
     private var job: Job? = null
     private var cacheJob: Job? = null
     private var shelfJob: Job? = null
     private var metadataJob: Job? = null
+    private var readerVolumesJob: Job? = null
+    private var readerVolumesKey: Triple<String, RequestMode, String>? = null
     private var tagsJob: Job? = null
     private var downloadChangesJob: Job? = null
     private var requestedBook: String? = null
@@ -156,15 +203,30 @@ class NovelViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(errors) {
+            val saved = readerSettings.settings.first()
+            if (!readerPreferencesEdited) mutableReaderPreferences.value = saved
+            for (value in readerPreferenceWrites) {
+                readerSettings.update(value).fold(
+                    onSuccess = {},
+                    onFailure = { error ->
+                        if (error is CancellationException) throw error
+                        mutable.update { it.copy(notice = error.message ?: "阅读设置保存失败") }
+                    }
+                )
+            }
+        }
+        viewModelScope.launch(errors) {
             combine(auth.cacheReadyFlow, auth.sessionChanges) { ready, _ ->
                 if (ready) auth.getReadingSessionSync() else null
             }.distinctUntilChanged().collect { session ->
+                cancelReaderSearch(clear = true)
+                readerSearchCatalogue = null
                 val previous = mutable.value
                 val previousPosition = currentPosition()
                 browseOrigins.clear()
                 downloadChangesJob?.cancel()
                 tagsJob?.cancel()
-                job?.cancel(); cacheJob?.cancel(); shelfJob?.cancel(); metadataJob?.cancel(); lastPosition =
+                job?.cancel(); cacheJob?.cancel(); shelfJob?.cancel(); metadataJob?.cancel(); readerVolumesJob?.cancel(); lastPosition =
                 null
                 sessionOwner = session?.owner
                 mutable.value = previous.copy(
@@ -395,7 +457,7 @@ class NovelViewModel @Inject constructor(
         val requestedOffset = if (append) offset else 0
         job?.cancel()
         shelfJob?.cancel()
-        metadataJob?.cancel()
+        metadataJob?.cancel(); readerVolumesJob?.cancel()
         mutable.update {
             it.copy(
                 busy = !append, loadingMore = append, loadMoreError = null,
@@ -473,7 +535,7 @@ class NovelViewModel @Inject constructor(
     private fun loadBook(path: String, reloadInfo: Boolean, reloadVolumes: Boolean) {
         job?.cancel()
         shelfJob?.cancel()
-        metadataJob?.cancel()
+        metadataJob?.cancel(); readerVolumesJob?.cancel()
         val owner = sessionOwner ?: return
         val mode = mutable.value.mode
         val local = repository.cachedVolumes.value.filter {
@@ -568,9 +630,21 @@ class NovelViewModel @Inject constructor(
         }
     }
 
-    fun openVolume(path: String, id: String, target: LocalReadingRecord? = null) {
+    fun openVolume(
+        path: String,
+        id: String,
+        target: LocalReadingRecord? = null,
+        searchHit: NovelBookMatch? = null
+    ) {
+        cancelReaderSearch(clear = searchHit == null)
+        if (searchHit != null) mutableReaderSearch.update {
+            it.copy(
+                selected = searchHit,
+                visible = false
+            )
+        }
         requestedVolume = Triple(path, id, target)
-        job?.cancel(); cacheJob?.cancel(); metadataJob?.cancel()
+        job?.cancel(); cacheJob?.cancel(); metadataJob?.cancel(); readerVolumesJob?.cancel()
         val owner = sessionOwner ?: return
         val mode = mutable.value.mode
         val session =
@@ -635,7 +709,7 @@ class NovelViewModel @Inject constructor(
         volumeId: String
     ) {
         val owner = session.owner ?: return
-        metadataJob?.cancel()
+        metadataJob?.cancel(); readerVolumesJob?.cancel()
         metadataJob = viewModelScope.launch(errors) {
             repository.detail(session.mode, owner, path).fold(
                 onSuccess = { book ->
@@ -691,7 +765,356 @@ class NovelViewModel @Inject constructor(
         reading.record(r)
     }
 
+    /** 历史入口缺少详情目录时按需补齐，不阻塞已经打开的正文。 */
+    fun loadReaderVolumes() {
+        val selected = mutable.value
+        val volume = selected.reader ?: return
+        val owner = sessionOwner ?: return
+        val session = auth.getReadingSessionSync() ?: return
+        if (!current(owner, selected.mode) || readerVolumesJob?.isActive == true) return
+        val key = Triple(owner, selected.mode, volume.book.path)
+        if (selected.volumes.isNotEmpty() && selected.volumesError == null &&
+            (selected.detailPath == volume.book.path || readerVolumesKey == key)
+        ) {
+            mutable.update { it.copy(volumesLoading = false) }
+            return
+        }
+        readerVolumesKey = key
+        mutable.update {
+            it.copy(
+                volumes = emptyList(),
+                volumesLoading = true,
+                volumesError = null
+            )
+        }
+        readerVolumesJob = viewModelScope.launch(errors) {
+            repository.volumes(selected.mode, owner, volume.book.path).fold(
+                onSuccess = { volumes ->
+                    ensureActive()
+                    if (current(owner, selected.mode) && auth.getReadingSessionSync() == session &&
+                        mutable.value.reader?.book?.path == volume.book.path
+                    ) {
+                        mutable.update {
+                            it.copy(
+                                volumes = volumes,
+                                volumesLoading = false,
+                                volumesError = null
+                            )
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    ensureActive()
+                    if (current(owner, selected.mode) && auth.getReadingSessionSync() == session &&
+                        mutable.value.reader?.book?.path == volume.book.path
+                    ) {
+                        mutable.update {
+                            it.copy(
+                                volumesLoading = false,
+                                volumesError = error.message ?: "分卷目录暂时无法加载"
+                            )
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    /** 搜索会话独立于阅读会话；取消、切换账号或作品时阻止迟到结果覆盖当前界面。 */
+    fun cancelReaderSearch(clear: Boolean = false) {
+        readerSearchGeneration++
+        readerSearchJob?.cancel()
+        readerSearchJob = null
+        if (clear) {
+            mutableReaderSearch.value = NovelReaderSearchUiState()
+            readerSearchKey = null
+        } else mutableReaderSearch.update { it.copy(running = false) }
+    }
+
+    fun openReaderSearch(query: String? = null) {
+        if (mutable.value.reader == null) return
+        if (query != null) searchReader(query, mutableReaderSearch.value.scope)
+        else mutableReaderSearch.update { it.copy(visible = true) }
+    }
+
+    fun closeReaderSearch() {
+        cancelReaderSearch()
+        mutableReaderSearch.update { it.copy(visible = false) }
+    }
+
+    fun endReaderSearch() {
+        cancelReaderSearch(clear = true)
+    }
+
+    fun searchReader(query: String, scope: NovelSearchScope) {
+        val selected = mutable.value
+        val reader = selected.reader ?: return
+        val owner = sessionOwner ?: return
+        val session = auth.getReadingSessionSync() ?: return
+        if (!current(owner, selected.mode)) return
+        val activeSearch = mutableReaderSearch.value
+        if (activeSearch.running && activeSearch.bookPath == reader.book.path &&
+            activeSearch.query == query.trim() && activeSearch.scope == scope
+        ) {
+            mutableReaderSearch.update { it.copy(visible = true) }
+            return
+        }
+        cancelReaderSearch()
+        val generation = readerSearchGeneration
+        val key = ReaderSearchKey(session, reader.book.path)
+        readerSearchKey = key
+        val normalized = query.trim()
+        mutableReaderSearch.value = NovelReaderSearchUiState(
+            bookPath = reader.book.path, query = normalized, scope = scope, visible = true,
+            running = normalized.isNotBlank()
+        )
+        if (normalized.isBlank()) return
+        fun valid() =
+            generation == readerSearchGeneration && auth.getReadingSessionSync() == session &&
+                    current(
+                        owner,
+                        selected.mode
+                    ) && mutable.value.reader?.book?.path == reader.book.path &&
+                    mutable.value.reader?.volume?.id == reader.volume.id
+        readerSearchJob = viewModelScope.launch(errors) {
+            try {
+                val volumes = if (scope == NovelSearchScope.VOLUME) listOf(reader.volume) else {
+                    val known = selected.volumes.takeIf {
+                        it.isNotEmpty() && selected.volumesError == null &&
+                                (selected.detailPath == reader.book.path ||
+                                        readerVolumesKey == Triple(
+                                    owner,
+                                    selected.mode,
+                                    reader.book.path
+                                ))
+                    } ?: readerSearchCatalogue?.takeIf { it.first == key }?.second
+                    if (known != null) known else {
+                        var fetched: List<NovelVolume>? = null
+                        var failure: Throwable? = null
+                        repository.volumes(selected.mode, owner, reader.book.path).fold(
+                            onSuccess = { fetched = it },
+                            onFailure = { if (it is CancellationException) throw it; failure = it }
+                        )
+                        ensureActive()
+                        if (!valid()) return@launch
+                        if (fetched.isNullOrEmpty()) {
+                            mutableReaderSearch.update {
+                                it.copy(
+                                    running = false,
+                                    progress = it.progress.copy(
+                                        error = failure?.message ?: "暂时无法获取全书分卷目录"
+                                    )
+                                )
+                            }
+                            return@launch
+                        }
+                        requireNotNull(fetched).also { readerSearchCatalogue = key to it }
+                    }
+                }
+                ensureActive()
+                if (!valid()) return@launch
+                val result = searchNovelVolumes(
+                    normalized, reader, volumes,
+                    load = { volume ->
+                        ensureActive()
+                        repository.readVolume(
+                            selected.mode, owner, reader.book.path, volume.id,
+                            allImages = false, refresh = false
+                        )
+                    },
+                    onProgress = { progress ->
+                        if (valid()) mutableReaderSearch.update { it.copy(progress = progress) }
+                    }
+                )
+                ensureActive()
+                if (valid()) mutableReaderSearch.update {
+                    it.copy(
+                        progress = result,
+                        running = false
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.w("NovelReaderSearch", "正文搜索失败", error)
+                if (valid()) mutableReaderSearch.update {
+                    it.copy(
+                        running = false,
+                        progress = it.progress.copy(error = error.message ?: "暂时无法完成搜索")
+                    )
+                }
+            }
+        }
+    }
+
+    fun openReaderSearchMatch(hit: NovelBookMatch) {
+        val search = mutableReaderSearch.value
+        val key = readerSearchKey ?: return
+        val selected = mutable.value
+        val reader = selected.reader ?: return
+        val owner = sessionOwner ?: return
+        if (auth.getReadingSessionSync() != key.session || !current(owner, selected.mode) ||
+            reader.book.path != search.bookPath || search.progress.matches.none { it.key == hit.key }
+        ) return
+        if (hit.volumeId == reader.volume.id &&
+            reader.document.textIn(hit.match.range)?.equals(search.query, ignoreCase = true) != true
+        ) {
+            mutable.update { it.copy(notice = "正文已变化，请重新搜索") }
+            return
+        }
+        val target = LocalReadingRecord(
+            owner, "novel", reader.book.path, hit.volumeId, hit.volumeName,
+            group = selected.mode.name, title = reader.book.name, cover = reader.book.cover,
+            line = hit.match.range.startLine, character = hit.match.range.startCharacter
+        )
+        if (hit.volumeId == reader.volume.id) {
+            cancelReaderSearch()
+            mutableReaderSearch.update { it.copy(selected = hit, visible = false) }
+            jumpToBookmark(target)
+        } else openVolume(reader.book.path, hit.volumeId, target, searchHit = hit)
+    }
+
+    fun moveReaderSearchMatch(delta: Int) {
+        val search = mutableReaderSearch.value
+        val matches = search.progress.matches
+        val index = matches.indexOfFirst { it.key == search.selected?.key }
+        matches.getOrNull(if (index < 0) 0 else index + delta)?.let(::openReaderSearchMatch)
+    }
+
     fun currentPosition() = lastPosition ?: mutable.value.restore
+
+    fun addAnnotation(
+        selection: NovelTextSelection,
+        style: String,
+        note: String,
+        onDone: (Boolean) -> Unit
+    ) {
+        val selected = mutable.value
+        val volume = selected.reader
+        val owner = sessionOwner
+        if (volume == null || owner == null || !current(owner, selected.mode)) {
+            onDone(false)
+            return
+        }
+        if (volume.document.textIn(selection.range) != selection.text) {
+            mutable.update { it.copy(notice = "正文已变化，请重新选择文字") }
+            onDone(false)
+            return
+        }
+        writeAnnotation(
+            NovelAnnotation(
+                UUID.randomUUID().toString(), owner, selected.mode.name, volume.book.path,
+                volume.volume.id, volume.volume.name, selection.text, selection.range,
+                style = style, note = note
+            ), onDone
+        )
+    }
+
+    fun updateAnnotation(annotation: NovelAnnotation, onDone: (Boolean) -> Unit) {
+        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name ||
+            !current(annotation.owner, mutable.value.mode)
+        ) {
+            onDone(false)
+            return
+        }
+        writeAnnotation(annotation.copy(updatedAt = System.currentTimeMillis()), onDone)
+    }
+
+    private fun writeAnnotation(annotation: NovelAnnotation, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch(errors) {
+            annotationStore.save(annotation).fold(
+                onSuccess = {
+                    if (current(
+                            annotation.owner,
+                            mutable.value.mode
+                        ) && annotation.mode == mutable.value.mode.name
+                    )
+                        mutable.update { it.copy(notice = "标注已保存") }
+                    onDone(true)
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    Log.w("NovelReader", "标注保存失败", error)
+                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                        mutable.update { it.copy(notice = "标注保存失败，请重试") }
+                    onDone(false)
+                }
+            )
+        }
+    }
+
+    fun removeAnnotation(annotation: NovelAnnotation) {
+        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name ||
+            !current(annotation.owner, mutable.value.mode)
+        ) return
+        viewModelScope.launch(errors) {
+            annotationStore.remove(annotation).fold(
+                onSuccess = {
+                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                        mutable.update { it.copy(notice = "标注已删除") }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                        mutable.update { it.copy(notice = "标注删除失败，请重试") }
+                }
+            )
+        }
+    }
+
+    fun jumpToAnnotation(annotation: NovelAnnotation) {
+        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name) return
+        val volume = mutable.value.reader
+        if (volume?.book?.path == annotation.path && volume.volume.id == annotation.volume &&
+            volume.document.textIn(annotation.range) != annotation.text
+        ) {
+            mutable.update { it.copy(notice = "正文已变化，请用搜索重新定位标注") }
+            return
+        }
+        jumpToBookmark(
+            LocalReadingRecord(
+                annotation.owner,
+                "novel",
+                annotation.path,
+                annotation.volume,
+                annotation.volumeName,
+                group = annotation.mode,
+                line = annotation.range.startLine,
+                character = annotation.range.startCharacter
+            )
+        )
+    }
+
+    /** 同卷书签只更新恢复锚点，避免重新下载正文或闪过加载页。 */
+    fun jumpToBookmark(record: LocalReadingRecord) {
+        val selected = mutable.value
+        val owner = sessionOwner ?: return
+        if (record.owner != owner || record.kind != "novel" || !current(
+                owner,
+                selected.mode
+            )
+        ) return
+        if (selected.reader?.book?.path == record.path && selected.reader.volume.id == record.chapter) {
+            lastPosition = record
+            mutable.update { it.copy(restore = record, anchorRevision = it.anchorRevision + 1) }
+        } else resume(record)
+    }
+
+    fun removeBookmark(record: LocalReadingRecord) {
+        val owner = sessionOwner ?: return
+        if (record.owner != owner || !current(owner, mutable.value.mode)) return
+        viewModelScope.launch(errors) {
+            reading.removeBookmark(record).fold(
+                onSuccess = { mutable.update { it.copy(notice = "书签已删除") } },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    mutable.update { it.copy(notice = error.message ?: "书签删除失败") }
+                }
+            )
+        }
+    }
+
     fun flushPosition() = reading.flushAsync()
     fun bookmark() {
         val r = lastPosition ?: return
@@ -1102,10 +1525,11 @@ class NovelViewModel @Inject constructor(
     }
 
     fun back(): Boolean {
+        cancelReaderSearch(clear = true)
         reading.flushAsync()
         job?.cancel(); cacheJob?.cancel()
         shelfJob?.cancel()
-        metadataJob?.cancel()
+        metadataJob?.cancel(); readerVolumesJob?.cancel()
         val s = mutable.value
         return when (s.view) {
             NovelView.READER -> {

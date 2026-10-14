@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.AppSettings
+import com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore
 import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
@@ -22,9 +23,16 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     private val userRepository: UserRepository,
     downloadRepository: DownloadRepository,
-    appSettingsRepository: AppSettingsRepository
+    appSettingsRepository: AppSettingsRepository,
+    private val novelImagePositionDebug: NovelImagePositionDebugStore
 ) : ViewModel() {
     val downloadProgress = downloadRepository.getDownloadProgress()
+    val novelImagePositionDebugSamples = novelImagePositionDebug.samples
+
+    fun dismissNovelImagePositionDebugSample(id: String) {
+        novelImagePositionDebug.dismiss(id)
+    }
+
     val appSettings = appSettingsRepository.settings.catch {
         android.util.Log.e("MainViewModel", "应用设置读取失败", it)
         emit(AppSettings())

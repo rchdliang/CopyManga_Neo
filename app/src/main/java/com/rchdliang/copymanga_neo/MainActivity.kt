@@ -115,6 +115,7 @@ import com.rchdliang.copymanga_neo.ui.export.ComicExportViewModel
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesScreen
 import com.rchdliang.copymanga_neo.ui.favorites.FavoritesViewModel
 import com.rchdliang.copymanga_neo.ui.home.HomeScreen
+import com.rchdliang.copymanga_neo.ui.novel.NovelImagePositionDebugDialog
 import com.rchdliang.copymanga_neo.ui.novel.NovelScreen
 import com.rchdliang.copymanga_neo.ui.profile.ProfileScreen
 import com.rchdliang.copymanga_neo.ui.reader.ReaderScreen
@@ -186,6 +187,16 @@ class MainActivity : ComponentActivity() {
                     hasExports = exportState.running,
                     onDownloadsOpened = { openDownloads = false })
                 ComicExportDialogs(exportViewModel)
+                if (BuildConfig.DEBUG) {
+                    val samples by mainViewModel.novelImagePositionDebugSamples.collectAsStateWithLifecycle()
+                    samples.firstOrNull()?.let { sample ->
+                        androidx.compose.runtime.key(sample.id) {
+                            NovelImagePositionDebugDialog(sample) {
+                                mainViewModel.dismissNovelImagePositionDebugSample(sample.id)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -226,6 +237,7 @@ sealed class Screen(val route: String) {
                 }.orEmpty())
             }"
     }
+
     object Detail : Screen("detail/{pathWord}") {
         fun createRoute(pathWord: String) = "detail/$pathWord"
     }

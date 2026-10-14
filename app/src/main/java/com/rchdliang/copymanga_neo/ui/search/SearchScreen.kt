@@ -407,11 +407,18 @@ private fun SearchResultsContent(
     onOrdering: (String) -> Unit
 ) {
     val grid = rememberLazyGridState()
-    LaunchedEffect(
-        state.submittedQuery, state.submittedQueryType,
-        state.selectedDiscoveryTheme?.pathWord, state.selectedDiscoveryTop?.pathWord, state.ordering
-    ) {
-        grid.scrollToItem(0)
+    val criteria = listOf(
+        state.submittedQuery, state.submittedQueryType?.name.orEmpty(),
+        state.selectedDiscoveryTheme?.pathWord.orEmpty(),
+        state.selectedDiscoveryTop?.pathWord.orEmpty(), state.ordering
+    )
+    // 返回详情前的搜索页时保留恢复的位置，仅在结果条件变化后回到顶部。
+    var appliedCriteria by rememberSaveable { mutableStateOf(criteria) }
+    LaunchedEffect(criteria) {
+        if (appliedCriteria != criteria) {
+            grid.scrollToItem(0)
+            appliedCriteria = criteria
+        }
     }
     GridLoadMoreEffect(
         grid,

@@ -12,20 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
@@ -42,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,6 +120,7 @@ fun NovelScreen(
     val local by viewModel.localData.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
     var showTags by rememberSaveable { mutableStateOf(false) }
+    val discoveryStateHolder = rememberSaveableStateHolder()
     var directDetailEntry by rememberSaveable(initialPath) { mutableStateOf(initialPath != null) }
     LaunchedEffect(state.view, state.browseOriginPath) {
         if (state.view == NovelView.BROWSE && state.browseOriginPath == null) directDetailEntry =
@@ -169,56 +166,67 @@ fun NovelScreen(
                 .fillMaxSize()
                 .padding(padding), contentAlignment = Alignment.TopCenter
         ) {
-            Column(
-                Modifier
-                    .then(if (state.view == NovelView.DETAIL) Modifier else Modifier.widthIn(max = 1040.dp))
-                    .then(
-                        if (state.view == NovelView.BROWSE) Modifier
-                            .statusBarsPadding()
-                            .navigationBarsPadding() else Modifier
+            // 动画外层固定全宽，限宽和系统边距随各自场景保持，避免退出页面提前重排。
+            NovelAnimatedContent(
+                state,
+                Modifier.fillMaxSize(),
+                contentKey = { it.view }) { state ->
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (state.view == NovelView.BROWSE) Modifier
+                                .statusBarsPadding()
+                                .navigationBarsPadding() else Modifier
+                        )
+                ) {
+                    if (state.busy && state.view == NovelView.BROWSE) LinearProgressIndicator(
+                        Modifier.fillMaxWidth()
                     )
-                    .fillMaxSize()
-            ) {
-                if (state.busy && state.view != NovelView.DETAIL) LinearProgressIndicator(Modifier.fillMaxWidth())
-                state.error?.let { error ->
-                    Surface(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(error, color = MaterialTheme.colorScheme.onErrorContainer)
-                            TextButton(
-                                onClick = viewModel::retry,
-                                enabled = !state.busy
-                            ) { Text("重试", color = MaterialTheme.colorScheme.onErrorContainer) }
+                    state.error?.takeIf { state.view != NovelView.READER }?.let { error ->
+                        Surface(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(error, color = MaterialTheme.colorScheme.onErrorContainer)
+                                TextButton(
+                                    onClick = viewModel::retry,
+                                    enabled = !state.busy
+                                ) {
+                                    Text(
+                                        "重试",
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-                NovelAnimatedContent(
-                    state,
-                    Modifier.fillMaxSize(),
-                    contentKey = { it.view }) { state ->
                     when (state.view) {
-                        NovelView.BROWSE -> NovelDiscovery(
-                            state,
-                            onFilter = { query, type, ordering, theme ->
-                                viewModel.filter(
-                                    query,
-                                    type,
-                                    ordering,
-                                    theme
-                                )
-                            },
-                            onOpen = viewModel::openBook, onMore = viewModel::loadMore,
-                            onRetry = viewModel::retryPage,
-                            onTags = { showTags = true; viewModel.refreshTags() }, onBack = ::back,
-                            onSort = viewModel::sortDiscovery,
-                            onRefresh = viewModel::refresh,
-                            onRefreshTags = viewModel::refreshTags
-                        )
+                        NovelView.BROWSE -> discoveryStateHolder.SaveableStateProvider("novel-discovery") {
+                            NovelDiscovery(
+                                state,
+                                onFilter = { query, type, ordering, theme ->
+                                    viewModel.filter(
+                                        query,
+                                        type,
+                                        ordering,
+                                        theme
+                                    )
+                                },
+                                onOpen = viewModel::openBook,
+                                onMore = viewModel::loadMore,
+                                onRetry = viewModel::retryPage,
+                                onTags = { showTags = true; viewModel.refreshTags() },
+                                onBack = ::back,
+                                onSort = viewModel::sortDiscovery,
+                                onRefresh = viewModel::refresh,
+                                onRefreshTags = viewModel::refreshTags
+                            )
+                        }
 
                         NovelView.DETAIL -> NovelDetailContent(
                             state, local.records,
@@ -240,41 +248,7 @@ fun NovelScreen(
                             onBack = ::back, onRefresh = viewModel::retry
                         )
 
-                        NovelView.READER -> if (state.reader != null) NovelReader(
-                            state,
-                            viewModel,
-                            ::back
-                        ) else {
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Outlined.MenuBook,
-                                    null,
-                                    Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Text(
-                                    if (state.busy) "正在打开本卷…" else "本卷暂时无法打开",
-                                    Modifier.padding(top = 16.dp),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    "已缓存的正文会优先从本机读取。",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                TextButton(onClick = ::back) {
-                                    Text(
-                                        "返回目录",
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
+                        NovelView.READER -> NovelReader(state, viewModel, ::back)
                     }
                 }
             }

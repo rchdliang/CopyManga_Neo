@@ -69,8 +69,14 @@ internal object NovelJson {
             val s = e.asJsonObject
             val type = s["content_type"].asInt
             require(type == 1 || type == 2) { "未知的官方目录类型" }
-            val start = s["start_lines"].asInt
-            val end = s["end_lines"].asInt
+            // 无效插图行号仍保留入口，不能把 null 当成可用的 0。
+            fun line(key: String): Int? = runCatching {
+                s[key]?.takeUnless { it.isJsonNull }?.asBigDecimal?.intValueExact()
+            }.getOrNull()
+
+            val start =
+                if (type == 1) requireNotNull(line("start_lines")) else line("start_lines") ?: -1
+            val end = if (type == 1) requireNotNull(line("end_lines")) else line("end_lines") ?: -1
             if (type == 1) doc.validateRange(start, end)
             val image = text(s, "content").takeIf { it.isNotBlank() }
             if (type == 2) require(image != null) { "插图地址缺失" }

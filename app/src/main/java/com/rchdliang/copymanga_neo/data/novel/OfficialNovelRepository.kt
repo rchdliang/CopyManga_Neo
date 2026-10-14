@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.rchdliang.copymanga_neo.BuildConfig
 import com.rchdliang.copymanga_neo.data.download.DownloadNetworkPolicy
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.novel.cache.NovelCacheStore
@@ -21,6 +22,7 @@ import com.rchdliang.copymanga_neo.domain.model.NovelTag
 import com.rchdliang.copymanga_neo.domain.model.NovelVolume
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.model.withFallback
+import com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore
 import com.rchdliang.copymanga_neo.domain.reading.NovelRequestSpec
 import com.rchdliang.copymanga_neo.domain.reading.NovelTextDocument
 import com.rchdliang.copymanga_neo.domain.repository.NovelRepository
@@ -58,7 +60,8 @@ class OfficialNovelRepository @Inject constructor(
     private val client: OkHttpClient,
     private val auth: AuthDataStore,
     private val downloadNetwork: DownloadNetworkPolicy,
-    private val themeCatalog: NovelThemeCatalogStore
+    private val themeCatalog: NovelThemeCatalogStore,
+    private val imagePositionDebug: NovelImagePositionDebugStore
 ) : NovelRepository {
     private val cache = NovelCacheStore(File(context.filesDir, "official_novel_cache"))
     private val mutex = Mutex()
@@ -196,6 +199,16 @@ class OfficialNovelRepository @Inject constructor(
                     fallback = false,
                     forDownload = forDownload
                 )
+                if (BuildConfig.DEBUG) {
+                    try {
+                        NovelImagePositionDebugJson.sample(mode, path, id, response)
+                            ?.let(imagePositionDebug::offer)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        android.util.Log.w("NovelDebug", "插图位置样本提取失败", error)
+                    }
+                }
                 if (response["is_lock"]?.asBoolean == true) throw IOException("本卷受限，请在当前模式登录或检查官方阅读权限")
                 val volume =
                     response.getAsJsonObject("volume") ?: throw IOException("官方未返回可读内容")
