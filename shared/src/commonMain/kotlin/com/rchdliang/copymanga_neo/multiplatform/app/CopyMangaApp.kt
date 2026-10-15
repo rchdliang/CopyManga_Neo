@@ -53,7 +53,6 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.downloads.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.export.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.profile.*
-import com.rchdliang.copymanga_neo.multiplatform.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -260,7 +259,7 @@ fun CopyMangaApp(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun MainNavigationShell(
+internal fun MainNavigationShell(
     current: MainTab, onSelect: (MainTab) -> Unit,
     loggedIn: Boolean, avatar: String?, updates: Int, content: @Composable () -> Unit
 ) {
@@ -280,27 +279,30 @@ private fun MainNavigationShell(
                         modalScrimColor = WideNavigationRailDefaults.colors().modalScrimColor,
                         modalContentColor = WideNavigationRailDefaults.colors().modalContentColor
                     ),
-                    header = {
-                        Column(Modifier.padding(top = 16.dp).padding(start = 24.dp)) {
-                            PreviewAwareAsyncImage(
-                                model = avatar.takeIf { loggedIn }, contentDescription = "用户头像",
-                                modifier = Modifier.padding(start = 6.dp).size(36.dp).clip(CircleShape).clickable { onSelect(MainTab.PROFILE) },
-                                placeholder = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.AccountCircle),
-                                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Filled.AccountCircle)
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            IconButton(
-                                modifier = Modifier.semantics { stateDescription = if (rail.targetValue == WideNavigationRailValue.Expanded) "已展开" else "已折叠" },
-                                onClick = { scope.launch { if (rail.targetValue == WideNavigationRailValue.Expanded) rail.collapse() else rail.expand() } }
-                            ) { Icon(if (rail.targetValue == WideNavigationRailValue.Expanded) Icons.AutoMirrored.Filled.MenuOpen else Icons.Filled.Menu,
-                                if (rail.targetValue == WideNavigationRailValue.Expanded) "折叠侧栏" else "展开侧栏") }
-                        }
-                    }
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    MainTab.entries.forEach { tab ->
-                        WideNavigationRailItem(railExpanded = rail.targetValue == WideNavigationRailValue.Expanded,
-                            selected = current == tab, onClick = { onSelect(tab) },
-                            icon = { TabIcon(tab, current == tab, updates) }, label = { Text(tab.title) })
+                    AdaptiveNavigationRailColumn(
+                        expanded = rail.targetValue == WideNavigationRailValue.Expanded,
+                        header = {
+                            Column(Modifier.padding(start = 24.dp)) {
+                                NavigationAvatar(
+                                    loggedIn = loggedIn, avatar = avatar,
+                                    modifier = Modifier.size(48.dp).clickable { onSelect(MainTab.PROFILE) }.padding(6.dp).clip(CircleShape)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                IconButton(
+                                    modifier = Modifier.semantics { stateDescription = if (rail.targetValue == WideNavigationRailValue.Expanded) "已展开" else "已折叠" },
+                                    onClick = { scope.launch { if (rail.targetValue == WideNavigationRailValue.Expanded) rail.collapse() else rail.expand() } }
+                                ) { Icon(if (rail.targetValue == WideNavigationRailValue.Expanded) Icons.AutoMirrored.Filled.MenuOpen else Icons.Filled.Menu,
+                                    if (rail.targetValue == WideNavigationRailValue.Expanded) "折叠侧栏" else "展开侧栏") }
+                            }
+                        }
+                    ) {
+                        MainTab.entries.forEach { tab ->
+                            WideNavigationRailItem(railExpanded = rail.targetValue == WideNavigationRailValue.Expanded,
+                                selected = current == tab, onClick = { onSelect(tab) },
+                                icon = { TabIcon(tab, current == tab, updates) }, label = { Text(tab.title) })
+                        }
                     }
                 }
                 Box(Modifier.weight(1f).fillMaxSize().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surface)) { content() }
