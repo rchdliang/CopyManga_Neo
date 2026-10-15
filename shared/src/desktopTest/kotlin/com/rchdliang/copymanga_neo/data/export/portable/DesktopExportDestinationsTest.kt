@@ -35,6 +35,22 @@ class DesktopExportDestinationsTest {
         assertEquals("new archive", Files.readString(staging))
     }
 
+    @Test fun replacedFileWithMatchingSizeAndModificationTimeIsRejected() {
+        val target = Files.writeString(directory.resolve("book.zip"), "original")
+        val attributes = Files.readAttributes(target, java.nio.file.attribute.BasicFileAttributes::class.java)
+        DesktopExportDestinations.approve(DesktopExportDestinations.capture(target))
+        val reservation = DesktopExportDestinations.claim(target)
+        // Keep the old file alive so its ID cannot be recycled for the replacement.
+        Files.move(target, directory.resolve("old.zip"))
+        Files.writeString(target, "new data")
+        Files.getFileAttributeView(target, java.nio.file.attribute.BasicFileAttributeView::class.java)
+            .setTimes(attributes.lastModifiedTime(), null, attributes.creationTime())
+        val staging = Files.writeString(directory.resolve("staging"), "new archive")
+        assertFailsWith<IOException> { reservation.publish(staging) }
+        assertEquals("new data", Files.readString(target))
+        assertEquals("new archive", Files.readString(staging))
+    }
+
     @Test fun newlyAppearingDestinationIsNotOverwritten() {
         val target = directory.resolve("book.zip")
         DesktopExportDestinations.approve(DesktopExportDestinations.capture(target))

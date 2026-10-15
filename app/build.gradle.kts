@@ -70,6 +70,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Install beside the daily release without sharing its private app data.
+            applicationIdSuffix = ".migrationtest"
+            versionNameSuffix = "-migrationtest"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

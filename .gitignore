@@ -59,3 +59,5 @@ reasonix.toml
 !/docs/IOS_BACKGROUND_TRANSFERS.md
 
 !/docs/CI.md
+
+!/docs/ANDROID_TEST_BUILD.md

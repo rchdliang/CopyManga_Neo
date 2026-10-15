@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.export.portable
 
+import com.sun.jna.Platform
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -36,6 +37,7 @@ object DesktopExportDestinations {
         requireNotNull(it.parent).toRealPath().resolve(it.fileName)
     }
     private fun snapshot(path: Path): Identity? {
+        if (Platform.isWindows()) return windowsExportFileIdentity(path)
         val attributes = try { Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS) }
         catch (_: java.nio.file.NoSuchFileException) { return null }
         if (!attributes.isRegularFile || attributes.isSymbolicLink) throw IOException("请选择普通文件，不能替换目录或符号链接")
