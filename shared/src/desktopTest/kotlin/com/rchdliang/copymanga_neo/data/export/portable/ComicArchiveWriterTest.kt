@@ -66,12 +66,13 @@ class ComicArchiveWriterTest {
 
     @Test
     fun approvedReplacementPublishesArchiveAndCleanupCannotDeleteIt() = runBlocking {
-        val target = File(temporary, "replace.zip").apply { writeText("original") }
+        val target = File(temporary, "./replace.zip").apply { writeText("original") }
         DesktopExportDestinations.approve(DesktopExportDestinations.capture(target.toPath()))
         val unit = exportUnits(plan(listOf(page("page.jpg", byteArrayOf(-1, -40, -1, 0)))), ComicExportFormat.ZIP).single()
         var active = ""
         val output = io.write(unit, target.absolutePath, false, ComicExportFormat.ZIP, { active = it }, {}, {})
-        assertEquals(target.toURI().toString(), output.uri)
+        // Normalized paths (including Windows short/long names) can identify the same file.
+        assertTrue(Files.isSameFile(target.toPath(), File(java.net.URI(output.uri)).toPath()))
         assertNotEquals(output.uri, active)
         assertTrue(io.delete(active))
         assertTrue(target.exists())
