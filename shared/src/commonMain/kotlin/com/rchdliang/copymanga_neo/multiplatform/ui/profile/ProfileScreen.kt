@@ -18,8 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -77,8 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.Role
@@ -625,7 +625,7 @@ private data class ProfileMenuEntry(
 )
 
 /** 登录表单只校验必填项，保留已有账号的兼容性。 */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun LoginDialog(
     isLoading: Boolean,
@@ -654,7 +654,15 @@ internal fun LoginDialog(
         derivedStateOf { if (submitted && passwordState.text.isBlank()) "请输入密码" else null }
     }.value
     val formScrollState = rememberScrollState()
-    var formViewportHeight by remember { mutableStateOf(0) }
+    val inheritedRelocationSpec = LocalBringIntoViewSpec.current
+    val density = LocalDensity.current
+    val cursorLineHeight = with(density) { MaterialTheme.typography.bodyLarge.lineHeight.toPx() }
+    val relocationSpec = remember(density, cursorLineHeight) {
+        LoginFormBringIntoViewSpec(
+            cursorMaxHeight = cursorLineHeight * 1.5f,
+            contextHeight = with(density) { 56.dp.toPx() } * density.fontScale.coerceAtLeast(1f)
+        )
+    }
 
     ActiveRouteLaunchedEffect(Unit) {
         if (savedUsername != null && usernameState.text.isEmpty()) {
@@ -681,123 +689,123 @@ internal fun LoginDialog(
         modifier = modifier,
         onDismissRequest = { if (!isLoading) onDismiss() },
         text = {
-            Column(
-                Modifier
-                    .onSizeChanged { formViewportHeight = it.height }
-                    .verticalScroll(formScrollState),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // In a short window with the IME open, fixed icon/title slots can leave
-                // less than one text field of usable height. Scroll them with the form;
-                // the action buttons remain fixed and cursor relocation stays enabled.
-                Icon(
-                    Icons.AutoMirrored.Outlined.Login, contentDescription = null,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    "登录账号",
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    "登录当前模式。登录另一模式后，原会话会失效。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                OutlinedTextField(
-                    state = usernameState,
-                    label = {
-                        Text(
-                            "账号", color = if (usernameError != null)
-                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    supportingText = if (usernameError == null) null else {
-                        { Text(usernameError, color = MaterialTheme.colorScheme.error) }
-                    },
-                    isError = usernameError != null,
-                    lineLimits = TextFieldLineLimits.SingleLine,
-                    keyboardOptions = KeyboardOptions(
-                        autoCorrectEnabled = false,
-                        imeAction = ImeAction.Next
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .keepLoginFieldVisible(formViewportHeight)
-                        .semantics { contentType = ContentType.Username },
-                    enabled = !isLoading
-                )
-                OutlinedSecureTextField(
-                    state = passwordState,
-                    label = {
-                        Text(
-                            "密码", color = if (passwordError != null)
-                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    supportingText = if (passwordError == null) null else {
-                        { Text(passwordError, color = MaterialTheme.colorScheme.error) }
-                    },
-                    isError = passwordError != null,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { showPassword = !showPassword },
-                            enabled = !isLoading
-                        ) {
-                            Icon(
-                                if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (showPassword) "隐藏密码" else "显示密码",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    textObfuscationMode = if (showPassword) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    onKeyboardAction = { submit() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .keepLoginFieldVisible(formViewportHeight)
-                        .semantics { contentType = ContentType.Password },
-                    enabled = !isLoading
-                )
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    shape = MaterialTheme.shapes.medium
+            CompositionLocalProvider(LocalBringIntoViewSpec provides relocationSpec) {
+                Column(
+                    Modifier.verticalScroll(formScrollState),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column {
-                        LoginPreferenceRow(
-                            "记住密码", "",
-                            rememberPasswordChecked, !isLoading
-                        ) {
-                            rememberPasswordChecked = it
-                            if (!it) auto = false
-                        }
-                        LoginPreferenceRow(
-                            "自动登录", "",
-                            auto, !isLoading
-                        ) {
-                            auto = it
-                            if (it) rememberPasswordChecked = true
-                        }
-                    }
-                }
-                error?.let {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text(
-                            it, Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides inheritedRelocationSpec) {
+                        // In a short window with the IME open, fixed icon/title slots can leave
+                        // less than one text field of usable height. Scroll them with the form;
+                        // the action buttons remain fixed and cursor relocation stays enabled.
+                        Icon(
+                            Icons.AutoMirrored.Outlined.Login, contentDescription = null,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            tint = MaterialTheme.colorScheme.primary
                         )
+                        Text(
+                            "登录账号",
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Text(
+                            "登录当前模式。登录另一模式后，原会话会失效。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        OutlinedTextField(
+                            state = usernameState,
+                            label = {
+                                Text(
+                                    "账号", color = if (usernameError != null)
+                                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            supportingText = if (usernameError == null) null else {
+                                { Text(usernameError, color = MaterialTheme.colorScheme.error) }
+                            },
+                            isError = usernameError != null,
+                            lineLimits = TextFieldLineLimits.SingleLine,
+                            keyboardOptions = KeyboardOptions(
+                                autoCorrectEnabled = false,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { contentType = ContentType.Username },
+                            enabled = !isLoading
+                        )
+                        OutlinedSecureTextField(
+                            state = passwordState,
+                            label = {
+                                Text(
+                                    "密码", color = if (passwordError != null)
+                                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            supportingText = if (passwordError == null) null else {
+                                { Text(passwordError, color = MaterialTheme.colorScheme.error) }
+                            },
+                            isError = passwordError != null,
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showPassword = !showPassword },
+                                    enabled = !isLoading
+                                ) {
+                                    Icon(
+                                        if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = if (showPassword) "隐藏密码" else "显示密码",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            textObfuscationMode = if (showPassword) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            ),
+                            onKeyboardAction = { submit() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { contentType = ContentType.Password },
+                            enabled = !isLoading
+                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Column {
+                                LoginPreferenceRow(
+                                    "记住密码", "",
+                                    rememberPasswordChecked, !isLoading
+                                ) {
+                                    rememberPasswordChecked = it
+                                    if (!it) auto = false
+                                }
+                                LoginPreferenceRow(
+                                    "自动登录", "",
+                                    auto, !isLoading
+                                ) {
+                                    auto = it
+                                    if (it) rememberPasswordChecked = true
+                                }
+                            }
+                        }
+                        error?.let {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Text(
+                                    it, Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -829,23 +837,27 @@ internal fun LoginDialog(
     )
 }
 
-/** Cursor relocation alone can leave the field decoration clipped after the IME resizes a window. */
-@Composable
-private fun Modifier.keepLoginFieldVisible(viewportHeight: Int): Modifier {
-    val requester = remember { BringIntoViewRequester() }
-    var focused by remember { mutableStateOf(false) }
-    var fieldHeight by remember { mutableStateOf(0) }
-    LaunchedEffect(focused, viewportHeight, fieldHeight) {
-        // Keep normal cursor scrolling when even a whole field cannot fit. Never scroll on text
-        // changes: only focus, actual viewport resizing or validation decoration resizing matters.
-        if (focused && fieldHeight > 0 && viewportHeight >= fieldHeight) {
-            requester.bringIntoView()
+/**
+ * A single relocation owner: Compose handles focus, cursor and IME viewport changes.
+ * Small relocation targets get surrounding room for the field decoration. Larger targets
+ * keep Compose's normal nearest-edge behavior. This policy is scoped to the vertical form;
+ * child text fields retain their platform policy for horizontal cursor scrolling.
+ * No extra coroutine may start/cancel another scroll while the Android IME is animating.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal class LoginFormBringIntoViewSpec(
+    private val cursorMaxHeight: Float,
+    private val contextHeight: Float
+) : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        if (containerSize <= 0f || size <= 0f) return 0f
+        if (size > cursorMaxHeight || size >= containerSize) {
+            return super.calculateScrollDistance(offset, size, containerSize)
         }
+        val visibleContext = contextHeight.coerceAtMost(containerSize).coerceAtLeast(size)
+        val padding = (visibleContext - size) / 2f
+        return super.calculateScrollDistance(offset - padding, visibleContext, containerSize)
     }
-    return this
-        .bringIntoViewRequester(requester)
-        .onFocusChanged { focused = it.isFocused }
-        .onSizeChanged { fieldHeight = it.height }
 }
 
 /** 整行可切换，Checkbox 不单独消费点击，避免重复触发及重复无障碍节点。 */

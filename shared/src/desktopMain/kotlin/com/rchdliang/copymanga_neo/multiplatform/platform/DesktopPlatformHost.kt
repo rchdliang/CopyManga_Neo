@@ -68,7 +68,9 @@ class DesktopPlatformHost(
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
-    override val notificationSettingsUnavailableReason: String? get() = if (System.getProperty("os.name").startsWith("Windows", true) && !GraphicsEnvironment.isHeadless() && Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) null else "当前桌面没有统一的通知设置入口，请在系统设置中手动管理"
+    override val notificationSettingsUnavailableReason: String?
+        get() = desktopNotificationSettingsUnavailableReason(
+            System.getProperty("os.name"), GraphicsEnvironment.isHeadless())
     override val backDispatcher = UiBackDispatcher()
     private val mutableWarnings = MutableStateFlow<List<String>>(emptyList())
     /** Hosts should surface these capability warnings once, rather than promising unavailable OS effects. */
@@ -289,13 +291,8 @@ class DesktopPlatformHost(
         // AWT desktop notifications have no runtime permission prompt. This does not claim a notification was sent.
     }
     override suspend fun openNotificationSettings(): Result<Unit> = result {
-        withContext(Dispatchers.Swing) {
-            requireGui()
-            check(System.getProperty("os.name").startsWith("Windows", true)) {
-                "请在系统设置中打开此应用的通知权限；当前桌面没有统一的通知设置入口"
-            }
-            check(Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) { "系统没有可用的设置入口" }
-            Desktop.getDesktop().browse(URI("ms-settings:notifications"))
+        withContext(Dispatchers.IO) {
+            openDesktopNotificationSettings(System.getProperty("os.name"), GraphicsEnvironment.isHeadless())
         }
     }
 
