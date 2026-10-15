@@ -1,0 +1,3 @@
+// Safe default. A developer-supplied local file or explicit Xcode build setting may override it.
+COPYMANGA_TAP_STRING =
+#include? "LocalSecrets.xcconfig"

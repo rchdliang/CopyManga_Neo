@@ -16,7 +16,7 @@ import android.provider.DocumentsContract
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-import com.rchdliang.copymanga_neo.MainActivity
+import com.rchdliang.copymanga_neo.multiplatform.AndroidSharedActivity
 import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
 import com.rchdliang.copymanga_neo.domain.model.ComicExportState
 import com.rchdliang.copymanga_neo.domain.model.ComicExportStatus
@@ -100,10 +100,10 @@ class ComicExportService : Service() {
     }
 
     private fun notification(state: ComicExportState): android.app.Notification {
-        val returnToApp = Intent(this, MainActivity::class.java)
+        val returnToApp = Intent(this, AndroidSharedActivity::class.java)
             .setAction(DownloadNotifications.OPEN_DOWNLOADS)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val retry = Intent(this, MainActivity::class.java).setAction(RETRY)
+        val retry = Intent(this, AndroidSharedActivity::class.java).setAction(RETRY)
             .setData("copymanga-export:retry/${state.taskId}".toUri())
             .putExtra(TASK_ID, state.taskId)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

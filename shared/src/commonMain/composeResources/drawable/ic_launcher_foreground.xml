@@ -1,0 +1,54 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group
+        android:pivotX="480"
+        android:pivotY="480"
+        android:scaleX="0.83"
+        android:scaleY="0.83"
+        android:translateY="21.6">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M480,405 A75,75 0,1 1 480,555 A75,75 0,1 1 480,405"
+            android:strokeWidth="62"
+            android:strokeColor="#000000" />
+        <group>
+            <path
+                android:fillColor="#000000"
+                android:pathData="M537.48,154.03 C575.41,160.72 611.98,174.98 644.22,195.56 C676.46,216.15 704.34,243.04 725.71,273.83 C747.08,304.61 761.93,339.26 769.37,374.68 C776.81,410.1 776.83,446.26 770,480 C763.17,446.26 751.3,414.94 735.66,386.95 C720.01,358.96 700.6,334.27 678.6,313.36 C656.59,292.45 631.98,275.3 605.78,262.14 C579.58,248.98 551.77,239.81 523.24,234.78 Z" />
+            <path
+                android:fillColor="#00000000"
+                android:pathData="M480,137 A53,53 0,1 1 480,243 A53,53 0,1 1 480,137"
+                android:strokeWidth="52"
+                android:strokeColor="#000000" />
+        </group>
+        <group
+            android:pivotX="480"
+            android:pivotY="480"
+            android:rotation="120">
+            <path
+                android:fillColor="#000000"
+                android:pathData="M537.48,154.03 C575.41,160.72 611.98,174.98 644.22,195.56 C676.46,216.15 704.34,243.04 725.71,273.83 C747.08,304.61 761.93,339.26 769.37,374.68 C776.81,410.1 776.83,446.26 770,480 C763.17,446.26 751.3,414.94 735.66,386.95 C720.01,358.96 700.6,334.27 678.6,313.36 C656.59,292.45 631.98,275.3 605.78,262.14 C579.58,248.98 551.77,239.81 523.24,234.78 Z" />
+            <path
+                android:fillColor="#00000000"
+                android:pathData="M480,137 A53,53 0,1 1 480,243 A53,53 0,1 1 480,137"
+                android:strokeWidth="52"
+                android:strokeColor="#000000" />
+        </group>
+        <group
+            android:pivotX="480"
+            android:pivotY="480"
+            android:rotation="240">
+            <path
+                android:fillColor="#000000"
+                android:pathData="M537.48,154.03 C575.41,160.72 611.98,174.98 644.22,195.56 C676.46,216.15 704.34,243.04 725.71,273.83 C747.08,304.61 761.93,339.26 769.37,374.68 C776.81,410.1 776.83,446.26 770,480 C763.17,446.26 751.3,414.94 735.66,386.95 C720.01,358.96 700.6,334.27 678.6,313.36 C656.59,292.45 631.98,275.3 605.78,262.14 C579.58,248.98 551.77,239.81 523.24,234.78 Z" />
+            <path
+                android:fillColor="#00000000"
+                android:pathData="M480,137 A53,53 0,1 1 480,243 A53,53 0,1 1 480,137"
+                android:strokeWidth="52"
+                android:strokeColor="#000000" />
+        </group>
+    </group>
+</vector>

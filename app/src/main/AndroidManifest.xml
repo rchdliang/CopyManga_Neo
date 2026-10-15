@@ -44,15 +44,19 @@
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false" />
         <activity
+            android:name=".multiplatform.AndroidSharedActivity"
+            android:exported="false"
+            android:theme="@style/Theme.CopyManga_Neo" />
+        <!-- Preserve the original launcher component, including existing pinned shortcuts. -->
+        <activity-alias
             android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.CopyManga_Neo">
+            android:targetActivity=".multiplatform.AndroidSharedActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
     </application>
 
 </manifest>

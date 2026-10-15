@@ -85,7 +85,7 @@ class ComicExportRepositoryImpl @Inject constructor(
                         return@mapNotNull null
                     }
                     val chapters = chapterDao.getChaptersOnce(pathWord)
-                        .filter { request.chapters == null || it.uuid in request.chapters }
+                        .filter { request.chapters?.let { selected -> it.uuid in selected } != false }
                         .sortedWith(
                             compareBy(
                                 { it.groupPathWord.orEmpty() },

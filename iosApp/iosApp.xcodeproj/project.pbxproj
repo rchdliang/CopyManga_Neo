@@ -1,0 +1,73 @@
+// !$*UTF8*$!
+{
+ archiveVersion = 1;
+ classes = {};
+ objectVersion = 56;
+ objects = {
+  000000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+  000000000000000000000015 = {isa = PBXBuildFile; fileRef = 000000000000000000000016; };
+  000000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHostingController.swift; sourceTree = "<group>"; };
+  000000000000000000000001 = {isa = PBXBuildFile; fileRef = 000000000000000000000002; };
+  000000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyMangaNeoApp.swift; sourceTree = "<group>"; };
+  000000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+  000000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CopyMangaNeo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+  000000000000000000000005 = {isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000017, 000000000000000000000007); sourceTree = "<group>"; };
+  000000000000000000000006 = {isa = PBXGroup; children = (000000000000000000000002, 000000000000000000000016, 000000000000000000000003); path = iosApp; sourceTree = "<group>"; };
+  000000000000000000000007 = {isa = PBXGroup; children = (000000000000000000000004); name = Products; sourceTree = "<group>"; };
+  000000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000001, 000000000000000000000015); runOnlyForDeploymentPostprocessing = 0; };
+  000000000000000000000009 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+  00000000000000000000000A = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+  00000000000000000000000B = {
+   isa = PBXShellScriptBuildPhase;
+   alwaysOutOfDate = 1;
+   buildActionMask = 2147483647;
+   files = (); inputPaths = (); outputPaths = ();
+   name = "Build shared Kotlin framework";
+   runOnlyForDeploymentPostprocessing = 0;
+   shellPath = /bin/sh;
+   shellScript = "set -e\nif [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then exit 0; fi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+  };
+  00000000000000000000000C = {
+   isa = PBXNativeTarget;
+   buildConfigurationList = 000000000000000000000010;
+   buildPhases = (00000000000000000000000B, 000000000000000000000008, 000000000000000000000009, 00000000000000000000000A);
+   buildRules = (); dependencies = (); name = CopyMangaNeo; productName = CopyMangaNeo;
+   productReference = 000000000000000000000004; productType = "com.apple.product-type.application";
+  };
+  00000000000000000000000D = {
+   isa = PBXProject;
+   attributes = {BuildIndependentTargetsInParallel = YES; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; };
+   buildConfigurationList = 00000000000000000000000F;
+   compatibilityVersion = "Xcode 14.0";
+   developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base, "zh-Hans");
+   mainGroup = 000000000000000000000005; productRefGroup = 000000000000000000000007;
+   projectDirPath = ""; projectRoot = ""; targets = (00000000000000000000000C);
+  };
+  00000000000000000000000F = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000011, 000000000000000000000012); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+  000000000000000000000010 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000013, 000000000000000000000014); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+  000000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf; }; name = Debug; };
+  000000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SWIFT_COMPILATION_MODE = wholemodule; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; }; name = Release; };
+  000000000000000000000013 = {isa = XCBuildConfiguration; baseConfigurationReference = 000000000000000000000017; buildSettings = {
+   COPYMANGA_DEBUG_BUILD = YES;
+   CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 29; DEVELOPMENT_TEAM = "";
+   ENABLE_USER_SCRIPT_SANDBOXING = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = iosApp/Info.plist;
+   FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)");
+   OTHER_LDFLAGS = ("$(inherited)", "-framework", CopyMangaShared);
+   LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+   MARKETING_VERSION = 0.10.14; PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
+   SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
+   SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+  }; name = Debug; };
+  000000000000000000000014 = {isa = XCBuildConfiguration; baseConfigurationReference = 000000000000000000000017; buildSettings = {
+   COPYMANGA_DEBUG_BUILD = NO;
+   CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 29; DEVELOPMENT_TEAM = "";
+   ENABLE_USER_SCRIPT_SANDBOXING = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = iosApp/Info.plist;
+   FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)");
+   OTHER_LDFLAGS = ("$(inherited)", "-framework", CopyMangaShared);
+   LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+   MARKETING_VERSION = 0.10.14; PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
+   SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
+  }; name = Release; };
+ };
+ rootObject = 00000000000000000000000D;
+}

@@ -46,6 +46,7 @@ val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
 android {
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.rchdliang.copymanga_neo"
@@ -120,6 +121,7 @@ hilt {
 }
 
 dependencies {
+    implementation(project(":shared"))
     testImplementation(libs.junit)
     val composeBom = platform(libs.androidx.compose.bom)
 
@@ -152,6 +154,8 @@ dependencies {
     
     // Coil 图片加载
     implementation(libs.coil.compose)
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
+    implementation("io.coil-kt.coil3:coil:3.6.3")
     
     // Navigation
     implementation(libs.navigation.compose)

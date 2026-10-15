@@ -12,7 +12,7 @@ import android.os.Build
 import android.text.format.Formatter
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.rchdliang.copymanga_neo.MainActivity
+import com.rchdliang.copymanga_neo.multiplatform.AndroidSharedActivity
 import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.domain.model.DownloadKind
 import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
@@ -160,7 +160,7 @@ internal class DownloadNotifications(private val context: Context) {
 
     private fun openDownloads(): PendingIntent = PendingIntent.getActivity(
         context, ID,
-        Intent(context, MainActivity::class.java).setAction(OPEN_DOWNLOADS)
+        Intent(context, AndroidSharedActivity::class.java).setAction(OPEN_DOWNLOADS)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )

@@ -27,7 +27,7 @@ internal object NovelJson {
     fun themeCounts(o: JsonObject): List<NovelTag> {
         require(o.getAsJsonArray("list") != null) { "小说题材目录缺少列表" }
         return tags(o, "list").onEach {
-            require(it.name.isNotBlank() && it.path.isNotBlank() && it.count != null && it.count >= 0) {
+            require(it.name.isNotBlank() && it.path.isNotBlank() && (it.count ?: -1) >= 0) {
                 "小说题材目录缺少有效数量"
             }
         }
