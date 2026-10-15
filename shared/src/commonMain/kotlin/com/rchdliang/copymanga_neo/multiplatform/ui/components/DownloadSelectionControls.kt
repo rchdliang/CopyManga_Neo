@@ -116,7 +116,7 @@ internal fun DownloadSelectionTopBar(
                     DropdownMenuGroup(
                         shapes = MenuDefaults.groupShape(0, 3)
                     ) {
-                        MenuDefaults.Label {
+                        DownloadMenuGroupLabel {
                             Text(
                                 "选中",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -158,7 +158,7 @@ internal fun DownloadSelectionTopBar(
                     DropdownMenuGroup(
                         shapes = MenuDefaults.groupShape(1, 3)
                     ) {
-                        MenuDefaults.Label {
+                        DownloadMenuGroupLabel {
                             Text(
                                 "取消选中",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

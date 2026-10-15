@@ -60,7 +60,13 @@ kotlin {
             implementation("io.ktor:ktor-client-mock:3.6.0")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         }
-        androidMain.dependencies { implementation("io.ktor:ktor-client-okhttp:3.6.0"); implementation("androidx.core:core-ktx:1.19.1") }
+        androidMain.dependencies {
+            // Compile shared Android UI against the same Material3 ABI packaged by :app.
+            // CMP's transitive alpha22 has experimental methods removed in beta01 (ToggleButton).
+            implementation(libs.androidx.compose.material3)
+            implementation("io.ktor:ktor-client-okhttp:3.6.0")
+            implementation("androidx.core:core-ktx:1.19.1")
+        }
         getByName("desktopMain").dependencies {
             implementation(when (portableDesktopTarget) {
                 null -> compose.desktop.currentOs
@@ -71,6 +77,9 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
             implementation("io.ktor:ktor-client-cio:3.6.0")
             implementation("net.java.dev.jna:jna:5.19.1")
+        }
+        getByName("desktopTest").dependencies {
+            implementation("org.jetbrains.compose.ui:ui-test:1.12.1")
         }
         iosMain.dependencies { implementation("io.ktor:ktor-client-darwin:3.6.0") }
         wasmJsMain.dependencies { implementation("io.ktor:ktor-client-js:3.6.0") }

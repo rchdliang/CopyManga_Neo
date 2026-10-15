@@ -25,6 +25,17 @@ val hasReleaseSigning =
         !keystoreProperties.getProperty(key).isNullOrBlank()
     }
 
+// Only the independent manual CI test build opts in; never fall back to debug keys.
+val useReleaseSigningForTest = providers.gradleProperty("useReleaseSigningForTest")
+    .map(String::toBooleanStrict)
+    .getOrElse(false)
+if (useReleaseSigningForTest) {
+    require(hasReleaseSigning) { "CI test signing requires complete release signing configuration" }
+    require(rootProject.file(keystoreProperties.getProperty("storeFile")).isFile) {
+        "CI test signing requires an existing release keystore"
+    }
+}
+
 val localAppTapString =
     providers.fileContents(rootProject.layout.projectDirectory.file("local.properties"))
         .asText.orElse("").map { text ->
@@ -74,6 +85,9 @@ android {
             // Install beside the daily release without sharing its private app data.
             applicationIdSuffix = ".migrationtest"
             versionNameSuffix = "-migrationtest"
+            if (useReleaseSigningForTest) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             isMinifyEnabled = true

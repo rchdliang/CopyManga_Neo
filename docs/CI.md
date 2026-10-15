@@ -34,7 +34,7 @@ gh workflow run multiplatform-manual.yml --ref YOUR_MIGRATION_BRANCH \
 
 | Selection | Runner | Build/test scope | Artifact |
 | --- | --- | --- | --- |
-| Android | Ubuntu 24.04 x64 | `:app:assembleDebug`, `:app:testDebugUnitTest` | Universal debug APK; JUnit XML/HTML |
+| Android | Ubuntu 24.04 x64 | `:app:assembleDebug`, `:app:testDebugUnitTest` | Universal independent test APK (existing release signer); JUnit XML/HTML |
 | Windows | Windows 2022 x64 | `:shared:desktopTest`, `:desktopApp:test`, `packageMsi`, `packageExe` | MSI and EXE; JUnit XML/HTML |
 | Linux | Ubuntu 24.04 x64 | Same desktop tests under Xvfb, `packageDeb`, `packageRpm` | DEB and RPM; JUnit XML/HTML |
 | Wasm | Ubuntu 24.04 x64 | Node host-logic tests, `:shared:wasmJsBrowserDistribution` (optimized production) | Static browser distribution |
@@ -60,7 +60,15 @@ physical iPhone.
 - Android installs the required SDK packages explicitly. The optional existing
   `COPYMANGA_TAP_STRING` secret is passed only to its build step; missing values
   are supported by the Gradle build, but official-App request mode then remains
-  unavailable. No signing secret is needed for debug builds.
+  unavailable. This manual job also requires the four existing release signing
+  Secrets and passes `-PuseReleaseSigningForTest=true` to sign the independent
+  `.migrationtest` APK consistently. Missing or invalid signing material fails
+  closed. The original release workflow and local default debug signing are
+  unchanged. See [Android test signing and first-install caveat](ANDROID_TEST_BUILD.md).
+  Signing material is restored through step-scoped environment variables, with
+  restrictive file permissions, and removed by an `always()` step before uploads.
+  Configuration caching is explicitly disabled. Dispatch only trusted reviewed
+  refs: the selected repository code runs with access to these existing Secrets.
 - Desktop packaging uses native matching hosts with no foreign-native override.
   Windows exposes the runner's preinstalled WiX 3 tools required by JDK 21
   `jpackage`; Linux installs RPM/fakeroot and Xvfb runtime dependencies. macOS

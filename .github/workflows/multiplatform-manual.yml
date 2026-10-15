@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       android:
-        description: Android debug APK and unit tests
+        description: Independently packaged Android test APK (stable signing) and unit tests
         type: boolean
         default: true
       windows:
@@ -57,11 +57,26 @@ jobs:
       - name: Install pinned Android SDK packages
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0'
+      - name: Check test signing preparation
+        run: python3 -m unittest discover -s tests/ci -p 'test_*.py'
+      - name: Restore existing release signing for independent test APK
+        # Same existing Secrets as android-ci-release.yml; never interpolate into shell.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python3 .github/scripts/prepare-test-signing.py
       - name: Build debug APK and run Android unit tests
         # Optional official-App mode; empty is supported by the app build.
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest -PuseReleaseSigningForTest=true --no-configuration-cache --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Remove ephemeral signing material
+        if: ${{ always() }}
+        run: |
+          rm -f -- "$GITHUB_WORKSPACE/keystore.properties"
+          rm -rf -- "$RUNNER_TEMP/android-test-signing"
       - name: Upload android-debug-apk
         uses: actions/upload-artifact@v6
         with:

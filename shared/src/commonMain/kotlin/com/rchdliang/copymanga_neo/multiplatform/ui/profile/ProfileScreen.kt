@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -59,10 +61,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +77,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.semantics.Role
@@ -621,7 +627,7 @@ private data class ProfileMenuEntry(
 /** 登录表单只校验必填项，保留已有账号的兼容性。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun LoginDialog(
+internal fun LoginDialog(
     isLoading: Boolean,
     error: String?,
     savedUsername: String?,
@@ -631,7 +637,8 @@ private fun LoginDialog(
     onLogin: (String, String, Boolean, Boolean) -> Unit,
     onDismiss: () -> Unit,
     onRegister: () -> Unit = {},
-    onClearError: () -> Unit = {}
+    onClearError: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val usernameState = rememberTextFieldState()
     val passwordState = remember { TextFieldState() }
@@ -639,10 +646,15 @@ private fun LoginDialog(
     var rememberPasswordChecked by remember { mutableStateOf(rememberPassword || autoLogin) }
     var auto by remember { mutableStateOf(autoLogin) }
     var submitted by remember { mutableStateOf(false) }
-    val username = usernameState.text.toString().trim()
-    val password = passwordState.text.toString()
-    val usernameError = if (submitted && username.isBlank()) "请输入账号" else null
-    val passwordError = if (submitted && password.isBlank()) "请输入密码" else null
+    // Subscribe to validation transitions, not every keystroke in the dialog layout.
+    val usernameError = remember {
+        derivedStateOf { if (submitted && usernameState.text.isBlank()) "请输入账号" else null }
+    }.value
+    val passwordError = remember {
+        derivedStateOf { if (submitted && passwordState.text.isBlank()) "请输入密码" else null }
+    }.value
+    val formScrollState = rememberScrollState()
+    var formViewportHeight by remember { mutableStateOf(0) }
 
     ActiveRouteLaunchedEffect(Unit) {
         if (savedUsername != null && usernameState.text.isEmpty()) {
@@ -657,6 +669,8 @@ private fun LoginDialog(
             .drop(1).collect { onClearError() }
     }
     fun submit() {
+        val username = usernameState.text.toString().trim()
+        val password = passwordState.text.toString()
         submitted = true
         if (!isLoading && username.isNotBlank() && password.isNotBlank()) {
             onLogin(username, password, rememberPasswordChecked, auto)
@@ -664,19 +678,29 @@ private fun LoginDialog(
     }
 
     if (LocalRouteActive.current) AlertDialog(
+        modifier = modifier,
         onDismissRequest = { if (!isLoading) onDismiss() },
-        icon = {
-            Icon(
-                Icons.AutoMirrored.Outlined.Login, contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-        },
-        title = { Text("登录账号", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column(
-                Modifier.verticalScroll(rememberScrollState()),
+                Modifier
+                    .onSizeChanged { formViewportHeight = it.height }
+                    .verticalScroll(formScrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // In a short window with the IME open, fixed icon/title slots can leave
+                // less than one text field of usable height. Scroll them with the form;
+                // the action buttons remain fixed and cursor relocation stays enabled.
+                Icon(
+                    Icons.AutoMirrored.Outlined.Login, contentDescription = null,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "登录账号",
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.headlineSmall
+                )
                 Text(
                     "登录当前模式。登录另一模式后，原会话会失效。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -701,6 +725,7 @@ private fun LoginDialog(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .keepLoginFieldVisible(formViewportHeight)
                         .semantics { contentType = ContentType.Username },
                     enabled = !isLoading
                 )
@@ -736,6 +761,7 @@ private fun LoginDialog(
                     onKeyboardAction = { submit() },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .keepLoginFieldVisible(formViewportHeight)
                         .semantics { contentType = ContentType.Password },
                     enabled = !isLoading
                 )
@@ -801,6 +827,25 @@ private fun LoginDialog(
             }
         }
     )
+}
+
+/** Cursor relocation alone can leave the field decoration clipped after the IME resizes a window. */
+@Composable
+private fun Modifier.keepLoginFieldVisible(viewportHeight: Int): Modifier {
+    val requester = remember { BringIntoViewRequester() }
+    var focused by remember { mutableStateOf(false) }
+    var fieldHeight by remember { mutableStateOf(0) }
+    LaunchedEffect(focused, viewportHeight, fieldHeight) {
+        // Keep normal cursor scrolling when even a whole field cannot fit. Never scroll on text
+        // changes: only focus, actual viewport resizing or validation decoration resizing matters.
+        if (focused && fieldHeight > 0 && viewportHeight >= fieldHeight) {
+            requester.bringIntoView()
+        }
+    }
+    return this
+        .bringIntoViewRequester(requester)
+        .onFocusChanged { focused = it.isFocused }
+        .onSizeChanged { fieldHeight = it.height }
 }
 
 /** 整行可切换，Checkbox 不单独消费点击，避免重复触发及重复无障碍节点。 */

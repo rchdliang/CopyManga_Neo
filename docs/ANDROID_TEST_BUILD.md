@@ -14,11 +14,32 @@ settings, login and downloads start separately; it does not migrate the original
 app's private data. Saved images in `Pictures/CopyManga Neo`, exported files and user-selected
 shared folders are not isolated: choose a separate test export folder to avoid affecting daily files.
 
-Normal Android debug signing is used. Do not commit or distribute a keystore.
-Updating this test app in place requires the same package and signing certificate;
-a build from another machine or fresh CI runner may require uninstalling only the
-test app first, which removes its private data. Back up anything needed first.
-Do not uninstall the daily original app to install this test build.
+Local builds keep normal Android debug signing. The manual Android CI job opts
+into the repository's existing release signing configuration with
+`-PuseReleaseSigningForTest=true`; the package remains `.migrationtest`. The flag
+fails configuration if signing properties are incomplete or the keystore is
+missing, and invalid credentials fail signing rather than falling back to a
+random runner debug certificate. Ordinary release behavior is unchanged.
+
+The manual workflow uses the same existing `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`
+Secrets as the existing release workflow. No new key or Secret is needed. The
+helper reads Secrets only from step-scoped environment variables, uses restrictive
+file permissions and Java-properties escaping, and logs no secret values. The
+keystore lives in the disposable runner's temporary directory; an `always()` step
+removes it and the properties file before artifact uploads. Configuration cache
+is disabled for this build; uploads are limited to APKs and test reports. Never
+commit, upload as an artifact, print, or distribute signing material. Only dispatch
+this signing workflow against trusted, reviewed repository code.
+
+Updating this test app in place requires the same package and signing certificate.
+The first transition from an older debug-signed test APK to the CI release-signed
+test APK may require uninstalling only the test app, which removes its private
+data. Back up anything needed first. Subsequent CI test APKs use the same existing
+certificate and can update in place while that signing key is unchanged and
+Android version/update requirements are satisfied. Switching back to a locally
+debug-signed build can again require a test-app reinstall. Do not uninstall the
+daily original app to install this test build.
 
 ## Verification
 
@@ -27,8 +48,20 @@ badging app-debug.apk` and `aapt2 dump xmltree app-debug.apk --file
 AndroidManifest.xml`. Check the package, label, version suffix and provider
 `com.rchdliang.copymanga_neo.migrationtest.reader.images`. Check that the launcher
 alias resolves to the existing `AndroidSharedActivity` class and that download /
-export services and notification receiver remain non-exported. Verify its debug
+export services and notification receiver remain non-exported. Verify its signing
 certificate with SDK `apksigner verify --print-certs app-debug.apk`.
+
+For CI artifacts, compare the signer SHA-256 fingerprint to a trusted existing
+release APK or a previously verified CI test APK. Do not infer stable signing
+from the filename alone. Real-secret restoration and an actual CI-signed APK have
+not been exercised locally; local validation uses synthetic non-key bytes only.
+Run `python3 -m unittest discover -s tests/ci -p 'test_*.py'` for the secret-free
+preparation and workflow regression checks. On 2026-10-15, all five checks and
+`actionlint` passed; Gradle with the signing flag and absent release properties
+failed with the intended configuration error. The default local
+`assembleDebug testDebugUnitTest` build still passed after this change (existing
+compile/test outputs were up to date). No CI dispatch or real-key signing was
+performed for these checks.
 
 On a device, keep the original installed, install the test APK and check:
 
@@ -63,3 +96,21 @@ Compose resources and AndroidX Startup provider authorities also use the test
 package. `apksigner verify --print-certs` passed with an Android Debug certificate.
 These are build/artifact checks only; coexistence and service behavior on a real
 Android device remain to be checked.
+
+## Small-window login regression check
+
+Use dummy credentials; no real login is needed to check the layout. In a floating
+window or split screen, focus the account field, enter text, then move to the
+password field with the IME open. Shrink the window again while password remains
+focused. Type and delete several characters, toggle password visibility, and
+scroll down to the remember/auto-login options. Check that the focused field stays
+visible, typing does not jerk the form, and the fixed Cancel/Login actions remain
+reachable. Also check a normal-height window and close/reopen the dialog.
+
+`LoginDialogScrollTest` runs the shared dialog offscreen at 400, 300 and 250 pixels
+of height, checks per-frame typing/deletion stability and focus, reduces an already
+focused dialog's height constraint, and checks IME submission and edited-password retry callbacks.
+The original fixed header left only 41 pixels for a 64-pixel field at the smallest
+size. The header now scrolls with the form; full-field relocation runs on focus or
+viewport/field size changes, not on each keystroke. These host tests do not emulate
+Android's actual IME animation or establish that a device-specific jitter is fixed.

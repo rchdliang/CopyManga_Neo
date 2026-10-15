@@ -1,6 +1,6 @@
 package com.rchdliang.copymanga_neo.data.remote
 
-/** 仅放行抓包已确认的业务校验 210，其余 210 继续由风控闸门处理。 */
+/** 仅放行明确的业务校验 210，其余 210 继续由风控闸门处理。 */
 internal object ApiBusinessErrors {
     fun isValidation(path: String, message: String?): Boolean {
         val text = message ?: return false
@@ -8,6 +8,8 @@ internal object ApiBusinessErrors {
             return com.rchdliang.copymanga_neo.domain.model.DownloadQuotaPolicy.isExhausted(text)
         }
         return when (path) {
+            "/api/v3/login" ->
+                com.rchdliang.copymanga_neo.domain.model.LoginValidationPolicy.isPasswordError(text)
             "/api/v3/member/update/info" -> listOf(
                 "用户頭像30天只能修改一次", "用户头像30天只能修改一次",
                 "用戶頭像30天只能修改一次"
