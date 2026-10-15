@@ -9,7 +9,63 @@ The Android UI and domain implementation now live in the shared module. Android 
 
 No production credentials or signing keys belong in this repository. `COPYMANGA_TAP_STRING` remains supplied externally. This snapshot does not include uncommitted changes on the user's PC. See BUILDING.md and IOS_BROWSER.md for configuration; browser and mobile-bundle constants are not secret storage.
 
-## Current validated code checkpoint: 518062a (2026-10-15)
+## Current native CI verification: a0d7e18 / c5f3dd68 (2026-10-15)
+
+Local source **a0d7e185f1811ccd14016c96c05febe93df54f5a** and published
+**c5f3dd681258e1ce3bf2074ff46c0f098919f7cd** have the same file tree. All five
+configured target jobs have successful CI evidence, across the two runs below;
+this is build/test/package verification, not full migration or runtime acceptance.
+
+- [Windows run 38728360827](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38728360827)
+  at `c5f3dd68` passed **387 tests in 76 JUnit suites**, with zero failures,
+  errors or skipped tests. `createRuntimeImage`, `packageMsi` and `packageExe`
+  succeeded on Windows. The [verified MSI/EXE artifact](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38728360827/artifacts/11970037211)
+  expires **2026-10-22**. The EXE has no Authenticode signing certificate.
+  Installation and GUI launch were not tested.
+- [Run 38726264087](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38726264087)
+  at earlier published `e546` passed the Android, Linux, Wasm and iOS simulator
+  jobs. Android's CI unit-test step passed; the **107-test count** is separately
+  verified by the local Android run, not an inferred CI XML count. iOS built an
+  **unsigned ARM64 simulator application with Xcode**, beyond the earlier KLIB
+  checks; no simulator launch, physical-device IPA or signing is claimed.
+- That earlier run's Windows job passed 386/387 tests and produced no installer.
+  The failure was a URI-path alias assertion; `a0d7e18` / `c5f3dd68` changes only
+  that test, so the four earlier successful jobs cover the same production code.
+  Current local Linux-host desktop tests also passed all 387 cases.
+
+The production Windows export fix (`21f4621`) addresses JDK attributes returning
+null `fileKey`: it queries a file handle for volume identity and the full 128-bit
+file ID rather than trusting size/timestamps alone. It retains changed-file,
+ordinary-file and no-reparse-point protections and fails closed if identity is
+unavailable. The later assertion fix compares filesystem identity across Windows
+URI aliases without weakening those production guards.
+
+The Android debug app (`30fb574`) uses
+`com.rchdliang.copymanga_neo.migrationtest` and **CopyManga Neo 测试版**, leaving the
+daily app's identity unchanged. See ANDROID_TEST_BUILD.md for data separation,
+shared export-directory limits and debug-signature compatibility. Local and CI
+debug certificates differ; do not promise in-place updates between those APKs.
+
+| Windows native installer | Bytes | SHA-256 |
+| --- | ---: | --- |
+| MSI | 116,570,868 | `c0fd271e253a1ac76b3319233edb95aedd93ae3f3735ad1153631e7bb012f3a8` |
+| EXE | 117,172,736 | `e3877e62f87481c7cbd2aa2d72421e242f2e92aa7eafd3b4da40791a1aa61105` |
+
+Current CI downloads: [Android](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38726264087/artifacts/11968473913),
+[Linux](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38726264087/artifacts/11967549408),
+[Wasm](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38726264087/artifacts/11968409337),
+[iOS simulator](https://github.com/rchdliang/CopyManga_Neo/actions/runs/38726264087/artifacts/11969610040).
+The separate portable Windows JARs built at `30fb574` each passed 17 structural
+checks against 93 inputs; they still require matching external JDK 21. Older
+Linux/Wasm packages at `518062a` are historical, not these current CI artifacts.
+
+Remaining acceptance includes application GUI/install flows, real-account network
+and reader/download/export behavior, Android real-device coexistence, iOS physical
+device signing/runtime, and browser permissions/CORS. Non-Android Wi-Fi binding
+and iOS/browser background-transfer differences remain documented limitations.
+All checkpoint sections and hashes below are historical unless explicitly reused.
+
+## Earlier validated code checkpoint: 518062a (2026-10-15)
 
 Checkpoint **518062a** corrects two portable search/discovery compact-layout
 initial defaults from `true` to Android's baseline `false`. Three regression

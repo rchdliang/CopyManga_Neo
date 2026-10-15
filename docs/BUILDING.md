@@ -12,6 +12,20 @@ This project is an in-progress migration pinned to original commit `466cef7c6acd
 
 Set `sdk.dir` in untracked `local.properties` or `ANDROID_HOME`. Supply `COPYMANGA_TAP_STRING` externally when testing official-App request mode. Never commit this value, signing keys, credentials, or your local SDK path.
 
+## Current CI build and packaging evidence (2026-10-15)
+
+At published `c5f3dd68` (same source tree as local `a0d7e18`), Windows CI passed
+all 387 desktop tests and built the runtime image, MSI and EXE. The EXE is unsigned
+(no Authenticode certificate); neither installer execution nor application GUI
+launch was tested. The four other target jobs passed at preceding `e546`, whose
+production code is unchanged by the later test-only URI-alias correction.
+Android's CI unit-test step passed; the separately verified local suite has 107
+tests. The iOS result is an unsigned ARM64 simulator **Xcode application build**,
+not just KLIB compilation, but is not a physical-device IPA or runtime result.
+See MIGRATION_STATUS.md for run/artifact links, installer checksums and remaining
+acceptance requirements. Current Android debug builds are isolated from the daily
+app; see ANDROID_TEST_BUILD.md before installing or mixing debug-signature sources.
+
 ## Restored validation environment (2026-10-15)
 
 Checkpoint `518062a` was validated with official-checksum-verified Gradle 9.6.0
@@ -206,7 +220,7 @@ not prove Windows launch, rendering, clipboard, tray, network binding or native
 file-dialog behavior. Those remain Windows runtime acceptance checks; MSI/EXE
 creation still requires Windows.
 
-### Current portable verification boundary
+### Earlier portable verification boundary: 518062a
 
 Windows x64 and ARM64 portable packaging now pass through production commit
 `518062a`, including the desktop text-share cancellation and portable layout-default

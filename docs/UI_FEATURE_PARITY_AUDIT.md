@@ -6,6 +6,23 @@ This is **not** a device/browser parity sign-off. Later integrated verification 
 
 Paths below are relative to the original `app/src/main/java/com/rchdliang/copymanga_neo/` and migrated `shared/src/.../kotlin/com/rchdliang/copymanga_neo/` trees.
 
+## Latest integrated verification (2026-10-15)
+
+Windows CI at published `c5f3dd68` (local `a0d7e18`, identical file tree) passed
+387 tests in 76 suites with no failures/errors/skips, then built MSI/EXE installers.
+The EXE is unsigned; installer execution and GUI flows remain untested. Android,
+Linux, Wasm and unsigned ARM64 iOS simulator Xcode application builds passed in
+the preceding CI run with the same production code. Android's local suite passed
+107 tests; its CI unit-test step also passed without a separately verified XML
+count here. See MIGRATION_STATUS.md for exact runs, artifacts and checksums.
+
+The Windows production export correction handles null JDK `fileKey` using full
+handle-based file identity, preserving replacement/reparse-point guards. The only
+subsequent change fixes a test's comparison across Windows URI aliases; the native
+387-test pass includes that correction. These results do not establish GUI,
+real-account behavior, Android-device coexistence or iOS physical-device signing
+and runtime. Earlier counts below remain scoped to their historical checkpoints.
+
 ## Coverage checked
 
 All 92 original UI source files have shared counterparts. `ui/util/CompactLocale.kt` moved to `multiplatform/ui/components/CompactLocale.kt`; no original UI file is omitted. The shared UI tree has additional capability/DI adapters. File presence alone does not prove behavior.
@@ -50,7 +67,7 @@ The primary screen bodies were retained, with constructor-injected real reposito
 - **Back/lifecycle ownership:** the outer host now uses one authoritative NavController with opaque route IDs and retained payload/model/picker identity. Native inputs still enter the pinned shared dispatcher; the standalone framework bridge preserves nested handler priority. Real previous-route composition and shared-cover seeking replace the inert snapshot transform. Committed-active lifecycle/effect and cache-only image gates prevent preview replay; cancellation preserves route and reader-local state, while legitimate framework pause/flush is allowed. Six focused framework/component tests passed, including geometry, saved-state restoration and rapid-pop cleanup. See `PREDICTIVE_BACK.md`; actual Android/Windows application acceptance remains deferred.
 
 - **Browser action outcomes:** prepared save/share/link/clipboard/fullscreen actions use an explicit fresh-click gate, with retry and disposal cleanup. Notification settings allow explicit permission retry and explain already granted/blocked permissions. Cancelled image SAVE resets the retained model to idle; cancelled credential copy no longer reports successful copying; cancelled clipboard reading remains null. Synthetic adapter cases cover these paths. They do not establish real-browser activation behavior.
-- **iOS back input:** the Swift host connects leading-edge gestures and hardware Escape to the shared dispatcher, respects RTL, excludes native modal presentation, and cancels on lifecycle interruption. Native compilation/device gesture arbitration and keyboard responder behavior still need verification for this new bridge.
+- **iOS back input:** the Swift host connects leading-edge gestures and hardware Escape to the shared dispatcher, respects RTL, excludes native modal presentation, and cancels on lifecycle interruption. The unsigned ARM64 simulator Xcode application now builds; device gesture arbitration and keyboard responder behavior still need runtime verification.
 
 The fresh detail/novel/reader comparison found no additional independently confirmed missing chapter, bookmark, favorite, progress or theme action. That is a bounded source-review result, not proof that all user paths are correct.
 
@@ -60,7 +77,7 @@ The fresh detail/novel/reader comparison found no additional independently confi
 - **Background transfer lifetime:** original `data/download/DownloadService.kt:58-105` runs a foreground service, wake lock and progress/action notifications. Desktop transfers last for the app scope; iOS/browser transfers require foreground/visible state. iOS/browser background schedulers and equivalent notification actions are not implemented. Android retains its original service adapter.
 - **Browser capabilities and credentials:** file save/export requires File System Access and a valid retained grant; sharing/clipboard require the corresponding Web APIs, secure context and applicable user activation. Unsupported capabilities fail visibly. Browser networking supports SYSTEM proxy only and remains subject to CORS; transport uses omitted ambient credentials/manual redirects and explicit app tokens. Browser login tokens/passwords remain session-memory-only because a secure persistent credential store is unavailable, so durable auto-login is not equivalent to native secure storage.
 - **Provider permissions and cleanup:** iOS/browser grants may be revoked or unavailable after restart. Those operations require re-selection or report manual cleanup rather than pretending to have saved/deleted data. iOS single-file retries without live reservation also require re-selection.
-- **Runtime and distribution verification:** Windows tray/dialog/package integration needs Windows; iOS needs macOS/Xcode and simulator/device validation; browser CORS, user activation, filesystem permission and persistence behavior need a real browser. The user deferred actual browser execution. Source compilation, Node fixtures and offscreen rendering do not establish these runtime outcomes.
+- **Runtime and distribution verification:** Windows native tests and MSI/EXE builds now pass, but tray/dialog/installer interaction remains untested. The iOS simulator Xcode build passes, but simulator/device execution and physical-device signing remain unverified; browser CORS, user activation, filesystem permission and persistence behavior need a real browser. The user deferred actual browser execution. Source compilation, Node fixtures and offscreen rendering do not establish these runtime outcomes.
 
 ## Practical acceptance checks still required
 
