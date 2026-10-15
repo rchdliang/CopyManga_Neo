@@ -3,12 +3,20 @@ package com.rchdliang.copymanga_neo.data.local
 import com.rchdliang.copymanga_neo.domain.model.ReadingProgress
 import com.rchdliang.copymanga_neo.domain.model.ReadingProgressSnapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -19,6 +27,7 @@ import org.junit.Test
 import java.io.IOException
 
 /** 验证仓库实际使用的加载流，包括失败、重试与账号隔离。 */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ReadingProgressLoaderTest {
     private val record = ReadingProgress("c", "章节", "default", 10, false)
 
@@ -71,7 +80,7 @@ class ReadingProgressLoaderTest {
     }
 
     @Test
-    fun failedReadySnapshotEndsReaderAndBackupWait() = runBlocking {
+    fun failedReadySnapshotEndsReaderAndBackupWait() = runTest {
         val state = MutableStateFlow(
             ReadingProgressSnapshot(
                 "guest",
@@ -80,17 +89,50 @@ class ReadingProgressLoaderTest {
                 loadVersion = 3
             )
         )
+        // Virtual time keeps class loading / runner scheduling outside the 10 ms budget.
         assertEquals(state.value, awaitReadingProgress(state, "guest", 3, 10))
+        assertEquals(0L, currentTime)
     }
 
     @Test
-    fun switchedOwnerOrStalledLoadHasBoundedVisibleTimeout() = runBlocking {
+    fun switchedOwnerOrStalledLoadHasBoundedVisibleTimeout() = runTest {
         val state = MutableStateFlow(ReadingProgressSnapshot("user:b"))
         val result = awaitReadingProgress(state, "guest", 4, 5)
+        assertEquals(5L, currentTime)
+        assertEquals("guest", result.owner)
+        assertEquals(4L, result.loadVersion)
+        assertEquals("阅读进度读取超时，请重试", result.error)
         assertTrue(result.isReady); assertNotNull(result.error); assertEquals(
         "user:b",
         state.value.owner
     )
+    }
+
+    @Test
+    fun waitRejectsWrongOwnerOldVersionAndNotReadyUntilMatchingSnapshot() = runTest {
+        val state = MutableStateFlow(ReadingProgressSnapshot("user:b", isReady = true, loadVersion = 4))
+        val expected = ReadingProgressSnapshot("guest", mapOf("book" to record), isReady = true, loadVersion = 4)
+        launch {
+            delay(1)
+            state.value = ReadingProgressSnapshot("guest", isReady = true, loadVersion = 3)
+            delay(1)
+            state.value = ReadingProgressSnapshot("guest", isReady = false, loadVersion = 4)
+            delay(1)
+            state.value = expected
+        }
+        assertEquals(expected, awaitReadingProgress(state, "guest", 4, 5))
+        assertEquals(3L, currentTime)
+    }
+
+    @Test
+    fun cancelledWaitDoesNotReturnTimeoutOrReadFailure() = runTest {
+        val state = MutableStateFlow(ReadingProgressSnapshot("guest"))
+        val waiting = async { awaitReadingProgress(state, "guest", 4, 5) }
+        runCurrent()
+        assertFalse(waiting.isCompleted)
+        waiting.cancelAndJoin()
+        assertTrue(waiting.isCancelled)
+        assertEquals(0L, currentTime)
     }
 
     @Test

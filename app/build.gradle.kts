@@ -142,6 +142,7 @@ hilt {
 dependencies {
     implementation(project(":shared"))
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)
