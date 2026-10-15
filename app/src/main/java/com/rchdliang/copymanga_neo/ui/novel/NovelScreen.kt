@@ -451,7 +451,7 @@ private fun NovelDetailContent(
         CommentsDialog(
             target = CommentTarget(CommentKind.NOVEL, book.uuid),
             title = book.name,
-            postingAllowed = false,
+            postingAllowed = true,
             onDismiss = { showComments = false }
         )
     }

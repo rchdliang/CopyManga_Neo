@@ -342,7 +342,9 @@ class CommentsViewModel @Inject constructor(
 
     /** 直接打开输入面板时保留列表位置，并按回复对象隔离草稿。 */
     fun startReply(comment: MangaComment) {
-        if (state.value.posting || state.value.target?.kind != CommentKind.COMIC) return
+        val current = state.value
+        val kind = current.target?.kind ?: return
+        if (current.posting || !current.postingAllowed || kind == CommentKind.CHAPTER) return
         saveDraft()
         state.update {
             it.copy(

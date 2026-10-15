@@ -157,6 +157,7 @@ class CommentRepositoryImpl @Inject constructor(
                 headers = CommentApiService.reportHeaders(mode == RequestMode.OFFICIAL_APP),
                 requestMode = mode
             )
+
             CommentKind.COMIC -> api.reportComment(
                 target.id,
                 commentId,
@@ -226,6 +227,7 @@ class CommentRepositoryImpl @Inject constructor(
                 target.id, replyId.orEmpty(), offset,
                 if (appMode) limit.coerceAtMost(10) else limit, headers = headers
             )
+
             CommentKind.COMIC -> api.comicComments(
                 target.id,
                 replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
@@ -272,7 +274,6 @@ class CommentRepositoryImpl @Inject constructor(
         replyId: String?
     ): Result<Unit> = result {
         require(target.id.isNotBlank()) { "评论标识无效" }
-        require(target.kind != CommentKind.NOVEL) { "小说评论暂仅支持查看和举报" }
         require(CommentText.isValid(content)) { "评论需要 3～200 个字" }
         val token = auth.getTokenSync()?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("请先登录后发表评论")
@@ -280,11 +281,19 @@ class CommentRepositoryImpl @Inject constructor(
         val networkGeneration = networkSettings.generation
         // 固定本次操作的账号，排队期间切换登录也不会改用其他人的 Token。
         val mode = networkSettings.settings.value.requestMode
-        val appMode = networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
+        val appMode = mode == RequestMode.OFFICIAL_APP
         val headers = CommentApiService.postHeaders(appMode)
         require(target.kind != CommentKind.CHAPTER || replyId.isNullOrBlank()) { "章节吐槽不支持回复" }
         val response = when (target.kind) {
-            CommentKind.NOVEL -> error("小说评论暂不支持发表")
+            CommentKind.NOVEL -> api.postNovelComment(
+                target.id,
+                content.trim(),
+                replyId?.takeIf { it.isNotBlank() }.orEmpty(),
+                "Token $token",
+                headers = headers,
+                requestMode = mode
+            )
+
             CommentKind.COMIC -> api.postComicComment(
                 target.id,
                 content.trim(),

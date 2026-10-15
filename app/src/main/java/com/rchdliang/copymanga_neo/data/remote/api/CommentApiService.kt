@@ -12,7 +12,7 @@ import retrofit2.http.HeaderMap
 import retrofit2.http.POST
 import retrofit2.http.Query
 
-/** 漫画评论与章节吐槽分别使用官方接口；读取不依赖登录。 */
+/** 漫画、整本小说评论与章节吐槽分别使用对应接口；读取不依赖登录。 */
 interface CommentApiService {
     @GET("api/v3/bookcomments")
     suspend fun novelComments(
@@ -22,6 +22,18 @@ interface CommentApiService {
         @Query("limit") limit: Int = 20,
         @HeaderMap headers: Map<String, String> = headers()
     ): Response<CommentResponseDto>
+
+    /** 整本小说发表与回复共用接口；顶层也保留空 reply_id 字段。 */
+    @FormUrlEncoded
+    @POST("api/v3/member/bookcomment")
+    suspend fun postNovelComment(
+        @Field("book_id") bookId: String,
+        @Field("comment") content: String,
+        @Field("reply_id") replyId: String,
+        @Header("Authorization") authorization: String,
+        @HeaderMap headers: Map<String, String>,
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode
+    ): Response<CommentPostResponseDto>
 
     @GET("api/v3/bookcomment/config")
     suspend fun novelReportConfig(
