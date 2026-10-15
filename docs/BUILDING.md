@@ -7,9 +7,29 @@ This project is an in-progress migration pinned to original commit `466cef7c6acd
 - Gradle wrapper 9.6.0
 - Kotlin 2.4.20, Compose Multiplatform 1.12.1
 - Android SDK platform 37.0 / Build-Tools 37.0.0 for Android
-- Node.js and Yarn Classic 1.22.x on PATH for Wasm bundling (verification uses Node 26.2.0). Automatic distribution downloads are disabled to preserve the settings-level repository policy. Override executables with `-Pcopymanga.nodeCommand=/path/to/node` and `-Pcopymanga.yarnCommand=/path/to/yarn` if needed.
+- Binaryen 130 `wasm-opt` on PATH for optimized Wasm production builds (the Kotlin 2.4.20 default version). Automatic download is disabled because it adds a project Ivy repository that conflicts with `FAIL_ON_PROJECT_REPOS`. Override the executable with `-Pcopymanga.binaryenCommand=/path/to/wasm-opt`.
+- Node.js and Yarn Classic 1.22.x on PATH for Wasm bundling (latest restored validation uses Node 24.19.0 and Yarn 1.22.22). Automatic distribution downloads are disabled to preserve the settings-level repository policy. Override executables with `-Pcopymanga.nodeCommand=/path/to/node` and `-Pcopymanga.yarnCommand=/path/to/yarn` if needed.
 
 Set `sdk.dir` in untracked `local.properties` or `ANDROID_HOME`. Supply `COPYMANGA_TAP_STRING` externally when testing official-App request mode. Never commit this value, signing keys, credentials, or your local SDK path.
+
+## Restored validation environment (2026-10-15)
+
+Checkpoint `518062a` was validated with official-checksum-verified Gradle 9.6.0
+and Temurin JDK 21.0.7+6. In the restored workspace only,
+`/workspace/shared/copymanga-build-tools/run-gradle` selects those tools, a
+workspace Gradle cache, the existing proxy and Java trust store. It is an
+untracked environment helper, not a portable prerequisite or repository script.
+On another machine, configure the toolchain above and use `./gradlew` normally.
+Do not copy proxy credentials or machine-specific paths into the repository.
+
+The serial desktop gate is `:shared:desktopTest :desktopApp:compileKotlin
+-PenableAndroid=false --max-workers=1 -Pkotlin.incremental=false`; it passed
+382 tests and application compilation. The Android gate is `:app:assembleDebug
+:app:testDebugUnitTest --max-workers=1 -Pkotlin.incremental=false`; it passed
+assembly and 105 tests with SDK platform 37.0 revision 2 / Build-Tools 37.0.0.
+For the restored workspace, Android used `ANDROID_HOME` pointing to the helper's
+sibling `android-sdk` directory and `ANDROID_USER_HOME` to `android-home`.
+These build/test results do not establish device or Windows-native acceptance.
 
 ## Commands
 
@@ -28,6 +48,19 @@ Android now launches the shared Compose UI while retaining its original native d
 The iOS project and browser runtime configuration are documented in [IOS_BROWSER.md](IOS_BROWSER.md). Android Studio can open this project root, select the `app` run configuration and deploy to a connected Android device after SDK/Gradle sync. Actual device operation is still an acceptance step; see the verification report.
 
 If Kotlin incremental compilation reports an internal dirty-symbol/classpath error after this structural migration, rerun the affected task with `-Pkotlin.incremental=false`. The final verification used that flag and `--max-workers=1`; it is not a suppression of compiler diagnostics or failed tests.
+
+## Linux package validation
+
+At `518062a`, Linux x64 portable-JAR and self-contained app-image packaging reran
+and passed in 24s. The portable JAR passed 21 structural checks against 93 inputs;
+the app image passed six structural checks and its archive preserved executable
+modes. Runtime modules were byte-identical to the earlier `a5c37c5` image; the
+non-GUI runtime probe was not rerun. That earlier probe passed 21 module, charset,
+crypto, trust, class and resource checks, including full-JDK charset-catalog
+equality. It used copied image runtime modules with the original JDK's Java
+launcher, not the packaged application launcher. No GUI or network was run;
+these results do not validate DEB/RPM installation or native application behavior.
+See MIGRATION_STATUS.md for the refreshed artifact hashes.
 
 ## Desktop application icons
 
@@ -90,6 +123,26 @@ this flag. A Gradle daemon `-D` argument alone is not forwarded to the app. Any 
 other than explicit `true` leaves debug disabled. Omit the override when checking
 release behavior. The same resolved flag drives both About/debug UI metadata and
 novel-position instrumentation. Android continues to supply its own BuildConfig.
+
+## Wasm production tooling and separate invocations
+
+Use local Binaryen 130 `wasm-opt` for production optimization, alongside Node and
+Yarn. The root build disables Binaryen automatic downloads to preserve
+`FAIL_ON_PROJECT_REPOS`; do not relax repository policy to recover that download.
+
+```sh
+./gradlew :shared:wasmJsBrowserDevelopmentWebpack -PenableAndroid=false --max-workers=1
+./gradlew :shared:wasmJsBrowserProductionWebpack -PenableAndroid=false --max-workers=1 -Pcopymanga.binaryenCommand=/path/to/wasm-opt
+```
+
+Run those commands separately. A combined development/production invocation
+failed Gradle 9.6 validation because the webpack tasks share generated npm output;
+separate invocations passed without suppressing validation. If the default Kotlin
+tooling cache is read-only, set `-Pkotlin.user.home=/writable/path/kotlin-home`.
+Use writable Node/Yarn caches as required by the host environment. The latest
+restored validation also used `-Pkotlin.incremental=false` and explicit Node/Yarn
+command overrides. Both webpack bundles passed; dynamic-dependency and production
+asset-size warnings remain. No browser runtime acceptance is implied.
 
 ## Kotlin 2.4.20 Wasm link-cache workaround
 
@@ -156,13 +209,16 @@ creation still requires Windows.
 ### Current portable verification boundary
 
 Windows x64 and ARM64 portable packaging now pass through production commit
-`6040544`, including the focused desktop image/file fixes. Both final JARs passed 26 structural checks against their respective
-93 exact resolved inputs. The checks cover ZIP CRCs/duplicates, the launcher,
-multi-release behavior and module-descriptor removal, Java 21 class versions,
-all three service descriptors/providers, seven Compose resources, the original
-icon, and matching Skiko/JNA PE32+ DLLs. The x64 DLLs use AMD64 `0x8664`; the ARM64
-DLLs use ARM64 `0xaa64`. Skiko's embedded checksum matches its exact DLL bytes.
-See MIGRATION_STATUS.md for artifact sizes, SHA-256 values and build timings.
+`518062a`, including the desktop text-share cancellation and portable layout-default
+fixes. Both final JARs
+passed 23 structural checks against their respective 93 exact resolved inputs.
+The current checks cover ZIP CRCs/duplicates, launcher/manifest, module-descriptor
+removal, Java 21 versions of the checked launcher/platform classes, all three
+service descriptors/providers, seven Compose resources, both multi-release
+entries, original icon, and matching Skiko/JNA PE32+ DLLs. The x64 DLLs use AMD64
+`0x8664`; the ARM64 DLLs use ARM64 `0xaa64`. Skiko's embedded checksum matches its
+exact DLL bytes. This is not a rerun of the older 26-check verifier's full scope.
+See MIGRATION_STATUS.md for current artifact sizes, SHA-256 values and results.
 
 No Windows application or native DLL was executed on Linux. These are external-
 JDK portable JARs, not bundled-runtime packages or installers; native Windows
@@ -175,3 +231,10 @@ Each successful preflight writes its declared resolved-input report beneath
 `desktopApp/build/reports/portable-jar/`: `<target>-flattenJars-inputs.txt`, or
 `host-flattenJars-inputs.txt` without an override. These reports support comparing
 service providers and resources against the packaged output.
+
+## Manual GitHub Actions builds
+
+See [Manual multiplatform CI](CI.md) for opt-in Android, Windows, Linux, Wasm and
+unsigned iOS simulator jobs, their artifacts and validation limits. The workflow
+must first be separately registered on the default branch before a manual run can
+select this migration branch; a branch-only push does not enable it.

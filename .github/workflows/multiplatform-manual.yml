@@ -1,0 +1,264 @@
+name: Multiplatform manual build
+run-name: Manual multiplatform build (${{ github.ref_name }})
+
+# Registration requires this file on the default branch; see docs/CI.md.
+# Deliberately no push, pull_request, tag or release trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      android:
+        description: Android debug APK and unit tests
+        type: boolean
+        default: true
+      windows:
+        description: Windows x64 MSI/EXE and desktop tests
+        type: boolean
+        default: false
+      linux:
+        description: Linux x64 DEB/RPM and desktop tests
+        type: boolean
+        default: false
+      wasm:
+        description: Optimized Wasm browser distribution
+        type: boolean
+        default: false
+      ios:
+        description: iOS ARM64 simulator app (unsigned, build only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-multiplatform-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  android:
+    if: ${{ inputs.android }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Show Java and Gradle versions
+        run: ./gradlew --version
+      - name: Install pinned Android SDK packages
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.0' 'build-tools;37.0.0'
+      - name: Build debug APK and run Android unit tests
+        # Optional official-App mode; empty is supported by the app build.
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Upload android-debug-apk
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-debug-apk-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            app/build/outputs/apk/debug/*.apk
+      - name: Upload android-test-reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-test-reports-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+
+  windows:
+    if: ${{ inputs.windows }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Show Java and Gradle versions
+        run: ./gradlew --version
+      - name: Expose preinstalled WiX 3 tools for JDK 21 jpackage
+        shell: pwsh
+        run: |
+          if (-not $env:WIX) { throw 'WiX 3 installation missing from runner' }
+          $wixBin = Join-Path $env:WIX 'bin'
+          if (-not (Test-Path (Join-Path $wixBin 'candle.exe'))) { throw 'WiX candle.exe missing' }
+          if (-not (Test-Path (Join-Path $wixBin 'light.exe'))) { throw 'WiX light.exe missing' }
+          $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Test desktop and build Windows installers
+        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageMsi :desktopApp:packageExe -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Upload windows-x64-installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64-installers-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/exe/*.exe
+      - name: Upload windows-test-reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-test-reports-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            shared/build/reports/tests/
+            shared/build/test-results/
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
+
+  linux:
+    if: ${{ inputs.linux }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Show Java and Gradle versions
+        run: ./gradlew --version
+      - name: Install Linux packaging and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rpm fakeroot xvfb libgl1 libfontconfig1
+      - name: Test desktop and build Linux installers
+        run: xvfb-run --auto-servernum ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageDeb :desktopApp:packageRpm -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Upload linux-x64-installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-x64-installers-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            desktopApp/build/compose/binaries/main/deb/*.deb
+            desktopApp/build/compose/binaries/main/rpm/*.rpm
+      - name: Upload linux-test-reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-test-reports-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            shared/build/reports/tests/
+            shared/build/test-results/
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
+
+  wasm:
+    if: ${{ inputs.wasm }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Show Java and Gradle versions
+        run: ./gradlew --version
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Install Yarn Classic and checksum-verified Binaryen 130
+        run: |
+          npm install --global yarn@1.22.22
+          archive="$RUNNER_TEMP/binaryen.tar.gz"
+          curl --fail --location --retry 3 'https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz' --output "$archive"
+          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          node --version
+          yarn --version
+          "$RUNNER_TEMP/binaryen-version_130/bin/wasm-opt" --version
+      - name: Test browser activation host logic
+        run: node --test tests/host/browser-activation.test.mjs
+      - name: Build optimized Wasm production distribution
+        # Keep development and production webpack in separate Gradle invocations.
+        run: ./gradlew :shared:wasmJsBrowserDistribution -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Upload wasm-production
+        uses: actions/upload-artifact@v6
+        with:
+          name: wasm-production-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            shared/build/dist/wasmJs/productionExecutable/
+
+  ios:
+    if: ${{ inputs.ios }}
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      # Also reaches the Gradle call made inside the Xcode shell build phase.
+      ORG_GRADLE_PROJECT_enableAndroid: 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Show Java and Gradle versions
+        run: ./gradlew --version
+      - name: Verify ARM64 runner and inspect Xcode project
+        run: |
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          xcodebuild -list -project iosApp/iosApp.xcodeproj
+      - name: Build unsigned ARM64 iOS simulator app
+        run: |
+          xcodebuild -project iosApp/iosApp.xcodeproj -scheme CopyMangaNeo             -configuration Debug -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -derivedDataPath build/ios-simulator             -resultBundlePath build/ios-simulator-build.xcresult             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+      - name: Archive simulator app preserving bundle permissions
+        run: |
+          test -d build/ios-simulator/Build/Products/Debug-iphonesimulator/CopyMangaNeo.app
+          tar -czf build/CopyMangaNeo-ios-simulator-arm64.tar.gz             -C build/ios-simulator/Build/Products/Debug-iphonesimulator CopyMangaNeo.app
+      - name: Upload ios-simulator-arm64
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-simulator-arm64-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            build/CopyMangaNeo-ios-simulator-arm64.tar.gz
+      - name: Upload ios-build-result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-build-result-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            build/ios-simulator-build.xcresult/

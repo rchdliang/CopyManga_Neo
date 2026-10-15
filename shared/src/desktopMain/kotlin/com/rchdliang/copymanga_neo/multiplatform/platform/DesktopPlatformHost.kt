@@ -168,15 +168,16 @@ class DesktopPlatformHost(
             requireGui()
             val mail = Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MAIL)
             val options = if (mail) arrayOf("复制到剪贴板", "用邮件分享", "取消") else arrayOf("复制到剪贴板", "取消")
-            when (JOptionPane.showOptionDialog(owner, text, title, JOptionPane.DEFAULT_OPTION,
-                JOptionPane.PLAIN_MESSAGE, null, options, options[0])) {
-                0 -> Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
-                1 -> if (mail) {
+            performDesktopTextShare(
+                mailAvailable = mail,
+                choose = { JOptionPane.showOptionDialog(owner, text, title, JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.PLAIN_MESSAGE, null, options, options[0]) },
+                copy = { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) },
+                mail = {
                     fun encode(value: String) = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
                     Desktop.getDesktop().mail(URI("mailto:?subject=${encode(title)}&body=${encode(text)}"))
-                } else throw UserActionCancelled()
-                else -> throw UserActionCancelled()
-            }
+                },
+            )
         }
     }
 

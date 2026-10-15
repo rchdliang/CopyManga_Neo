@@ -57,3 +57,5 @@ reasonix.toml
 !/docs/WINDOWS_WIFI_DOWNLOADS.md
 
 !/docs/IOS_BACKGROUND_TRANSFERS.md
+
+!/docs/CI.md

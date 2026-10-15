@@ -12,8 +12,8 @@ import kotlinx.serialization.builtins.ListSerializer
 internal data class AppPreferenceDocument(
     val app: AppSettings = AppSettings(),
     val ranks: HomeRankPreferences = HomeRankPreferences(),
-    val compactSearch: Boolean = true,
-    val compactDiscovery: Boolean = true
+    val compactSearch: Boolean = false,
+    val compactDiscovery: Boolean = false
 )
 
 class PortableAppSettings(storage: DocumentStorage) : AppSettingsRepository {

@@ -9,6 +9,160 @@ The Android UI and domain implementation now live in the shared module. Android 
 
 No production credentials or signing keys belong in this repository. `COPYMANGA_TAP_STRING` remains supplied externally. This snapshot does not include uncommitted changes on the user's PC. See BUILDING.md and IOS_BROWSER.md for configuration; browser and mobile-bundle constants are not secret storage.
 
+## Current validated code checkpoint: 518062a (2026-10-15)
+
+Checkpoint **518062a** corrects two portable search/discovery compact-layout
+initial defaults from `true` to Android's baseline `false`. Three regression
+tests were added. Existing explicit choices remain preserved: storage JSON uses
+`encodeDefaults = true`. This is a source-confirmed preference-default correction,
+not a claim of exhaustive parity. The desktop text-share cancellation correction
+and local Binaryen build configuration from previous checkpoints remain included.
+
+Validation after the default correction:
+
+- **382 shared desktop tests passed**, and desktop application compilation passed.
+- Android debug assembly and **105 Android JVM tests** passed in **1m12s** (8
+  executed / 66 up-to-date tasks; the unit-test task executed). APK ZIP CRCs and
+  v2 signature verification passed.
+- Windows x64 and ARM64 packaging each passed in **26s** (5 executed / 14
+  up-to-date tasks). Packaging/preflight regenerated; desktop compilation reused
+  its already-passed output. Each artifact passed **23 structural checks against
+  93 inputs**, within the verifier scope recorded below.
+- Linux portable-JAR and app-image packaging reran successfully in **24s** (6
+  executed / 17 up-to-date tasks). The JAR passed **21 structural checks / 93
+  inputs**; the app image passed **6 structural checks**, with safe archive paths
+  and executable modes verified. The image contains 209 files / 206,899,358 bytes.
+  The prior 21-check non-GUI runtime probe was **not rerun**; current runtime
+  modules were verified byte-identical to those previously probed.
+- Both iOS Arm64 device/simulator KLIB compile tasks executed and passed in
+  **1m6s** (6 executed / 7 up-to-date tasks). No framework/Xcode linkage or device
+  runtime was tested.
+- Wasm development passed in **1m46s** (7 executed / 22 up-to-date tasks);
+  separate production distribution passed in **3m7s** (8 executed / 23 up-to-date
+  tasks). Linking, Binaryen 130 optimization, webpack and distribution reran.
+  The production ZIP contains 17 files and passed **24 static checks**. Dynamic
+  dependency and asset-size warnings remain; no browser application was run.
+
+| Current artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `CopyMangaNeo-windows-x64-0.10.14.jar` | 92,462,144 | `961e969f5be86cdd9968adbb2e5c832915a07f95911dc07fecc242f5f7868db3` |
+| `CopyMangaNeo-windows-arm64-0.10.14.jar` | 91,623,556 | `bca4bd775ec759eb351ca1e01a9e9e169cddba55c6ccfd2e95c6d9e35b8dd2c9` |
+| `app-debug.apk` | 88,445,141 | `ec5fa4aa47b52460a7b216210b371dcddfd543dd6209919d5bd6a7a718e6ec28` |
+| `CopyMangaNeo-linux-x64-0.10.14.jar` | 94,184,439 | `8b1ad906dac8e619ec09c83cb18973a944bfab8efb20ba31bc56605f52136433` |
+| `CopyMangaNeo-linux-x64-0.10.14-self-contained.tar.gz` | 120,506,588 | `d6f6e762b832f0ffbec9ee462019a817de42b3c80a41a15ada270746ff9baa8e` |
+| `CopyMangaNeo-wasm-production-20261015.zip` | 6,686,887 | `d0d8e7bf783af904023d4fedfead4233766a79881389c7ba4e3f8250e86d9705` |
+
+The final dated source snapshot must include **518062a** and the subsequent
+validation documentation. Earlier snapshots and hashes below are historical.
+No Android device/emulator, Windows/Linux application GUI or browser runtime
+acceptance is claimed. Portable Windows JARs still need matching external JDK 21;
+iOS Swift/Xcode linkage and all documented platform limitations remain deferred.
+
+## Earlier restored validation: 90aaeed (2026-10-15)
+
+Checkpoint **90aaeed** fixes desktop text sharing after caller cancellation: the
+caller must still be active before opening the chooser and again after its modal
+loop returns, before copying text or opening mail. Cancellation and action-failure
+regressions are covered by desktop tests.
+
+Gradle **9.6.0** and Temurin **JDK 21.0.7+6** were restored from official packages
+with matching published checksums. The environment-local helper uses the existing
+proxy, Java trust store and workspace dependency cache; no repository build-script
+change or disabled certificate validation was needed. Android SDK platform 37.0
+revision 2, Build-Tools 37.0.0 and platform tools were restored from official
+packages after SDK license approval.
+
+Fresh validation of this checkpoint:
+
+- **379 shared desktop tests passed**, with no failures/errors/skips; desktop
+  application compilation passed (combined gate: 47s).
+- Android debug assembly and **105 retained Android JVM tests** in 15 suites
+  passed, with no failures/errors/skips (combined gate: 5m31s). Debug APK ZIP
+  integrity and v2 signature verification passed. Two native libraries were
+  packaged unstripped; this warning did not block the build.
+- iOS Arm64 device and Arm64 simulator shared KLIB compilation passed in
+  **1m53s**. This compiles Kotlin libraries only; Swift/Xcode linkage and
+  simulator/device runtime were not tested.
+- Windows x64 and ARM64 portable JARs were rebuilt with the cancellation fix.
+  Each passed **23 structural checks against 93 resolved input JARs**: ZIP CRCs
+  and duplicate entries, launcher/manifest, removal of module descriptors,
+  Java 21 compatibility of the checked launcher/platform classes, all three
+  service descriptors/providers, seven Compose resources, both multi-release
+  entries, original icon, and architecture-matched Skiko/JNA DLLs with the
+  Skiko checksum. This is the current verifier's scope, not a rerun of all 26
+  checks recorded at older checkpoints.
+- A bounded source comparison against original baseline **466cef7** found no
+  new concrete reader regression. It does not establish full behavior parity.
+
+| Current artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `CopyMangaNeo-windows-x64-0.10.14.jar` | 92,462,145 | `976ddf14fc590e7a5cda81d37829b77bed2da0759251bc34e84b09d9612319fb` |
+| `CopyMangaNeo-windows-arm64-0.10.14.jar` | 91,623,557 | `84fe38d49bb0afee631971e7ab13764ef884ead20ebc22d2e8691ee695ac302e` |
+| `app-debug.apk` | 87,722,446 | `2e79bbc0879134a586eda1dace699243de21a10f3361be4476ad3ef5b5975479` |
+
+The source ZIP and Git bundle preserve the **90aaeed** working tree; the bundle
+comes from a shallow reconstruction, lacks earlier upstream history and is not a
+complete-history backup. After cloning, restore the known shallow boundary
+`4aa51451db943c6b98b30bc623e63402b1a1a4c4` in the clone's Git shallow file; this
+procedure passed `git fsck --full`, history traversal and clean-worktree checks.
+Without that metadata, ordinary fetch into an empty repository and traversal
+into missing parents can fail. The ZIP is the source-only fallback. Later
+documentation updates are separate from those
+immutable source snapshots. These Windows JARs require
+an external, architecture-matched JDK 21; they have no bundled runtime and are
+not MSI/EXE installers. No Android device/emulator or native Windows application
+was run. The post-checkpoint Wasm build follow-up is recorded below. Native
+acceptance, iOS Swift/Xcode linkage and documented platform
+limitations remain deferred. This is not full parity or release acceptance.
+
+### Wasm build follow-up: a5c37c5
+
+Validated code checkpoint **a5c37c5** adds the build-configuration correction below.
+The development webpack bundle and optimized production webpack bundle now pass.
+The production build exposed Binaryen's automatic project Ivy repository, which
+conflicted with the existing `FAIL_ON_PROJECT_REPOS` policy. A minimal root
+`build.gradle.kts` change disables that tool download and selects local `wasm-opt`
+through `copymanga.binaryenCommand`, matching the Node/Yarn tool pattern. The
+repository policy remains unchanged. This build-configuration follow-up is not
+included in the immutable source ZIP/bundle named `90aaeed`; use the final dated
+source snapshot containing `a5c37c5` and these documentation updates.
+
+The validated tools were Node **24.19.0**, Yarn **1.22.22** and official Binaryen
+**130**. A writable `kotlin.user.home` resolves the restored environment's
+read-only default tooling-cache path. Development webpack passed; production
+executable linking and Binaryen optimization executed successfully, and the
+separate production webpack invocation passed in **18s**. Run development and
+production webpack in separate Gradle invocations: combining them exposed a
+Gradle 9.6 shared-npm-output implicit-dependency validation failure, which was
+not suppressed. Development reported one dynamic-dependency warning; production
+reported four warnings including dynamic-dependency and asset/entry-size warnings.
+No browser application was executed. These are bundle/build results, not browser
+runtime, CORS, text rendering or cross-platform parity acceptance.
+
+### Linux packaging follow-up: a5c37c5
+
+Linux x64 portable JAR and self-contained application-image builds passed in
+**1m36s**. The portable JAR passed **21 structural checks against 93 inputs**.
+The application image contains 209 files / 206,899,356 bytes; dependency,
+launcher/configuration/icon and extracted Skiko native-resource checks passed.
+The compressed archive preserves all image files and executable modes.
+
+A non-GUI probe passed **21 runtime checks**, including GBK/GB18030/MS936/MS950,
+equality with the full JDK's charset catalog, required modules, EC/TLS, 150 trust
+anchors, application/JNA class lookup and icon resources. The probe used a copy
+of the image runtime with byte-identical modules and the original JDK's Java
+launcher; it did not run the packaged application launcher, UI or network.
+No DEB/RPM installer or native GUI acceptance is claimed. Existing platform and
+deprecation warnings remain. Windows JAR hashes were unchanged by these builds.
+
+| Linux artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `CopyMangaNeo-linux-x64-0.10.14.jar` | 94,184,440 | `b88aa22588afd421f3ae6698f8e37dc6008e3fcd17c332bd91117bdd496b3c8d` |
+| `CopyMangaNeo-linux-x64-0.10.14-self-contained.tar.gz` | 120,503,221 | `7cdaa152fe65c8879445a4c75e040c5b28294a2c52cd78bc573b888aacb8bf0e` |
+
+All checkpoint sections below are historical; current artifact hashes and
+validation scope are those above.
+
 ## Desktop image/file parity follow-up (2026-10-15)
 
 Production commit **6040544** adds three bounded, source-confirmed corrections:

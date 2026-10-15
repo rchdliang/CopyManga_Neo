@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec
+import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenEnvSpec
+import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnPlugin
@@ -18,9 +20,11 @@ plugins {
 
 // Use developer/CI-installed tools so Kotlin does not add Ivy distribution repositories
 // forbidden by settings.gradle.kts's FAIL_ON_PROJECT_REPOS policy. No machine paths
-// are committed: override with -Pcopymanga.nodeCommand=... / -Pcopymanga.yarnCommand=....
+// are committed: override copymanga.nodeCommand, copymanga.yarnCommand or
+// copymanga.binaryenCommand with -P when the tools are not on PATH.
 val configuredNodeCommand = providers.gradleProperty("copymanga.nodeCommand").orElse("node")
 val configuredYarnCommand = providers.gradleProperty("copymanga.yarnCommand").orElse("yarn")
+val configuredBinaryenCommand = providers.gradleProperty("copymanga.binaryenCommand").orElse("wasm-opt")
 
 plugins.withType<WasmNodeJsRootPlugin> {
     rootProject.extensions.configure<WasmNodeJsEnvSpec> {
@@ -32,6 +36,13 @@ plugins.withType<WasmNodeJsRootPlugin> {
 // the root environment. Configure both because subproject defaults come from the
 // legacy root extension rather than inheriting the root environment spec.
 allprojects {
+    // Production optimization needs wasm-opt; preserve FAIL_ON_PROJECT_REPOS here too.
+    plugins.withType<BinaryenPlugin> {
+        extensions.configure<BinaryenEnvSpec> {
+            download.set(false)
+            command.set(configuredBinaryenCommand)
+        }
+    }
     plugins.withType<WasmNodeJsPlugin> {
         extensions.configure<WasmNodeJsEnvSpec> {
             download.set(false)
