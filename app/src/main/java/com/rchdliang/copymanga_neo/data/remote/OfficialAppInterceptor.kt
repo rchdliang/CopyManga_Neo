@@ -5,6 +5,8 @@ import com.rchdliang.copymanga_neo.BuildConfig
 import com.rchdliang.copymanga_neo.data.local.OfficialAppIdentity
 import com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
+import okhttp3.RequestBody.Companion.toRequestBody
+import com.rchdliang.copymanga_neo.domain.model.NovelCommentFormPolicy
 import okhttp3.FormBody
 import okhttp3.Interceptor
 import okhttp3.Request
@@ -148,9 +150,16 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
                 if (login || register) builder.header("Authorization", "Token")
                     .header("X-No-Auth", "1")
             }
-            builder.method(original.method, FormBody.Builder().apply {
+            val body = FormBody.Builder().apply {
                 fields.forEach { (key, value) -> add(key, value) }
-            }.build())
+            }.build()
+            if (original.method == "POST" && path == "/api/v3/member/bookcomment") {
+                val buffer = okio.Buffer()
+                body.writeTo(buffer)
+                builder.method(original.method, NovelCommentFormPolicy.encodeAppTopLevelReply(
+                    original.method, path, buffer.readUtf8()
+                ).toRequestBody(body.contentType()))
+            } else builder.method(original.method, body)
         }
         return builder.build()
     }
@@ -162,6 +171,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             "/api/v3/member/collect/comic",
             "/api/v3/member/collect/book",
             "/api/v3/member/comment",
+            "/api/v3/member/bookcomment",
             "/api/v3/member/roast",
             "/api/v3/member/comment/report",
             "/api/v3/member/bookcomment/report",
@@ -177,6 +187,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             "/api/v3/member/collect/comic",
             "/api/v3/member/collect/book",
             "/api/v3/member/comment",
+            "/api/v3/member/bookcomment",
             "/api/v3/member/roast",
             "/api/v3/member/comment/report",
             "/api/v3/member/bookcomment/report",

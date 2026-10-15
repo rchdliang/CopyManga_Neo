@@ -457,7 +457,7 @@ private fun NovelDetailContent(
         CommentsDialog(
             target = CommentTarget(CommentKind.NOVEL, book.uuid),
             title = book.name,
-            postingAllowed = false,
+            postingAllowed = true,
             viewModel = requireNotNull(commentsViewModel) { "Provide CommentsViewModel to the novel route" },
             onDismiss = { showComments = false }
         )

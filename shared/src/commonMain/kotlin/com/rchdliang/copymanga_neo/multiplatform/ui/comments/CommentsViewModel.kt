@@ -340,7 +340,7 @@ class CommentsViewModel constructor(
 
     /** 直接打开输入面板时保留列表位置，并按回复对象隔离草稿。 */
     fun startReply(comment: MangaComment) {
-        if (state.value.posting || state.value.target?.kind != CommentKind.COMIC) return
+        if (state.value.posting || state.value.target?.kind !in setOf(CommentKind.COMIC, CommentKind.NOVEL)) return
         saveDraft()
         state.update {
             it.copy(

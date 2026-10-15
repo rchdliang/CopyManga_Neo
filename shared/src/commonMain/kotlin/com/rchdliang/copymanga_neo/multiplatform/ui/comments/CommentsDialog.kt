@@ -524,7 +524,7 @@ internal fun CommentsContent(
                         when {
                             state.checkingPermission -> "正在确认评论权限…"
                             state.permissionError != null -> state.permissionError
-                            target.kind == CommentKind.NOVEL -> "小说评论暂仅支持查看、浏览回复和举报"
+                            target.kind == CommentKind.NOVEL -> "该小说暂不允许发表评论"
                             else -> "这部漫画已关闭评论发表"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -612,7 +612,7 @@ internal fun CommentsContent(
                                                     ) ({
                                                         onShowReplies(comment)
                                                     }) else null,
-                                                    onReply = if (target.kind == CommentKind.COMIC && state.postingAllowed) ({
+                                                    onReply = if (target.kind != CommentKind.CHAPTER && state.postingAllowed) ({
                                                         onCompose(comment)
                                                     }) else null,
                                                     onShowReplies = if (state.parent == null && target.kind != CommentKind.CHAPTER && preview?.comments?.isNotEmpty() == true) ({

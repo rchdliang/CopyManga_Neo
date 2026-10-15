@@ -24,6 +24,54 @@ class CopyMangaClientTest {
         override fun resolve(settings:OfficialAppSettings)=settings.copy(pseudoId="stablePseudoId00",umString="0123456789abcdef0123456789abcdef",device="test-device",deviceInfo="test-model",buildTime="2025.05.22")
     }
     private fun state(app:Boolean=false,token:String="")=PortableNetworkState(NetworkSnapshot(settings=NetworkSettings(requestMode=if(app)RequestMode.OFFICIAL_APP else RequestMode.WEB),webSession=PortableSession(token),appSession=PortableSession(token)))
+    @Test fun novelCommentWritesMatchCapturedModesAndKeepClickedReplyId() = runTest {
+        for (app in listOf(false, true)) {
+            val replies = listOf("", "synthetic-child-reply-id")
+            var calls = 0
+            val engine = MockEngine { request ->
+                assertEquals("/api/v3/member/bookcomment", request.url.encodedPath)
+                assertEquals(HttpMethod.Post, request.method)
+                assertEquals(if (app) "3" else null, request.url.parameters["platform"])
+                assertNull(request.url.parameters["_update"])
+                val body = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
+                val form = parseQueryString(body)
+                assertEquals("synthetic-book", form["book_id"])
+                assertEquals("synthetic comment + & reply_id=", form["comment"])
+                val reply = replies[calls++]
+                if (reply.isEmpty()) assertTrue(if (app) "reply_id" in body.split('&') else "reply_id=" in body.split('&'))
+                else assertEquals(reply, form["reply_id"])
+                assertNull(form["_update"])
+                assertEquals("Token synthetic-token", request.headers["Authorization"])
+                if (app) {
+                    assertEquals(identity.tapString, form["tapString"])
+                    assertEquals("Token synthetic-token", form["authorization"])
+                    assertNotNull(request.headers["X-auth-signature"])
+                } else {
+                    assertNull(form["tapString"])
+                    assertNull(form["platform"])
+                }
+                respond("""{"code":200,"results":null}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+            val client = CopyMangaClient(HttpClient(engine), state(app, "synthetic-token"), identity = identity)
+            try {
+                val repository = PortableCommentRepository(client)
+                for (reply in replies) repository.postComment(
+                    CommentTarget(CommentKind.NOVEL, "synthetic-book"),
+                    "synthetic comment + & reply_id=", reply
+                ).getOrThrow()
+                assertEquals(2, calls)
+            } finally { client.close() }
+        }
+    }
+
+    @Test fun novelBareReplyEncodingIsLimitedToCapturedWrite() {
+        val body = "comment=reply_id%3D&reply_id=&book_id=synthetic"
+        assertEquals("comment=reply_id%3D&reply_id&book_id=synthetic",
+            NovelCommentFormPolicy.encodeAppTopLevelReply("POST", "/api/v3/member/bookcomment", body))
+        assertEquals(body, NovelCommentFormPolicy.encodeAppTopLevelReply("POST", "/api/v3/member/comment", body))
+        assertEquals(body, NovelCommentFormPolicy.encodeAppTopLevelReply("GET", "/api/v3/member/bookcomment", body))
+    }
+
     @Test fun webHeadersAndSearchPageWindowMatchUpstream()=runTest {
         val engine=MockEngine { request ->
             assertEquals("api.copy4000.com",request.url.host);assertEquals("1",request.headers["platform"])

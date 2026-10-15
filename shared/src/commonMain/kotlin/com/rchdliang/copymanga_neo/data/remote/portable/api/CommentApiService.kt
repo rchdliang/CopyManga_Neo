@@ -24,6 +24,21 @@ class CommentApiService(private val client: CopyMangaClient, private val www: Bo
         headers: Map<String, String> = headers()
     ): PortableResponse<CommentResponseDto> = client.call(ApiRequest(path = "/api/v3/bookcomments", method = "GET", query = listOfNotNull("book_id" to bookId.toString(), "reply_id" to replyId.toString(), "offset" to offset.toString(), "limit" to limit.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<CommentResponseDto>())
 
+    suspend fun postNovelComment(
+        bookId: String,
+        content: String,
+        replyId: String,
+        authorization: String,
+        headers: Map<String, String> = postHeaders(),
+        requestMode: RequestMode? = null
+    ): PortableResponse<CommentPostResponseDto> = client.call(
+        ApiRequest(path = "/api/v3/member/bookcomment", method = "POST",
+            form = listOf("book_id" to bookId, "comment" to content, "reply_id" to replyId),
+            headers = headers + ("Authorization" to authorization), www = www,
+            mode = requestMode, invalidateCurrentSessionOn401 = true),
+        serializer<CommentPostResponseDto>()
+    )
+
     suspend fun novelReportConfig(
         update: Boolean = true,
         headers: Map<String, String> = headers()

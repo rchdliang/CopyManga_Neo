@@ -23,6 +23,17 @@ interface CommentApiService {
         @HeaderMap headers: Map<String, String> = headers()
     ): Response<CommentResponseDto>
 
+    @FormUrlEncoded
+    @POST("api/v3/member/bookcomment")
+    suspend fun postNovelComment(
+        @Field("book_id") bookId: String,
+        @Field("comment") content: String,
+        @Field("reply_id") replyId: String,
+        @Header("Authorization") authorization: String,
+        @HeaderMap headers: Map<String, String> = postHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
+    ): Response<CommentPostResponseDto>
+
     @GET("api/v3/bookcomment/config")
     suspend fun novelReportConfig(
         @Query("_update") update: Boolean = true,
