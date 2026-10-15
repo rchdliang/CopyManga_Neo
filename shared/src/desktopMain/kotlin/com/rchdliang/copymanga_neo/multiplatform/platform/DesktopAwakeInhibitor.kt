@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.platform
 
+import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -10,7 +11,7 @@ object DesktopAwakeInhibitor {
     fun acquire(): Result<AutoCloseable> = runCatching {
         val os = System.getProperty("os.name").lowercase()
         val command = when {
-            os.startsWith("windows") -> listOf("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_SCRIPT)
+            os.startsWith("windows") -> windowsKeepAwakeCommand()
             os.startsWith("linux") -> listOf("systemd-inhibit", "--what=idle:sleep", "--mode=block",
                 "--who=CopyManga_Neo", "--why=Reader keep-screen-on", "sh", "-c", "printf 'READY\\n'; read -r release")
             os.startsWith("mac") -> listOf("caffeinate", "-d", "-i", "/bin/sh", "-c", "printf 'READY\\n'; read -r release")
@@ -22,7 +23,7 @@ object DesktopAwakeInhibitor {
         }
         try {
             val line = readerExecutor.submit<String?> { process.inputStream.bufferedReader().readLine() }.get(6, TimeUnit.SECONDS)
-            check(line == "READY" && process.isAlive) { "系统未授予屏幕常亮请求：${line ?: "启动失败"}" }
+            check(line == "READY" && process.isAlive) { "无法启动屏幕常亮保持：${line ?: "启动失败"}" }
         } catch (failure: Exception) {
             stop(process)
             throw failure
@@ -43,7 +44,19 @@ object DesktopAwakeInhibitor {
         if (!process.waitFor(1, TimeUnit.SECONDS)) process.destroyForcibly()
     }
 
-    private val WINDOWS_SCRIPT = """
+    /**
+     * Windows PowerShell reparses -Command through the native command line. Embedded C#
+     * quotes (DllImport("kernel32.dll")) must not take part in that parsing: encode the
+     * complete script using the UTF-16LE format required by -EncodedCommand instead.
+     */
+    internal fun windowsKeepAwakeCommand(): List<String> = listOf(
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+        Base64.getEncoder().encodeToString(WINDOWS_SCRIPT.toByteArray(Charsets.UTF_16LE))
+    )
+
+    internal val WINDOWS_SCRIPT = """
+        ${'$'}ErrorActionPreference = 'Stop';
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding(${'$'}false);
         Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CopyMangaPower { [DllImport("kernel32.dll", SetLastError=true)] public static extern uint SetThreadExecutionState(uint flags); }';
         ${'$'}previous = [CopyMangaPower]::SetThreadExecutionState([uint32]2147483651);
         if (${'$'}previous -eq 0) { throw 'SetThreadExecutionState failed'; }

@@ -112,7 +112,9 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             LaunchedEffect(focused, phase.showApplication) {
                 if (!focused || !phase.showApplication) escapeKeys.reset()
             }
-            val host = remember(window) { DesktopPlatformHost(window, AwtDesktopWindowPolicy(window)) }
+            val host = remember(window, windowState) {
+                DesktopPlatformHost(window, ComposeDesktopWindowPolicy(windowState))
+            }
             val warnings by host.capabilityWarnings.collectAsState()
             var dismissedWarnings by remember { mutableStateOf(setOf<String>()) }
             val snackbar = remember { SnackbarHostState() }

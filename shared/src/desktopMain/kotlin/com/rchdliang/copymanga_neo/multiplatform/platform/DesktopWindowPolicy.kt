@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.platform
 
 import java.awt.Window
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowState
 
 /** A lease restores the previous policy when the last reader effect is disposed. */
 interface DesktopWindowPolicy {
@@ -49,4 +51,39 @@ class AwtDesktopWindowPolicy(
 
     override fun acquireKeepAwake(): Result<AutoCloseable> = keepAwake?.invoke()
         ?: DesktopAwakeInhibitor.acquire()
+}
+
+/**
+ * Compose owns the native window. Reader effects only update its observable state, so native
+ * bounds/fullscreen changes run through Window's update phase, not reentrantly during applyChanges.
+ * Both orientation and hidden reader controls can hold leases at the same time.
+ * Acquire/close are UI-thread operations, like WindowState itself.
+ */
+class ComposeDesktopWindowPolicy(
+    private val state: WindowState,
+    private val keepAwake: () -> Result<AutoCloseable> = { DesktopAwakeInhibitor.acquire() }
+) : DesktopWindowPolicy {
+    private var users = 0
+    private var previousPlacement = WindowPlacement.Floating
+
+    override fun acquireFullscreen(): Result<AutoCloseable> = runCatching {
+        if (users == 0) {
+            previousPlacement = state.placement
+            state.placement = WindowPlacement.Fullscreen
+        }
+        users++
+        var closed = false
+        AutoCloseable {
+            if (!closed) {
+                closed = true
+                users--
+                // Do not overwrite a placement deliberately changed by the host while reading.
+                if (users == 0 && state.placement == WindowPlacement.Fullscreen) {
+                    state.placement = previousPlacement
+                }
+            }
+        }
+    }
+
+    override fun acquireKeepAwake() = keepAwake()
 }
