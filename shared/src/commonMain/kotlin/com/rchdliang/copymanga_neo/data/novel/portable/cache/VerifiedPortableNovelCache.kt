@@ -29,7 +29,8 @@ private data class VolumeManifest(
     val result: JsonObject,
     @SerialName("text_sha256") val textHash: String,
     @SerialName("text_file") val textFile: String,
-    val images: Map<String, String> = emptyMap()
+    val images: Map<String, String> = emptyMap(),
+    @SerialName("download_requested") val downloadRequested: Boolean = false
 )
 
 /**
@@ -131,7 +132,8 @@ class VerifiedPortableNovelCache(
         val manifest = VolumeManifest(
             mode = mode, owner = owner, lastAccessed = now(),
             result = Json.parseToJsonElement(metadataJson).jsonObject,
-            textHash = hash, textFile = "text.$hash.txt", images = previous?.images.orEmpty()
+            textHash = hash, textFile = "text.$hash.txt", images = previous?.images.orEmpty(),
+            downloadRequested = previous?.downloadRequested ?: false
         )
         storage.write("$dir/${manifest.textFile}", textBytes)
         writeManifest(dir, manifest)
@@ -151,6 +153,11 @@ class VerifiedPortableNovelCache(
         writeManifest(dir, loaded.manifest.copy(images = loaded.manifest.images + (key to ReadingContentHash.sha256(bytes))))
         requireNotNull(load(dir)).reading
     }
+    override suspend fun markDownloadRequested(mode: RequestMode, owner: String, path: String, id: String) = mutex.withLock {
+        val dir = directory(mode, owner, path, id)
+        val loaded = load(dir) ?: throw PlatformIOException("请先缓存小说正文")
+        writeManifest(dir, loaded.manifest.copy(downloadRequested = true))
+    }
     private suspend fun scan(): List<NovelCachedVolume> = storage.list(root)
         .filter { it.endsWith("/manifest.json") && digestPattern.matches(it.removeSuffix("/manifest.json").substringAfterLast('/')) }
         .mapNotNull { path ->
@@ -161,7 +168,7 @@ class VerifiedPortableNovelCache(
                     loaded.manifest.mode, loaded.manifest.owner, loaded.reading.book, loaded.reading.volume,
                     storage.list(directory).sumOf { storage.size(it) }, loaded.reading.cachedImages.size,
                     loaded.reading.sections.filter { it.type == 2 }.mapNotNull { it.image }.distinct().size,
-                    loaded.manifest.lastAccessed
+                    loaded.manifest.lastAccessed, loaded.manifest.downloadRequested
                 )
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { null } // Never delete a manifest-backed volume because reading failed.

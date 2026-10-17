@@ -211,7 +211,7 @@ class DownloadManager internal constructor(
                         .filter { it.hasCompleteFiles() }.map { it.uuid }.toSet()
 
                     is NovelDownloadTask -> novels?.cachedVolumes?.value.orEmpty()
-                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.offlineReady }
+                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.visibleInDownloads && it.offlineReady }
                         .map { it.volume.id }.toSet()
                 }
                 val restored = task.withItems(task.items.map {

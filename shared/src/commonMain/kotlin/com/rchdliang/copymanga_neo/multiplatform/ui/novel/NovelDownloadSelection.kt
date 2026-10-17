@@ -3,11 +3,11 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 import com.rchdliang.copymanga_neo.domain.model.ChapterDownloadStatus
 import com.rchdliang.copymanga_neo.multiplatform.ui.detail.chapterDownloadChanges
 
-/** 完整缓存覆盖队列状态；未完整缓存仍可通过勾选继续下载。 */
+/** 仅明确下载的完整缓存覆盖队列状态；阅读缓存仍可通过勾选保存为下载。 */
 internal fun novelVolumeStatuses(state: NovelUiState): Map<String, ChapterDownloadStatus> =
     buildMap {
         state.downloadTask?.volumes?.forEach { put(it.volume.id, it.status) }
-        state.cachedVolumes.filter { it.offlineReady }.forEach {
+        state.cachedVolumes.filter { it.downloadRequested && it.offlineReady }.forEach {
             put(it.volume.id, ChapterDownloadStatus.DOWNLOADED)
         }
     }

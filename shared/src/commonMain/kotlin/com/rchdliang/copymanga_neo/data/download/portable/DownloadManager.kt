@@ -216,7 +216,7 @@ class DownloadManager(
                         .filter { records.hasCompleteFiles(it) }.map { it.uuid }.toSet()
 
                     is NovelDownloadTask -> novels.cachedVolumes.value
-                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.offlineReady }
+                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.offlineReady && it.visibleInDownloads }
                         .map { it.volume.id }.toSet()
                 }
                 val restored = task.withItems(task.items.map {

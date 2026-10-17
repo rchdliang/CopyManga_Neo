@@ -22,8 +22,11 @@ data class NovelCachedVolume(
     val bytes: Long,
     val cachedImages: Int,
     val totalImages: Int,
-    val lastAccessedAt: Long
+    val lastAccessedAt: Long,
+    /** Only an explicit download request makes a reading cache appear in Downloads. */
+    val downloadRequested: Boolean = false
 ) {
+    val visibleInDownloads: Boolean get() = downloadRequested
     val offlineReady: Boolean get() = cachedImages == totalImages
 }
 

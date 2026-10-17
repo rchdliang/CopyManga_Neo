@@ -89,7 +89,7 @@ class DownloadsViewModel constructor(
             ) { comics, cached, ready, _ ->
                 val session = if (ready) sessions.getReadingSessionSync() else null
                 val owned = if (session?.owner == null) emptyList() else cached.filter {
-                    it.owner == session.owner && it.mode == session.mode
+                    it.visibleInDownloads && it.owner == session.owner && it.mode == session.mode
                 }
                 val books = comics.map { DownloadedBookItem.Comic(it) } +
                         owned.groupBy { it.book.path }.values.map { volumes ->

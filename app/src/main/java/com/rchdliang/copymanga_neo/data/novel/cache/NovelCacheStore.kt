@@ -128,6 +128,7 @@ internal class NovelCacheStore(
         result: JsonObject,
         bytes: ByteArray,
         previous: StoredNovelVolume?,
+        downloadRequested: Boolean = false,
         validateSession: () -> Unit
     ): StoredNovelVolume {
         val directory = directory(mode, owner, path, id)
@@ -139,6 +140,12 @@ internal class NovelCacheStore(
             addProperty("mode", mode.name)
             addProperty("owner", owner)
             addProperty("last_accessed", now())
+            // 刷新正文不能降级已下载卷；是否缓存完整与下载意图无关。
+            addProperty(
+                "download_requested", downloadRequested ||
+                    previous?.manifest?.get("download_requested")
+                        ?.takeUnless { it.isJsonNull }?.asBoolean == true
+            )
             add("result", result.deepCopy())
             addProperty("text_sha256", AtomicCacheFile.digest(bytes))
             addProperty("text_file", VerifiedVolumeCache.textName(bytes))
@@ -184,6 +191,16 @@ internal class NovelCacheStore(
         return cached.copy(manifest = manifest)
     }
 
+    /** 用户明确下载已有正文时只更新意图，复用阅读缓存及插图。 */
+    fun markDownloadRequested(cached: StoredNovelVolume): StoredNovelVolume {
+        if (cached.manifest["download_requested"]?.takeUnless { it.isJsonNull }?.asBoolean == true) return cached
+        val manifest = cached.manifest.deepCopy().apply {
+            addProperty("download_requested", true)
+        }
+        writeManifest(cached.directory, manifest)
+        return cached.copy(manifest = manifest)
+    }
+
     fun describe(cached: StoredNovelVolume): NovelCachedVolume = NovelCachedVolume(
         RequestMode.valueOf(cached.manifest["mode"].asString),
         cached.manifest["owner"].asString,
@@ -192,7 +209,8 @@ internal class NovelCacheStore(
         directoryBytes(cached.directory),
         cached.reading.cachedImages.size,
         cached.reading.sections.filter { it.type == 2 }.map { it.image }.distinct().size,
-        cached.manifest["last_accessed"].asLong
+        cached.manifest["last_accessed"].asLong,
+        cached.manifest["download_requested"]?.takeUnless { it.isJsonNull }?.asBoolean == true
     )
 
     fun scan(): List<NovelCachedVolume> =

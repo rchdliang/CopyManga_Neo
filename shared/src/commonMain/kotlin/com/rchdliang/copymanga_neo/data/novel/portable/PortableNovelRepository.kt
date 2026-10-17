@@ -64,7 +64,7 @@ class PortableNovelRepository(
     }
     override suspend fun readVolume(mode:RequestMode,owner:String,path:String,id:String,allImages:Boolean,refresh:Boolean,onProgress:(NovelCacheProgress)->Unit,forDownload:Boolean):Result<NovelReadingVolume> = result {
         val generation=session(mode,owner)
-        if(!allImages&&!refresh)readCached(mode,owner,path,id)?.let{client.state.requireCurrent(generation);return@result it}
+        if(!forDownload&&!allImages&&!refresh)readCached(mode,owner,path,id)?.let{client.state.requireCurrent(generation);return@result it}
         mutex.withLock {
             client.state.requireCurrent(generation)
             // Fully cached volumes remain available offline; bind a download network only for I/O.
@@ -98,6 +98,12 @@ class PortableNovelRepository(
                 client.state.requireCurrent(generation);currentCoroutineContext().ensureActive()
                 onProgress(NovelCacheProgress(NovelCacheStage.TEXT,bytes=bytes.size.toLong()))
                 reading=cache.publish(mode,owner,path,id,metadata.toString(),bytes)
+                publishCached()
+            }
+            // Cache hits still need promotion; ordinary reads/refreshes never clear this intent.
+            if(forDownload) {
+                client.state.requireCurrent(generation);currentCoroutineContext().ensureActive()
+                cache.markDownloadRequested(mode,owner,path,id)
                 publishCached()
             }
             var current=requireNotNull(reading)
