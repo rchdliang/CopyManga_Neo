@@ -35,6 +35,107 @@ class NovelCacheStoreTest {
             reopened.map { it.mode }.toSet()
         )
         assertTrue(reopened.all { it.offlineReady && it.bytes > 0 && it.book.name == "测试小说" })
+        assertTrue(reopened.all { it.downloadRequested == false })
+    }
+
+    @Test
+    fun readingCacheStaysSeparateEvenWhenAllImagesAreCached() {
+        val root = temporary.newFolder()
+        val store = NovelCacheStore(root)
+        var volume = store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(image = "https://images.example/picture"), "正文\n".toByteArray(), null
+        ) {}
+        volume = store.writeImage(volume, "https://images.example/picture", byteArrayOf(1, 2, 3))
+        store.touch(volume)
+        val entry = NovelCacheStore(root).scan().single()
+        assertTrue(entry.offlineReady)
+        assertEquals(false, entry.downloadRequested)
+        assertFalse(entry.visibleInDownloads)
+        assertTrue(entry.bytes > 0)
+    }
+
+    @Test
+    fun explicitDownloadPromotesExistingCacheAndSurvivesReadingRefresh() {
+        val root = temporary.newFolder()
+        val store = NovelCacheStore(root)
+        val reading = store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(), "正文\n".toByteArray(), null
+        ) {}
+        val text = File(reading.directory, reading.manifest["text_file"].asString)
+        val before = text.readBytes()
+        val downloaded = store.markDownloadRequested(reading)
+        assertTrue(before.contentEquals(text.readBytes()))
+        assertEquals(true, NovelCacheStore(root).scan().single().downloadRequested)
+        assertTrue(NovelCacheStore(root).scan().single().visibleInDownloads)
+        store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(), "刷新正文\n".toByteArray(), downloaded
+        ) {}
+        assertEquals(true, NovelCacheStore(root).scan().single().downloadRequested)
+    }
+
+    @Test
+    fun explicitPartialDownloadIsRecordedBeforeImagesFinish() {
+        val root = temporary.newFolder()
+        val store = NovelCacheStore(root)
+        store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(image = "https://images.example/picture"), "正文\n".toByteArray(), null,
+            downloadRequested = true
+        ) {}
+        val entry = NovelCacheStore(root).scan().single()
+        assertEquals(true, entry.downloadRequested)
+        assertFalse(entry.offlineReady)
+        assertEquals(1, entry.totalImages)
+    }
+
+    @Test
+    fun missingDownloadMarkerKeepsContentReadableWithoutListingAsDownload() {
+        val root = temporary.newFolder()
+        val store = NovelCacheStore(root)
+        val volume = store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(), "正文\n".toByteArray(), null
+        ) {}
+        val legacyManifest = volume.manifest.deepCopy().apply { remove("download_requested") }
+        val manifestFile = File(volume.directory, "manifest.json")
+        manifestFile.writeText(legacyManifest.toString())
+        val before = manifestFile.readText()
+        val reopened = NovelCacheStore(root)
+        assertFalse(reopened.scan().single().downloadRequested)
+        assertFalse(reopened.scan().single().visibleInDownloads)
+        assertEquals(before, manifestFile.readText())
+        val legacy = reopened.read(RequestMode.WEB, "guest", "book", "v1")!!
+        assertEquals("正文", legacy.reading.document.lines.first())
+        val refreshed = reopened.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(), "刷新正文\n".toByteArray(), legacy
+        ) {}
+        assertFalse(reopened.describe(refreshed).downloadRequested)
+        reopened.markDownloadRequested(refreshed)
+        assertEquals(true, NovelCacheStore(root).scan().single().downloadRequested)
+    }
+
+    @Test
+    fun explicitIntentDoesNotLeakAcrossAccountsOrModes() {
+        val store = NovelCacheStore(temporary.newFolder())
+        store.publish(
+            RequestMode.WEB, "guest", "book", "v1",
+            response(), "正文\n".toByteArray(), null, downloadRequested = true
+        ) {}
+        store.publish(
+            RequestMode.WEB, "user:a", "book", "v1",
+            response(), "正文\n".toByteArray(), null
+        ) {}
+        store.publish(
+            RequestMode.OFFICIAL_APP, "guest", "book", "v1",
+            response(), "正文\n".toByteArray(), null
+        ) {}
+        val entries = store.scan()
+        assertEquals(1, entries.count { it.downloadRequested == true })
+        assertEquals(2, entries.count { it.downloadRequested == false })
     }
 
     @Test

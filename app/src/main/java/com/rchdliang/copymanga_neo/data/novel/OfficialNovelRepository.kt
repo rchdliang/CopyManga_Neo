@@ -175,7 +175,7 @@ class OfficialNovelRepository @Inject constructor(
         onProgress: (NovelCacheProgress) -> Unit,
         forDownload: Boolean
     ): Result<NovelReadingVolume> = result {
-        if (!allImages && !refresh) {
+        if (!forDownload && !allImages && !refresh) {
             val readingSession = session(mode, owner)
             // 已发布的正文可以立即阅读，不等待后台补齐整卷插图；此分支不修改缓存。
             val snapshot =
@@ -220,12 +220,21 @@ class OfficialNovelRepository @Inject constructor(
                 val bytes = resource(address, NovelCacheStore.TEXT_LIMIT, forDownload) {
                     onProgress(NovelCacheProgress(NovelCacheStage.TEXT, bytes = it))
                 }
-                cached = cache.publish(mode, owner, path, id, response, bytes, cached) {
+                cached = cache.publish(
+                    mode, owner, path, id, response, bytes, cached,
+                    downloadRequested = forDownload
+                ) {
                     ensureSession(session)
                 }
                 publishCached(cached)
             }
             var state = requireNotNull(cached)
+            if (forDownload) {
+                currentCoroutineContext().ensureActive()
+                ensureSession(session)
+                state = cache.markDownloadRequested(state)
+                publishCached(state)
+            }
             val urls =
                 state.reading.sections.filter { it.type == 2 }.map { requireNotNull(it.image) }
                     .distinct()

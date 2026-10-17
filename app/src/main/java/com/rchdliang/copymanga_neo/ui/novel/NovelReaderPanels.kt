@@ -16,7 +16,6 @@ import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -24,14 +23,13 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,17 +68,14 @@ internal fun NovelSheetHeader(title: String, onClose: () -> Unit) {
 @Composable
 internal fun ColumnScope.NovelReaderSettings(
     preferences: NovelReaderPreferences,
-    state: NovelUiState,
-    onPreferences: (NovelReaderPreferences) -> Unit,
-    onCache: () -> Unit,
-    onRefresh: () -> Unit,
-    onDelete: () -> Unit
+    onPreferences: (NovelReaderPreferences) -> Unit
 ) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var savedTab by rememberSaveable { mutableIntStateOf(0) }
+    val tab = savedTab.coerceIn(0, 1)
     PrimaryTabRow(selectedTabIndex = tab) {
-        listOf("排版", "阅读", "离线").forEachIndexed { index, title ->
+        listOf("排版", "阅读").forEachIndexed { index, title ->
             Tab(
-                selected = tab == index, onClick = { tab = index },
+                selected = tab == index, onClick = { savedTab = index },
                 text = { Text(title, color = MaterialTheme.colorScheme.onSurface) })
         }
     }
@@ -160,7 +156,8 @@ internal fun ColumnScope.NovelReaderSettings(
                     NovelChoices(
                         "分页布局",
                         preferences.columns,
-                        listOf("AUTO" to "自动", "SINGLE" to "单页", "DOUBLE" to "双页")
+                        listOf("AUTO" to "自动", "SINGLE" to "单页", "DOUBLE" to "双页"),
+                        enabled = preferences.mode == "PAGED"
                     ) {
                         onPreferences(preferences.copy(columns = it))
                     }
@@ -197,45 +194,6 @@ internal fun ColumnScope.NovelReaderSettings(
                     }
                 }
             }
-        } else {
-            item {
-                NovelSettingsGroup("本卷缓存") {
-                    Text(
-                        if (state.reader?.offlineReady == true) "正文与插图已保存，可离线阅读。"
-                        else "正文成功打开后会保存；下载本卷可补齐全部插图。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    state.downloadProgress?.let {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    FilledTonalButton(
-                        onClick = onCache,
-                        enabled = !state.refreshing,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (state.caching) "暂停下载" else "下载 / 继续本卷",
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onRefresh,
-                        enabled = !state.refreshing,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            if (state.refreshing) "正在检查…" else "检查官方更新",
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    TextButton(onClick = onDelete, enabled = !state.refreshing) {
-                        Text("删除本卷缓存", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
         }
     }
 }
@@ -262,18 +220,20 @@ private fun NovelChoices(
     title: String,
     value: String,
     choices: List<Pair<String, String>>,
+    enabled: Boolean = true,
     onChange: (String) -> Unit
 ) {
     Column {
         Text(
             title,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             choices.forEach { (key, name) ->
                 FilterChip(
                     selected = value == key, onClick = { onChange(key) },
+                    enabled = enabled,
                     label = { Text(name, color = LocalContentColor.current) })
             }
         }
@@ -297,7 +257,23 @@ private fun NovelSettingsSlider(
         }
         val slider = rememberSliderState(value = value, trackRange = range, steps = steps)
         slider.value = value
-        Slider(state = slider, onValueChange = { slider.value = it; onChange(it) })
+        Slider(
+            state = slider,
+            onValueChange = { slider.value = it; onChange(it) },
+            track = { sliderState ->
+                SliderDefaults.Track(
+                    sliderState = sliderState,
+                    drawTick = { offset, color ->
+                        drawLine(
+                            color = color,
+                            start = offset - Offset(0f, 3.dp.toPx()),
+                            end = offset + Offset(0f, 3.dp.toPx()),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                )
+            }
+        )
     }
 }
 

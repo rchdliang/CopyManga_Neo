@@ -134,9 +134,6 @@ internal data class NovelReaderActions(
     val loadVolumes: () -> Unit = {},
     val openBookmark: (LocalReadingRecord) -> Unit = {},
     val removeBookmark: (LocalReadingRecord) -> Unit = {},
-    val cache: () -> Unit = {},
-    val refresh: () -> Unit = {},
-    val deleteCache: () -> Unit = {},
     val retry: () -> Unit = {},
     val addAnnotation: (NovelTextSelection, String, String, (Boolean) -> Unit) -> Unit = { _, _, _, done ->
         done(
@@ -188,9 +185,6 @@ internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack:
             openBookmark = viewModel::jumpToBookmark,
             removeBookmark = viewModel::removeBookmark,
             loadVolumes = viewModel::loadReaderVolumes,
-            cache = viewModel::cache,
-            refresh = viewModel::refreshVolume,
-            deleteCache = viewModel::deleteCache,
             retry = viewModel::retry,
             addAnnotation = viewModel::addAnnotation,
             updateAnnotation = viewModel::updateAnnotation,
@@ -405,7 +399,6 @@ private fun NovelReaderBody(
     val textMenu = remember { NovelReaderTextMenuState() }
     var controlsVisible by rememberSaveable { mutableStateOf(initiallyShowControls) }
     var sheet by rememberSaveable { mutableStateOf<String?>(null) }
-    var deleteCache by remember { mutableStateOf(false) }
     var seek by remember { mutableStateOf(false) }
     var galleryKey by rememberSaveable {
         mutableStateOf(initialPosition?.section?.takeIf { key ->
@@ -450,9 +443,9 @@ private fun NovelReaderBody(
             .coerceIn(0f, 1f)
     }
     val overlayVisible =
-        controlsVisible || sheet != null || galleryKey != null || seek || deleteCache || annotationDraft != null || search.visible
+        controlsVisible || sheet != null || galleryKey != null || seek || annotationDraft != null || search.visible
     NovelReaderWindow(preferences.keepScreenOn, overlayVisible)
-    BackHandler(enabled = controlsVisible && sheet == null && galleryKey == null && !seek && !deleteCache && annotationDraft == null && !search.visible) {
+    BackHandler(enabled = controlsVisible && sheet == null && galleryKey == null && !seek && annotationDraft == null && !search.visible) {
         controlsVisible = false
     }
     // 系统栏临时出现时，正文只保留固定的挖孔安全区，避免分页和阅读位置跳动。
@@ -710,9 +703,7 @@ private fun NovelReaderBody(
                     galleryKey = it; sheet = null
                 }
 
-                else -> NovelReaderSettings(
-                    preferences, state, actions.preferences, actions.cache, actions.refresh,
-                    onDelete = { sheet = null; deleteCache = true })
+                else -> NovelReaderSettings(preferences, actions.preferences)
             }
         }
     }
@@ -748,29 +739,6 @@ private fun NovelReaderBody(
             }
         }
     }
-    if (deleteCache) AlertDialog(
-        onDismissRequest = { deleteCache = false },
-        title = { Text("删除本卷缓存？", color = MaterialTheme.colorScheme.onSurface) },
-        text = {
-            Text(
-                "正文和插图缓存会删除；阅读位置、历史和书签保留。",
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { deleteCache = false; actions.deleteCache() }) {
-                Text("删除", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = { deleteCache = false }) {
-                Text(
-                    "取消",
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    )
     if (seek) {
         var value by remember { mutableStateOf((fraction * 100).roundToInt().toString()) }
         val progress = value.toFloatOrNull()?.takeIf { it.isFinite() && it in 0f..100f }
@@ -951,13 +919,7 @@ private fun NovelReaderSettingsPreview() {
         Surface {
             Column(Modifier.fillMaxSize()) {
                 NovelSheetHeader("阅读设置") {}
-                NovelReaderSettings(
-                    preferences,
-                    NovelUiState(reader = previewNovelVolume()),
-                    { preferences = it },
-                    {},
-                    {},
-                    {})
+                NovelReaderSettings(preferences) { preferences = it }
             }
         }
     }

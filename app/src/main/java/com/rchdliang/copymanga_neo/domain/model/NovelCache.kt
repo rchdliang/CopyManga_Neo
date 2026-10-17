@@ -19,9 +19,12 @@ data class NovelCachedVolume(
     val bytes: Long,
     val cachedImages: Int,
     val totalImages: Int,
-    val lastAccessedAt: Long
+    val lastAccessedAt: Long,
+    /** 仅主动下载为 true；阅读缓存及缺少标记的旧清单均为 false。 */
+    val downloadRequested: Boolean = false
 ) {
     val offlineReady: Boolean get() = cachedImages == totalImages
+    val visibleInDownloads: Boolean get() = downloadRequested
 }
 
 data class NovelCacheUsage(val bytes: Long, val volumes: Int)

@@ -34,8 +34,11 @@ interface NovelRepository {
     suspend fun tags(mode: RequestMode, owner: String): Result<List<NovelTag>>
     fun cachedTags(mode: RequestMode): List<NovelTag> =
         com.rchdliang.copymanga_neo.domain.model.NovelThemeDefaults.themes
+
     suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook>
     suspend fun volumes(mode: RequestMode, owner: String, path: String): Result<List<NovelVolume>>
+
+    /** forDownload 仅由主动下载任务传入，同时持久化下载意图；补齐插图本身不代表下载。 */
     suspend fun readVolume(
         mode: RequestMode,
         owner: String,
