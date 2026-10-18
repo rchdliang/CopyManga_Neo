@@ -66,6 +66,8 @@ class SettingsViewModel constructor(
 
     fun setThemeMode(mode: AppThemeMode) = save { repository.setThemeMode(mode) }
     fun setWifiOnlyDownloads(enabled: Boolean) = save { repository.setWifiOnlyDownloads(enabled) }
+    fun setComicImageConcurrency(count: Int) = save { repository.setComicImageConcurrency(count) }
+    fun setComicDownloadLimitKiB(limit: Int) = save { repository.setComicDownloadLimitKiB(limit) }
     fun setCredentialExportPassword(enabled: Boolean) =
         save { repository.setCredentialExportPassword(enabled) }
 

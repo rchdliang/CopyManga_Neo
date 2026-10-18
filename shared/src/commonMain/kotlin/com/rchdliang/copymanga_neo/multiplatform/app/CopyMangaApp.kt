@@ -149,6 +149,11 @@ fun CopyMangaApp(
     retryExportId: String? = null,
     onExportRetryConsumed: () -> Unit = {}
 ) {
+    LaunchedEffect(repositories) {
+        withFrameNanos { }
+        withFrameNanos { }
+        repositories.startBackground()
+    }
     val owner = requireNotNull(viewModelStoreOwner) {
         "Provide a window/activity ViewModelStoreOwner and clear it only when that host finishes."
     }
@@ -350,6 +355,7 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             models.get(route.id) { DetailViewModel(r.manga, r.users, r.downloads, r.blacklist, r.readingProgress, r.localReading) },
             commentsDialog = { target, title, allowed, dismiss, login -> CommentsDialog(target, title, dismiss, allowed, login, route.path, comments(target.toString())) },
             onChapterClick = { chapter, path, name, group -> nav.reader(path, chapter, name, group) }, onNavigateBack = back, onNavigateToProfile = profile,
+            onStartChapterClick = { chapter, path, name, group, page -> nav.reader(path, chapter, name, group, page = page) },
             onThemeClick = { theme -> nav.open(AppRoute("search", arguments = mapOf(
                 "themePathWord" to theme.pathWord.orEmpty(), "themeName" to theme.name))) },
             onAuthorClick = { author -> nav.open(AppRoute("search", arguments = mapOf("query" to author.name, "queryType" to QueryType.AUTHOR.value))) })
@@ -368,9 +374,8 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             viewModel = models.get(route.id) { ReaderViewModel(r.manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions) },
             services = ReaderUiServices(p.reader, p.imageLoader,
                 models.get(route.id) { ReaderImageActionsViewModel(r.images, it) },
-                { chapter -> models.get(route.id, "inline:$chapter") { ReaderChapterCommentsViewModel(r.comments) } },
-                modalComments = { comments(ReaderCommentModelKeys.modal) },
-                inlineComments = { chapter -> comments(ReaderCommentModelKeys.inline(chapter)) }), exportViewModel = export())
+                models.get(route.id) { ReaderCommentModels(r.comments, r.users, r.manga, r.downloads, r.sessions) },
+                modalComments = { comments(ReaderCommentModelKeys.modal) }), exportViewModel = export())
         "tab" -> when (MainTab.valueOf(route.id.substringAfter(':'))) {
             MainTab.HOME -> HomeScreen(
                 models.get(route.id) { HomeViewModel(r.manga, r.discovery, r.blacklist, FilterHomeComics(r.manga), r.risk, r.appSettings, autoStart = false) },

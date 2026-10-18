@@ -46,6 +46,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -179,6 +182,23 @@ fun HomeContent(
     onMoreNovels: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+    // 横向分区的状态由页面持有，避免 LazyColumn 回收分区后丢失位置。
+    val pageScroll = rememberLazyListState()
+    val recommendedScroll = rememberLazyListState()
+    val hotScroll = rememberLazyListState()
+    val newestScroll = rememberLazyListState()
+    val ranksScroll = rememberLazyListState()
+    val topicsScroll = rememberLazyListState()
+    val finishedScroll = rememberLazyListState()
+    val novelsScroll = rememberLazyListState()
+    val rankCriteria = listOf(uiState.rankAudience, uiState.rankPeriod)
+    var appliedRankCriteria by rememberSaveable { mutableStateOf(rankCriteria) }
+    LaunchedEffect(rankCriteria) {
+        if (appliedRankCriteria != rankCriteria) {
+            ranksScroll.scrollToItem(0)
+            appliedRankCriteria = rankCriteria
+        }
+    }
     val isRefreshing = uiState.isLoading || novels.loading
     // 网络结果与过滤流分开发布；过滤未就绪时保留固定分区，避免晚到内容插到当前锚点上方。
     val awaitingComics = uiState.error == null && (uiState.isLoading || !uiState.filterReady)
@@ -274,6 +294,7 @@ fun HomeContent(
 
                 else -> {
                     LazyColumn(
+                        state = pageScroll,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 16.dp),
@@ -320,6 +341,7 @@ fun HomeContent(
                                 uiState.recComicList,
                                 "home-recommended",
                                 onComicClick,
+                                listState = recommendedScroll,
                                 onMore = { onNavigateToExplore("recommended") },
                                 shelf = HomeShelf.RECOMMENDED,
                                 paging = uiState.paging[HomeShelf.RECOMMENDED],
@@ -330,7 +352,13 @@ fun HomeContent(
                             )
                         }
                         item(key = "novels") {
-                            HomeNovelSection(novels, onNovelClick, onMoreNovels, onNovelRetry)
+                            HomeNovelSection(
+                                novels,
+                                onNovelClick,
+                                onMoreNovels,
+                                onNovelRetry,
+                                novelsScroll
+                            )
                         }
                         if (showHomeSection(
                                 uiState.hotComics.size,
@@ -342,6 +370,7 @@ fun HomeContent(
                                 uiState.hotComics,
                                 "home-hot",
                                 onComicClick,
+                                listState = hotScroll,
                                 initialLoading = awaitingComics
                             )
                         }
@@ -358,6 +387,7 @@ fun HomeContent(
                                 uiState.newComics,
                                 "home-new",
                                 onComicClick,
+                                listState = newestScroll,
                                 onMore = { onNavigateToExplore("newest") },
                                 shelf = HomeShelf.NEWEST,
                                 paging = uiState.paging[HomeShelf.NEWEST],
@@ -380,6 +410,7 @@ fun HomeContent(
                                 uiState.rankComics,
                                 "home-ranks",
                                 onComicClick,
+                                listState = ranksScroll,
                                 onMore = { onNavigateToExplore("ranks?audience=${uiState.rankAudience}&period=${uiState.rankPeriod}") },
                                 shelf = HomeShelf.RANKS,
                                 paging = uiState.paging[HomeShelf.RANKS],
@@ -402,6 +433,7 @@ fun HomeContent(
                             )
                         ) item(key = "topics") {
                             HomeTopicsSection(
+                                listState = topicsScroll,
                                 topics = uiState.topics,
                                 paging = uiState.topicPaging,
                                 initialLoading = awaitingComics,
@@ -422,6 +454,7 @@ fun HomeContent(
                                 uiState.finishComics,
                                 "home-finished",
                                 onComicClick,
+                                listState = finishedScroll,
                                 onMore = { onNavigateToExplore("finished") },
                                 shelf = HomeShelf.FINISHED,
                                 paging = uiState.paging[HomeShelf.FINISHED],
@@ -499,6 +532,7 @@ private fun HomeComicSection(
     comics: List<ComicSummary>,
     transitionGroupKey: String,
     onComicClick: (String) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
     onMore: (() -> Unit)? = null,
     shelf: HomeShelf? = null,
     paging: HomeShelfPaging? = null,
@@ -530,7 +564,6 @@ private fun HomeComicSection(
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val visibleCards = homeBookColumns(maxWidth)
             val cardWidth = (maxWidth - 8.dp * (visibleCards - 1)) / visibleCards
-            val listState = rememberLazyListState()
             ActiveRouteLaunchedEffect(shelf, visibleCards) {
                 if (shelf != null) onViewportChanged(shelf, visibleCards)
             }
@@ -544,9 +577,6 @@ private fun HomeComicSection(
                 ) {
                     onLoadMore(shelf, true)
                 }
-            }
-            LaunchedEffect(rankAudience, rankPeriod) {
-                if (ranked) listState.scrollToItem(0)
             }
             ActiveRouteLaunchedEffect(
                 shelf,
@@ -661,6 +691,7 @@ private fun HomeRankChoices(
 /** 专题横向列表按窗口宽度展示，到达末尾时分页加载。 */
 @Composable
 private fun HomeTopicsSection(
+    listState: LazyListState = rememberLazyListState(),
     topics: List<ComicTopic>,
     paging: HomeShelfPaging,
     onLoadMore: () -> Unit,
@@ -676,7 +707,6 @@ private fun HomeTopicsSection(
             val cardWidth = if (visibleCards == 1 && topics.size > 1)
                 (maxWidth * 0.9f).coerceAtMost(360.dp)
             else (maxWidth - 12.dp * (visibleCards - 1)) / visibleCards
-            val listState = rememberLazyListState()
             ActiveRouteLaunchedEffect(
                 topics.size,
                 visibleCards,
@@ -1036,7 +1066,8 @@ private fun HomeRiskDialogPreview() {
 /** 与漫画分区共用标题、间距和封面卡，不创建额外专题。 */
 @Composable
 private fun HomeNovelSection(
-    state: HomeNovelUiState, onOpen: (String) -> Unit, onMore: () -> Unit, onRetry: () -> Unit
+    state: HomeNovelUiState, onOpen: (String) -> Unit, onMore: () -> Unit, onRetry: () -> Unit,
+    listState: LazyListState = rememberLazyListState()
 ) {
     HomeSectionContainer {
         HomeSectionHeader("轻小说", onMore)
@@ -1045,7 +1076,7 @@ private fun HomeNovelSection(
             state.books.isNotEmpty() || state.loading -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val count = homeBookColumns(maxWidth)
                 val width = (maxWidth - 8.dp * (count - 1)) / count
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.books, key = { it.path }) { book ->
                         NovelTransitionCard(
                             book = book, source = "home",

@@ -31,7 +31,8 @@ object PortableBackupCodec {
             val fraction = (o["fraction"] as? JsonPrimitive)?.also { require(!it.isString) }?.doubleOrNull ?: error("阅读位置无效")
             val r = LocalReadingRecord(o.string("owner"), o.string("kind"), o.string("path"), o.string("chapter"), o.string("name"),
                 o.string("group"), o.string("title"), o.integer("page"), fraction, o.string("section"), o.integer("line"), o.integer("character"),
-                o.boolean("completed"), o.long("at"), o.string("cover"), o.string("authors"))
+                o.boolean("completed"), o.long("at"), o.string("cover"), o.string("authors"),
+                atChapterEnd = if ("atChapterEnd" in o) o.boolean("atChapterEnd") else false)
             return r
         }
         fun times(key: String) = raw.getValue(key).jsonObject.mapValues { (_, value) ->
@@ -67,7 +68,7 @@ object PortableBackupCodec {
         value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).also { require(it == it.normalized()) }
     fun encode(value: SettingsBackup): String = buildJsonObject {
         put("format", "copymanga-neo-settings"); put("version", 2)
-        put("settings", buildJsonObject { put("themeMode", value.settings.themeMode.name); put("wifiOnlyDownloads", value.settings.wifiOnlyDownloads) })
+        put("settings", buildJsonObject { put("themeMode", value.settings.themeMode.name); put("wifiOnlyDownloads", value.settings.wifiOnlyDownloads); put("comicImageConcurrency", value.settings.comicImageConcurrency); put("comicDownloadLimitKiB", value.settings.comicDownloadLimitKiB) })
         put("readerDefaults", storageJson.encodeToJsonElement(ReaderPreferences.serializer(), value.readerDefaults))
         put("homeRank", storageJson.encodeToJsonElement(HomeRankPreferences.serializer(), value.homeRank))
         put("localReading", storageJson.parseToJsonElement(value.localReading))
@@ -92,6 +93,9 @@ object PortableBackupCodec {
             require(path.isNotBlank())
             v.jsonObject.let { ReaderPreferences(it.string("direction"), it.string("scale"), it.string("orientation")) }.also { require(it == it.normalized()) }
         }
-        return SettingsBackup(AppSettings(AppThemeMode.valueOf(app.string("themeMode")), app.boolean("wifiOnlyDownloads")), reader, rank, local.toString(), tools.toString(), comics)
+        val concurrency = if ("comicImageConcurrency" in app) app.integer("comicImageConcurrency") else 3
+        val limit = if ("comicDownloadLimitKiB" in app) app.integer("comicDownloadLimitKiB") else 0
+        require(concurrency in 1..10 && limit >= 0) { "下载设置无效" }
+        return SettingsBackup(AppSettings(AppThemeMode.valueOf(app.string("themeMode")), app.boolean("wifiOnlyDownloads"), comicImageConcurrency = concurrency, comicDownloadLimitKiB = limit), reader, rank, local.toString(), tools.toString(), comics)
     }
 }

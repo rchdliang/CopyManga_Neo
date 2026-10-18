@@ -7,5 +7,7 @@ enum class AppThemeMode { SYSTEM, LIGHT, DARK }
 data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val wifiOnlyDownloads: Boolean = false,
-    val includePasswordInCredentialExport: Boolean = false
+    val includePasswordInCredentialExport: Boolean = false,
+    val comicImageConcurrency: Int = 3,
+    val comicDownloadLimitKiB: Int = 0
 )

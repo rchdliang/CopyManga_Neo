@@ -30,11 +30,13 @@ data class ReaderUiServices(
     val platform: ReaderPlatform,
     val imageLoader: (timeoutSeconds: Int) -> ImageLoader,
     val imageActions: ReaderImageActionsViewModel,
-    val chapterComments: (chapterId: String) -> ReaderChapterCommentsViewModel,
+    val comments: ReaderCommentModels,
     // Modal open/close resets its model. Never share it with retained inline drafts.
-    val modalComments: () -> CommentsViewModel,
-    val inlineComments: (chapterId: String) -> CommentsViewModel
-)
+    val modalComments: () -> CommentsViewModel
+) {
+    fun chapterComments(chapterId: String) = comments.chapter(chapterId)
+    fun inlineComments(chapterId: String) = comments.inline(chapterId)
+}
 
 /** Keys are local to a reader route; the modal lifecycle must not clear inline drafts. */
 internal object ReaderCommentModelKeys {

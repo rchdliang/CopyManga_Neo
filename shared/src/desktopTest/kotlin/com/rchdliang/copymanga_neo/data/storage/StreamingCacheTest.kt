@@ -1,11 +1,39 @@
 package com.rchdliang.copymanga_neo.data.storage
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.test.*
 
 class StreamingCacheTest {
+    @Test fun parallelPagesCanCreateTheSameNewChapterDirectory() = runTest {
+        val root = Files.createTempDirectory("copymanga-parallel-directory-")
+        try {
+            val storage = FileCacheStorage(root.toString())
+            repeat(5) { chapter ->
+                val gate = CompletableDeferred<Unit>()
+                val pages = (0..9).map { page ->
+                    async(Dispatchers.IO) {
+                        gate.await()
+                        storage.writeStream("downloads/$chapter/$page.jpg") { emit ->
+                            emit(byteArrayOf(chapter.toByte(), page.toByte()))
+                        }
+                    }
+                }
+                gate.complete(Unit)
+                pages.awaitAll()
+                assertEquals(10, storage.list("downloads/$chapter").size)
+                repeat(10) { page ->
+                    assertContentEquals(byteArrayOf(chapter.toByte(), page.toByte()),
+                        storage.read("downloads/$chapter/$page.jpg", 10))
+                }
+            }
+        } finally { root.toFile().deleteRecursively() }
+    }
     @Test fun interruptedTransferNeverReplacesCompleteFile() = runTest {
         val root = Files.createTempDirectory("copymanga-stream-")
         try {

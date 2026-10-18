@@ -10,10 +10,12 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,6 +56,7 @@ internal fun DataSettingsScreen(
         backup::chooseExport,
         backup::chooseImport,
         settings::resetGlobalDefaults,
+        onCredentialExportPasswordChange = settings::setCredentialExportPassword,
         onClearNovelCache = settings::clearNovelCache,
         logsContent = { NetworkLogCard(logs) }
     )
@@ -100,6 +103,7 @@ internal fun DataSettingsPage(
     onImport: () -> Unit = {},
     onResetDefaults: () -> Unit = {},
     onClearNovelCache: () -> Unit = {},
+    onCredentialExportPasswordChange: (Boolean) -> Unit = {},
     logsContent: @Composable () -> Unit = {}
 ) {
     var showLogs by rememberSaveable { mutableStateOf(false) }
@@ -166,6 +170,19 @@ internal fun DataSettingsPage(
         ProfileListItem(
             Icons.Outlined.FileDownload, "导入设置与阅读数据", "恢复当前版本备份，合并阅读记录",
             index = 1, count = 2, enabled = enabled, onClick = onImport
+        )
+        ProfileSectionTitle("登录凭据")
+        ProfileListItem(
+            Icons.Outlined.Key, "导出时包含密码", "仅导出登录凭据时包含已记住的密码",
+            index = 0, count = 1, enabled = !state.isLoading && !state.isSaving,
+            onClick = { onCredentialExportPasswordChange(!state.settings.includePasswordInCredentialExport) },
+            trailingContent = {
+                Switch(
+                    checked = state.settings.includePasswordInCredentialExport,
+                    onCheckedChange = onCredentialExportPasswordChange,
+                    enabled = !state.isLoading && !state.isSaving
+                )
+            }
         )
         ProfileSectionTitle("维护")
         ProfileListItem(

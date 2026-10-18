@@ -76,18 +76,25 @@ class PortableAppGraph private constructor(
     val repositories: AppRepositories,
     val downloadManager: DownloadManager,
     val imageLoader: (Int) -> ImageLoader,
-    val startupWarnings: List<String>,
+    val warnings: StateFlow<List<String>>,
     private val closeResources: () -> Unit,
     private val shutdownResources: suspend () -> Unit
 ) : AutoCloseable {
+    val startupWarnings: List<String> get() = warnings.value
     override fun close() = closeResources()
     /** Await transfer cancellation and export rollback before closing their IO dependencies. */
     suspend fun shutdown() = shutdownResources()
     companion object {
         /** The caller owns its UI scope; this graph owns and cancels its child work on close. */
         suspend fun create(services: PortableAppServices, parentScope: CoroutineScope): PortableAppGraph {
+            val started = kotlin.time.TimeSource.Monotonic.markNow()
+            fun trace(phase: String) {
+                if (services.debugBuild) com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog.d(
+                    "Startup", "$phase=${started.elapsedNow().inWholeMilliseconds}ms")
+            }
             val lifetime = SupervisorJob(parentScope.coroutineContext[Job])
-            val appScope = CoroutineScope(parentScope.coroutineContext + lifetime)
+            // 原生平台的持久化恢复不占用 UI 线程；浏览器仍通过协程分阶段让出执行权。
+            val appScope = CoroutineScope(parentScope.coroutineContext + Dispatchers.Default + lifetime)
             val cleanup = mutableListOf<() -> Unit>()
             var completed = false
             fun closeAll() {
@@ -97,21 +104,34 @@ class PortableAppGraph private constructor(
             }
             try {
                 val documents = services.documents; val cache = services.cache
-                val startupWarnings = services.startupWarnings.toMutableList()
+                val warnings = MutableStateFlow(services.startupWarnings)
+                fun warn(message: String) { warnings.update { (it + message).distinct() } }
                 services.imageDiskCache?.let { cleanup += { it.shutdown() } }
-                val appSettings = PortableAppSettings(documents).also { it.initialize().getOrThrow() }
-                val readerPreferences = PortableReaderPreferences(documents).also { it.initialize().getOrThrow() }
-                val readerTools = PortableReaderTools(documents).also { it.initialize().getOrThrow() }
-                val localReading = PortableLocalReading(documents, appScope).also {
-                    it.retryRead().onFailure { failure ->
-                        startupWarnings += "本地阅读数据无法读取，原文件已保留，请在本地书库重试：${failure.message.orEmpty()}"
-                    }
+                val appSettings = PortableAppSettings(documents)
+                val readerPreferences = PortableReaderPreferences(documents)
+                val readerTools = PortableReaderTools(documents)
+                val localReading = PortableLocalReading(documents, appScope, initializeImmediately = false)
+                val novelPreferences = PortableNovelPreferences(documents)
+                val annotations = PortableNovelAnnotations(documents)
+                val blacklist = PortableThemeBlacklist(documents)
+                val logs = PortableNetworkLog(documents, appScope)
+                val reads: List<suspend () -> Unit> = listOf(
+                    { appSettings.initialize().getOrThrow() },
+                    { readerPreferences.initialize().getOrThrow() },
+                    { readerTools.initialize().getOrThrow() },
+                    { novelPreferences.initialize().getOrThrow() },
+                    { annotations.initialize().getOrThrow() },
+                    { blacklist.initialize().getOrThrow() },
+                    { logs.initialize().getOrThrow() },
+                    { localReading.awaitReady().onFailure { warn("本地阅读数据无法读取，原文件已保留，请在本地书库重试：${it.message.orEmpty()}") } }
+                )
+                coroutineScope {
+                    val slots = kotlinx.coroutines.sync.Semaphore(4)
+                    reads.map { read -> async(Dispatchers.Default) { slots.acquire(); try { read() } finally { slots.release() } } }.awaitAll()
                 }
-                val novelPreferences = PortableNovelPreferences(documents).also { it.initialize().getOrThrow() }
-                val annotations = PortableNovelAnnotations(documents).also { it.initialize().getOrThrow() }
-                val blacklist = PortableThemeBlacklist(documents).also { it.initialize().getOrThrow() }
-                val logs = PortableNetworkLog(documents, appScope).also { it.initialize().getOrThrow() }
-                val identity = PersistedOfficialIdentity.create(documents, services.deviceName, services.deviceModel, services.tapString)
+                val identity = withContext(Dispatchers.Default) {
+                    PersistedOfficialIdentity.create(documents, services.deviceName, services.deviceModel, services.tapString)
+                }
                 val state = PortableNetworkState(); val risk = PortableRiskControlGate()
                 val cleanClients = AppResourcePool<Triple<Long, NetworkSettings, Int>, HttpClient> { it.close() }
                 cleanup += cleanClients::close
@@ -128,7 +148,7 @@ class PortableAppGraph private constructor(
                     persistImportedConfiguration = { settings, generation -> network.persistImportedConfiguration(settings, generation) })
                 network = PortableNetworkSettings(documents, state, identity, KtorNetworkDiagnostics({ engine(it) }, risk) { identity.tapString.isNotEmpty() }, risk,
                     clearAppSession = { users.clearModeSecureSession(RequestMode.OFFICIAL_APP, it) })
-                network.initialize().getOrThrow(); users.restoreSecureSessions()
+                withContext(Dispatchers.Default) { network.initialize().getOrThrow(); users.restoreSecureSessions() }
                 val session = PortableReadingSession(state)
                 val downloadServices = services.downloadServices(appScope, appSettings, { engine() },
                     { "https://${state.snapshot.settings.apiHost}/" }, { state.snapshot.settings })
@@ -148,7 +168,9 @@ class PortableAppGraph private constructor(
                     return boundClients.get(generation to selected) { client.withEngineClient(selected, services.proxyPolicy, generation) }
                 }
                 val themes = PersistentThemeCatalogs(documents)
-                themes.initialize().onFailure { startupWarnings += "题材缓存无法读取，将暂用内存资料：${it.message}" }
+                withContext(Dispatchers.Default) {
+                    themes.initialize().onFailure { warn("题材缓存无法读取，将暂用内存资料：${it.message}") }
+                }
                 val manga = PortableMangaRepository(client, themeCache = themes, downloadClient = { boundClient() })
                 val discovery = PortableComicDiscoveryRepository(client, themeCatalog = themes)
                 val novelCache = VerifiedPortableNovelCache(cache)
@@ -157,27 +179,35 @@ class PortableAppGraph private constructor(
                     requireDownloadNetwork = { requireDownloadNetwork() }, downloadClient = { boundClient() },
                     imagePositionDebug = debugStore, imagePositionDebugEnabled = { services.debugBuild }, themeCatalog = themes,
                     inspectImage = services.readerImageIo::inspect)
-                novels.refreshCachedVolumes().getOrThrow()
                 val novelShelf = PortableNovelShelfRepository(client)
                 val progress = PortableReadingProgress(documents, state, manga, appScope)
-                val records = DownloadRecords(documents, cache).also {
-                    try { it.awaitReady() }
-                    catch (cancel: CancellationException) { throw cancel }
-                    catch (error: Exception) { startupWarnings += error.message ?: "下载记录无法读取，原数据已保留" }
-                }
+                val records = DownloadRecords(documents, cache)
                 val access = LocalDownloadAccess()
                 val comments = PortableCommentRepository(client, DownloadedCommentStore(records))
                 val manager = DownloadManager(manga, records, cache, KtorDownloadImageTransport(downloadServices.clientProvider, networkState = state),
-                    downloadServices.runtime, DownloadQueueStore(documents), downloadServices.networkPolicy, network, comments, access, novels, session, appScope)
-                try { manager.awaitRestoration() }
-                catch (cancel: CancellationException) { throw cancel }
-                catch (error: Exception) {
-                    startupWarnings += "下载队列无法恢复，原记录已保留，下载操作已停用；修复存储后请重新启动：${error.message.orEmpty()}"
-                }
+                    downloadServices.runtime, DownloadQueueStore(documents), downloadServices.networkPolicy, network, comments, access, novels, session, appScope, deferRestoration = true, sourceGeneration = { state.snapshot.generation })
                 val downloads = PortableDownloadRepository(records, manager, access)
                 val export = PortableComicExportRepository(downloads, services.comicExportIo, documents, access, appScope, services.beforeExport)
-                export.awaitRestoration().onFailure { error ->
-                    startupWarnings += error.message ?: "导出任务无法读取，原数据已保留"
+                // 首帧之后预热；通知/下载命令可以直接 await，不依赖界面或帧时钟。
+                val background = appScope.launch(start = CoroutineStart.LAZY) {
+                    supervisorScope {
+                        launch {
+                            try { manager.awaitRestoration() }
+                            catch (cancel: CancellationException) { throw cancel }
+                            catch (error: Exception) { warn(error.message ?: "下载队列无法恢复，原记录已保留") }
+                        }
+                        launch { export.awaitRestoration().onFailure { warn(it.message ?: "导出任务无法读取，原数据已保留") } }
+                    }
+                }
+                // 系统通知可在首帧前提交下载命令，首次参数不能依赖异步 collect 的调度顺序。
+                val initialDownloadSettings = appSettings.settings.first()
+                manager.setImageConcurrency(initialDownloadSettings.comicImageConcurrency)
+                manager.setBandwidthLimit(initialDownloadSettings.comicDownloadLimitKiB)
+                appScope.launch {
+                    appSettings.settings.collect {
+                        manager.setImageConcurrency(it.comicImageConcurrency)
+                        manager.setBandwidthLimit(it.comicDownloadLimitKiB)
+                    }
                 }
                 val loaders = AppResourcePool<Int, ImageLoader> { it.shutdown() }
                 cleanup += loaders::close
@@ -226,9 +256,11 @@ class PortableAppGraph private constructor(
                 val repositories = AppRepositories(manga, discovery, novels, novelShelf, users, session, downloads, comments,
                     PortableShareLinkRepository(client, network::persistShareHosts), localReading, progress, appSettings, readerPreferences, readerTools,
                     novelPreferences, annotations, blacklist, network, risk, storage,
-                    PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore)
+                    PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore,
+                    startBackground = { if (background.start()) trace("shell_frame") })
+                trace("core_ready")
                 completed = true
-                return PortableAppGraph(repositories, manager, ::imageLoader, startupWarnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })
+                return PortableAppGraph(repositories, manager, ::imageLoader, warnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })
             } finally { if (!completed) drainGraphLifetime(lifetime, ::closeAll) }
         }
     }

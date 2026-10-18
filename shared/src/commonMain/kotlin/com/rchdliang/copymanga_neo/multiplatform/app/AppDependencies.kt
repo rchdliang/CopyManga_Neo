@@ -36,7 +36,8 @@ data class AppRepositories(
     val networkLog: NetworkLogRepository,
     val images: ReaderImageRepository,
     val export: ComicExportRepository,
-    val novelImagePositionDebug: com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore? = null
+    val novelImagePositionDebug: com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore? = null,
+    val startBackground: () -> Unit = {}
 )
 
 data class AppPlatforms(

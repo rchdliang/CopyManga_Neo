@@ -11,6 +11,28 @@ import kotlin.test.*
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortableReadingLifecycleTest {
+    @Test fun returningFromChapterEndKeepsCompletedBadgeButClearsResumeAdvance() = runTest {
+        val docs = Documents()
+        val reading = PortableLocalReading(docs, backgroundScope)
+        reading.awaitReady().getOrThrow()
+        val end = LocalReadingRecord("owner", "comic", "book", "a", "A", page = 9, completed = true, atChapterEnd = true)
+        reading.record(end)
+        reading.flush().getOrThrow()
+        assertTrue(reading.position("owner", "comic", "book", "a")!!.atChapterEnd)
+        val backup = PortableBackupCodec.reading(reading.snapshot.value)
+        assertTrue(PortableBackupCodec.reading(backup).records.single().atChapterEnd)
+        reading.record(end.copy(page = 2, completed = false, atChapterEnd = false))
+        reading.flush().getOrThrow()
+        val restored = PortableLocalReading(docs, backgroundScope)
+        restored.awaitReady().getOrThrow()
+        val position = restored.position("owner", "comic", "book", "a")!!
+        assertTrue(position.completed)
+        assertFalse(position.atChapterEnd)
+        assertEquals(2, position.page)
+        val legacy = storageJson.decodeFromString(LocalReadingRecord.serializer(),
+            storageJson.encodeToString(LocalReadingRecord.serializer(), end).replace(",\"atChapterEnd\":true", ""))
+        assertFalse(legacy.atChapterEnd)
+    }
     private class Documents : DocumentStorage {
         val values = mutableMapOf<String, String>()
         var readGate: CompletableDeferred<Unit>? = null

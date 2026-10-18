@@ -8,7 +8,7 @@ interface CacheStorage {
     suspend fun read(path: String, limit: Int): ByteArray?
     suspend fun write(path: String, bytes: ByteArray)
     /** 分块写入；生产文件后端覆盖此方法，成功返回后才发布正式文件。 */
-    suspend fun writeStream(path: String, produce: suspend (suspend (ByteArray) -> Unit) -> Unit) {
+    suspend fun writeStream(path: String, publish: (suspend (suspend () -> Unit) -> Unit)? = null, produce: suspend (suspend (ByteArray) -> Unit) -> Unit) {
         val chunks = mutableListOf<ByteArray>()
         var size = 0
         produce { chunk ->
@@ -18,7 +18,7 @@ interface CacheStorage {
         val bytes = ByteArray(size)
         var offset = 0
         chunks.forEach { it.copyInto(bytes, offset); offset += it.size }
-        write(path, bytes)
+        if (publish == null) write(path, bytes) else publish { write(path, bytes) }
     }
     suspend fun list(prefix: String = ""): List<String>
     suspend fun remove(path: String)

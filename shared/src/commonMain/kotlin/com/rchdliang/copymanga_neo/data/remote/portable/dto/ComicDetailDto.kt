@@ -34,7 +34,7 @@ data class ComicDetailDto(
     @SerialName("b_hidden") val bHidden: Boolean,
     @SerialName("ban") val ban: Int,
     @SerialName("name") val name: String,
-    @SerialName("alias") val comicAlias: String,
+    @SerialName("alias") val comicAlias: String? = null,
     @SerialName("path_word") val pathWord: String,
     @SerialName("close_comment") val closeComment: Boolean,
     @SerialName("close_roast") val closeRoast: Boolean,

@@ -201,14 +201,22 @@ private fun DownloadsContent(
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
-                DownloadsSectionHeader(
-                    title = "正在下载",
-                    countText = "${activeDownloads.size} 个任务"
-                )
+            if (uiState.isLoading || uiState.loadError != null) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "restoration") {
+                    Text(
+                        uiState.loadError ?: "正在恢复下载记录…",
+                        color = if (uiState.loadError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
-
             if (hasActive) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
+                    DownloadsSectionHeader(
+                        title = "正在下载",
+                        countText = "${activeDownloads.size} 个任务"
+                    )
+                }
                 activeDownloads.entries.forEach { (pathWord, progressInfo) ->
                     val paused =
                         progressInfo.status == DownloadTaskStatus.PAUSED || progressInfo.status == DownloadTaskStatus.PAUSED_BY_RISK
@@ -239,20 +247,19 @@ private fun DownloadsContent(
                         }
                     }
                 }
-            } else {
-                item(span = { GridItemSpan(maxLineSpan) }, key = "active_empty") {
-                    EmptyDownloadSection(text = "暂无下载任务")
+                item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
+                    Spacer(Modifier.height(8.dp))
                 }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
-                Spacer(Modifier.height(8.dp))
             }
 
             item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_header") {
                 DownloadsSectionHeader(
                     title = "已下载",
-                    countText = "$downloadedCount 部"
+                    countText = when {
+                        uiState.isLoading -> "正在读取"
+                        uiState.loadError != null && !hasDownloaded -> "数据未就绪"
+                        else -> "$downloadedCount 部"
+                    }
                 )
             }
 
@@ -299,7 +306,7 @@ private fun DownloadsContent(
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
-                    EmptyDownloadSection(text = "暂无已下载内容")
+                    if (!uiState.isLoading && uiState.loadError == null) EmptyDownloadSection(text = "暂无已下载内容")
                 }
             }
         }

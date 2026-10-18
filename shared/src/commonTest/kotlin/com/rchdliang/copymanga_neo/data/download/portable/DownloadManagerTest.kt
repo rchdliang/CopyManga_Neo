@@ -112,9 +112,11 @@ class DownloadManagerTest {
         var gate: CompletableDeferred<Unit>? = null
         var cleanupGate: CompletableDeferred<Unit>? = null
         var cancelled = 0
+        var failureUrl: String? = null
         override suspend fun read(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit): ByteArray {
             calls++
             requestedUrls += url
+            if (url == failureUrl) throw PlatformIOException("image failed")
             try { if (calls > gateAfterCalls) gate?.await() } catch (cancel: CancellationException) { cancelled++; throw cancel }
             finally { cleanupGate?.let { withContext(NonCancellable) { it.await() } } }
             onBytes(3)
@@ -144,6 +146,35 @@ class DownloadManagerTest {
         ChapterInfo(1, "chapter", 1, 1, null, "第一章", "id", "book", null, "default", 0, null, null, null, null),
         ChapterDownloadStatus.WAITING
     )), "作者", "连载", null, null, taskId = "task")
+
+    @Test fun workerCountIsBoundedAndPauseCancelsEveryInFlightImage() = runTest {
+        val f = Fixture(backgroundScope)
+        f.manga.imageUrls = (0..9).map { "https://test.invalid/$it.jpg" }
+        f.manager.setImageConcurrency(3)
+        f.images.gate = CompletableDeferred()
+        runCurrent(); f.manager.enqueue(task()); runCurrent()
+        assertEquals(3, f.images.calls)
+        f.manager.pauseDownload(task().taskKey).join(); runCurrent()
+        assertEquals(3, f.images.cancelled)
+        assertNull(f.records.getChapter("chapter"))
+        f.images.gate = null
+        f.manager.resumeDownload(task().taskKey).join(); runCurrent()
+        val chapter = assertNotNull(f.records.getChapter("chapter"))
+        assertEquals((0..9).map { "${it.toString().padStart(3, '0')}.jpg" }, chapter.imagePaths.map { it.substringAfterLast('/') })
+        assertTrue(f.records.hasCompleteFiles(chapter))
+    }
+
+    @Test fun failedWorkerCancelsSiblingsBeforeErrorAndNeverCommitsChapter() = runTest {
+        val f = Fixture(backgroundScope)
+        f.manga.imageUrls = (0..9).map { "https://test.invalid/$it.jpg" }
+        f.images.gate = CompletableDeferred()
+        f.images.failureUrl = f.manga.imageUrls[2]
+        runCurrent(); f.manager.enqueue(task()); runCurrent()
+        assertEquals(3, f.images.calls)
+        assertEquals(2, f.images.cancelled)
+        assertNull(f.records.getChapter("chapter"))
+        assertEquals(DownloadTaskStatus.ERROR, f.manager.downloadProgress.value[task().taskKey]?.status)
+    }
 
     @Test fun corruptQueueStopsBackgroundCommandsWithoutReplacingDurableData() = runTest {
         val documents = Documents()

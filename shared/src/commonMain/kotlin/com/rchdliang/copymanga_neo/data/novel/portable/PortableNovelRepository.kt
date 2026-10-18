@@ -133,7 +133,13 @@ class PortableNovelRepository(
 
     override suspend fun removeVolume(mode:RequestMode,owner:String,path:String,id:String):Result<Unit> = result { mutex.withLock { session(mode,owner);cache.removeVolume(mode,owner,path,id);publishCached() } }
     override suspend fun removeBook(mode:RequestMode,owner:String,path:String):Result<Unit> = result { mutex.withLock { session(mode,owner);cache.removeBook(mode,owner,path);publishCached() } }
-    override suspend fun refreshCachedVolumes():Result<Unit> = result { mutex.withLock { publishCached() } }
+    private var cacheIndexed = false
+    override suspend fun awaitCachedVolumes(): Result<Unit> = result {
+        mutex.withLock { if (!cacheIndexed) { publishCached(); cacheIndexed = true } }
+    }
+    override suspend fun refreshCachedVolumes():Result<Unit> = result {
+        mutex.withLock { publishCached(); cacheIndexed = true }
+    }
     override suspend fun cacheUsage():Result<NovelCacheUsage> = result { cache.usage() }
     override suspend fun clearCache():Result<Unit> = result { mutex.withLock { cache.clear();publishCached() } }
     private suspend fun publishCached(){mutableCached.value=cache.list().sortedByDescending{it.lastAccessedAt}}

@@ -37,6 +37,9 @@ fun PortableAppEntry(
         error = null
         var uninstalled: PortableAppGraph? = null
         try {
+            // Wasm 的本地存储是同步 API；先让宿主绘制首页骨架，再读取配置。
+            withFrameNanos { }
+            withFrameNanos { }
             uninstalled = create(scope)
             currentCoroutineContext().ensureActive()
             if (!disposed) {
@@ -51,8 +54,9 @@ fun PortableAppEntry(
             finally { if (startupJob === job) startupJob = null }
         }
     }
-    LaunchedEffect(warnings, graph) {
-        for (warning in (graph?.startupWarnings.orEmpty() + warnings).distinct()) if (warning !in shown) {
+    val graphWarnings by (graph?.warnings ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<String>()) }).collectAsState()
+    LaunchedEffect(warnings, graphWarnings) {
+        for (warning in (graphWarnings + warnings).distinct()) if (warning !in shown) {
             snackbar.showSnackbar(warning, actionLabel = "知道了", duration = SnackbarDuration.Long)
             shown = shown + warning
         }
@@ -81,10 +85,7 @@ fun PortableAppEntry(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             val ready = graph
             if (ready != null) CopyMangaApp(ready.repositories, remember(ready) { platforms(ready) }, owner)
-            else Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (error == null) { CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); Text("正在读取本地资料…") }
-                else { Text(error.orEmpty()); Spacer(Modifier.height(16.dp)); Button(onClick = { attempt++ }) { Text("重试") } }
-            }
+            else StartupSurface(error) { attempt++ }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
             if (ready != null && error != null) AlertDialog(
                 onDismissRequest = { error = null }, title = { Text("资料尚未保存") }, text = { Text(error.orEmpty()) },

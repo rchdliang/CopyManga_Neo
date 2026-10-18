@@ -36,6 +36,10 @@ class DocumentStore<T>(
     val error = mutableError.asStateFlow()
 
     suspend fun load(): Result<Unit> = mutex.withLock { loadLocked() }
+    /** 首次读取合并到同一把锁；显式 load 仍用于重新读取和修复后重试。 */
+    suspend fun ensureLoaded(): Result<Unit> = mutex.withLock {
+        if (loaded) Result.success(Unit) else loadLocked()
+    }
     private suspend fun loadLocked(): Result<Unit> = attempt {
         val value = storage.read(key)?.let {
             checkSize(it)
@@ -51,6 +55,10 @@ class DocumentStore<T>(
         attempt {
             val next = transform(mutable.value)
             validate(next)
+            if (next == mutable.value) {
+                mutableError.value = null
+                return@attempt
+            }
             val encoded = storageJson.encodeToString(serializer, next)
             checkSize(encoded)
             storage.write(key, encoded)

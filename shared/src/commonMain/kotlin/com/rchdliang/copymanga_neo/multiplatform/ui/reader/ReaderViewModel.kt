@@ -78,7 +78,8 @@ class ReaderViewModel constructor(
                 authors = comicAuthors,
                 page = page,
                 fraction = fraction,
-                completed = completed
+                completed = completed,
+                atChapterEnd = completed
             )
         )
         if (currentChapterUuid != chapter || lastReportedChapter != chapter) {
@@ -110,6 +111,10 @@ class ReaderViewModel constructor(
     val appending = mutableAppending.asStateFlow()
     private var chain = emptyList<ReaderSessionChapter>()
     private var appendJob: Job? = null
+    private var prependJob: Job? = null
+    private var appendBoundary: String? = null
+    private var prependBoundary: String? = null
+    private var attemptedPrevious: String? = null
     private val navigationJobs = mutableMapOf<String, Job>()
     private var policyJob: Job? = null
     private var attemptedNext: String? = null
@@ -151,7 +156,7 @@ class ReaderViewModel constructor(
         viewModelScope.launch {
             readingProgress.progress.map { it.owner }.distinctUntilChanged().collect { owner ->
                 if (owner != null && readerOwner != null && owner != readerOwner) {
-                    loadJob?.cancel(); appendJob?.cancel(); policyJob?.cancel(); catalogJob?.cancel()
+                    loadJob?.cancel(); appendJob?.cancel(); prependJob?.cancel(); policyJob?.cancel(); catalogJob?.cancel()
                     navigationJobs.values.forEach { it.cancel() }; navigationJobs.clear()
                     initialized = false; readerOwner = null; chain = emptyList()
                     mutableCommentsAllowed.value = false
@@ -240,7 +245,8 @@ class ReaderViewModel constructor(
             currentChapterUuid = chapterUuid
             currentGroup = group
         }
-        appendJob?.cancel()
+        appendJob?.cancel(); prependJob?.cancel()
+        appendBoundary = null; prependBoundary = null; attemptedPrevious = null
         if (keepContent) {
             // 同一会话内刷新一章，不打断其他已追加章节尚未完成的在线导航。
             navigationJobs.remove(chapterUuid)?.cancel()
@@ -411,55 +417,83 @@ class ReaderViewModel constructor(
     }
 
     /** 每次只追加下一章；同一个失败目标不因滚动重组被反复请求。 */
-    fun appendNextChapter(retry: Boolean = false) {
-        if (!tools.settings.value.continuousChapters || appendJob?.isActive == true) return
-        val last = chain.lastOrNull() ?: return
-        val next = last.content.nextUuid ?: return
-        if (chain.any { it.uuid == next } || (!retry && attemptedNext == next)) return
-        attemptedNext = next
+    fun appendNextChapter(retry: Boolean = false) = loadAdjacent(previous = false, retry = retry)
+    fun prependPreviousChapter(retry: Boolean = false) = loadAdjacent(previous = true, retry = retry)
+
+    /** 两侧最多各一个请求；迟到结果只允许追加到请求时的边界。 */
+    private fun loadAdjacent(previous: Boolean, retry: Boolean) {
+        if (!tools.settings.value.continuousChapters || chain.size >= ReaderWindowPolicy.MAX_RESIDENT_CHAPTERS) return
+        if ((if (previous) prependJob else appendJob)?.isActive == true) return
+        val boundary = (if (previous) chain.firstOrNull() else chain.lastOrNull()) ?: return
+        val next = (if (previous) boundary.content.prevUuid else boundary.content.nextUuid) ?: return
+        val attempted = if (previous) attemptedPrevious else attemptedNext
+        if (chain.any { it.uuid == next } || (!retry && attempted == next)) return
+        if (previous) { attemptedPrevious = next; prependBoundary = boundary.uuid }
+        else { attemptedNext = next; appendBoundary = boundary.uuid; mutableAppending.value = true }
         val revision = sessionRevision
         val comic = currentComicPathWord
-        mutableAppending.value = true
-        appendJob = viewModelScope.launch {
+        val request = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             try {
                 val downloaded = downloadRepository.getDownloadedChapter(next)
                 val result = if (downloaded != null && downloaded.comicPathWord == comic) {
-                    Result.success(
-                        downloaded.offlineContent(
-                            downloadRepository.getDownloadedChapters(
-                                comic
-                            )
-                        )
-                    )
-                } else repository.getChapterContent(comic, next, last.group)
+                    Result.success(downloaded.offlineContent(downloadRepository.getDownloadedChapters(comic)))
+                } else repository.getChapterContent(comic, next, boundary.group)
                 ensureActive()
                 if (revision != sessionRevision) return@launch
                 result.fold(
                     onSuccess = { content ->
-                        if (content.imageUrls.isEmpty()) return@fold
-                        val group = downloaded?.takeIf { it.comicPathWord == comic }?.groupPathWord
-                            ?: last.group
-                        chain = chain + ReaderSessionChapter(next, group, content)
-                        val active = chain.firstOrNull { it.uuid == currentChapterUuid } ?: last
-                        _uiState.value = ReaderUiState.Success(active.content, active.uuid, chain)
-                        if (downloaded?.comicPathWord == comic) {
-                            refreshDownloadedNavigation(comic, next, group, revision)
+                        val edge = if (previous) chain.firstOrNull() else chain.lastOrNull()
+                        if (content.imageUrls.isEmpty() || edge?.uuid != boundary.uuid || chain.any { it.uuid == next }) return@fold
+                        if (chain.size >= ReaderWindowPolicy.MAX_RESIDENT_CHAPTERS) {
+                            if (previous) attemptedPrevious = null else attemptedNext = null
+                            return@fold
                         }
+                        val group = downloaded?.takeIf { it.comicPathWord == comic }?.groupPathWord ?: boundary.group
+                        val item = ReaderSessionChapter(next, group, content)
+                        chain = if (previous) listOf(item) + chain else chain + item
+                        val active = chain.firstOrNull { it.uuid == currentChapterUuid } ?: boundary
+                        _uiState.value = ReaderUiState.Success(active.content, active.uuid, chain)
+                        if (downloaded?.comicPathWord == comic) refreshDownloadedNavigation(comic, next, group, revision)
                     },
-                    onFailure = { _toastMessage.value = "下一章未加载，可在章末重试" }
+                    onFailure = { _toastMessage.value = if (previous) "上一章未加载，可用上一章按钮重试" else "下一章未加载，可在章末重试" }
                 )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                UiLog.w("ReaderViewModel", "下一章加载失败", error)
-                if (revision == sessionRevision) _toastMessage.value = "下一章加载失败，请重试"
+                UiLog.w("ReaderViewModel", "相邻章节加载失败", error)
+                if (revision == sessionRevision) _toastMessage.value = "相邻章节加载失败，请重试"
             } finally {
-                if (revision == sessionRevision) mutableAppending.value = false
+                val job = coroutineContext[Job]
+                if (previous && prependJob === job) { prependJob = null; prependBoundary = null }
+                if (!previous && appendJob === job) { appendJob = null; appendBoundary = null; mutableAppending.value = false }
             }
         }
+        if (previous) prependJob = request else appendJob = request
+        request.start()
+    }
+
+    /** 界面停稳并保存锚点后才能裁剪，不能在拖动中改变页面下标。 */
+    fun retainWindow(uuid: String) {
+        if (uuid != currentChapterUuid) return
+        val retained = ReaderWindowPolicy.around(chain, uuid) { it.uuid }
+        if (retained == chain) return
+        val keys = retained.map { it.uuid }.toSet()
+        chain = retained
+        navigationJobs.keys.filter { it !in keys }.forEach { navigationJobs.remove(it)?.cancel() }
+        if (appendBoundary != null && appendBoundary !in keys) {
+            appendJob?.cancel(); appendJob = null; appendBoundary = null; mutableAppending.value = false
+        }
+        if (prependBoundary != null && prependBoundary !in keys) {
+            prependJob?.cancel(); prependJob = null; prependBoundary = null
+        }
+        attemptedNext = null; attemptedPrevious = null
+        mutableClosedChapters.value = mutableClosedChapters.value.intersect(keys)
+        val active = retained.firstOrNull { it.uuid == uuid } ?: return
+        _uiState.value = ReaderUiState.Success(active.content, active.uuid, retained)
     }
 
     fun closeChapterComments(uuid: String) {
+        if (chain.none { it.uuid == uuid }) return
         mutableClosedChapters.value += uuid
     }
 

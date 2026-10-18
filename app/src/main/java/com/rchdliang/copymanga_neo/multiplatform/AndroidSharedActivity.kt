@@ -85,30 +85,27 @@ class AndroidSharedActivity : ComponentActivity() {
             if (graph == null) {
                 MaterialTheme {
                     Surface(Modifier.fillMaxSize()) {
-                        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.Center) {
-                            if (startup == null) CircularProgressIndicator()
-                            else {
-                                Text(
-                                    startup?.exceptionOrNull()?.message ?: "应用初始化失败",
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                TextButton(onClick = { sharedContainer.start() }) {
-                                    Text("重试", color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
+                        com.rchdliang.copymanga_neo.multiplatform.app.StartupSurface(
+                            startup?.exceptionOrNull()?.message,
+                            onRetry = { sharedContainer.start() }
+                        )
                     }
                 }
                 return@setContent
             }
             LaunchedEffect(graph) {
                 graph.repositories.risk.resetForAppLaunch(isFreshActivity = savedInstanceState == null)
-                graph.startupWarnings.forEach {
+            }
+            val startupWarnings by graph.warnings.collectAsStateWithLifecycle()
+            var shownWarnings by remember { mutableStateOf(emptySet<String>()) }
+            LaunchedEffect(startupWarnings) {
+                startupWarnings.filterNot { it in shownWarnings }.forEach {
                     android.widget.Toast.makeText(
                         applicationContext,
                         it,
                         android.widget.Toast.LENGTH_LONG
                     ).show()
+                    shownWarnings = shownWarnings + it
                 }
             }
             val platforms = AppPlatforms(

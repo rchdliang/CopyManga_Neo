@@ -42,6 +42,11 @@ data class CommentFeed(
     val downloadComplete: Boolean = false
 )
 
+/** 阅读器裁剪窗口时仅保存文字和回复 ID，避免草稿持有整份评论数据。 */
+data class CommentDraftSnapshot(val root: String, val replies: Map<String, String>) {
+    val isEmpty get() = root.isBlank() && replies.values.all { it.isBlank() }
+}
+
 data class CommentsUiState(
     val reportTarget: MangaComment? = null,
     val reportConfig: com.rchdliang.copymanga_neo.domain.model.CommentReportConfig? = null,
@@ -77,6 +82,7 @@ class CommentsViewModel constructor(
     val uiState = state.asStateFlow()
     private var rootFeed = CommentFeed()
     private var rootDraft = ""
+    private var pendingReaderDrafts: CommentDraftSnapshot? = null
     private val replyDrafts = mutableMapOf<String, String>()
     private var readJob: Job? = null
     private var postJob: Job? = null
@@ -138,6 +144,12 @@ class CommentsViewModel constructor(
         rootFeed = CommentFeed()
         rootDraft = ""
         replyDrafts.clear()
+        pendingReaderDrafts?.let { saved ->
+            rootDraft = saved.root
+            replyDrafts.putAll(saved.replies)
+            state.update { it.copy(draft = saved.root) }
+        }
+        pendingReaderDrafts = null
         load(refresh = true)
         if (postingAllowed && permissionPathWord != null) retryPermission()
     }
@@ -250,6 +262,14 @@ class CommentsViewModel constructor(
 
     fun hasDraft(): Boolean =
         state.value.draft.isNotBlank() || rootDraft.isNotBlank() || replyDrafts.values.any { it.isNotBlank() }
+
+    fun captureReaderDrafts(): CommentDraftSnapshot {
+        pendingReaderDrafts?.let { if (state.value.target == null) return it }
+        saveDraft()
+        return CommentDraftSnapshot(rootDraft, replyDrafts.filterValues { it.isNotBlank() }.toMap())
+    }
+
+    fun restoreReaderDrafts(value: CommentDraftSnapshot) { pendingReaderDrafts = value }
 
     fun clearMessage() {
         state.update { it.copy(message = null) }

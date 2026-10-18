@@ -56,6 +56,8 @@ interface NovelRepository {
 
     suspend fun removeBook(mode: RequestMode, owner: String, path: String): Result<Unit>
     suspend fun refreshCachedVolumes(): Result<Unit>
+    /** 等待首次索引；多处同时进入页面时共享已加载的结果。 */
+    suspend fun awaitCachedVolumes(): Result<Unit> = refreshCachedVolumes()
     suspend fun cacheUsage(): Result<NovelCacheUsage>
     suspend fun clearCache(): Result<Unit>
 }

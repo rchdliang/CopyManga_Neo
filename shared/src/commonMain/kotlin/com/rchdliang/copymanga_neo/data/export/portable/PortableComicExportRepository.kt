@@ -44,7 +44,7 @@ class PortableComicExportRepository(
     override val messages = mutableMessages.asSharedFlow()
     private val commands = Mutex()
     private var work: Job? = null
-    private val restoration = scope.async {
+    private val restoration = scope.async(start = CoroutineStart.LAZY) {
         try {
             document.load().getOrThrow()
             mutable.value = document.state.value

@@ -80,6 +80,8 @@ class PortableSettingsBackup constructor(
     private suspend fun applyPreferences(value: SettingsBackup) {
         settings.setThemeMode(value.settings.themeMode).fold({}, { throw it })
         settings.setWifiOnlyDownloads(value.settings.wifiOnlyDownloads).fold({}, { throw it })
+        settings.setComicImageConcurrency(value.settings.comicImageConcurrency).fold({}, { throw it })
+        settings.setComicDownloadLimitKiB(value.settings.comicDownloadLimitKiB).fold({}, { throw it })
         settings.setHomeRankPreferences(value.homeRank).fold({}, { throw it })
         reader.updateGlobal { value.readerDefaults }.fold({}, { throw it })
 

@@ -18,7 +18,9 @@ data class LocalReadingRecord(
     val completed: Boolean = false,
     val updatedAt: Long = kotlin.time.Clock.System.now().toEpochMilliseconds(),
     val cover: String = "",
-    val authors: String = ""
+    val authors: String = "",
+    /** 最后记录的位置是否停在章末；回翻后清除，与永久已读标记分开。 */
+    val atChapterEnd: Boolean = false
 ) {
     // Length-prefixing prevents delimiter collisions in names and account identifiers.
     val key: String

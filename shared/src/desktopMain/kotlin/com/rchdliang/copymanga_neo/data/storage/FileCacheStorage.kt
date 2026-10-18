@@ -47,7 +47,7 @@ class FileCacheStorage(directory: String) : CacheStorage {
     override suspend fun write(path: String, bytes: ByteArray): Unit = withContext(Dispatchers.IO) {
         val target = file(path)
         val parent = requireNotNull(target.parentFile)
-        if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Cannot create cache directory")
+        Files.createDirectories(parent.toPath())
         val temporary = File.createTempFile("cache-", ".partial", parent)
         try {
             FileOutputStream(temporary).use { output -> output.write(bytes); output.fd.sync() }
@@ -59,10 +59,10 @@ class FileCacheStorage(directory: String) : CacheStorage {
         } finally { Files.deleteIfExists(temporary.toPath()) }
     }
     /** 网络或校验失败时删除临时文件，原目标文件保持可读。 */
-    override suspend fun writeStream(path: String, produce: suspend (suspend (ByteArray) -> Unit) -> Unit): Unit = withContext(Dispatchers.IO) {
+    override suspend fun writeStream(path: String, publish: (suspend (suspend () -> Unit) -> Unit)?, produce: suspend (suspend (ByteArray) -> Unit) -> Unit): Unit = withContext(Dispatchers.IO) {
         val target = file(path)
         val parent = requireNotNull(target.parentFile)
-        if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Cannot create cache directory")
+        Files.createDirectories(parent.toPath())
         val temporary = File.createTempFile("download-", ".partial", parent)
         try {
             FileOutputStream(temporary).use { output ->
@@ -70,7 +70,11 @@ class FileCacheStorage(directory: String) : CacheStorage {
                 output.fd.sync()
             }
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            val commit: suspend () -> Unit = {
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                Unit
+            }
+            if (publish == null) commit() else publish(commit)
         } finally { Files.deleteIfExists(temporary.toPath()) }
     }
     override suspend fun list(prefix: String): List<String> = withContext(Dispatchers.IO) {

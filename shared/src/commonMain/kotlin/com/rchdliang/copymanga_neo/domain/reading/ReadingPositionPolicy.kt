@@ -13,9 +13,10 @@ object ReadingPositionPolicy {
         page: Int,
         count: Int,
         settled: Boolean,
-        lastImageBottomVisible: Boolean
+        lastImageBottomVisible: Boolean,
+        continuous: Boolean = false
     ): Boolean =
-        count > 0 && page == count - 1 && settled && lastImageBottomVisible
+        count > 0 && (continuous || page == count - 1) && settled && lastImageBottomVisible
 
     fun clampPage(page: Int, count: Int): Int = if (count <= 0) 0 else page.coerceIn(0, count - 1)
 }

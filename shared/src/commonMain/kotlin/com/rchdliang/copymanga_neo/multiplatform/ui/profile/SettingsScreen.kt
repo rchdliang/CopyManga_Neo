@@ -1,5 +1,14 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.ui.text.input.KeyboardType
+import kotlin.math.roundToInt
+
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
@@ -14,7 +23,6 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Restore
@@ -54,7 +62,11 @@ internal fun SettingsScreen(
     onNavigateToAbout: () -> Unit = {},
     onNavigateToData: () -> Unit = {},
     viewModel: SettingsViewModel,
-    onManageDownloads: () -> Unit
+    onManageDownloads: () -> Unit,
+    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW,
+    embedded: Boolean = false,
+    overviewLayout: (@Composable (appPreferences: @Composable () -> Unit) -> Unit)? = null,
+    onOpenDestination: ((SettingsDestination) -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
@@ -65,10 +77,15 @@ internal fun SettingsScreen(
         state.message?.let { toast.showToast(it); viewModel.clearMessage() }
     }
     SettingsPage(
+        overviewLayout = overviewLayout,
+        embedded = embedded,
+        initialDestination = initialDestination,
+        onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
-        onCredentialExportPasswordChange = viewModel::setCredentialExportPassword,
+        onImageConcurrencyChange = viewModel::setComicImageConcurrency,
+        onDownloadLimitChange = viewModel::setComicDownloadLimitKiB,
         onNavigateBack = onNavigateBack,
         onNavigateToAbout = onNavigateToAbout,
         onNavigateToData = onNavigateToData,
@@ -98,7 +115,8 @@ internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
-    onCredentialExportPasswordChange: (Boolean) -> Unit = {},
+    onImageConcurrencyChange: (Int) -> Unit = {},
+    onDownloadLimitChange: (Int) -> Unit = {},
     onNavigateBack: () -> Unit,
     onNavigateToAbout: () -> Unit = {},
     onNavigateToData: () -> Unit = {},
@@ -110,11 +128,17 @@ internal fun SettingsPage(
     onManageDownloads: () -> Unit = {},
     onNotificationSettings: () -> Unit = {},
     notificationSettingsUnavailableReason: String? = null,
-    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW
+    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW,
+    embedded: Boolean = false,
+    overviewLayout: (@Composable (
+        appPreferences: @Composable () -> Unit
+    ) -> Unit)? = null,
+    onOpenDestination: ((SettingsDestination) -> Unit)? = null
 ) {
     var destination by rememberSaveable { mutableStateOf(initialDestination) }
     var picker by rememberSaveable { mutableStateOf<SettingsPicker?>(null) }
     var resetReader by rememberSaveable { mutableStateOf(false) }
+    var downloadNumber by rememberSaveable { mutableStateOf<String?>(null) }
     val enabled = !state.isLoading && !state.isSaving
     val reader = state.readerDefaults
     val direction =
@@ -123,70 +147,75 @@ internal fun SettingsPage(
     val orientation = ScreenOrientationSetting.fromName(reader.screenOrientation).label
     fun size(bytes: Long?) = bytes?.let { formatStorageBytes(it) } ?: "正在统计"
     val goBack = {
-        if (destination == SettingsDestination.OVERVIEW) onNavigateBack() else destination =
+        if (onOpenDestination != null || destination == SettingsDestination.OVERVIEW) onNavigateBack() else destination =
             SettingsDestination.OVERVIEW
     }
-    BackHandler(enabled = destination != SettingsDestination.OVERVIEW) { goBack() }
+    BackHandler(enabled = onOpenDestination == null && destination != SettingsDestination.OVERVIEW) { goBack() }
 
-    ProfileSettingsScaffold(
-        title = when (destination) {
-            SettingsDestination.OVERVIEW -> "设置"
-            SettingsDestination.READING -> "阅读设置"
-            SettingsDestination.DOWNLOADS -> "下载与存储"
-        },
-        onNavigateBack = goBack,
-        isRefreshing = state.storageLoading,
-        onRefresh = if (destination == SettingsDestination.DOWNLOADS) ({
-            if (!state.storageLoading && !state.clearingCache) onRefreshStorage()
-        }) else null
-    ) {
+    val content: @Composable ColumnScope.() -> Unit = {
         when (destination) {
             SettingsDestination.OVERVIEW -> {
-                ProfileSectionTitle("外观")
-                ProfileListItem(
-                    Icons.Outlined.Palette,
-                    "主题",
-                    state.settings.themeMode.label,
-                    index = 0,
-                    count = 1,
-                    enabled = enabled,
-                    onClick = { picker = SettingsPicker.THEME })
-                ProfileSectionTitle("阅读与下载")
-                ProfileListItem(
-                    Icons.AutoMirrored.Outlined.MenuBook, "阅读设置",
-                    "$direction · $scale", index = 0, count = 2,
-                    onClick = { destination = SettingsDestination.READING })
-                ProfileListItem(
-                    Icons.Outlined.Download, "下载与存储",
-                    if (state.settings.wifiOnlyDownloads) "仅 Wi-Fi 下载 · 文件管理" else "下载偏好与文件管理",
-                    index = 1, count = 2, onClick = { destination = SettingsDestination.DOWNLOADS })
-                ProfileSectionTitle("账号")
-                ProfileListItem(
-                    Icons.Outlined.Key, "导出时包含密码", "仅包含已记住的密码",
-                    index = 0, count = 1, enabled = enabled,
-                    onClick = { onCredentialExportPasswordChange(!state.settings.includePasswordInCredentialExport) },
-                    trailingContent = {
-                        Switch(
-                            checked = state.settings.includePasswordInCredentialExport,
-                            onCheckedChange = onCredentialExportPasswordChange,
-                            enabled = enabled
+                val appPreferences: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+                        ProfileSectionTitle("阅读与下载")
+                        ProfileListItem(
+                            Icons.AutoMirrored.Outlined.MenuBook, "阅读设置",
+                            "$direction · $scale", index = 0, count = 2,
+                            onClick = {
+                                onOpenDestination?.invoke(SettingsDestination.READING)
+                                    ?: run { destination = SettingsDestination.READING }
+                            })
+                        ProfileListItem(
+                            Icons.Outlined.Download,
+                            "下载与存储",
+                            if (state.settings.wifiOnlyDownloads) "仅 Wi-Fi 下载 · 文件管理" else "下载偏好与文件管理",
+                            index = 1,
+                            count = 2,
+                            onClick = {
+                                onOpenDestination?.invoke(SettingsDestination.DOWNLOADS)
+                                    ?: run { destination = SettingsDestination.DOWNLOADS }
+                            })
+                        ProfileSectionTitle("外观")
+                        ProfileListItem(
+                            Icons.Outlined.Palette,
+                            "主题",
+                            state.settings.themeMode.label,
+                            index = 0,
+                            count = 1,
+                            enabled = enabled,
+                            onClick = { picker = SettingsPicker.THEME })
+                        ProfileSectionTitle("应用管理")
+                        ProfileListItem(
+                            Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
+                            index = 0, count = 3, onClick = onNavigateToData
                         )
+                        ProfileListItem(
+                            Icons.Outlined.Notifications,
+                            "系统通知设置",
+                            notificationSettingsUnavailableReason ?: "前往系统通知设置",
+                            index = 1,
+                            count = 3,
+                            onClick = onNotificationSettings,
+                            enabled = notificationSettingsUnavailableReason == null
+                        )
+                        ProfileListItem(
+                            Icons.Outlined.Info, "关于 CopyManga Neo", "版本与应用信息",
+                            index = 2, count = 3, onClick = onNavigateToAbout
+                        )
+                        state.error?.let {
+                            Text(
+                                it,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
                     }
-                )
-                ProfileSectionTitle("管理")
-                ProfileListItem(
-                    Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
-                    index = 0, count = 3, onClick = onNavigateToData
-                )
-                ProfileListItem(
-                    Icons.Outlined.Notifications, "系统通知设置", notificationSettingsUnavailableReason ?: "前往系统通知设置",
-                    index = 1, count = 3, onClick = onNotificationSettings,
-                    enabled = notificationSettingsUnavailableReason == null
-                )
-                ProfileListItem(
-                    Icons.Outlined.Info, "关于 CopyManga Neo", "版本与应用信息",
-                    index = 2, count = 3, onClick = onNavigateToAbout
-                )
+                }
+                if (overviewLayout != null) {
+                    overviewLayout(appPreferences)
+                } else {
+                    appPreferences()
+                }
             }
 
             SettingsDestination.READING -> {
@@ -232,7 +261,7 @@ internal fun SettingsPage(
                 ProfileListItem(
                     Icons.Outlined.Wifi, "仅 Wi-Fi 下载",
                     if (state.settings.wifiOnlyDownloads) "等待 Wi-Fi 连接后继续任务" else "允许使用当前网络下载",
-                    index = 0, count = 1, enabled = enabled,
+                    index = 0, count = 3, enabled = enabled,
                     onClick = { onWifiOnlyChange(!state.settings.wifiOnlyDownloads) },
                     trailingContent = {
                         Switch(
@@ -241,6 +270,25 @@ internal fun SettingsPage(
                             enabled = enabled
                         )
                     })
+                ProfileListItem(
+                    Icons.Outlined.Download, "漫画图片并发数",
+                    "${state.settings.comicImageConcurrency} 张",
+                    index = 1, count = 3, enabled = enabled,
+                    onClick = { downloadNumber = "concurrency" }
+                )
+                ProfileListItem(
+                    Icons.Outlined.Download, "漫画图片总限速",
+                    if (state.settings.comicDownloadLimitKiB == 0) "不限速" else
+                        "${formatDownloadLimitMiB(state.settings.comicDownloadLimitKiB)} MiB/s",
+                    index = 2, count = 3, enabled = enabled,
+                    onClick = { downloadNumber = "bandwidth" }
+                )
+                Text(
+                    "仅影响漫画图片，限速由并行下载共享。",
+                    Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
                 ProfileSectionTitle("存储")
                 ProfileListItem(
                     Icons.Outlined.Download, "管理下载文件",
@@ -253,12 +301,6 @@ internal fun SettingsPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                Text(
-                    "未完成的任务可在下载页继续。",
-                    Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
                 state.storageError?.let {
                     Text(
                         it,
@@ -268,11 +310,57 @@ internal fun SettingsPage(
                 }
             }
         }
-        state.error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+        if (destination != SettingsDestination.OVERVIEW) {
+            state.error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+            }
         }
     }
 
+    if (embedded) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap),
+            content = content
+        )
+    } else {
+        ProfileSettingsScaffold(
+            title = when (destination) {
+                SettingsDestination.OVERVIEW -> "设置"
+                SettingsDestination.READING -> "阅读设置"
+                SettingsDestination.DOWNLOADS -> "下载与存储"
+            },
+            onNavigateBack = goBack,
+            isRefreshing = state.storageLoading,
+            onRefresh = if (destination == SettingsDestination.DOWNLOADS) ({
+                if (!state.storageLoading && !state.clearingCache) onRefreshStorage()
+            }) else null,
+            content = content
+        )
+    }
+
+    downloadNumber?.let { kind ->
+        if (kind == "concurrency") {
+            DownloadConcurrencyDialog(
+                initialValue = state.settings.comicImageConcurrency,
+                enabled = enabled,
+                onDismiss = { downloadNumber = null },
+                onSave = {
+                    onImageConcurrencyChange(it)
+                    downloadNumber = null
+                }
+            )
+        } else {
+            DownloadLimitDialog(
+                initialValue = state.settings.comicDownloadLimitKiB,
+                enabled = enabled,
+                onDismiss = { downloadNumber = null },
+                onSave = {
+                    onDownloadLimitChange(it)
+                    downloadNumber = null
+                }
+            )
+        }
+    }
     picker?.let { current ->
         val (title, options, selected) = when (current) {
             SettingsPicker.THEME -> Triple(
@@ -349,7 +437,7 @@ internal fun SettingsPage(
             }
         )
     }
-    if (resetReader) if (LocalRouteActive.current) AlertDialog(
+    if (resetReader) AlertDialog(
         onDismissRequest = { resetReader = false },
         title = { Text("恢复阅读默认值？", color = MaterialTheme.colorScheme.onSurface) },
         text = {
@@ -372,6 +460,176 @@ internal fun SettingsPage(
             }
         }
     )
+}
+
+@Composable
+private fun DownloadLimitDialog(
+    initialValue: Int,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
+) {
+    var input by rememberSaveable {
+        mutableStateOf(
+            if (initialValue == 0) "" else formatDownloadLimitMiB(
+                initialValue
+            )
+        )
+    }
+    val value = parseDownloadLimitKiB(input, initialValue)
+    val valid = value != null
+    if (LocalRouteActive.current) AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("漫画图片总限速", color = MaterialTheme.colorScheme.onSurface) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    singleLine = true,
+                    enabled = enabled,
+                    isError = !valid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    label = {
+                        Text(
+                            "MiB/s",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            "不限速",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+                Text(
+                    if (valid) "留空不限速，保存后生效。" else "请输入有效的正数，或留空。",
+                    Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { value?.let(onSave) }, enabled = enabled && valid) {
+                Text(
+                    "保存",
+                    color = if (enabled && valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "取消",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DownloadConcurrencyDialog(
+    initialValue: Int,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
+) {
+    var value by rememberSaveable { mutableStateOf(initialValue.coerceIn(1, 10).toFloat()) }
+    if (LocalRouteActive.current) AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("漫画图片并发数", color = MaterialTheme.colorScheme.onSurface) },
+        text = {
+            Column {
+                Text(
+                    "${value.roundToInt()} 张",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Slider(
+                    value = value, valueRange = 1f..10f, steps = 8,
+                    onValueChange = { value = it.roundToInt().toFloat() },
+                    enabled = enabled
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    (1..10).forEach { tick ->
+                        Text(
+                            tick.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Text(
+                    "下一章节或暂停后继续时生效。",
+                    Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(value.roundToInt()) }, enabled = enabled) {
+                Text(
+                    "保存",
+                    color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "取消",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
+}
+
+/** 展示使用 MiB/s，保留已有 KiB/s 偏好的精度与持久化格式。 */
+internal fun formatDownloadLimitMiB(limitKiB: Int): String {
+    val rounded = (limitKiB.toLong() * 1000 + 512) / 1024
+    val whole = rounded / 1000
+    val remainder = rounded % 1000
+    return if (remainder == 0L) whole.toString() else
+        "$whole.${remainder.toString().padStart(3, '0').trimEnd('0')}"
+}
+
+/** 使用十进制逐位乘法，所有平台保持 HALF_UP，避免浮点在边界处舍入不同。 */
+internal fun parseDownloadLimitKiB(input: String, initialValue: Int? = null): Int? {
+    val normalized = input.trim().replace(',', '.')
+    if (normalized.isEmpty()) return 0
+    if (normalized.length > 24 || !normalized.matches(Regex("[0-9]*([.][0-9]{0,3})?"))) return null
+    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(initialValue)) return initialValue
+    val digits = normalized.replace(".", "")
+    if (digits.isEmpty()) return null
+    val decimals = if ('.' in normalized) normalized.substringAfter('.').length else 0
+    var carry = 0
+    val reversed = StringBuilder()
+    for (digit in digits.reversed()) {
+        val product = digit.digitToInt() * 1024 + carry
+        reversed.append(product % 10); carry = product / 10
+    }
+    while (carry > 0) {
+        reversed.append(carry % 10); carry /= 10
+    }
+    val scaled = reversed.reverse().toString().padStart(decimals + 1, '0')
+    val whole =
+        scaled.dropLast(decimals).trimStart('0').ifEmpty { "0" }.toLongOrNull() ?: return null
+    val fraction = scaled.takeLast(decimals)
+    if (whole > Int.MAX_VALUE || whole == Int.MAX_VALUE.toLong() && fraction.any { it != '0' }) return null
+    val rounded = whole + if (fraction.firstOrNull()?.let { it >= '5' } == true) 1 else 0
+    return rounded.takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
 }
 
 private val AppThemeMode.label: String

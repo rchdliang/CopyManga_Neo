@@ -47,6 +47,8 @@ sealed interface DownloadedBookItem {
 }
 
 data class DownloadsUiState(
+    val isLoading: Boolean = true,
+    val loadError: String? = null,
     val downloadedBooks: List<DownloadedBookItem> = emptyList(),
     val activeDownloads: Map<String, DownloadProgressInfo> = emptyMap(),
     val isSelectionMode: Boolean = false,
@@ -79,10 +81,13 @@ class DownloadsViewModel constructor(
 
     init {
         viewModelScope.launch(exceptionHandler) {
+            val restored = downloadRepository.awaitReady()
+            val indexed = novels.awaitCachedVolumes()
+            _uiState.update { it.copy(loadError = restored.exceptionOrNull()?.message ?: indexed.exceptionOrNull()?.message) }
             val contents = combine(
                 downloadRepository.getAllDownloadedComics().catch { error ->
                     if (error is CancellationException) throw error
-                    _uiState.update { it.copy(message = error.message ?: "下载记录无法读取，原数据已保留") }
+                    _uiState.update { it.copy(loadError = error.message ?: "下载记录无法读取，原数据已保留") }
                     emit(emptyList())
                 }, novels.cachedVolumes,
                 sessions.cacheReadyFlow, sessions.sessionChanges
@@ -119,6 +124,7 @@ class DownloadsViewModel constructor(
                     val selected =
                         state.selectedKeys.intersect(if (changedSession) comicKeys else validKeys)
                     state.copy(
+                        isLoading = false,
                         downloadedBooks = content.books,
                         activeDownloads = progress,
                         selectedKeys = selected,
@@ -128,15 +134,7 @@ class DownloadsViewModel constructor(
                 }
             }
         }
-        viewModelScope.launch(exceptionHandler) {
-            novels.refreshCachedVolumes().fold(
-                onSuccess = {},
-                onFailure = { error ->
-                    if (error is CancellationException) throw error
-                    _uiState.update { it.copy(message = error.message ?: "小说下载目录加载失败") }
-                }
-            )
-        }
+
     }
 
     fun pauseTask(key: String) = viewModelScope.launch(exceptionHandler) {

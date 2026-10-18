@@ -47,7 +47,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlException as SiteRiskControlException
@@ -68,7 +69,9 @@ class DownloadManager(
     private val localAccess: LocalDownloadAccess,
     private val novels: NovelRepository,
     private val sessions: ReadingSessionRepository,
-    parentScope: CoroutineScope
+    parentScope: CoroutineScope,
+    deferRestoration: Boolean = false,
+    private val sourceGeneration: () -> Long = { 0L }
 ) {
     companion object {
         private const val TAG = "DownloadManager"
@@ -79,7 +82,9 @@ class DownloadManager(
             DownloadLog.e(TAG, "下载任务处理失败", error)
         })
     private val queue = Channel<BookDownloadTask>(UNLIMITED)
-    private var imageConcurrency = Semaphore(3)
+    private val imageConcurrency = MutableStateFlow(3)
+    private val bandwidth = DownloadBandwidthLimiter()
+    fun setBandwidthLimit(limitKiB: Int) { bandwidth.limitKiB = limitKiB }
 
     private val _downloadProgress = MutableStateFlow<Map<String, DownloadProgressInfo>>(emptyMap())
     val downloadProgress: StateFlow<Map<String, DownloadProgressInfo>> =
@@ -136,7 +141,8 @@ class DownloadManager(
         activeNetworkJobs.value.toList().joinAll()
     }
 
-    private val restoration = scope.async { restoreQueue() }
+    private val restorationGate = CompletableDeferred<Unit>().also { if (!deferRestoration) it.complete(Unit) }
+    private val restoration = scope.async { restorationGate.await(); restoreQueue() }
 
     init {
         scope.launch {
@@ -193,6 +199,7 @@ class DownloadManager(
 
     /** 恢复为暂停状态，由用户点击继续；已完成章节只认完整的本地文件。 */
     suspend fun awaitRestoration() {
+        restorationGate.complete(Unit)
         try { restoration.await() }
         catch (cancel: CancellationException) { throw cancel }
         catch (error: Exception) {
@@ -202,6 +209,7 @@ class DownloadManager(
 
     /** Failed durable state must block queue work without crashing unrelated app coroutines. */
     private suspend fun restoredForBackgroundWork(): Boolean = try {
+        restorationGate.await()
         awaitRestoration()
         true
     } catch (cancel: CancellationException) {
@@ -213,8 +221,8 @@ class DownloadManager(
 
     private suspend fun restoreQueue() {
         records.awaitReady()
-        novels.refreshCachedVolumes()
         val saved = queueStore.load()
+        if (saved.any { it is NovelDownloadTask }) novels.awaitCachedVolumes().getOrThrow()
         stateMutex.withLock {
             saved.forEach { task ->
                 val complete = when (task) {
@@ -322,7 +330,7 @@ class DownloadManager(
     }
 
     fun setImageConcurrency(count: Int) {
-        imageConcurrency = Semaphore(count.coerceIn(1, 10))
+        imageConcurrency.value = count.coerceIn(1, 10)
     }
 
     fun enqueue(task: BookDownloadTask) {
@@ -953,6 +961,7 @@ class DownloadManager(
 
             try {
                 val chapterIndex = idx + 1
+                val chapterGeneration = sourceGeneration()
                 val existing = records.getChapter(chapterItem.chapter.uuid)
                     ?.takeIf { it.comicPathWord == comicPathWord && records.hasCompleteFiles(it) }
                 // 评论阶段暂停后继续时，复用已经完整保存的图片。
@@ -1009,7 +1018,8 @@ class DownloadManager(
                             chapterItem.chapter.uuid,
                             imageUrls,
                             chapterIndex,
-                            chapterItem.chapter.name
+                            chapterItem.chapter.name,
+                            chapterGeneration
                         )
 
                         if (comicDownloadKey(comicPathWord) in pausedTasks) {
@@ -1048,7 +1058,10 @@ class DownloadManager(
                         )
                         val committed = stateMutex.withLock {
                             val latest = comicTask(comicPathWord)
-                            if (latest?.taskId == task.taskId && latest.chapters.any {
+                            if (latest?.taskId == task.taskId && sourceGeneration() != chapterGeneration) {
+                                throw IOException("请求配置已变化，请重新下载章节")
+                            }
+                            if (sourceGeneration() == chapterGeneration && comicDownloadKey(comicPathWord) !in pausedTasks && networkAllowed() && latest?.taskId == task.taskId && latest.chapters.any {
                                     it.chapter.uuid == chapterItem.chapter.uuid
                                 }) {
                                 records.insertChapter(entity)
@@ -1263,85 +1276,104 @@ class DownloadManager(
         chapterUuid: String,
         imageUrls: List<String>,
         chapterIndex: Int,
-        chapterName: String?
+        chapterName: String?,
+        expectedGeneration: Long
     ): List<String> = supervisorScope {
         val key = comicDownloadKey(comicPathWord)
-        val totalImages = imageUrls.size
+        val taskId = comicTask(comicPathWord)?.taskId
+        val generation = expectedGeneration
+        val revision = stateMutex.withLock { pauseRevisions[key] ?: 0L }
+        val selectedPolicy = networkPolicy.state.value
+        val total = imageUrls.size
         val receipts = DownloadImageReceipts(storage)
-        val paths = mutableListOf<String>()
-        var bytesSinceLastTick = 0L
-        var lastTick = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val paths = MutableList(total) { "" }
+        val claims = Mutex()
+        var next = 0
+        var completed = 0
+        var bytes = 0L
+        var tick = kotlin.time.TimeSource.Monotonic.markNow()
         fun checkAllowed() {
-            if (!networkAllowed() || key in networkWaiting) throw DownloadNetworkUnavailableException()
+            if (!networkAllowed() || key in networkWaiting || networkPolicy.state.value != selectedPolicy) throw DownloadNetworkUnavailableException()
             if (key in pausedTasks) throw IOException("下载已暂停")
-            if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
-                throw IOException("下载已取消")
-            }
+            if (sourceGeneration() != generation) throw IOException("请求配置已变化，请重新下载章节")
+            val task = comicTask(comicPathWord)
+            if (task?.taskId != taskId || task?.chapters?.none { it.chapter.uuid == chapterUuid } != false) throw IOException("下载已取消")
         }
-        for ((i, url) in imageUrls.withIndex()) {
+        fun checkPublication() {
             checkAllowed()
-            val semaphore = imageConcurrency
-            semaphore.acquire()
-            try {
-                val extension = url.substringBefore('?').substringAfterLast('.', "jpg")
-                    .lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: "img"
-                val path = downloadChapterPrefix(comicPathWord, chapterUuid) + "${i.toString().padStart(3, '0')}.$extension"
-                val request = async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
-                    checkAllowed()
-                    val selectedPolicy = networkPolicy.state.value
-                    localAccess.mutate("$comicPathWord/$chapterUuid").use {
-                        if (!receipts.isComplete(path, url)) {
-                            storage.writeStream(path) { write ->
-                                imageTransport.stream(url, selectedPolicy, onBytes = { read ->
-                            if (networkPolicy.state.value != selectedPolicy) throw DownloadNetworkUnavailableException()
-                            checkAllowed()
-                            bytesSinceLastTick += read
-                            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-                            val elapsed = now - lastTick
-                            if (elapsed >= 500L) {
-                                val speed = bytesSinceLastTick * 1000L / elapsed
-                                bytesSinceLastTick = 0L; lastTick = now
-                                updateProgress(
-                                    comicPathWord, status = DownloadTaskStatus.DOWNLOADING,
-                                    statusText = "正在下载图片 ${i + 1}/$totalImages",
-                                    currentChapterIndex = chapterIndex, currentChapterName = chapterName,
-                                    currentChapterProgress = i.toFloat() / totalImages.coerceAtLeast(1),
-                                    downloadedImages = i, totalImages = totalImages, speedBytesPerSecond = speed
-                                )
+            if ((pauseRevisions[key] ?: 0L) != revision) throw IOException("下载已暂停")
+        }
+        fun report(speed: Long? = null) {
+            updateProgress(comicPathWord, status = DownloadTaskStatus.DOWNLOADING,
+                statusText = "正在下载图片 $completed/$total", currentChapterIndex = chapterIndex,
+                currentChapterName = chapterName, currentChapterProgress = completed.toFloat() / total.coerceAtLeast(1),
+                downloadedImages = completed, totalImages = total, speedBytesPerSecond = speed)
+        }
+        // 一个注册的父任务拥有整组 worker，暂停/取消会取消并等待全部子请求。
+        val group = async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            coroutineScope {
+                List(minOf(imageConcurrency.value, total)) {
+                    async {
+                        while (true) {
+                            val index = claims.withLock { if (next < total) next++ else null } ?: break
+                            currentCoroutineContext().ensureActive(); checkAllowed()
+                            val url = imageUrls[index]
+                            val extension = url.substringBefore('?').substringAfterLast('.', "jpg")
+                                .lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: "img"
+                            val path = downloadChapterPrefix(comicPathWord, chapterUuid) + "${index.toString().padStart(3, '0')}.$extension"
+                            localAccess.mutate("$comicPathWord/$chapterUuid").use {
+                                if (!receipts.isComplete(path, url)) {
+                                    storage.writeStream(path, publish = { publish ->
+                                        stateMutex.withLock {
+                                            currentCoroutineContext().ensureActive(); checkPublication()
+                                            publish()
+                                            receipts.record(path, url)
+                                        }
+                                    }) { write ->
+                                        imageTransport.stream(url, selectedPolicy, onBytes = { checkAllowed() }) { chunk ->
+                                            var offset = 0
+                                            while (offset < chunk.size) {
+                                                val count = minOf(8192, chunk.size - offset)
+                                                bandwidth.consume(count)
+                                                currentCoroutineContext().ensureActive(); checkAllowed()
+                                                write(chunk.copyOfRange(offset, offset + count)); offset += count
+                                                stateMutex.withLock {
+                                                    checkPublication(); bytes += count
+                                                    val elapsed = tick.elapsedNow().inWholeMilliseconds
+                                                    if (elapsed >= 500) {
+                                                        report(bytes * 1000L / elapsed)
+                                                        bytes = 0; tick = kotlin.time.TimeSource.Monotonic.markNow()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        currentCoroutineContext().ensureActive(); checkAllowed()
+                                    }
+                                }
                             }
-                                }, write = write)
-                                checkAllowed()
-                                if (networkPolicy.state.value != selectedPolicy) throw DownloadNetworkUnavailableException()
+                            stateMutex.withLock {
+                                currentCoroutineContext().ensureActive(); checkPublication()
+                                paths[index] = path; completed++; report()
                             }
-                            receipts.record(path, url)
                         }
                     }
-                    checkAllowed()
-                    path
-                }
-                activeCalls[key] = request
-                trackNetworkRequest(request)
-                request.start()
-                try {
-                    checkAllowed()
-                    paths += request.await()
-                } catch (cancel: CancellationException) {
-                    currentCoroutineContext().ensureActive()
-                    throw IOException("图片下载已暂停", cancel)
-                } finally {
-                    activeCalls.remove(key, request)
-                    request.cancel()
-                }
-                updateProgress(
-                    comicPathWord, status = DownloadTaskStatus.DOWNLOADING,
-                    statusText = "正在下载图片 ${i + 1}/$totalImages",
-                    currentChapterIndex = chapterIndex, currentChapterName = chapterName,
-                    currentChapterProgress = (i + 1).toFloat() / totalImages.coerceAtLeast(1),
-                    downloadedImages = i + 1, totalImages = totalImages
-                )
-            } finally { semaphore.release() }
+                }.awaitAll()
+            }
+            paths.toList()
         }
-        paths
+        activeCalls[key] = group
+        trackNetworkRequest(group)
+        try {
+            checkAllowed()
+            group.await()
+        } catch (cancel: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw IOException("图片下载已暂停", cancel)
+        } finally {
+            group.cancel()
+            withContext(NonCancellable) { group.join() }
+            activeCalls.remove(key, group)
+        }
     }
 
     private suspend fun handleRiskControl(

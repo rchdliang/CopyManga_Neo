@@ -13,7 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 
 /** Account-isolated, app-scope persistence; deletion cutoffs also fence in-flight position writes. */
-class PortableLocalReading(storage: DocumentStorage, private val scope: CoroutineScope) : LocalReadingRepository {
+class PortableLocalReading(storage: DocumentStorage, private val scope: CoroutineScope, initializeImmediately: Boolean = true) : LocalReadingRepository {
     private val document = DocumentStore(storage, "reading-library.json", LocalReadingSnapshot.serializer(), LocalReadingSnapshot(),
         validate = PortableBackupCodec::validateReading, maximumBytes = PortableBackupCodec.MAX_READING_BYTES)
     override val snapshot = document.state
@@ -25,7 +25,7 @@ class PortableLocalReading(storage: DocumentStorage, private val scope: Coroutin
     private val operations = Mutex()
     private var initial: Result<Unit>? = null
     init {
-        scope.launch { operations.withLock { initializeLocked() } }
+        if (initializeImmediately) scope.launch { operations.withLock { initializeLocked() } }
         scope.launch { for (ignored in writes) { delay(120); flush() } }
     }
     private fun nextVersion() = versions.updateAndGet { maxOf(it + 1, Clock.System.now().toEpochMilliseconds()) }
@@ -50,6 +50,7 @@ class PortableLocalReading(storage: DocumentStorage, private val scope: Coroutin
         }
     }
     override suspend fun retryRead(): Result<Unit> = operations.withLock { loadLocked() }
+    suspend fun awaitReady(): Result<Unit> = operations.withLock { initializeLocked() }
     private suspend fun mutate(transform: (LocalReadingSnapshot) -> LocalReadingSnapshot): Result<Unit> = operations.withLock {
         initializeLocked().exceptionOrNull()?.let { return@withLock Result.failure(it) }
         document.update(transform).onSuccess { observeVersions(snapshot.value) }

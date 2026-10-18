@@ -331,7 +331,7 @@ class NovelViewModel(
             if (targetPath != null && repository.cachedVolumes.value.none {
                     it.owner == session.owner && it.mode == session.mode && it.book.path == targetPath
                 }) {
-                repository.refreshCachedVolumes().fold(
+                repository.awaitCachedVolumes().fold(
                     onSuccess = {}, onFailure = { if (it is CancellationException) throw it }
                 )
             }
