@@ -195,7 +195,13 @@ class DownloadManager internal constructor(
             scope.launch {
                 restoration.await()
                 policy.ready.await()
-                policy.state.collect { applyNetworkPolicy(it.allowed) }
+                var previous = policy.state.value
+                policy.state.collect { next ->
+                    // 即使仍允许下载，切换绑定或限制开关也必须撤销旧连接。
+                    if (next.bindingChangedFrom(previous)) applyNetworkPolicy(false)
+                    previous = next
+                    applyNetworkPolicy(next.allowed)
+                }
             }
         }
     }
@@ -659,14 +665,6 @@ class DownloadManager internal constructor(
                 }
             }
         }
-    }
-
-    private fun writeChapterImage(
-        comic: String, chapter: String, file: File,
-        input: java.io.InputStream, length: Long, onBytes: (Int) -> Unit
-    ) {
-        localAccess.mutate("$comic/$chapter")
-            .use { writeDownloadedImage(file, input, length, onBytes) }
     }
 
     suspend fun cancelAll() {
@@ -1278,94 +1276,97 @@ class DownloadManager internal constructor(
                 val ext = url.substringAfterLast('.').substringBefore('?').ifEmpty { "jpg" }
                 val file = File(dir, "${i.toString().padStart(3, '0')}.$ext")
 
-                // 未提交章节的旧文件可能来自历史版本的中断写入，重试时重新获取。
-                val request = Request.Builder().url(url).build()
-                val call = client.newCall(request)
-                activeCalls[comicDownloadKey(comicPathWord)] = call
-                try {
-                    if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
-                    if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
-                        call.cancel()
-                    }
-                    call.execute().use { response ->
-
-                        if (isRiskResponseCode(response.code)) {
-                            response.close()
-                            throw RiskControlException("服务器返回 ${response.code}，可能触发风控")
-                        }
-
-                        if (!response.isSuccessful) {
-                            val code = response.code
-                            response.close()
-                            throw IOException("图片下载失败，HTTP $code")
-                        }
-
-                        val body = response.body
-
-                        val contentType = response.header("Content-Type").orEmpty()
-                        if (contentType.isNotBlank() &&
-                            !contentType.startsWith("image/") &&
-                            !contentType.contains("octet-stream")
-                        ) {
-                            val preview = try {
-                                body.source().peek().readUtf8(512)
-                            } catch (_: Throwable) {
-                                ""
+                localAccess.mutate("$comicPathWord/$chapterUuid").use {
+                    downloadImageIfNeeded(file, url) {
+                        val request = Request.Builder().url(url).build()
+                        val call = client.newCall(request)
+                        activeCalls[comicDownloadKey(comicPathWord)] = call
+                        try {
+                            if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
+                            if (comicDownloadKey(comicPathWord) in pausedTasks ||
+                                comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false
+                            ) {
+                                call.cancel()
                             }
-                            response.close()
-                            if (isRiskHtml(preview)) {
-                                throw RiskControlException("图片地址返回风控页面")
-                            } else {
-                                throw IOException("图片地址返回了非图片内容：$contentType")
-                            }
-                        }
+                            call.execute().use { response ->
 
-                        file.parentFile?.mkdirs()
-
-                        body.byteStream().use { input ->
-                            writeChapterImage(
-                                comicPathWord,
-                                chapterUuid,
-                                file,
-                                input,
-                                body.contentLength()
-                            ) { read ->
-                                if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
-                                if (comicDownloadKey(comicPathWord) in pausedTasks) throw IOException(
-                                    "下载已暂停"
-                                )
-                                if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
-                                    throw IOException("下载已取消")
+                                if (isRiskResponseCode(response.code)) {
+                                    response.close()
+                                    throw RiskControlException("服务器返回 ${response.code}，可能触发风控")
                                 }
-                                bytesSinceLastTick += read
 
-                                val now = System.currentTimeMillis()
-                                val elapsed = now - lastTick
-                                if (elapsed >= 500L) {
-                                    val speed = bytesSinceLastTick * 1000L / elapsed
-                                    bytesSinceLastTick = 0L
-                                    lastTick = now
+                                if (!response.isSuccessful) {
+                                    val code = response.code
+                                    response.close()
+                                    throw IOException("图片下载失败，HTTP $code")
+                                }
 
-                                    val imageProgress = i.toFloat() / totalImages.coerceAtLeast(1)
-                                    updateProgress(
-                                        comicPathWord = comicPathWord,
-                                        status = DownloadTaskStatus.DOWNLOADING,
-                                        statusText = "正在下载图片 ${i + 1}/$totalImages",
-                                        currentChapterIndex = chapterIndex,
-                                        currentChapterName = chapterName,
-                                        currentChapterProgress = imageProgress,
-                                        downloadedImages = i,
-                                        totalImages = totalImages,
-                                        speedBytesPerSecond = speed
-                                    )
+                                val body = response.body
+
+                                val contentType = response.header("Content-Type").orEmpty()
+                                if (contentType.isNotBlank() &&
+                                    !contentType.startsWith("image/") &&
+                                    !contentType.contains("octet-stream")
+                                ) {
+                                    val preview = try {
+                                        body.source().peek().readUtf8(512)
+                                    } catch (_: Throwable) {
+                                        ""
+                                    }
+                                    response.close()
+                                    if (isRiskHtml(preview)) {
+                                        throw RiskControlException("图片地址返回风控页面")
+                                    } else {
+                                        throw IOException("图片地址返回了非图片内容：$contentType")
+                                    }
+                                }
+
+                                file.parentFile?.mkdirs()
+
+                                body.byteStream().use { input ->
+                                    writeDownloadedImage(
+                                        file,
+                                        input,
+                                        body.contentLength()
+                                    ) { read ->
+                                        if (!networkAllowed() || comicDownloadKey(comicPathWord) in networkWaiting) throw DownloadNetworkUnavailableException()
+                                        if (comicDownloadKey(comicPathWord) in pausedTasks) throw IOException(
+                                            "下载已暂停"
+                                        )
+                                        if (comicTask(comicPathWord)?.chapters?.none { it.chapter.uuid == chapterUuid } != false) {
+                                            throw IOException("下载已取消")
+                                        }
+                                        bytesSinceLastTick += read
+
+                                        val now = System.currentTimeMillis()
+                                        val elapsed = now - lastTick
+                                        if (elapsed >= 500L) {
+                                            val speed = bytesSinceLastTick * 1000L / elapsed
+                                            bytesSinceLastTick = 0L
+                                            lastTick = now
+
+                                            val imageProgress = i.toFloat() / totalImages.coerceAtLeast(1)
+                                            updateProgress(
+                                                comicPathWord = comicPathWord,
+                                                status = DownloadTaskStatus.DOWNLOADING,
+                                                statusText = "正在下载图片 ${i + 1}/$totalImages",
+                                                currentChapterIndex = chapterIndex,
+                                                currentChapterName = chapterName,
+                                                currentChapterProgress = imageProgress,
+                                                downloadedImages = i,
+                                                totalImages = totalImages,
+                                                speedBytesPerSecond = speed
+                                            )
+                                        }
+                                    }
                                 }
                             }
+                        } finally {
+                            activeCalls.remove(comicDownloadKey(comicPathWord), call)
                         }
-                        paths.add(file.absolutePath)
                     }
-                } finally {
-                    activeCalls.remove(comicDownloadKey(comicPathWord), call)
                 }
+                paths.add(file.absolutePath)
 
                 val chapterProgress = (i + 1).toFloat() / totalImages.coerceAtLeast(1)
                 updateProgress(
@@ -1525,16 +1526,8 @@ class DownloadManager internal constructor(
         val newChapterProgress = currentChapterProgress ?: old?.currentChapterProgress ?: 0f
         val newChapterIndex = currentChapterIndex ?: old?.currentChapterIndex ?: 0
 
-        val overall = if (totalChapters <= 0) {
-            0f
-        } else {
-            // 已尝试的章节序号包含失败项，只能累加已完成章节和当前下载章节的进度。
-            val inFlight =
-                if (task.items.any { it.status == ChapterDownloadStatus.DOWNLOADING }) {
-                    newChapterProgress
-                } else 0f
-            ((completedChapters + inFlight) / totalChapters).coerceIn(0f, 1f)
-        }
+        val nextStatus = status ?: old?.status ?: DownloadTaskStatus.IDLE
+        val overall = downloadOverallProgress(task, old, nextStatus, newChapterProgress)
 
         val info = DownloadProgressInfo(
             comicPathWord = task.pathWord,
@@ -1548,7 +1541,7 @@ class DownloadManager internal constructor(
                 ?: old?.currentChapterName
                 ?: task.currentChapterDisplayName,
             currentChapterProgress = newChapterProgress,
-            status = status ?: old?.status ?: DownloadTaskStatus.IDLE,
+            status = nextStatus,
             statusText = statusText ?: old?.statusText ?: "等待中",
             errorMessage = errorMessage,
             downloadedImages = downloadedImages ?: old?.downloadedImages ?: 0,

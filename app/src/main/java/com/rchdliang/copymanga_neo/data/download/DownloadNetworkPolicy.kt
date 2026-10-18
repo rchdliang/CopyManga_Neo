@@ -32,6 +32,10 @@ internal data class DownloadNetworkState(
 internal fun downloadNetworkAllowed(wifiOnly: Boolean, connected: Boolean, wifi: Boolean): Boolean =
     connected && (!wifiOnly || wifi)
 
+/** 网络仍可用时，限制开关或绑定变化也要求重建当前传输。 */
+internal fun DownloadNetworkState.bindingChangedFrom(previous: DownloadNetworkState): Boolean =
+    wifiOnly != previous.wifiOnly || network != previous.network
+
 private data class DownloadConnection(
     val network: Network?,
     val connected: Boolean,
