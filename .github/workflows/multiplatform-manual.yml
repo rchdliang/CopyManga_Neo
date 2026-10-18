@@ -1,7 +1,7 @@
 name: Multiplatform manual build
 run-name: Manual multiplatform build (${{ github.ref_name }})
 
-# Registration requires this file on the default branch; see docs/CI.md.
+# Registration requires this file on the default branch; see docs/BUILDING.md.
 # Deliberately no push, pull_request, tag or release trigger.
 on:
   workflow_dispatch:

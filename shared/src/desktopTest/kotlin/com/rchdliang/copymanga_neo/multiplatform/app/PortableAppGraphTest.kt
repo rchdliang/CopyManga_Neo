@@ -31,7 +31,7 @@ class PortableAppGraphTest {
         deviceName = "test", deviceModel = "test",
         createHttpClient = { _, _ -> HttpClient(MockEngine { respondError(io.ktor.http.HttpStatusCode.ServiceUnavailable) }) },
         proxyPolicy = PortableProxyPolicy.EngineDefault,
-        downloadServices = { scope, settings, client, _ ->
+                downloadServices = { scope, settings, client, _, _ ->
             val monitor = object : DownloadNetworkMonitor {
                 override val connections = MutableStateFlow(DownloadConnection(false, false))
             }

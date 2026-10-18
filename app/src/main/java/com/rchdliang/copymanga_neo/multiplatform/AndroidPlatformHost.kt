@@ -156,7 +156,13 @@ class AndroidPlatformHost(context: Context, private val savedState: SavedStateHa
             val flags = result.data?.flags ?: 0
             val permissions = flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             if (flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0 && permissions != 0) {
-                try { app.contentResolver.takePersistableUriPermission(uri, permissions) }
+                try {
+                    app.contentResolver.takePersistableUriPermission(uri, when (permissions) {
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION -> Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION -> Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        else -> Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    })
+                }
                 catch (error: SecurityException) {
                     android.util.Log.w("SharedPicker", "本次授权可用，但无法保存重启后的文档访问权限", error)
                 }

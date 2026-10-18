@@ -6,7 +6,6 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.compression.ContentEncoding
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -23,7 +22,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.*
 import kotlin.time.Clock
 
-class PortableTransportException(message: String, val outcomeUnknown: Boolean) : com.rchdliang.copymanga_neo.domain.platform.PlatformIOException(message)
+class PortableTransportException(message: String) : com.rchdliang.copymanga_neo.domain.platform.PlatformIOException(message)
 data class NetworkResponse(val first:Int,val second:String,val headers:Map<String,List<String>>)
 data class ResourceResponse(val status:Int,val headers:Map<String,List<String>>,val bytes:ByteArray,val requestMillis:Long,val responseMillis:Long,val generation:Long)
 class ApiException(val status: Int, message: String) : Exception(message)
@@ -68,6 +67,7 @@ class CopyMangaClient(
     private var sessionInvalidated: (suspend (RequestMode,Long) -> Unit)? = null,
     private val engineProvider: ((NetworkSettings) -> HttpClient)? = null,
     private val boundGeneration:Long? = null,
+    private val webApiUserAgent: String = CopyMangaNetworkConfig.WEB_API_USER_AGENT,
 ) {
     private fun configure(engine:HttpClient)=engine.config {
         followRedirects=false;expectSuccess=false
@@ -138,7 +138,9 @@ class CopyMangaClient(
                 }
                 require(host.isNotBlank() && host.none { it in "/:@?#\\" || it.isWhitespace() }) { "无效站点域名" }
                 val headers = request.headers.toMutableMap()
-                val transportHeaders=CopyMangaNetworkConfig.transportHeaders(request.www,request.path)
+                val transportHeaders=CopyMangaNetworkConfig.transportHeaders(request.www,request.path).let {
+                    if (request.www) it else it + ("User-Agent" to webApiUserAgent)
+                }
                 headers.keys.filter { key -> transportHeaders.keys.any { it.equals(key,true) } }.forEach(headers::remove)
                 headers.putAll(transportHeaders)
                 val noAuth = headers.remove("X-No-Auth") != null
@@ -146,9 +148,10 @@ class CopyMangaClient(
                 headers.remove("Cookie")
                 if(request.www) {
                     headers.remove("Authorization")
-                    webCookies.value["${snapshot.generation}:$host"]?.filter { cookie ->
+                    val cookies = webCookies.value["${snapshot.generation}:$host"]?.filter { cookie ->
                         (cookie.expiresAt==null||cookie.expiresAt>nowMillis()) && (request.path==cookie.path||request.path.startsWith(cookie.path.let{if(it.endsWith('/'))it else "$it/"}))
-                    }?.joinToString("; ") { "${it.name}=${it.value}" }?.takeIf { it.isNotBlank() }?.let { headers["Cookie"] = it }
+                    }.orEmpty().filterNot { it.name == "webp" }.map { "${it.name}=${it.value}" }
+                    if (mode == RequestMode.WEB) headers["Cookie"] = (cookies + "webp=1").joinToString("; ")
                 } else {
                     headers["version"] = settings.version
                     headers["Origin"] = "https://${settings.wwwHost}"
@@ -205,16 +208,16 @@ class CopyMangaClient(
                         } else setBody(FormDataContent(parameters))
                     }
                     request.avatarJpeg?.let { bytes -> setBody(MultiPartFormDataContent(formData { append("file",bytes,Headers.build { append(HttpHeaders.ContentType,"image/jpeg");append(HttpHeaders.ContentDisposition,"filename=\"avatar.jpg\"") }) })) }
-                }.execute { streaming -> bounded(streaming,8*1024*1024) } } catch(e:CancellationException) { throw e } catch(e:Exception) {
+                }.execute { streaming -> bounded(streaming,8*1024*1024) } } catch(e:CancellationException) { throw e } catch(_:Exception) {
                     diagnostic("failure",failure="transport")
-                    throw PortableTransportException("网络请求失败", request.method!="GET"||request.path.contains("/chapter2download/"))
+                    throw PortableTransportException("网络请求失败")
                 }
                 state.requireCurrent(snapshot.generation)
                 require(response.url.host == host && response.url.protocol == URLProtocol.HTTPS) { "站点重定向到其他域名，请更新网络设置" }
                 if(response.status.value in 300..399) throw ApiException(response.status.value,"站点请求重定向已停止；未重放业务请求")
                 val text=try { response.bytes.decodeToString(throwOnInvalidSequence=true) } catch(e:CancellationException) { throw e } catch(e:Exception) {
                     diagnostic("failure",failure="response_read")
-                    throw PortableTransportException("响应读取失败",request.method!="GET"||request.path.contains("/chapter2download/"))
+                    throw PortableTransportException("响应读取失败")
                 }
                 state.requireCurrent(snapshot.generation)
                 if(request.www) {
@@ -280,7 +283,6 @@ class CopyMangaClient(
         try {
             if(site)risk.register(job)
             try {
-                val requestMillis=requestedAt
                 diagnostic("request")
                 val response=selectedHttp.publicResourceGet(address,allowHttp,resourceBoundaryHosts(snapshot.settings),
                     requestHeaders,timeoutMillis,beforeHop={state.requireCurrent(snapshot.generation);proxy.verify(snapshot.settings)}) { streaming -> bounded(streaming,maximumBytes) }
@@ -294,7 +296,7 @@ class CopyMangaClient(
                         risk.block(reason,job);throw RiskControlException(reason)
                     }
                 }
-                ResourceResponse(response.status.value,response.headers.entries().associate{it.key to it.value},bytes,requestMillis,nowMillis(),snapshot.generation)
+                ResourceResponse(response.status.value,response.headers.entries().associate{it.key to it.value},bytes,requestedAt,nowMillis(),snapshot.generation)
             }finally{if(site)risk.unregister(job)}
         } catch(e:CancellationException) { diagnostic("failure",failure="cancelled");throw e
         } catch(e:Exception) { diagnostic("failure",failure="resource_transport_or_policy");throw e
@@ -311,7 +313,7 @@ class CopyMangaClient(
     fun withEngineClient(engine:HttpClient,proxyPolicy:PortableProxyPolicy=proxy,generation:Long=state.snapshot.generation):CopyMangaClient {
         state.requireCurrent(generation)
         check(boundGeneration==null||boundGeneration==generation){"下载客户端已过期，请重新检查网络策略"}
-        return CopyMangaClient(engine,state,risk,identity,proxyPolicy,json,nowMillis,diagnostics,sessionInvalidated,boundGeneration=generation)
+        return CopyMangaClient(engine,state,risk,identity,proxyPolicy,json,nowMillis,diagnostics,sessionInvalidated,boundGeneration=generation,webApiUserAgent=webApiUserAgent)
     }
     fun credentialIdentity(): AppCredentialIdentity {
         val resolved=(identity?:error("当前平台缺少 App 模式身份配置")).resolve(state.snapshot.settings.officialApp)

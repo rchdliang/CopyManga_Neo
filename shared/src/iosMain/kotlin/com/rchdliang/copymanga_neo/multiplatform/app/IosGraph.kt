@@ -35,7 +35,7 @@ class IosGraph private constructor(val core: PortableAppGraph, val host: IosPlat
                 documents = platformDocumentStorage("$root/settings"), cache = platformCacheStorage(cacheDirectory),
                 secureCredentials = IosSecureCredentialStorage(), deviceName = UIDevice.currentDevice.systemName,
                 deviceModel = UIDevice.currentDevice.model, createHttpClient = ::createIosHttpClient, proxyPolicy = iosProxyPolicy,
-                downloadServices = { appScope, settings, client, probe ->
+                downloadServices = { appScope, settings, client, probe, _ ->
                     iosDownloadServices(appScope, settings, client, probe).let { AppDownloadServices(it.runtime, it.networkPolicy, it.clientProvider) }
                 },
                 comicExportIo = FileComicExportIo("$cacheDirectory/downloads"),

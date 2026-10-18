@@ -35,6 +35,8 @@ interface DownloadClientProvider {
 /** Android starts/maintains its foreground service; desktop hosts keep an app-owned runner alive. */
 interface DownloadRuntime {
     fun onWorkAvailable()
+    /** Android 等待前台服务成功就绪；其他平台直接确认应用仍存活。 */
+    suspend fun awaitReady() { onWorkAvailable() }
 }
 
 class DownloadNetworkPolicy(

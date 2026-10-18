@@ -5,18 +5,31 @@ import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnPlugin
 import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootEnvSpec
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
-    alias(libs.plugins.hilt) apply false
-    alias(libs.plugins.ksp) apply false
     kotlin("multiplatform") version "2.4.20" apply false
     kotlin("jvm") version "2.4.20" apply false
     kotlin("plugin.serialization") version "2.4.20" apply false
     id("org.jetbrains.compose") version "1.12.1" apply false
     id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
 }
+
+// 同一文件也由 iOS xcconfig 直接包含；所有发布版本只在此文件中维护。
+val releaseProperties = providers.fileContents(layout.projectDirectory.file("version.properties"))
+    .asText.map { text -> Properties().apply { text.reader().use { load(it) } } }.get()
+val releaseVersionName = releaseProperties.getProperty("COPYMANGA_VERSION_NAME")?.trim().orEmpty()
+val releaseVersionCode = releaseProperties.getProperty("COPYMANGA_VERSION_CODE")?.trim()?.toIntOrNull()
+require(releaseVersionName.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) {
+    "version.properties: COPYMANGA_VERSION_NAME 必须是三段数值版本号"
+}
+require(releaseVersionCode != null && releaseVersionCode in 1..2_100_000_000) {
+    "version.properties: COPYMANGA_VERSION_CODE 必须是有效的正整数构建号"
+}
+extra["copyMangaVersionName"] = releaseVersionName
+extra["copyMangaVersionCode"] = releaseVersionCode
 
 // Use developer/CI-installed tools so Kotlin does not add Ivy distribution repositories
 // forbidden by settings.gradle.kts's FAIL_ON_PROJECT_REPOS policy. No machine paths

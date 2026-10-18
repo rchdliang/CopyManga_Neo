@@ -49,23 +49,23 @@
   000000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SWIFT_COMPILATION_MODE = wholemodule; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; }; name = Release; };
   000000000000000000000013 = {isa = XCBuildConfiguration; baseConfigurationReference = 000000000000000000000017; buildSettings = {
    COPYMANGA_DEBUG_BUILD = YES;
-   CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 29; DEVELOPMENT_TEAM = "";
+   CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = "";
    ENABLE_USER_SCRIPT_SANDBOXING = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = iosApp/Info.plist;
    FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)");
    OTHER_LDFLAGS = ("$(inherited)", "-framework", CopyMangaShared);
    LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-   MARKETING_VERSION = 0.10.14; PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
+   PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
    SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
    SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
   }; name = Debug; };
   000000000000000000000014 = {isa = XCBuildConfiguration; baseConfigurationReference = 000000000000000000000017; buildSettings = {
    COPYMANGA_DEBUG_BUILD = NO;
-   CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 29; DEVELOPMENT_TEAM = "";
+   CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = "";
    ENABLE_USER_SCRIPT_SANDBOXING = NO; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = iosApp/Info.plist;
    FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)");
    OTHER_LDFLAGS = ("$(inherited)", "-framework", CopyMangaShared);
    LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-   MARKETING_VERSION = 0.10.14; PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
+   PRODUCT_BUNDLE_IDENTIFIER = "com.rchdliang.copymanga-neo"; PRODUCT_NAME = CopyMangaNeo;
    SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";
   }; name = Release; };
  };

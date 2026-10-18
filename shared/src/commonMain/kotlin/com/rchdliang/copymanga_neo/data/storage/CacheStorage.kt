@@ -7,6 +7,19 @@ package com.rchdliang.copymanga_neo.data.storage
 interface CacheStorage {
     suspend fun read(path: String, limit: Int): ByteArray?
     suspend fun write(path: String, bytes: ByteArray)
+    /** 分块写入；生产文件后端覆盖此方法，成功返回后才发布正式文件。 */
+    suspend fun writeStream(path: String, produce: suspend (suspend (ByteArray) -> Unit) -> Unit) {
+        val chunks = mutableListOf<ByteArray>()
+        var size = 0
+        produce { chunk ->
+            require(size.toLong() + chunk.size <= 64L * 1024 * 1024) { "图片超过单张安全大小限制" }
+            chunks += chunk.copyOf(); size += chunk.size
+        }
+        val bytes = ByteArray(size)
+        var offset = 0
+        chunks.forEach { it.copyInto(bytes, offset); offset += it.size }
+        write(path, bytes)
+    }
     suspend fun list(prefix: String = ""): List<String>
     suspend fun remove(path: String)
     suspend fun size(path: String): Long

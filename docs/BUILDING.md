@@ -1,254 +1,125 @@
-# Building the migration
+# 构建与版本配置
 
-This project is an in-progress migration pinned to original commit `466cef7c6acd2f082a9f7432cc06a082d83bc1c9`.
+项目结构与平台能力见 [架构说明](ARCHITECTURE.md)。以下命令从仓库根目录执行；Windows 使用 `.\gradlew.bat`，macOS/Linux 使用 `./gradlew`。
 
-## Toolchain
-- JDK 21 (a full JDK, not just a JRE)
-- Gradle wrapper 9.6.0
-- Kotlin 2.4.20, Compose Multiplatform 1.12.1
-- Android SDK platform 37.0 / Build-Tools 37.0.0 for Android
-- Binaryen 130 `wasm-opt` on PATH for optimized Wasm production builds (the Kotlin 2.4.20 default version). Automatic download is disabled because it adds a project Ivy repository that conflicts with `FAIL_ON_PROJECT_REPOS`. Override the executable with `-Pcopymanga.binaryenCommand=/path/to/wasm-opt`.
-- Node.js and Yarn Classic 1.22.x on PATH for Wasm bundling (latest restored validation uses Node 24.19.0 and Yarn 1.22.22). Automatic distribution downloads are disabled to preserve the settings-level repository policy. Override executables with `-Pcopymanga.nodeCommand=/path/to/node` and `-Pcopymanga.yarnCommand=/path/to/yarn` if needed.
+## 环境准备
 
-Set `sdk.dir` in untracked `local.properties` or `ANDROID_HOME`. Supply `COPYMANGA_TAP_STRING` externally when testing official-App request mode. Never commit this value, signing keys, credentials, or your local SDK path.
+- 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
+- Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
+- 桌面安装包使用对应操作系统及架构的 JDK；Windows MSI/EXE 需要 WiX，Linux DEB/RPM 需要系统打包工具。
+- iOS 应用需要 macOS、Xcode 和签名团队；当前模拟器目标是 ARM64。
+- 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
+- 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。
 
-## Current CI build and packaging evidence (2026-10-15)
+Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行配置。修改构建脚本后重新同步；不要在仍运行的构建中改动输入文件。
 
-At published `c5f3dd68` (same source tree as local `a0d7e18`), Windows CI passed
-all 387 desktop tests and built the runtime image, MSI and EXE. The EXE is unsigned
-(no Authenticode certificate); neither installer execution nor application GUI
-launch was tested. The four other target jobs passed at preceding `e546`, whose
-production code is unchanged by the later test-only URI-alias correction.
-Android's CI unit-test step passed; the separately verified local suite has 107
-tests. The iOS result is an unsigned ARM64 simulator **Xcode application build**,
-not just KLIB compilation, but is not a physical-device IPA or runtime result.
-See MIGRATION_STATUS.md for run/artifact links, installer checksums and remaining
-acceptance requirements. Current Android debug builds are isolated from the daily
-app; see ANDROID_TEST_BUILD.md before installing or mixing debug-signature sources.
+## 修改版本号
 
-## Restored validation environment (2026-10-15)
+只编辑根目录的 [version.properties](../version.properties)：
 
-Checkpoint `518062a` was validated with official-checksum-verified Gradle 9.6.0
-and Temurin JDK 21.0.7+6. In the restored workspace only,
-`/workspace/shared/copymanga-build-tools/run-gradle` selects those tools, a
-workspace Gradle cache, the existing proxy and Java trust store. It is an
-untracked environment helper, not a portable prerequisite or repository script.
-On another machine, configure the toolchain above and use `./gradlew` normally.
-Do not copy proxy credentials or machine-specific paths into the repository.
+| 字段 | 含义 |
+| --- | --- |
+| `COPYMANGA_VERSION_NAME` | 三段数值版本名，用于 Android、桌面安装包、iOS 与共享界面 |
+| `COPYMANGA_VERSION_CODE` | 递增的整数构建号，用于 Android、iOS 与共享界面 |
 
-The serial desktop gate is `:shared:desktopTest :desktopApp:compileKotlin
--PenableAndroid=false --max-workers=1 -Pkotlin.incremental=false`; it passed
-382 tests and application compilation. The Android gate is `:app:assembleDebug
-:app:testDebugUnitTest --max-workers=1 -Pkotlin.incremental=false`; it passed
-assembly and 105 tests with SDK platform 37.0 revision 2 / Build-Tools 37.0.0.
-For the restored workspace, Android used `ANDROID_HOME` pointing to the helper's
-sibling `android-sdk` directory and `ANDROID_USER_HOME` to `android-home`.
-These build/test results do not establish device or Windows-native acceptance.
+这个文件的赋值语法同时适用于 Java Properties 和 Xcode 配置，不要在其中放本地路径、密钥或机器专用设置。
 
-## Commands
+- 根 Gradle 脚本读取并校验两个字段；Android 与桌面模块直接使用读取结果。
+- `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
+- iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
+- Android Debug 自动追加 `-migrationtest`，不需要在版本源中填写后缀。
+- 版本回归测试读取 Gradle 传入的期望值，升级时不需要另改测试常量。
+
+可以单独检查版本生成及桌面默认元数据：
 
 ```sh
-./gradlew :app:assembleDebug
-./gradlew :shared:desktopTest -PenableAndroid=false
+./gradlew :shared:generateReleaseVersion :app:generateDebugBuildConfig
+./gradlew :shared:desktopTest --tests '*DesktopBuildMetadataTest' -PenableAndroid=false
+```
+
+## Android
+
+```sh
+./gradlew :app:assembleDebug :app:testDebugUnitTest
+./gradlew :app:assembleDebugAndroidTest
+./gradlew :app:lintDebug
+```
+
+Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`，包名为 `com.rchdliang.copymanga_neo.migrationtest`，桌面名称为“CopyManga Neo 测试版”。它与原版应用的私有账号、设置和下载数据分开；导出目录、相册和用户选中的共享文件夹仍需自行区分。
+
+App 请求模式所需的 `COPYMANGA_TAP_STRING` 从构建进程环境变量或本地 `local.properties` 读取，环境变量优先。没有该配置仍能构建，但 App 模式不可用。新 worktree 不会自动复制被忽略的本地配置，需要单独配置。不要把实际值写入源码、示例或日志。
+
+Release 构建：
+
+```sh
+./gradlew :app:assembleRelease
+```
+
+需要本地 `keystore.properties` 的 `storeFile`、`storePassword`、`keyAlias`、`keyPassword` 及对应密钥库。普通本地 Debug 使用调试签名；`-PuseReleaseSigningForTest=true` 让独立测试包使用已有发布签名，签名材料不完整时构建失败。
+
+相同包名只有相同签名才能覆盖安装。切换本地调试签名与 CI 发布签名可能需要先备份再重装测试版；不要卸载原版应用。设备测试使用 `:app:connectedDebugAndroidTest`，需先连接目标设备；构建成功不等于设备操作验证完成。
+
+## 桌面
+
+```sh
+./gradlew :shared:desktopTest :desktopApp:compileKotlin -PenableAndroid=false
 ./gradlew :desktopApp:run -PenableAndroid=false
-./gradlew :shared:wasmJsBrowserDevelopmentWebpack -PenableAndroid=false
+```
+
+`-PenableAndroid=false` 排除 Android 应用模块，适用于桌面、浏览器及独立 iOS 构建。Windows 使用 `:desktopApp:packageMsi`、`:desktopApp:packageExe`；Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`。输出位于 `desktopApp/build/compose/binaries`，安装包必须在匹配的平台验证。
+
+仅制作需要外部 JDK 的便携 JAR 时，可以选择 Windows 原生库：
+
+```sh
+./gradlew :desktopApp:packageUberJarForCurrentOS -Pcopymanga.desktopTarget=windows-x64 -PenableAndroid=false
+```
+
+ARM64 改用 `windows-arm64`。输出位于 `desktopApp/build/compose/jars`，文件名包含配置版本；使用匹配架构的 JDK 21 运行 `java -jar`。跨平台选择仅用于打包，不能在 Linux 执行 Windows 原生代码或生成 Windows 安装程序。
+
+打包前置任务会检查重复类、服务描述符、签名块和多版本 JAR 语义；不要绕过检查来强行合并依赖。诊断文件位于 `desktopApp/build/reports/portable-jar`。
+
+桌面默认关闭开发专用行为。需要调试界面时，把 `-Dcopymanga.debug=true` 传给应用 JVM，而不是仅传给 Gradle。数据目录可通过应用 JVM 的 `-Dcopymanga.dataDir=...` 指定；不要让多个进程同时使用同一目录。
+
+## iOS
+
+1. 在 Apple Silicon Mac 上打开 `iosApp/iosApp.xcodeproj`。
+2. 选择 `CopyMangaNeo` scheme 和 ARM64 模拟器或实体设备。
+3. 实体设备选择自己的签名团队，然后 Build/Run。项目构建阶段会调用 `:shared:embedAndSignAppleFrameworkForXcode`。
+4. 不构建 Android 应用时，给 Xcode 启动环境设置 `ORG_GRADLE_PROJECT_enableAndroid=false`。
+
+App 模式配置可通过复制 `iosApp/LocalSecrets.xcconfig.example` 为被 Git 忽略的 `iosApp/LocalSecrets.xcconfig` 提供。Debug 也支持进程环境变量 `COPYMANGA_TAP_STRING`。通过构建设置写入 Info.plist 的值可从应用包中读取，不应存放个人密码或账号 token。
+
+`:shared:compileKotlinIosArm64` 只验证共享 KLIB；Swift 编译、框架链接、签名、系统选择器和设备运行需要 Xcode 环境验证。
+
+## 浏览器
+
+```sh
 ./gradlew :shared:wasmJsBrowserDevelopmentRun -PenableAndroid=false
+./gradlew :shared:wasmJsBrowserDistribution -PenableAndroid=false
 ```
 
-Windows installers must be built and validated on Windows; Linux packages on Linux. iOS framework/simulator/device builds need macOS and Xcode. Declaring a target is not verification of that platform.
+生产输出位于 `shared/build/dist/wasmJs/productionExecutable`。生产站点使用 HTTPS；本地开发可使用 localhost。开发和生产 webpack 任务请分开调用，避免共用 npm 输出产生冲突。
 
-Android now launches the shared Compose UI while retaining its original native data/services and platform adapters. Duplicate Android-only screens were removed. Refer to MIGRATION_STATUS.md for the exact current integration and verification state; do not assume all target launchers or platform services are finished.
+构建使用 PATH 中的 Node、Yarn 和 Binaryen；也可通过 `-Pcopymanga.nodeCommand=...`、`-Pcopymanga.yarnCommand=...`、`-Pcopymanga.binaryenCommand=...` 指定。保持自动工具下载关闭，以遵守设置中的仓库策略。
 
-The iOS project and browser runtime configuration are documented in [IOS_BROWSER.md](IOS_BROWSER.md). Android Studio can open this project root, select the `app` run configuration and deploy to a connected Android device after SDK/Gradle sync. Actual device operation is still an acceptance step; see the verification report.
+宿主可在应用脚本之前设置 `globalThis.copyMangaNeoConfig.tapString`。本地 `shared/src/wasmJsMain/resources/copy-manga-config.local.js` 被忽略，但需要由本地页面显式加载。浏览器配置对访问者可见，不应包含账号凭据；配置不会解除 CORS、禁用请求头或代理限制。
 
-If Kotlin incremental compilation reports an internal dirty-symbol/classpath error after this structural migration, rerun the affected task with `-Pkotlin.incremental=false`. The final verification used that flag and `--max-workers=1`; it is not a suppression of compiler diagnostics or failed tests.
+`gradle.properties` 中的 Wasm 增量链接配置及堆大小用于当前工具链。遇到旧链接缓存错误时，先停止构建，再只清理相关的生成链接缓存；不要删除源文件、账号数据或其他平台产物。
 
-## Linux package validation
+## CI 与检查
 
-At `518062a`, Linux x64 portable-JAR and self-contained app-image packaging reran
-and passed in 24s. The portable JAR passed 21 structural checks against 93 inputs;
-the app image passed six structural checks and its archive preserved executable
-modes. Runtime modules were byte-identical to the earlier `a5c37c5` image; the
-non-GUI runtime probe was not rerun. That earlier probe passed 21 module, charset,
-crypto, trust, class and resource checks, including full-JDK charset-catalog
-equality. It used copied image runtime modules with the original JDK's Java
-launcher, not the packaged application launcher. No GUI or network was run;
-these results do not validate DEB/RPM installation or native application behavior.
-See MIGRATION_STATUS.md for the refreshed artifact hashes.
+- [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
+- [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
+- 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 模拟器应用，不是实体设备 IPA。
+- 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。
 
-## Desktop application icons
-
-The window/taskbar icon and Linux package icon use `desktopApp/src/main/resources/copymanga-neo.png`, copied byte-for-byte from the original `app/src/main/ic_launcher-playstore.png` (512 × 512). Both have SHA-256 `86cab9c79a3178dcb3cdcae8a8a2a962f97fe6dc9bcee4814e34aad0f110a8bb`. This preserves the project's original artwork; no redesign is included.
-
-Windows packages use `desktopApp/icons/copymanga-neo.ico`, a format conversion of that same PNG containing 16, 24, 32, 48, 64, 128 and 256-pixel frames. To regenerate with Pillow:
-
-```python
-from PIL import Image
-with Image.open("app/src/main/ic_launcher-playstore.png") as image:
-    image.save("desktopApp/icons/copymanga-neo.ico", format="ICO",
-               sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)])
-```
-
-The desktop Gradle configuration wires the appropriate installer icons; the Compose window reads the PNG as a classpath resource. The transfer tray retains its existing download/progress glyph. Installer branding still needs validation on each target OS; checking icon files does not verify native packaging or taskbar behavior. See [Compose native distribution configuration](https://kotlinlang.org/docs/multiplatform/compose-native-distribution.html#application-icon).
-
-## Web CJK font fallback and offline limits
-
-Compose Multiplatform 1.12.1 provides automatic Noto fallback downloads for characters absent from loaded fonts, including CJK characters. The exact published `ui-1.12.1-sources.jar` contains `webMain/androidx/compose/ui/platform/NotoFontDownloader.web.kt`, whose fallback base URL is `https://fonts.gstatic.com/s/`; its CJK variant selection uses `window.navigator.language`. See [automatic font fallback](https://kotlinlang.org/docs/multiplatform/compose-web-resources.html#automatic-font-fallback).
-
-This application keeps that online fallback and does not bundle a CJK font. A fresh offline session, blocked Google font access, or deployment policy that disallows those downloads can leave Chinese glyphs unavailable; glyph placeholders can also appear while fonts load. Do not describe browser Chinese text as self-contained or offline-verified. Merely setting the HTML language or a CSS font family does not package fonts for the canvas renderer. For self-contained deployments, a future change must bundle licensed fallback fonts and preload them through the Compose font resolver, then verify Chinese UI and novel text under blocked-network conditions.
-
-## Windows sensitive clipboard path
-
-Desktop sensitive-text copying uses JNA core 5.19.1 on Windows only. The bridge uses the existing realized AWT window's native handle and the standard `user32`/`kernel32` clipboard APIs; it creates no hidden window, changes no system settings, and uses no shell command or elevated privilege.
-
-Before publishing `CF_UNICODETEXT`, it registers and successfully sets all three documented Windows exclusion formats: `ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory` (DWORD zero), and `CanUploadToCloudClipboard` (DWORD zero). All native buffers are allocated and filled before opening/emptying the clipboard. Failed prerequisites never fall back to an ordinary AWT copy. If a write fails after emptying, the previous clipboard contents cannot be restored; partial metadata is cleared while the application still holds the clipboard lock. A close failure is reported as an uncertain copy result rather than retried.
-
-Successful `SetClipboardData` calls transfer memory ownership to Windows. Only untransferred allocations are wiped/freed by the application, and the temporary UTF-16LE byte array is zeroed. This does not erase the caller's immutable JVM string or stop other applications from reading the live clipboard. The UI therefore says that Windows history/cloud exclusion was requested, not that arbitrary clipboard monitoring has been prevented. Linux keeps its existing AWT copy and limitation warning.
-
-`WindowsSensitiveClipboardTest` uses an injected fake native API and synthetic text; it never loads the Windows adapter or accesses a real clipboard. Native execution, history/cloud behavior, native-library packaging and contention still require Windows acceptance testing. References: [Windows clipboard formats](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats), [SetClipboardData ownership](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setclipboarddata), and [JNA source and distribution](https://github.com/java-native-access/jna).
-
-### Desktop single-instance coordination
-
-Desktop startup takes an OS file lock in `<dataDir>/.desktop-instance` before opening
-repositories or the image cache. The data directory is canonicalized, so aliases share
-one lock. A second launch sends only a session-qualified “open the existing window”
-request and waits up to eight seconds for acknowledgement. It never opens a second
-graph; failed locking, unsafe coordination files, or an unacknowledged request show a
-launch error instead. Retry after the first process finishes starting or exiting.
-
-The lock file is never replaced or deleted; the OS releases its lock when the process
-ends, including a crash. Stale requests cannot acknowledge a new session. Coordination
-objects are created owner-only (POSIX permissions or Windows ACLs); existing data-directory
-permissions and existing unsafe objects are not modified. No socket, credentials, or
-external command payload is involved. Windows ACL/locking and tray reopening still
-require matching-platform runtime verification; synthetic filesystem tests do not
-establish native Windows behavior.
-
-### Desktop development metadata
-
-Desktop defaults to upstream release identity `0.10.14` / version code `29`, with
-debug-only UI and novel-position instrumentation disabled. This is true for both
-packaged installers and ordinary development runs; no version bump is implied.
-To opt into developer diagnostics, pass `-Dcopymanga.debug=true` to the **application
-JVM**. For a one-command development run on a POSIX shell, use
-`JAVA_TOOL_OPTIONS=-Dcopymanga.debug=true ./gradlew :desktopApp:run`; that command-scoped
-Java option also applies to Gradle's Java processes, but only the application reads
-this flag. A Gradle daemon `-D` argument alone is not forwarded to the app. Any value
-other than explicit `true` leaves debug disabled. Omit the override when checking
-release behavior. The same resolved flag drives both About/debug UI metadata and
-novel-position instrumentation. Android continues to supply its own BuildConfig.
-
-## Wasm production tooling and separate invocations
-
-Use local Binaryen 130 `wasm-opt` for production optimization, alongside Node and
-Yarn. The root build disables Binaryen automatic downloads to preserve
-`FAIL_ON_PROJECT_REPOS`; do not relax repository policy to recover that download.
+按改动选择相关检查：
 
 ```sh
-./gradlew :shared:wasmJsBrowserDevelopmentWebpack -PenableAndroid=false --max-workers=1
-./gradlew :shared:wasmJsBrowserProductionWebpack -PenableAndroid=false --max-workers=1 -Pcopymanga.binaryenCommand=/path/to/wasm-opt
+./gradlew :shared:desktopTest -PenableAndroid=false
+./gradlew :app:testDebugUnitTest :app:lintDebug
+node --test tests/host/browser-activation.test.mjs
+python -m unittest discover -s tests/ci -p 'test_*.py'
 ```
 
-Run those commands separately. A combined development/production invocation
-failed Gradle 9.6 validation because the webpack tasks share generated npm output;
-separate invocations passed without suppressing validation. If the default Kotlin
-tooling cache is read-only, set `-Pkotlin.user.home=/writable/path/kotlin-home`.
-Use writable Node/Yarn caches as required by the host environment. The latest
-restored validation also used `-Pkotlin.incremental=false` and explicit Node/Yarn
-command overrides. Both webpack bundles passed; dynamic-dependency and production
-asset-size warnings remain. No browser runtime acceptance is implied.
-
-## Kotlin 2.4.20 Wasm link-cache workaround
-
-`kotlin.incremental.wasm=false` is set in the project because a development link after source changes failed with `Declaration redefinition happened on vTableGcTypes`. Kotlin's Wasm link-cache setting is independent of `kotlin.incremental`. A fresh nonincremental executable link and webpack build passed with the same compiler/dependencies and assertions unchanged. This disables incremental Wasm linking only; it does not establish the compiler defect's precise cause.
-
-If recovering an older checkout that already has this failure, stop its Gradle build and move aside only `shared/build/klib/cache/wasm-js/developmentExecutable` and `shared/build/kotlin/compileDevelopmentExecutableKotlinWasmJs`, then rebuild. These are generated state; keep source, application data, npm/Yarn dependencies and other platform outputs intact. The workaround can be revisited after a Kotlin upgrade and fresh validation.
-
-## Wasm linker memory
-
-Full nonincremental Wasm executable linking with the framework navigation host
-exhausted a 2 GiB Gradle heap (`Java heap space`) after source compilation passed.
-The project now sets `org.gradle.jvmargs=-Xmx4096m`; budget additional RAM for the
-OS, Kotlin/Native and other build processes. The current 10 GiB environment can
-run the aggregate build serially; avoid concurrent platform builds on similarly
-sized machines. `kotlin.incremental.wasm=false` remains required for the separate
-Kotlin 2.4.20 generated-fragment cache issue. A heap increase addresses the observed
-resource failure: the full serial platform gate subsequently passed in 5m54s,
-including Wasm executable linking and webpack. This is build evidence, not app execution.
-
-## Windows portable JAR from Linux (JDK required)
-
-The supported Compose uber-JAR task can package explicit Windows JVM natives without
-creating a Windows installer or launcher. Select the same target in both projects:
-
-```sh
-./gradlew :desktopApp:packageUberJarForCurrentOS -Pcopymanga.desktopTarget=windows-x64 -PenableAndroid=false --max-workers=1
-# For a Windows ARM64 JVM, use -Pcopymanga.desktopTarget=windows-arm64 instead.
-```
-
-Output is under `desktopApp/build/compose/jars/`, labeled `windows-x64` or
-`windows-arm64` rather than the build machine's OS. On the corresponding Windows
-machine, use an existing full JDK 21 with the matching JVM architecture:
-
-```bat
-java -jar CopyMangaNeo-windows-x64-0.10.14.jar
-```
-
-Use the actual generated filename if a build-type classifier is present. An x64
-JVM needs the x64 artifact even on an ARM64 machine. No JRE is bundled. With no
-property, normal host dependency selection and native packaging remain unchanged.
-The same flattening preflight and multi-release preservation protect host uber-JARs. With a
-foreign target selected, native run/test/app-image/installer tasks fail rather than
-produce a misleading host launcher containing foreign natives. Build and test
-ordinary host artifacts without this override; it is a packaging selection, not
-an instruction to execute Windows native code on Linux.
-
-A verification task per flatten/build-type task checks its actual inputs before
-packaging. Distinct duplicate service descriptors/classes or dependency signature
-blocks fail closed; use a thin main JAR with intact dependency libraries if a future
-dependency requires service merging. No extra fat-JAR plugin or manual service
-merging is used. The inspected dependency set contains multi-release resources;
-the output keeps `Multi-Release: true` and omits individual library module descriptors.
-Versioned inputs without their own multi-release flag are rejected to avoid changing
-their semantics. Ordinary Compose resources and native DLL/checksum files remain
-inside the JAR.
-
-Before distributing, inspect the resolved inputs and final JAR for the selected
-Skiko DLL/checksum, matching JNA `jnidispatch` DLL, Compose resources, Main-Class and
-all service providers. Dependency resolution/packaging and artifact inspection do
-not prove Windows launch, rendering, clipboard, tray, network binding or native
-file-dialog behavior. Those remain Windows runtime acceptance checks; MSI/EXE
-creation still requires Windows.
-
-### Earlier portable verification boundary: 518062a
-
-Windows x64 and ARM64 portable packaging now pass through production commit
-`518062a`, including the desktop text-share cancellation and portable layout-default
-fixes. Both final JARs
-passed 23 structural checks against their respective 93 exact resolved inputs.
-The current checks cover ZIP CRCs/duplicates, launcher/manifest, module-descriptor
-removal, Java 21 versions of the checked launcher/platform classes, all three
-service descriptors/providers, seven Compose resources, both multi-release
-entries, original icon, and matching Skiko/JNA PE32+ DLLs. The x64 DLLs use AMD64
-`0x8664`; the ARM64 DLLs use ARM64 `0xaa64`. Skiko's embedded checksum matches its
-exact DLL bytes. This is not a rerun of the older 26-check verifier's full scope.
-See MIGRATION_STATUS.md for current artifact sizes, SHA-256 values and results.
-
-No Windows application or native DLL was executed on Linux. These are external-
-JDK portable JARs, not bundled-runtime packages or installers; native Windows
-acceptance remains deferred. The previously blocked official Maven dependency
-resolved successfully in the republished environment. Its installed JDK required
-the environment's existing Java trust store for the existing proxy; no repository
-mirror, disabled certificate validation or security/network policy change was used.
-
-Each successful preflight writes its declared resolved-input report beneath
-`desktopApp/build/reports/portable-jar/`: `<target>-flattenJars-inputs.txt`, or
-`host-flattenJars-inputs.txt` without an override. These reports support comparing
-service providers and resources against the packaged output.
-
-## Manual GitHub Actions builds
-
-See [Manual multiplatform CI](CI.md) for opt-in Android, Windows, Linux, Wasm and
-unsigned iOS simulator jobs, their artifacts and validation limits. The workflow
-must first be separately registered on the default branch before a manual run can
-select this migration branch; a branch-only push does not enable it.
+构建日志、报告和截图保存在被忽略的构建输出目录或仓库外。docs 仅维护本文件与架构说明，不保存逐轮迁移记录、测试次数或历史产物校验值。

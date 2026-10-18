@@ -32,7 +32,8 @@ class PortableComicExportRepository(
     private val io: ComicExportIo,
     private val storage: DocumentStorage,
     private val access: LocalDownloadAccess,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val beforeStart: suspend () -> Unit = {}
 ) : ComicExportRepository {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val document = DocumentStore(storage, "comic-export-task.json", ComicExportState.serializer(), ComicExportState())
@@ -137,6 +138,7 @@ class PortableComicExportRepository(
                     totalBytes = units.sumOf { it.bytes }, outputs = previousOutputs, current = "准备导出"
                 )
                 persist()
+                beforeStart()
                 // Enter the try/finally before returning, so even immediate cancellation releases the lease.
                 work = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                     lease.use {

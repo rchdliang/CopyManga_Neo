@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.update
 interface DownloadImageTransport {
     /** No retries. The caller rechecks current policy, pause and cancellation for every chunk. */
     suspend fun read(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit): ByteArray
+    suspend fun stream(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit, write: suspend (ByteArray) -> Unit) {
+        write(read(url, policy, onBytes))
+    }
 }
 
 /** Bounded download, content checks and cancellation before any atomic file commit. */
@@ -29,12 +32,21 @@ class KtorDownloadImageTransport(
 ) : DownloadImageTransport {
     init { require(maximumImageBytes > 0) }
     override suspend fun read(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit): ByteArray {
+        val chunks = mutableListOf<ByteArray>()
+        var size = 0
+        stream(url, policy, onBytes) { chunks += it; size += it.size }
+        return ByteArray(size).also { result ->
+            var offset = 0
+            chunks.forEach { it.copyInto(result, offset); offset += it.size }
+        }
+    }
+    override suspend fun stream(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit, write: suspend (ByteArray) -> Unit) {
         if (!policy.allowed) throw PlatformIOException("当前网络不允许下载")
         val snapshot = networkState?.snapshot
         val client = clients.client(policy).config { followRedirects = false; expectSuccess = false }
         try {
-            return client.publicResourceGet(url, allowHttp = true, protectedHosts = resourceBoundaryHosts(snapshot?.settings), beforeHop = {
-                snapshot?.let { networkState?.requireCurrent(it.generation) }
+            client.publicResourceGet(url, allowHttp = true, protectedHosts = resourceBoundaryHosts(snapshot?.settings), beforeHop = {
+                snapshot?.let { networkState.requireCurrent(it.generation) }
             }) { response ->
                 val code = response.status.value
                 if (code == 403 || code == 429) throw RiskControlException("服务器返回 $code，可能触发风控")
@@ -42,28 +54,26 @@ class KtorDownloadImageTransport(
                 val expected = response.contentLength()
                 if (expected != null && expected > maximumImageBytes) throw PlatformIOException("图片超过单张安全大小限制")
                 val channel = response.bodyAsChannel()
-                val chunks = mutableListOf<ByteArray>()
+                var previewBytes = ByteArray(0)
                 val buffer = ByteArray(8192)
                 var total = 0
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    snapshot?.let { networkState?.requireCurrent(it.generation) }
+                    snapshot?.let { networkState.requireCurrent(it.generation) }
                     val read = channel.readAvailable(buffer)
                     if (read < 0) break
                     if (read == 0) continue
                     if (total.toLong() + read > maximumImageBytes) throw PlatformIOException("图片超过单张安全大小限制")
-                    chunks += buffer.copyOf(read)
+                    if (previewBytes.size < 512) previewBytes += buffer.copyOf(minOf(read, 512 - previewBytes.size))
                     total += read
                     onBytes(read)
+                    write(buffer.copyOf(read))
                 }
                 if (total <= 0 || (expected != null && expected >= 0 && expected != total.toLong())) {
                     throw PlatformIOException("图片下载不完整：$total/${expected ?: -1} 字节")
                 }
-                val bytes = ByteArray(total)
-                var offset = 0
-                chunks.forEach { it.copyInto(bytes, offset); offset += it.size }
                 val type = response.headers["Content-Type"].orEmpty()
-                val preview = bytes.copyOf(minOf(bytes.size, 512)).decodeToString().lowercase()
+                val preview = previewBytes.decodeToString().lowercase()
                 val nonImageType = type.isNotBlank() && !type.startsWith("image/") && !type.contains("octet-stream")
                 val html = preview.trimStart().startsWith("<html") || preview.trimStart().startsWith("<!doctype html")
                 if (nonImageType || html) {
@@ -72,7 +82,7 @@ class KtorDownloadImageTransport(
                     }
                     throw PlatformIOException("图片地址返回了非图片内容：$type")
                 }
-                bytes
+                Unit
             }
         } catch (cancel: CancellationException) { throw cancel }
         catch (error: PlatformIOException) { throw error }

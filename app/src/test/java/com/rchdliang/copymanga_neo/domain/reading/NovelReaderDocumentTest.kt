@@ -1,7 +1,8 @@
 package com.rchdliang.copymanga_neo.domain.reading
 
-import com.google.gson.JsonParser
-import com.rchdliang.copymanga_neo.data.novel.NovelJson
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import com.rchdliang.copymanga_neo.data.novel.portable.PortableNovelJson
 import com.rchdliang.copymanga_neo.domain.model.NovelReaderPreferences
 import com.rchdliang.copymanga_neo.domain.model.NovelSection
 import org.junit.Assert.assertEquals
@@ -28,7 +29,7 @@ class NovelReaderDocumentTest {
 
     @Test
     fun invalidPositionsKeepImageEntranceWithoutInserting() {
-        val json = JsonParser.parseString(
+        val json = Json.parseToJsonElement(
             """
             {"id":"volume","contents":[
               {"name":"a","content_type":2,"start_lines":null,"end_lines":2,"content":"https://example.com/a.jpg"},
@@ -39,9 +40,9 @@ class NovelReaderDocumentTest {
               {"name":"f","content_type":2,"start_lines":1.5,"end_lines":2,"content":"https://example.com/f.jpg"}
             ]}
         """
-        ).asJsonObject
+        ).jsonObject
         val source = text()
-        val document = NovelReaderDocument(source, NovelJson.sections(json, source))
+        val document = NovelReaderDocument(source, PortableNovelJson.sections(json, source))
         assertEquals(6, document.images.size)
         assertTrue(document.entries.none { it is NovelReaderEntry.Image })
         assertEquals(

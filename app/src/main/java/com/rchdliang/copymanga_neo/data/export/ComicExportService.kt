@@ -20,18 +20,19 @@ import com.rchdliang.copymanga_neo.multiplatform.AndroidSharedActivity
 import com.rchdliang.copymanga_neo.data.download.DownloadNotifications
 import com.rchdliang.copymanga_neo.domain.model.ComicExportState
 import com.rchdliang.copymanga_neo.domain.model.ComicExportStatus
-import dagger.hilt.android.AndroidEntryPoint
+import com.rchdliang.copymanga_neo.multiplatform.sharedContainer
+import com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
+import com.rchdliang.copymanga_neo.data.export.portable.resultMessage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /** 用户在前台发起，离开下载页后仍显示导出进度；系统超时时取消并清理未完成文件。 */
-@AndroidEntryPoint
 class ComicExportService : Service() {
     companion object {
         private const val CHANNEL = "comic_exports"
@@ -45,9 +46,16 @@ class ComicExportService : Service() {
         )
     }
 
-    @Inject
-    lateinit var exports: ComicExportManager
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    lateinit var exports: ComicExportRepository
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate +
+                CoroutineExceptionHandler { _, error ->
+                    android.util.Log.e("ComicExport", "导出服务无法读取共享任务状态", error)
+                    sharedContainer.exports.stopped(this)
+                    sharedContainer.current?.repositories?.export?.cancel()
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                })
     private var wakeLock: PowerManager.WakeLock? = null
 
     @OptIn(FlowPreview::class)
@@ -64,7 +72,10 @@ class ComicExportService : Service() {
         try {
             startForeground(
                 ID,
-                notification(exports.state.value),
+                notification(
+                    sharedContainer.current?.repositories?.export?.state?.value
+                        ?: ComicExportState()
+                ),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
             wakeLock = getSystemService(PowerManager::class.java)
@@ -72,13 +83,16 @@ class ComicExportService : Service() {
                     setReferenceCounted(false)
                     acquire(6 * 60 * 60 * 1000L)
                 }
+            sharedContainer.exports.started(this)
         } catch (error: RuntimeException) {
             android.util.Log.e("ComicExport", "前台导出服务启动失败", error)
-            exports.cancel("无法启动后台导出，请返回应用重试")
+            sharedContainer.exports.failed()
+            sharedContainer.current?.repositories?.export?.cancel()
             stopSelf()
             return
         }
         scope.launch {
+            exports = sharedContainer.awaitGraph().repositories.export
             exports.state.sample(500).collect { state ->
                 if (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
                         this@ComicExportService, Manifest.permission.POST_NOTIFICATIONS
@@ -87,6 +101,7 @@ class ComicExportService : Service() {
                     notifications.notify(ID, notification(state))
                 }
                 if (!state.running) {
+                    sharedContainer.exports.stopped(this@ComicExportService)
                     stopForeground(STOP_FOREGROUND_DETACH)
                     stopSelf()
                 }
@@ -95,7 +110,7 @@ class ComicExportService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == CANCEL) exports.cancel()
+        if (intent?.action == CANCEL) sharedContainer.current?.repositories?.export?.cancel()
         return START_NOT_STICKY
     }
 
@@ -174,13 +189,16 @@ class ComicExportService : Service() {
         )
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        exports.cancel("导出达到系统时限，请重试未完成文件")
+        sharedContainer.current?.repositories?.export?.cancel()
+        sharedContainer.exports.stopped(this)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
+        sharedContainer.exports.stopped(this)
+        if (sharedContainer.current?.repositories?.export?.state?.value?.running == true) sharedContainer.current?.repositories?.export?.cancel()
         wakeLock?.let { if (it.isHeld) it.release() }
         scope.cancel()
         super.onDestroy()

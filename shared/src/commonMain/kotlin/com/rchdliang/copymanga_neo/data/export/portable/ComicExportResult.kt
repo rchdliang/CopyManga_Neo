@@ -4,7 +4,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicExportState
 import com.rchdliang.copymanga_neo.domain.model.ComicExportStatus
 
 /** 通知与应用内提示共用结果文案，包括已成功的输出和清理失败提示。 */
-internal fun ComicExportState.resultMessage(): String = buildString {
+fun ComicExportState.resultMessage(): String = buildString {
     append(
         when (status) {
             ComicExportStatus.CANCELLED -> "导出已取消"

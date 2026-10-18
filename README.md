@@ -1,4 +1,4 @@
-> Compose Multiplatform migration in progress, based on upstream commit `466cef7c6acd2f082a9f7432cc06a082d83bc1c9`. Android now uses shared UI. See [build instructions](docs/BUILDING.md), [verification status](docs/MIGRATION_STATUS.md), and [iOS/browser setup](docs/IOS_BROWSER.md). Original project documentation follows.
+> CMP 版本使用共享 Compose UI 和 portable 数据层，平台宿主提供系统能力。开发维护请查看[构建与版本配置](docs/BUILDING.md)和[架构说明](docs/ARCHITECTURE.md)。
 
 <div align="center">
   <img width="160" height="160" src="app/src/main/ic_launcher-playstore.png" alt="CopyManga Neo 图标">

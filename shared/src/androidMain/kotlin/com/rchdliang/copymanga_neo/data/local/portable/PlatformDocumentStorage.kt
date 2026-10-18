@@ -4,12 +4,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
 
-actual fun platformDocumentStorage(directory: String): DocumentStorage = FileDocumentStorage(Path.of(directory))
+actual fun platformDocumentStorage(directory: String): DocumentStorage = FileDocumentStorage(Paths.get(directory))
 
 private class FileDocumentStorage(private val root: Path) : DocumentStorage {
     private fun path(key: String): Path {
@@ -18,14 +19,15 @@ private class FileDocumentStorage(private val root: Path) : DocumentStorage {
     }
     override suspend fun read(key: String): String? = withContext(Dispatchers.IO) {
         val file = path(key)
-        if (Files.exists(file)) Files.readString(file) else null
+        if (Files.exists(file)) Files.readAllBytes(file).decodeToString(throwOnInvalidSequence = true) else null
     }
     override suspend fun write(key: String, value: String): Unit = withContext(Dispatchers.IO) {
         Files.createDirectories(root)
         val destination = path(key)
         val temporary = Files.createTempFile(root, ".write-", ".tmp")
         try {
-            Files.writeString(temporary, value)
+            // 部分 Android ART 没有 Java 11 的 Files.writeString/readString。
+            Files.write(temporary, value.toByteArray(Charsets.UTF_8))
             FileChannel.open(temporary, StandardOpenOption.WRITE).use { it.force(true) }
             try { Files.move(temporary, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
             catch (unsupported: AtomicMoveNotSupportedException) {

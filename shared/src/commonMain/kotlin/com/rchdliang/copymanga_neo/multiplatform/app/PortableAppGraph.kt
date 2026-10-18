@@ -23,7 +23,8 @@ import kotlinx.coroutines.flow.*
 data class AppDownloadServices(
     val runtime: DownloadRuntime,
     val networkPolicy: DownloadNetworkPolicy,
-    val clientProvider: DownloadClientProvider
+    val clientProvider: DownloadClientProvider,
+    val close: () -> Unit = {}
 )
 data class PortableAppServices(
     val documents: DocumentStorage,
@@ -33,14 +34,16 @@ data class PortableAppServices(
     val deviceModel: String,
     val createHttpClient: (NetworkSettings, Int) -> HttpClient,
     val proxyPolicy: PortableProxyPolicy,
-    val downloadServices: (CoroutineScope, AppSettingsRepository, () -> HttpClient, () -> String) -> AppDownloadServices,
+    val downloadServices: (CoroutineScope, AppSettingsRepository, () -> HttpClient, () -> String, () -> NetworkSettings) -> AppDownloadServices,
     val comicExportIo: ComicExportIo,
     val readerImageIo: ReaderImageIo,
     val imageContext: PlatformContext,
     val imageDiskCache: DiskCache? = null,
     val tapString: String = "",
     val startupWarnings: List<String> = emptyList(),
-    val debugBuild: Boolean = false
+    val debugBuild: Boolean = false,
+    val beforeExport: suspend () -> Unit = {},
+    val webApiUserAgent: String = CopyMangaNetworkConfig.WEB_API_USER_AGENT
 )
 
 /** Thread-safe closeable resource pool, also available on Native and Wasm without JVM collections. */
@@ -71,6 +74,7 @@ private class AppResourcePool<K, V : Any>(private val dispose: (V) -> Unit) {
 
 class PortableAppGraph private constructor(
     val repositories: AppRepositories,
+    val downloadManager: DownloadManager,
     val imageLoader: (Int) -> ImageLoader,
     val startupWarnings: List<String>,
     private val closeResources: () -> Unit,
@@ -117,7 +121,7 @@ class PortableAppGraph private constructor(
                     return cleanClients.get(Triple(snapshot.generation, selected, timeout)) { services.createHttpClient(selected, timeout) }
                 }
                 val client = CopyMangaClient(engine(), state, risk, identity, services.proxyPolicy, diagnostics = logs::record,
-                    engineProvider = { services.createHttpClient(it, 30) })
+                    engineProvider = { services.createHttpClient(it, 30) }, webApiUserAgent = services.webApiUserAgent)
                 cleanup += client::close
                 lateinit var network: PortableNetworkSettings
                 val users = PortableUserRepository(client, services.secureCredentials,
@@ -126,7 +130,9 @@ class PortableAppGraph private constructor(
                     clearAppSession = { users.clearModeSecureSession(RequestMode.OFFICIAL_APP, it) })
                 network.initialize().getOrThrow(); users.restoreSecureSessions()
                 val session = PortableReadingSession(state)
-                val downloadServices = services.downloadServices(appScope, appSettings, { engine() }) { "https://${state.snapshot.settings.apiHost}/" }
+                val downloadServices = services.downloadServices(appScope, appSettings, { engine() },
+                    { "https://${state.snapshot.settings.apiHost}/" }, { state.snapshot.settings })
+                cleanup += downloadServices.close
                 suspend fun requireDownloadNetwork(): DownloadNetworkState {
                     downloadServices.networkPolicy.ready.await()
                     return downloadServices.networkPolicy.state.value.also { policy ->
@@ -169,7 +175,7 @@ class PortableAppGraph private constructor(
                     startupWarnings += "下载队列无法恢复，原记录已保留，下载操作已停用；修复存储后请重新启动：${error.message.orEmpty()}"
                 }
                 val downloads = PortableDownloadRepository(records, manager, access)
-                val export = PortableComicExportRepository(downloads, services.comicExportIo, documents, access, appScope)
+                val export = PortableComicExportRepository(downloads, services.comicExportIo, documents, access, appScope, services.beforeExport)
                 export.awaitRestoration().onFailure { error ->
                     startupWarnings += error.message ?: "导出任务无法读取，原数据已保留"
                 }
@@ -222,7 +228,7 @@ class PortableAppGraph private constructor(
                     novelPreferences, annotations, blacklist, network, risk, storage,
                     PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore)
                 completed = true
-                return PortableAppGraph(repositories, ::imageLoader, startupWarnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })
+                return PortableAppGraph(repositories, manager, ::imageLoader, startupWarnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })
             } finally { if (!completed) drainGraphLifetime(lifetime, ::closeAll) }
         }
     }

@@ -31,14 +31,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
@@ -253,33 +254,23 @@ private fun NovelSettingsSlider(
             Text(title, color = MaterialTheme.colorScheme.onSurface)
             Text(label, color = MaterialTheme.colorScheme.primary)
         }
-        // Keep the original immediate thumb update while the preferences Flow recomposes its owner.
-        var sliderValue by remember(value, range, steps) { mutableFloatStateOf(value) }
+        // 拖动时立即更新本地数值，忽略偏好 Flow 回传的中间值。
+        var sliderValue by remember(range, steps) { mutableFloatStateOf(value) }
+        var isChanging by remember(range, steps) { mutableStateOf(false) }
+        LaunchedEffect(value, range, steps) {
+            if (!isChanging) sliderValue = value
+        }
         val sliderColors = SliderDefaults.colors(
             activeTickColor = MaterialTheme.colorScheme.onPrimary,
             inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Slider(
             value = sliderValue,
-            onValueChange = { sliderValue = it; onChange(it) },
+            onValueChange = { isChanging = true; sliderValue = it; onChange(it) },
+            onValueChangeFinished = { isChanging = false },
             valueRange = range,
             steps = steps,
-            colors = sliderColors,
-            track = { sliderState ->
-                SliderDefaults.Track(
-                    sliderState = sliderState,
-                    colors = sliderColors,
-                    drawTick = { offset, color ->
-                        // Draw clear ruler marks instead of the default small dots.
-                        drawLine(
-                            color = color,
-                            start = Offset(offset.x, offset.y - 4.dp.toPx()),
-                            end = Offset(offset.x, offset.y + 4.dp.toPx()),
-                            strokeWidth = 2.dp.toPx()
-                        )
-                    }
-                )
-            }
+            colors = sliderColors
         )
     }
 }

@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.data.storage
 
+import kotlinx.coroutines.ensureActive
+
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -54,6 +56,21 @@ class FileCacheStorage(directory: String) : CacheStorage {
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
+        } finally { Files.deleteIfExists(temporary.toPath()) }
+    }
+    /** 网络或校验失败时删除临时文件，原目标文件保持可读。 */
+    override suspend fun writeStream(path: String, produce: suspend (suspend (ByteArray) -> Unit) -> Unit): Unit = withContext(Dispatchers.IO) {
+        val target = file(path)
+        val parent = requireNotNull(target.parentFile)
+        if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Cannot create cache directory")
+        val temporary = File.createTempFile("download-", ".partial", parent)
+        try {
+            FileOutputStream(temporary).use { output ->
+                produce { chunk -> kotlinx.coroutines.currentCoroutineContext().ensureActive(); output.write(chunk) }
+                output.fd.sync()
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } finally { Files.deleteIfExists(temporary.toPath()) }
     }
     override suspend fun list(prefix: String): List<String> = withContext(Dispatchers.IO) {

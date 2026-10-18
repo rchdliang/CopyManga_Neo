@@ -37,7 +37,7 @@ class DesktopGraph private constructor(
                 deviceName = System.getProperty("os.name"), deviceModel = "Desktop-${System.getProperty("os.arch")}",
                 createHttpClient = { settings, timeout -> createDesktopHttpClient(settings, timeout) },
                 proxyPolicy = desktopProxyPolicy,
-                downloadServices = { scope, settings, client, probe ->
+                downloadServices = { scope, settings, client, probe, _ ->
                     desktopDownloadServices(scope, settings, client, probe).let {
                         AppDownloadServices(it.runtime, it.networkPolicy, it.clientProvider)
                     }

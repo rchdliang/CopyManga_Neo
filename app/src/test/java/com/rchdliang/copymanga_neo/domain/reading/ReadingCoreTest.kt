@@ -1,7 +1,7 @@
 package com.rchdliang.copymanga_neo.domain.reading
 
-import com.rchdliang.copymanga_neo.data.novel.cache.AtomicCacheFile
-import com.rchdliang.copymanga_neo.data.novel.cache.VerifiedVolumeCache
+import com.rchdliang.copymanga_neo.data.storage.FileCacheStorage
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,8 +11,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.ByteArrayInputStream
-import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
 
@@ -120,7 +118,7 @@ class ReadingCoreTest {
     @Test
     fun persistedKeysAndDigestsAreByteForByteCompatible() {
         val emptyDigest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        assertEquals(emptyDigest, AtomicCacheFile.digest(byteArrayOf()))
+        assertEquals(emptyDigest, ReadingContentHash.sha256(byteArrayOf()))
         assertEquals(
             "3543:1:113:1510:$emptyDigest",
             NovelTextDocument.sectionKey("3543", 1, 113, 1510, null)
@@ -288,149 +286,27 @@ class ReadingCoreTest {
     }
 
     @Test
-    fun boundedReadDoesNotCloseCallerAndRejectsOverflow() {
-        var closed = false
-        val stream = object : ByteArrayInputStream(byteArrayOf(1, 2, 3)) {
-            override fun close() {
-                closed = true; super.close()
-            }
-        }
-        assertArrayEquals(byteArrayOf(1, 2, 3), AtomicCacheFile.readBounded(stream, 3))
-        assertFalse(closed)
-        assertThrows(IOException::class.java) {
-            AtomicCacheFile.readBounded(
-                ByteArrayInputStream(
-                    byteArrayOf(1, 2, 3, 4)
-                ), 3
-            )
-        }
-        assertArrayEquals(
-            byteArrayOf(),
-            AtomicCacheFile.readBounded(ByteArrayInputStream(byteArrayOf()), 0)
-        )
+    fun boundedCacheReadRejectsOverflow() = runBlocking {
+        val storage = FileCacheStorage(temporary.newFolder().absolutePath)
+        storage.write("image", byteArrayOf(1, 2, 3))
+        assertArrayEquals(byteArrayOf(1, 2, 3), storage.read("image", 3))
+        assertThrows(IOException::class.java) { runBlocking { storage.read("image", 2) } }
+        storage.write("empty", byteArrayOf())
+        assertArrayEquals(byteArrayOf(), storage.read("empty", 0))
     }
 
     @Test
-    fun atomicReplacementCleansTemporaryFilesAndFailedWriteKeepsOriginal() {
-        val dir = temporary.newFolder()
-        val target = File(dir, "manifest.json")
-        AtomicCacheFile.write(target, "original".toByteArray())
-        AtomicCacheFile.write(target, "replacement".toByteArray())
-        assertEquals("replacement", target.readText())
-        assertEquals(listOf("manifest.json"), dir.list()!!.toList())
+    fun atomicReplacementCleansTemporaryFilesAndFailedWriteKeepsOriginal() = runBlocking {
+        val storage = FileCacheStorage(temporary.newFolder().absolutePath)
+        storage.write("manifest.json", "original".toByteArray())
+        storage.write("manifest.json", "replacement".toByteArray())
+        assertEquals("replacement", storage.read("manifest.json", 100)!!.toString(Charsets.UTF_8))
+        assertEquals(listOf("manifest.json"), storage.list())
         assertThrows(IOException::class.java) {
-            AtomicCacheFile.write(
-                File(target, "child.json"),
-                byteArrayOf(1)
-            )
+            runBlocking { storage.write("manifest.json/child.json", byteArrayOf(1)) }
         }
-        assertEquals("replacement", target.readText())
+        assertEquals("replacement", storage.read("manifest.json", 100)!!.toString(Charsets.UTF_8))
     }
 
-    @Test
-    fun failedManifestPublicationPreservesReadablePreviousRevision() {
-        val dir = temporary.newFolder()
-        val old = "旧正文\n第一章".toByteArray()
-        val fresh = "新正文\n修订章节".toByteArray()
-        VerifiedVolumeCache.publish(
-            dir,
-            old,
-            "old manifest".toByteArray()
-        ) { NovelTextDocument.decode(it, "UTF-8") }
-        assertThrows(IOException::class.java) {
-            VerifiedVolumeCache.publish(
-                dir,
-                fresh,
-                "new manifest".toByteArray(),
-                { NovelTextDocument.decode(it, "UTF-8") },
-                { _, _ -> throw IOException("manifest commit failed") })
-        }
-        assertEquals("old manifest", File(dir, "manifest.json").readText())
-        assertArrayEquals(
-            old,
-            VerifiedVolumeCache.read(
-                dir,
-                VerifiedVolumeCache.textName(old),
-                AtomicCacheFile.digest(old),
-                1024
-            )
-        )
-        VerifiedVolumeCache.publish(
-            dir,
-            fresh,
-            "new manifest".toByteArray()
-        ) { NovelTextDocument.decode(it, "UTF-8").validateRange(0, 2) }
-        assertEquals("new manifest", File(dir, "manifest.json").readText())
-        assertArrayEquals(
-            fresh,
-            VerifiedVolumeCache.read(
-                dir,
-                VerifiedVolumeCache.textName(fresh),
-                AtomicCacheFile.digest(fresh),
-                1024
-            )
-        )
-    }
-
-    @Test
-    fun validationFailurePublishesNothing() {
-        val dir = temporary.newFolder()
-        val malformed = byteArrayOf(0xc3.toByte(), 0x28)
-        assertThrows(CharacterCodingException::class.java) {
-            VerifiedVolumeCache.publish(
-                dir,
-                malformed,
-                byteArrayOf()
-            ) { NovelTextDocument.decode(it, "UTF-8") }
-        }
-        assertTrue(dir.list()!!.isEmpty())
-        assertThrows(IllegalArgumentException::class.java) {
-            VerifiedVolumeCache.publish(
-                dir,
-                "one".toByteArray(),
-                byteArrayOf()
-            ) { NovelTextDocument.decode(it, "UTF-8").validateRange(0, 9) }
-        }
-        assertTrue(dir.list()!!.isEmpty())
-    }
-
-    @Test
-    fun cachedReadsRejectNullIdentityTraversalChecksumMismatchAndOversize() {
-        val dir = temporary.newFolder()
-        val body = "已缓存正文".toByteArray()
-        val digest = AtomicCacheFile.digest(body)
-        val name = VerifiedVolumeCache.textName(body)
-        AtomicCacheFile.write(File(dir, name), body)
-        assertArrayEquals(body, VerifiedVolumeCache.read(dir, name, digest, 1024))
-        for ((name, hash) in listOf(
-            null to digest, name to null, "../manifest.json" to digest,
-            name to digest.uppercase(), "text.wrong.txt" to digest, "volume.txt" to digest
-        )) {
-            assertThrows(IOException::class.java) {
-                VerifiedVolumeCache.read(
-                    dir,
-                    name,
-                    hash,
-                    1024
-                )
-            }
-        }
-        assertThrows(IOException::class.java) {
-            VerifiedVolumeCache.read(
-                dir,
-                name,
-                digest,
-                1
-            )
-        }
-        AtomicCacheFile.write(File(dir, name), "changed".toByteArray())
-        assertThrows(IOException::class.java) {
-            VerifiedVolumeCache.read(
-                dir,
-                name,
-                digest,
-                1024
-            )
-        }
-    }
+    // 卷发布失败、正文摘要和损坏数据覆盖于共享 VerifiedPortableNovelCacheTest。
 }

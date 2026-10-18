@@ -24,6 +24,39 @@ class CopyMangaClientTest {
         override fun resolve(settings:OfficialAppSettings)=settings.copy(pseudoId="stablePseudoId00",umString="0123456789abcdef0123456789abcdef",device="test-device",deviceInfo="test-model",buildTime="2025.05.22")
     }
     private fun state(app:Boolean=false,token:String="")=PortableNetworkState(NetworkSnapshot(settings=NetworkSettings(requestMode=if(app)RequestMode.OFFICIAL_APP else RequestMode.WEB),webSession=PortableSession(token),appSession=PortableSession(token)))
+    @Test fun officialDownloadAllowsOmittedBanFlagWithoutReplayingAuthorization() = runTest {
+        var calls = 0
+        val engine = MockEngine { request ->
+            calls++
+            assertEquals("/api/v3/comic/book/chapter2download/chapter", request.url.encodedPath)
+            respond("""{"code":200,"results":{"is_lock":false,"is_login":true,"day_downloads":9,"chapter":{"uuid":"chapter","size":1,"contents":[{"url":"https://test.invalid/page.jpg"}],"words":[0]}}}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val client = CopyMangaClient(HttpClient(engine), state(true, "synthetic-token"), identity = identity)
+        try {
+            val result = assertNotNull(OfficialDownloadApiService(client).chapter("book", "chapter", "Token synthetic-token").body()?.results)
+            assertFalse(result.isBanned)
+            assertTrue(result.isLogin == true)
+            assertEquals("chapter", result.chapter?.uuid)
+            assertEquals(1, calls)
+        } finally { client.close() }
+    }
+
+    @Test fun officialChapterStillRejectsExplicitBanAndLockFlags() = runTest {
+        for (flags in listOf("\"is_lock\":false,\"is_banned\":true", "\"is_lock\":true,\"is_banned\":false")) {
+            val engine = MockEngine {
+                respond("""{"code":200,"results":{$flags,"chapter":{"uuid":"chapter","size":1,"contents":[{"url":"https://test.invalid/page.jpg"}],"words":[0]}}}""",
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+            val client = CopyMangaClient(HttpClient(engine), state(true, "synthetic-token"), identity = identity)
+            try {
+                val result = PortableOfficialAppContentSource(client).chapter("book", "chapter")
+                assertTrue(result.isFailure)
+                assertEquals("章节暂不可阅读", result.exceptionOrNull()?.message)
+            } finally { client.close() }
+        }
+    }
+
     @Test fun novelCommentWritesMatchCapturedModesAndKeepClickedReplyId() = runTest {
         for (app in listOf(false, true)) {
             val replies = listOf("", "synthetic-child-reply-id")
@@ -114,7 +147,7 @@ class CopyMangaClientTest {
             assertEquals(RESOURCE_USER_AGENT,request.headers["User-Agent"])
             assertEquals(RESOURCE_LANGUAGE,request.headers["Accept-Language"])
             assertNull(request.headers["Authorization"])
-            assertNull(request.headers["Cookie"])
+            assertEquals("webp=1",request.headers["Cookie"])
             assertNull(request.headers["X-auth-signature"])
             if(request.url.encodedPath.startsWith("/comic/")) {
                 assertTrue(request.headers["Accept"].orEmpty().startsWith("text/html,"))
@@ -225,8 +258,9 @@ class CopyMangaClientTest {
         val engine=MockEngine { request ->
             calls++
             when(calls) {
-                1->{assertNull(request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}",headers=headersOf(HttpHeaders.SetCookie,"site=abc; Path=/comic; Secure"))}
-                2->{assertEquals("site=abc",request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}")}
+                1->{assertEquals("webp=1", request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}",headers=headersOf(HttpHeaders.SetCookie,"site=abc; Path=/comic; Secure"))}
+                2->{assertEquals("site=abc; webp=1",request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}")}
+                3->{assertEquals("webp=1",request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}")}
                 else->{assertNull(request.headers["Cookie"]);respond("{\"code\":200,\"results\":{}}")}
             }
         }

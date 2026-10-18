@@ -14,7 +14,8 @@ data class OfficialChapterResponse(
 @Serializable
 data class OfficialChapterResult(
     @SerialName("is_lock") val isLock: Boolean,
-    @SerialName("is_banned") val isBanned: Boolean,
+    // 下载授权响应可能省略此字段，保持旧 Gson 的缺省 false 行为。
+    @SerialName("is_banned") val isBanned: Boolean = false,
     @SerialName("chapter") val chapter: OfficialChapterDto? = null,
     @SerialName("is_login") val isLogin: Boolean? = null,
     @SerialName("day_downloads") val dayDownloads: Int? = null

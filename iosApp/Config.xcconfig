@@ -1,3 +1,8 @@
+// The two assignments are valid for both Java Properties and Xcode configuration.
+#include "../version.properties"
+MARKETING_VERSION = $(COPYMANGA_VERSION_NAME)
+CURRENT_PROJECT_VERSION = $(COPYMANGA_VERSION_CODE)
+
 // Safe default. A developer-supplied local file or explicit Xcode build setting may override it.
 COPYMANGA_TAP_STRING =
 #include? "LocalSecrets.xcconfig"

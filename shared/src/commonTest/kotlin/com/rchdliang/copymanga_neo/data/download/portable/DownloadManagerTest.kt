@@ -31,11 +31,12 @@ class DownloadManagerTest {
     }
     private class Manga : MangaRepository {
         var contentCalls = 0
+        var imageUrls = listOf("https://test.invalid/page.jpg")
         var failure: Throwable? = null
         override val cachedComicThemes = MutableStateFlow<Map<String, CachedComicThemes>>(emptyMap())
         override suspend fun getChapterDownloadContent(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterContent> {
             contentCalls++
-            return failure?.let { Result.failure(it) } ?: Result.success(ChapterContent(listOf("https://test.invalid/page.jpg"), null, null))
+            return failure?.let { Result.failure(it) } ?: Result.success(ChapterContent(imageUrls, null, null))
         }
         override suspend fun getHomeComics(): Nothing = error("unused")
         override suspend fun getComicDetail(pathWord: String): Nothing = error("unused")
@@ -106,19 +107,21 @@ class DownloadManagerTest {
     }
     private class Images : DownloadImageTransport {
         var calls = 0
+        val requestedUrls = mutableListOf<String>()
+        var gateAfterCalls = 0
         var gate: CompletableDeferred<Unit>? = null
         var cleanupGate: CompletableDeferred<Unit>? = null
         var cancelled = 0
         override suspend fun read(url: String, policy: DownloadNetworkState, onBytes: (Int) -> Unit): ByteArray {
             calls++
-            try { gate?.await() } catch (cancel: CancellationException) { cancelled++; throw cancel }
+            requestedUrls += url
+            try { if (calls > gateAfterCalls) gate?.await() } catch (cancel: CancellationException) { cancelled++; throw cancel }
             finally { cleanupGate?.let { withContext(NonCancellable) { it.await() } } }
             onBytes(3)
             return byteArrayOf(1, 2, 3)
         }
     }
-    private class Fixture(scope: CoroutineScope, val documents: Documents = Documents()) {
-        val files = Files()
+    private class Fixture(scope: CoroutineScope, val documents: Documents = Documents(), val files: Files = Files()) {
         val records = DownloadRecords(documents, files)
         val queue = DownloadQueueStore(documents)
         val manga = Manga()
@@ -129,8 +132,12 @@ class DownloadManagerTest {
             override val connections = connection
         }, scope)
         var foregroundRequests = 0
+        var foregroundGate: CompletableDeferred<Unit>? = null
         val manager = DownloadManager(manga, records, files, images,
-            object : DownloadRuntime { override fun onWorkAvailable() { foregroundRequests++ } },
+            object : DownloadRuntime {
+                override fun onWorkAvailable() { foregroundRequests++ }
+                override suspend fun awaitReady() { onWorkAvailable(); foregroundGate?.await() }
+            },
             queue, policy, NetworkSettings, Comments(records), LocalDownloadAccess(), Novels, Sessions, scope)
     }
     private fun task() = ComicDownloadTask("book", "作品", null, listOf(ChapterDownloadItem(
@@ -197,6 +204,80 @@ class DownloadManagerTest {
         runCurrent()
         assertEquals(1, f.manga.contentCalls)
         assertNotNull(f.records.getChapter("chapter"))
+    }
+
+    @Test fun resumeKeepsPublishedPagesAndRetriesOnlyTheInterruptedPage() = runTest {
+        val f = Fixture(backgroundScope)
+        val urls = listOf("https://test.invalid/first.jpg", "https://test.invalid/second.jpg")
+        f.manga.imageUrls = urls
+        f.images.gateAfterCalls = 1
+        f.images.gate = CompletableDeferred()
+        runCurrent(); f.manager.enqueue(task()); runCurrent()
+        f.manager.pauseDownload(task().taskKey); runCurrent()
+        assertNull(f.records.getChapter("chapter"))
+        assertEquals(urls, f.images.requestedUrls)
+        f.images.gate = null
+        f.manager.resumeDownload(task().taskKey); runCurrent()
+        assertEquals(urls + urls[1], f.images.requestedUrls)
+        assertTrue(f.records.hasCompleteFiles(assertNotNull(f.records.getChapter("chapter"))))
+    }
+
+    @Test fun restartReusesReceiptsFromThePreviousDownloadProcess() = runTest {
+        val first = Fixture(backgroundScope)
+        val urls = listOf("https://test.invalid/first.jpg", "https://test.invalid/second.jpg")
+        first.manga.imageUrls = urls
+        first.images.gateAfterCalls = 1
+        first.images.gate = CompletableDeferred()
+        runCurrent(); first.manager.enqueue(task()); runCurrent()
+        first.manager.pauseDownload(task().taskKey); runCurrent()
+        val restored = Fixture(backgroundScope, first.documents, first.files)
+        restored.manga.imageUrls = urls
+        runCurrent(); restored.manager.awaitRestoration()
+        restored.manager.resumeDownload(task().taskKey); runCurrent()
+        assertEquals(listOf(urls[1]), restored.images.requestedUrls)
+        assertTrue(restored.records.hasCompleteFiles(assertNotNull(restored.records.getChapter("chapter"))))
+    }
+
+    @Test fun wifiWaitAndManualPauseKeepTheCompletedPageProgress() = runTest {
+        val f = Fixture(backgroundScope)
+        val urls = listOf("https://test.invalid/first.jpg", "https://test.invalid/second.jpg")
+        f.manga.imageUrls = urls
+        f.images.gateAfterCalls = 1
+        f.images.gate = CompletableDeferred()
+        runCurrent(); f.manager.enqueue(task()); runCurrent()
+        assertEquals(0.5f, f.manager.downloadProgress.value[task().taskKey]?.overallProgress)
+        f.connection.value = DownloadConnection(false, false)
+        runCurrent()
+        val waiting = assertNotNull(f.manager.downloadProgress.value[task().taskKey])
+        assertEquals(DownloadTaskStatus.WAITING_FOR_WIFI, waiting.status)
+        assertEquals(0.5f, waiting.overallProgress)
+        assertEquals(1, waiting.downloadedImages)
+        assertEquals(0L, waiting.speedBytesPerSecond)
+        f.manager.pauseDownload(task().taskKey); runCurrent()
+        assertEquals(0.5f, f.manager.downloadProgress.value[task().taskKey]?.overallProgress)
+        f.connection.value = DownloadConnection(true, true, "new-wifi")
+        runCurrent()
+        assertEquals(DownloadTaskStatus.PAUSED, f.manager.downloadProgress.value[task().taskKey]?.status)
+        f.images.gate = null
+        f.manager.resumeDownload(task().taskKey); runCurrent()
+        assertEquals(urls + urls[1], f.images.requestedUrls)
+    }
+
+    @Test fun receiptRejectsUnknownSourceTruncatedFilesAndUncommittedTransfers() = runTest {
+        val files = Files()
+        val receipts = DownloadImageReceipts(files)
+        val path = "downloads/chapter/000.jpg"
+        val url = "https://test.invalid/page.jpg?signature=private"
+        files.write(path, byteArrayOf(1, 2, 3))
+        assertFalse(receipts.isComplete(path, url))
+        receipts.record(path, url)
+        assertTrue(receipts.isComplete(path, url))
+        assertFalse(files.rows.getValue("$path.complete").decodeToString().contains("private"))
+        assertFalse(receipts.isComplete(path, "$url-changed"))
+        files.write(path, byteArrayOf(1))
+        assertFalse(receipts.isComplete(path, url))
+        files.remove(path)
+        assertFalse(receipts.isComplete(path, url))
     }
 
     @Test fun riskFailurePausesWithoutAutomaticRetry() = runTest {
@@ -284,4 +365,31 @@ class DownloadManagerTest {
         assertNull(f.records.getChapter("chapter"))
     }
 
+
+    @Test fun authorizationWaitsForForegroundAndFailurePreservesPausedQueue() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        f.foregroundGate = CompletableDeferred()
+        f.manager.enqueue(task()); runCurrent()
+        assertEquals(0, f.manga.contentCalls)
+        f.foregroundGate!!.completeExceptionally(IllegalStateException("service rejected"))
+        runCurrent()
+        assertEquals(0, f.images.calls)
+        assertEquals(DownloadTaskStatus.PAUSED, f.manager.downloadProgress.value[task().taskKey]?.status)
+        assertEquals(1, f.queue.load().size)
+        f.foregroundGate = null
+        f.manager.resumeDownload(task().taskKey); runCurrent()
+        assertNotNull(f.records.getChapter("chapter"))
+    }
+    @Test fun changingBindingCancelsPreviousImageBeforeResuming() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent(); f.images.gate = CompletableDeferred()
+        f.manager.enqueue(task()); runCurrent()
+        f.connection.value = DownloadConnection(true, true, "replacement")
+        runCurrent()
+        assertTrue(f.images.cancelled > 0)
+        assertNull(f.records.getChapter("chapter"))
+        f.images.gate!!.complete(Unit); runCurrent()
+        assertNotNull(f.records.getChapter("chapter"))
+    }
 }

@@ -28,7 +28,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -73,7 +72,6 @@ class DownloadManager(
 ) {
     companion object {
         private const val TAG = "DownloadManager"
-        private const val DOWNLOAD_DIR = "downloads"
     }
 
     private val scope =
@@ -144,7 +142,7 @@ class DownloadManager(
         scope.launch {
             networkSettings.settings.drop(1).collect { pauseNovelTasks("连接设置已变化，请确认后继续") }
         }
-        sessions?.let { sessionRepository ->
+        sessions.let { sessionRepository ->
             scope.launch {
                 sessionRepository.awaitReady()
                 var previous = sessionRepository.getReadingSessionSync()
@@ -176,11 +174,19 @@ class DownloadManager(
 
     init {
         scope.launch { if (restoredForBackgroundWork()) processQueue() }
-        networkPolicy?.let { policy ->
+        networkPolicy.let { policy ->
             scope.launch {
                 if (!restoredForBackgroundWork()) return@launch
                 policy.ready.await()
-                policy.state.collect { applyNetworkPolicy(it.allowed) }
+                var previous = policy.state.value
+                policy.state.collect { next ->
+                    // 切换 Wi-Fi 绑定或限制开关时，先撤销旧传输，再按新策略恢复。
+                    if (next.bindingId != previous.bindingId || next.wifiOnly != previous.wifiOnly) {
+                        applyNetworkPolicy(false)
+                    }
+                    previous = next
+                    applyNetworkPolicy(next.allowed)
+                }
             }
         }
     }
@@ -481,7 +487,7 @@ class DownloadManager(
     }
 
     /** 必须先发布任务，再启动前台服务，最后将任务交给下载循环。 */
-    private fun ensureForeground(task: BookDownloadTask): Boolean {
+    private suspend fun ensureForeground(task: BookDownloadTask): Boolean {
         if (task.taskKey in cacheRemovals) {
             pausedTasks = pausedTasks + task.taskKey
             updateProgress(
@@ -500,9 +506,11 @@ class DownloadManager(
             return false
         }
         return try {
-        runtime.onWorkAvailable()
+        runtime.awaitReady()
         true
-    } catch (e: RuntimeException) {
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
         DownloadLog.e(TAG, "无法启动下载前台服务", e)
             pausedTasks = pausedTasks + task.taskKey
         updateProgress(
@@ -1195,7 +1203,7 @@ class DownloadManager(
             trackNetworkRequest(request)
             request.start()
             val restricted =
-                networkPolicy?.let { policy -> async { policy.state.first { !it.allowed } } }
+                networkPolicy.let { policy -> async { policy.state.first { !it.allowed } } }
             try {
                 if (requestKey in pausedTasks ||
                     comicTask(comicPathWord)?.chapters?.none { it.id == chapter.uuid } != false
@@ -1232,7 +1240,7 @@ class DownloadManager(
             trackNetworkRequest(request)
             request.start()
             val restricted =
-                networkPolicy?.let { policy -> async { policy.state.first { !it.allowed } } }
+                networkPolicy.let { policy -> async { policy.state.first { !it.allowed } } }
             try {
                 if (comicDownloadKey(comic) in pausedTasks || comicTask(comic)?.chapters?.none { it.chapter.uuid == uuid } != false) request.cancel()
                 select {
@@ -1259,6 +1267,7 @@ class DownloadManager(
     ): List<String> = supervisorScope {
         val key = comicDownloadKey(comicPathWord)
         val totalImages = imageUrls.size
+        val receipts = DownloadImageReceipts(storage)
         val paths = mutableListOf<String>()
         var bytesSinceLastTick = 0L
         var lastTick = kotlin.time.Clock.System.now().toEpochMilliseconds()
@@ -1279,26 +1288,33 @@ class DownloadManager(
                 val path = downloadChapterPrefix(comicPathWord, chapterUuid) + "${i.toString().padStart(3, '0')}.$extension"
                 val request = async(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                     checkAllowed()
-                    val bytes = imageTransport.read(url, networkPolicy.state.value) { read ->
-                        checkAllowed()
-                        bytesSinceLastTick += read
-                        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-                        val elapsed = now - lastTick
-                        if (elapsed >= 500L) {
-                            val speed = bytesSinceLastTick * 1000L / elapsed
-                            bytesSinceLastTick = 0L; lastTick = now
-                            updateProgress(
-                                comicPathWord, status = DownloadTaskStatus.DOWNLOADING,
-                                statusText = "正在下载图片 ${i + 1}/$totalImages",
-                                currentChapterIndex = chapterIndex, currentChapterName = chapterName,
-                                currentChapterProgress = i.toFloat() / totalImages.coerceAtLeast(1),
-                                downloadedImages = i, totalImages = totalImages, speedBytesPerSecond = speed
-                            )
-                        }
-                    }
-                    checkAllowed()
+                    val selectedPolicy = networkPolicy.state.value
                     localAccess.mutate("$comicPathWord/$chapterUuid").use {
-                        storage.write(path, bytes)
+                        if (!receipts.isComplete(path, url)) {
+                            storage.writeStream(path) { write ->
+                                imageTransport.stream(url, selectedPolicy, onBytes = { read ->
+                            if (networkPolicy.state.value != selectedPolicy) throw DownloadNetworkUnavailableException()
+                            checkAllowed()
+                            bytesSinceLastTick += read
+                            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                            val elapsed = now - lastTick
+                            if (elapsed >= 500L) {
+                                val speed = bytesSinceLastTick * 1000L / elapsed
+                                bytesSinceLastTick = 0L; lastTick = now
+                                updateProgress(
+                                    comicPathWord, status = DownloadTaskStatus.DOWNLOADING,
+                                    statusText = "正在下载图片 ${i + 1}/$totalImages",
+                                    currentChapterIndex = chapterIndex, currentChapterName = chapterName,
+                                    currentChapterProgress = i.toFloat() / totalImages.coerceAtLeast(1),
+                                    downloadedImages = i, totalImages = totalImages, speedBytesPerSecond = speed
+                                )
+                            }
+                                }, write = write)
+                                checkAllowed()
+                                if (networkPolicy.state.value != selectedPolicy) throw DownloadNetworkUnavailableException()
+                            }
+                            receipts.record(path, url)
+                        }
                     }
                     checkAllowed()
                     path
@@ -1326,22 +1342,6 @@ class DownloadManager(
             } finally { semaphore.release() }
         }
         paths
-    }
-
-    private fun isRiskResponseCode(code: Int): Boolean {
-        return code == 403 || code == 429
-    }
-
-    private fun isRiskHtml(content: String): Boolean {
-        val lower = content.lowercase()
-        return lower.contains("captcha") ||
-                lower.contains("verify") ||
-                lower.contains("cloudflare") ||
-                lower.contains("cf-challenge") ||
-                lower.contains("安全验证") ||
-                lower.contains("人机验证") ||
-                lower.contains("访问频繁") ||
-                lower.contains("too many requests")
     }
 
     private suspend fun handleRiskControl(
@@ -1461,8 +1461,16 @@ class DownloadManager(
 
         val newChapterProgress = currentChapterProgress ?: old?.currentChapterProgress ?: 0f
         val newChapterIndex = currentChapterIndex ?: old?.currentChapterIndex ?: 0
+        val nextStatus = status ?: old?.status ?: DownloadTaskStatus.IDLE
+        // 网络等待会把活动章节改回 WAITING，但已经完整落盘的图片进度仍然有效。
+        val retainPartialProgress = nextStatus in setOf(
+            DownloadTaskStatus.WAITING_FOR_WIFI, DownloadTaskStatus.PAUSED, DownloadTaskStatus.PAUSED_BY_RISK
+        ) && old?.taskId == task.taskId && old.totalChapters == totalChapters &&
+                old.completedChapters == completedChapters
 
-        val overall = if (totalChapters <= 0) {
+        val overall = if (retainPartialProgress) {
+            old.overallProgress
+        } else if (totalChapters <= 0) {
             0f
         } else {
             // 已尝试的章节序号包含失败项，只能累加已完成章节和当前下载章节的进度。
@@ -1485,7 +1493,7 @@ class DownloadManager(
                 ?: old?.currentChapterName
                 ?: task.currentChapterDisplayName,
             currentChapterProgress = newChapterProgress,
-            status = status ?: old?.status ?: DownloadTaskStatus.IDLE,
+            status = nextStatus,
             statusText = statusText ?: old?.statusText ?: "等待中",
             errorMessage = errorMessage,
             downloadedImages = downloadedImages ?: old?.downloadedImages ?: 0,

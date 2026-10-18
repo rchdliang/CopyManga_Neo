@@ -2,5 +2,5 @@ package com.rchdliang.copymanga_neo.multiplatform.app
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.profile.AppBuildInfo
 
-/** Upstream release identity; hosts must explicitly opt into development-only behavior. */
-val portableReleaseBuildInfo = AppBuildInfo("CopyManga Neo", "0.10.14", 29, "com.rchdliang.copymanga_neo", false)
+/** 发布版本来自根目录配置；开发专用行为仍由宿主显式启用。 */
+val portableReleaseBuildInfo = AppBuildInfo("CopyManga Neo", ReleaseVersion.NAME, ReleaseVersion.CODE, "com.rchdliang.copymanga_neo", false)

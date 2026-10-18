@@ -36,7 +36,7 @@ compose.desktop {
             modules("java.instrument", "java.management", "jdk.unsupported", "jdk.charsets")
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "CopyMangaNeo"
-            packageVersion = "0.10.14"
+            packageVersion = rootProject.extra["copyMangaVersionName"] as String
             description = "CopyManga Neo multiplatform client"
             vendor = "rchdliang"
             windows { iconFile.set(project.file("icons/copymanga-neo.ico")) }

@@ -26,7 +26,7 @@ class BrowserGraph private constructor(val core: PortableAppGraph, val host: Bro
                 documents = platformDocumentStorage("$namespace-settings"), cache = platformCacheStorage(cacheNamespace),
                 secureCredentials = MemorySecureCredentialStorage(), deviceName = "Browser", deviceModel = "WebAssembly",
                 createHttpClient = ::createBrowserHttpClient, proxyPolicy = browserProxyPolicy,
-                downloadServices = { appScope, settings, client, probe ->
+                downloadServices = { appScope, settings, client, probe, _ ->
                     browserDownloadServices(appScope, settings, client, probe).let { AppDownloadServices(it.runtime, it.networkPolicy, it.clientProvider) }
                 },
                 comicExportIo = BrowserComicExportIo(cacheNamespace),

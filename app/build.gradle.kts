@@ -4,14 +4,6 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
-    alias(libs.plugins.ksp)
-}
-
-configurations.all {
-    resolutionStrategy {
-        force(libs.kotlinMetadataJvm)
-    }
 }
 
 val keystoreProperties = Properties()
@@ -63,8 +55,9 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 29
-        versionName = "0.10.14"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = rootProject.extra["copyMangaVersionCode"] as Int
+        versionName = rootProject.extra["copyMangaVersionName"] as String
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
@@ -135,14 +128,13 @@ androidComponents {
     }
 }
 
-hilt {
-    enableAggregatingTask = true
-}
-
 dependencies {
     implementation(project(":shared"))
     testImplementation(libs.junit)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.kotlinx.serialization.json)
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)
@@ -159,23 +151,11 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material3.adaptive.navigation.suite)
 
-
-    // Hilt 依赖注入
-    implementation(libs.hilt.android)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.kotlinx.collections.immutable)
-    ksp(libs.hilt.compiler)
-    implementation(libs.hilt.navigation.compose)
-    
-    // Retrofit + OkHttp 网络请求
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.gson)
-    implementation(libs.okhttp.logging)
-    
+
     // Coil 图片加载
-    implementation(libs.coil.compose)
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.3")
-    implementation("io.coil-kt.coil3:coil:3.6.3")
+    implementation(libs.coil3)
     
     // Navigation
     implementation(libs.navigation.compose)
@@ -183,23 +163,12 @@ dependencies {
     // Lifecycle ViewModel
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
-    
-    // DataStore
-    implementation(libs.datastore.preferences)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
-    
-    // Gson
-    implementation(libs.gson)
 
-    // Room
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
 
     // Compose 预览工具
     debugImplementation(libs.androidx.compose.ui.tooling)
-
 
 }

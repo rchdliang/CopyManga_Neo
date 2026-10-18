@@ -1,4 +1,11 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 
 plugins {
     kotlin("multiplatform")
@@ -11,6 +18,34 @@ plugins {
 // Explicit portable-JAR target; native packaging still requires a matching host.
 val portableDesktopTarget = providers.gradleProperty("copymanga.desktopTarget").orNull
 
+/** 由版本配置生成各平台共同使用的常量，产物仅位于 build 目录。 */
+@CacheableTask
+abstract class GenerateReleaseVersion : DefaultTask() {
+    @get:Input abstract val releaseName: Property<String>
+    @get:Input abstract val releaseCode: Property<Int>
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val target = outputDirectory.file("com/rchdliang/copymanga_neo/multiplatform/app/ReleaseVersion.kt").get().asFile
+        target.parentFile.mkdirs()
+        target.writeText("""
+            package com.rchdliang.copymanga_neo.multiplatform.app
+
+            // Generated from version.properties. Do not edit.
+            internal object ReleaseVersion {
+                const val NAME = "${releaseName.get()}"
+                const val CODE = ${releaseCode.get()}
+            }
+        """.trimIndent() + "\n")
+    }
+}
+
+val generateReleaseVersion = tasks.register<GenerateReleaseVersion>("generateReleaseVersion") {
+    releaseName.set(rootProject.extra["copyMangaVersionName"] as String)
+    releaseCode.set(rootProject.extra["copyMangaVersionCode"] as Int)
+    outputDirectory.set(layout.buildDirectory.dir("generated/releaseVersion/commonMain"))
+}
 
 
 kotlin {
@@ -30,6 +65,7 @@ kotlin {
     }
     wasmJs { browser { commonWebpackConfig { outputFileName = "copymanga-neo.js" } }; binaries.executable() }
     sourceSets {
+        commonMain { kotlin.srcDir(generateReleaseVersion.flatMap { it.outputDirectory }) }
         commonMain.dependencies {
             // Production shared NavHost; platform inputs use the standalone dispatcher bridge.
             implementation("org.jetbrains.androidx.navigation:navigation-compose:2.10.0-beta01")
@@ -65,6 +101,7 @@ kotlin {
             // CMP's transitive alpha22 has experimental methods removed in beta01 (ToggleButton).
             implementation(libs.androidx.compose.material3)
             implementation("io.ktor:ktor-client-okhttp:3.6.0")
+            implementation(libs.okhttp)
             implementation("androidx.core:core-ktx:1.19.1")
         }
         getByName("desktopMain").dependencies {
@@ -94,6 +131,8 @@ compose.resources {
 // Keep native test extraction in the build directory, including read-only-home CI workers.
 tasks.withType<Test>().configureEach {
     systemProperty("skiko.data.path", layout.buildDirectory.dir("skiko-test-cache").get().asFile.absolutePath)
+    systemProperty("copymanga.expectedVersionName", rootProject.extra["copyMangaVersionName"] as String)
+    systemProperty("copymanga.expectedVersionCode", rootProject.extra["copyMangaVersionCode"] as Int)
 }
 
 // Selecting foreign natives is for packaging, never for executing host JVM tests.

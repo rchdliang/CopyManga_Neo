@@ -10,6 +10,10 @@ import java.io.DataInputStream
  * Material3 versions. Kotlin source compilation alone cannot catch a removed runtime overload.
  */
 class SearchMaterialAbiTest {
+    @Test fun sharedNovelSliderCallsExistInPackagedAndroidMaterial() = assertMaterialCalls(
+        "com/rchdliang/copymanga_neo/multiplatform/ui/novel/NovelReaderPanelsKt",
+        requiredOwner = "androidx/compose/material3/SliderKt"
+    )
     @Test fun sharedSearchCategoryCallsExistInPackagedAndroidMaterial() = assertMaterialCalls(
         "com/rchdliang/copymanga_neo/multiplatform/ui/search/SearchPageKt",
         requiredOwner = "androidx/compose/material3/ToggleButtonKt"

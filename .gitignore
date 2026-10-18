@@ -21,43 +21,22 @@ AGENTS.md
 reasonix.toml
 /.codex/config.toml
 /work
-/docs/
 /app/src/main/assets/official_app_identity_har.json
 /tools/
 /.codex/
 /.codex-remote-attachments/
 
 # Machine-specific development tools and migration reports
-/tools/
 /toolchain/
 .kotlin/
-.DS_Store
 
-# Track the migration's reproducible setup and verification record.
-!/docs/
+# Keep only durable build and architecture documentation in the repository.
 /docs/*
 !/docs/BUILDING.md
-!/docs/MIGRATION_STATUS.md
-!/docs/migration-audit/
+!/docs/ARCHITECTURE.md
 **/build/
-!/docs/UI_FEATURE_PARITY_AUDIT.md
-!/docs/IOS_BROWSER.md
-!/docs/FEATURE_PARITY_AUDIT.md
-!/docs/NOVEL_READER_PARITY.md
 
 # Local protocol configuration. Never add real values to tracked source or examples.
 /iosApp/LocalSecrets.xcconfig
 /shared/src/wasmJsMain/resources/copy-manga-config.local.js
 /iosApp/**/xcuserdata/
-
-!/docs/PREDICTIVE_BACK.md
-!/docs/BROWSER_ACTIONS.md
-!/docs/IOS_BACK_INPUT.md
-
-!/docs/WINDOWS_WIFI_DOWNLOADS.md
-
-!/docs/IOS_BACKGROUND_TRANSFERS.md
-
-!/docs/CI.md
-
-!/docs/ANDROID_TEST_BUILD.md
