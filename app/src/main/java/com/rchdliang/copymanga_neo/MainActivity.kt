@@ -71,6 +71,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -651,8 +652,11 @@ fun MainScreen(
     val windowWidthDp = with(density) { containerSize.width.toDp() }
     val isExpanded = windowWidthDp >= 840.dp
 
+    // 状态容器独立于手机/宽屏布局，尺寸变化后仍恢复各目的地的位置。
+    val destinationStateHolder = rememberSaveableStateHolder()
     if (isExpanded) {
         WideScreenLayout(
+            destinationStateHolder = destinationStateHolder,
             isLoggedIn = isLoggedIn,
             avatar = avatar,
             favoritesViewModel = favoritesViewModel,
@@ -702,6 +706,7 @@ fun MainScreen(
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 MainDestinationContent(
+                    saveableStateHolder = destinationStateHolder,
                     currentDestination = currentDestination,
                     favoritesViewModel = favoritesViewModel,
                     modifier = Modifier.fillMaxSize(),
@@ -721,6 +726,7 @@ fun MainScreen(
 
 @Composable
 private fun WideScreenLayout(
+    destinationStateHolder: SaveableStateHolder,
     isLoggedIn: Boolean,
     avatar: String?,
     favoritesViewModel: FavoritesViewModel,
@@ -841,6 +847,7 @@ private fun WideScreenLayout(
                 .background(MaterialTheme.colorScheme.surface)
         ) {
             MainDestinationContent(
+                saveableStateHolder = destinationStateHolder,
                 currentDestination = currentDestination,
                 favoritesViewModel = favoritesViewModel,
                 modifier = Modifier.fillMaxSize(),
@@ -860,6 +867,7 @@ private fun WideScreenLayout(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MainDestinationContent(
+    saveableStateHolder: SaveableStateHolder,
     currentDestination: AppDestinations,
     favoritesViewModel: FavoritesViewModel,
     modifier: Modifier = Modifier,
@@ -872,8 +880,6 @@ private fun MainDestinationContent(
     onReadComic: (String, String, String, String, Int, Double) -> Unit,
     onNavigateToNovel: (String?, LocalReadingRecord?) -> Unit
 ) {
-    val saveableStateHolder = rememberSaveableStateHolder()
-
     // 顶层目的地必须直接过渡，避免 Pager 的跨页滚动短暂显示中间页面。
     AnimatedContent(
         targetState = currentDestination,

@@ -201,14 +201,13 @@ private fun DownloadsContent(
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
-                DownloadsSectionHeader(
-                    title = "正在下载",
-                    countText = "${activeDownloads.size} 个任务"
-                )
-            }
-
             if (hasActive) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
+                    DownloadsSectionHeader(
+                        title = "正在下载",
+                        countText = "${activeDownloads.size} 个任务"
+                    )
+                }
                 activeDownloads.entries.forEach { (pathWord, progressInfo) ->
                     val paused =
                         progressInfo.status == DownloadTaskStatus.PAUSED || progressInfo.status == DownloadTaskStatus.PAUSED_BY_RISK
@@ -239,14 +238,9 @@ private fun DownloadsContent(
                         }
                     }
                 }
-            } else {
-                item(span = { GridItemSpan(maxLineSpan) }, key = "active_empty") {
-                    EmptyDownloadSection(text = "暂无下载任务")
+                item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
+                    Spacer(Modifier.height(8.dp))
                 }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }, key = "spacer") {
-                Spacer(Modifier.height(8.dp))
             }
 
             item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_header") {

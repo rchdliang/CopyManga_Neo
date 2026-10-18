@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rchdliang.copymanga_neo.domain.model.AppSettings
@@ -26,6 +27,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private val store = context.appSettingsDataStore
     private val themeKey = stringPreferencesKey("theme_mode")
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only_downloads")
+    private val imageConcurrencyKey = intPreferencesKey("comic_image_concurrency")
+    private val downloadLimitKey = intPreferencesKey("comic_download_limit_kib")
     private val exportPasswordKey = booleanPreferencesKey("include_password_in_credential_export")
     private val rankAudienceKey = stringPreferencesKey("home_rank_audience")
     private val rankPeriodKey = stringPreferencesKey("home_rank_period")
@@ -35,7 +38,9 @@ class AppSettingsRepositoryImpl @Inject constructor(
             themeMode = AppThemeMode.entries.firstOrNull { it.name == prefs[themeKey] }
                 ?: AppThemeMode.SYSTEM,
             wifiOnlyDownloads = prefs[wifiOnlyKey] ?: false,
-            includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false
+            includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false,
+            comicImageConcurrency = (prefs[imageConcurrencyKey] ?: 3).coerceIn(1, 10),
+            comicDownloadLimitKiB = (prefs[downloadLimitKey] ?: 0).coerceAtLeast(0)
         )
     }.distinctUntilChanged()
 
@@ -49,6 +54,16 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCredentialExportPassword(enabled: Boolean) = save {
         store.edit { it[exportPasswordKey] = enabled }
+    }
+
+    override suspend fun setComicImageConcurrency(count: Int) = save {
+        require(count in 1..10) { "并发数需为 1–10" }
+        store.edit { it[imageConcurrencyKey] = count }
+    }
+
+    override suspend fun setComicDownloadLimitKiB(limit: Int) = save {
+        require(limit >= 0) { "限速不能为负数" }
+        store.edit { it[downloadLimitKey] = limit }
     }
 
     override suspend fun getHomeRankPreferences(): Result<HomeRankPreferences> = try {
@@ -93,6 +108,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
         store.edit {
             it.remove(themeKey)
             it.remove(wifiOnlyKey)
+            it.remove(imageConcurrencyKey)
+            it.remove(downloadLimitKey)
             it.remove(exportPasswordKey)
             it.remove(rankAudienceKey)
             it.remove(rankPeriodKey)

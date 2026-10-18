@@ -26,3 +26,4 @@ reasonix.toml
 /tools/
 /.codex/
 /.codex-remote-attachments/
+/shared/build/

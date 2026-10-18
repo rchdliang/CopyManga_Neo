@@ -38,6 +38,9 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +65,19 @@ fun ComicExploreScreen(
     viewModel: ComicExploreViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val gridState = rememberLazyGridState()
+    val criteria = listOf(
+        state.section.name, state.topic?.pathWord.orEmpty(), state.theme.orEmpty(),
+        state.top.orEmpty(), state.ordering, state.rankAudience, state.rankPeriod
+    )
+    // 导航返回恢复原位置；只有筛选条件实际变化才回到顶部。
+    var appliedCriteria by rememberSaveable { mutableStateOf(criteria) }
+    LaunchedEffect(criteria) {
+        if (appliedCriteria != criteria) {
+            gridState.scrollToItem(0)
+            appliedCriteria = criteria
+        }
+    }
     val back = {
         if (state.topic != null && !viewModel.openedFromTopic) viewModel.closeTopic()
         else onNavigateBack()
@@ -148,13 +164,6 @@ fun ComicExploreScreen(
                 val columns = if (topicsOnly) ((maxWidth - 32.dp) / 360.dp).toInt().coerceAtLeast(1)
                 else if (state.topic != null) ((maxWidth - 16.dp) / 152.dp).toInt().coerceAtLeast(2)
                 else comicGridColumns(maxWidth - 32.dp)
-                val gridState = rememberLazyGridState()
-                LaunchedEffect(
-                    state.section, state.topic?.pathWord, state.theme, state.top,
-                    state.ordering, state.rankAudience, state.rankPeriod
-                ) {
-                    gridState.scrollToItem(0)
-                }
                 LaunchedEffect(
                     state.nextOffset,
                     state.isLoading,

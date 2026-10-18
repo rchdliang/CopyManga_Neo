@@ -36,7 +36,6 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Block
@@ -68,6 +67,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -101,7 +101,8 @@ import kotlinx.coroutines.flow.drop
 private enum class ProfilePage {
     MAIN,
     HISTORY,
-    SETTINGS,
+    READING,
+    DOWNLOADS,
     BLACKLIST,
     NETWORK,
     ABOUT,
@@ -151,88 +152,105 @@ fun ProfileScreen(
         }
     }
 
+    val pageStateHolder = rememberSaveableStateHolder()
+    val openSettings: (SettingsDestination) -> Unit = {
+        currentPage = when (it) {
+            SettingsDestination.OVERVIEW -> ProfilePage.MAIN
+            SettingsDestination.READING -> ProfilePage.READING
+            SettingsDestination.DOWNLOADS -> ProfilePage.DOWNLOADS
+        }
+    }
     BackHandler(enabled = currentPage != ProfilePage.MAIN) {
-        currentPage = if (currentPage in setOf(
-                ProfilePage.DATA,
-                ProfilePage.ABOUT
-            )
-        ) ProfilePage.SETTINGS else ProfilePage.MAIN
+        currentPage = if (currentPage == ProfilePage.HISTORY)
+            ProfilePage.LOCAL_LIBRARY else ProfilePage.MAIN
     }
 
-    when (currentPage) {
-        ProfilePage.MAIN -> ProfileMainPage(
-            uiState = uiState,
-            onRefresh = viewModel::refresh,
-            onLogout = viewModel::logout,
-            onEditProfile = viewModel::showProfileEditor,
-            onRetryProfile = viewModel::showProfileEditor,
-            onSaveProfile = viewModel::saveProfile,
-            onDismissProfile = viewModel::hideProfileEditor,
-            onLoginClick = viewModel::showLoginDialog,
-            savedPasswordProvider = viewModel::getSavedPasswordSync,
-            onLogin = viewModel::login,
-            onRegisterClick = viewModel::showRegisterDialog,
-            onRegister = viewModel::register,
-            onDismissRegister = viewModel::hideRegisterDialog,
-            onClearRegisterError = viewModel::clearRegisterError,
-            onDismissLogin = viewModel::hideLoginDialog,
-            onClearLoginError = viewModel::clearLoginError,
-            onExportCredential = { viewModel.requestCredentialExport() },
-            onImportCredential = {
-                val credential = runCatching {
-                    clipboardManager.primaryClip
-                        ?.takeIf { it.itemCount > 0 }
-                        ?.getItemAt(0)
-                        ?.coerceToText(context)
-                        ?.toString()
-                }.getOrNull()
-                viewModel.importLoginCredential(credential.orEmpty())
-            },
-            onNavigateToHistory = { currentPage = ProfilePage.LOCAL_LIBRARY },
-            onNavigateToSettings = { currentPage = ProfilePage.SETTINGS },
-            onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
-            onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
-            onBlacklistEnabledChange = viewModel::setBlacklistEnabled
-        )
+    pageStateHolder.SaveableStateProvider(currentPage.name) {
+        when (currentPage) {
+            ProfilePage.MAIN -> SettingsScreen(
+                onNavigateBack = { currentPage = ProfilePage.MAIN },
+                onNavigateToData = { currentPage = ProfilePage.DATA },
+                onNavigateToAbout = { currentPage = ProfilePage.ABOUT },
+                embedded = true,
+                onOpenDestination = openSettings,
+                overviewLayout = { appPreferences ->
+                    ProfileMainPage(
+                        uiState = uiState,
+                        onRefresh = viewModel::refresh,
+                        onLogout = viewModel::logout,
+                        onEditProfile = viewModel::showProfileEditor,
+                        onRetryProfile = viewModel::showProfileEditor,
+                        onSaveProfile = viewModel::saveProfile,
+                        onDismissProfile = viewModel::hideProfileEditor,
+                        onLoginClick = viewModel::showLoginDialog,
+                        savedPasswordProvider = viewModel::getSavedPasswordSync,
+                        onLogin = viewModel::login,
+                        onRegisterClick = viewModel::showRegisterDialog,
+                        onRegister = viewModel::register,
+                        onDismissRegister = viewModel::hideRegisterDialog,
+                        onClearRegisterError = viewModel::clearRegisterError,
+                        onDismissLogin = viewModel::hideLoginDialog,
+                        onClearLoginError = viewModel::clearLoginError,
+                        onExportCredential = { viewModel.requestCredentialExport() },
+                        onImportCredential = {
+                            val credential = runCatching {
+                                clipboardManager.primaryClip
+                                    ?.takeIf { it.itemCount > 0 }
+                                    ?.getItemAt(0)
+                                    ?.coerceToText(context)
+                                    ?.toString()
+                            }.getOrNull()
+                            viewModel.importLoginCredential(credential.orEmpty())
+                        },
+                        onNavigateToHistory = { currentPage = ProfilePage.LOCAL_LIBRARY },
+                        settingsContent = appPreferences,
+                        onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
+                        onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
+                        onBlacklistEnabledChange = viewModel::setBlacklistEnabled
+                    )
+                }
+            )
 
-        ProfilePage.LOCAL_LIBRARY -> com.rchdliang.copymanga_neo.ui.library.LocalLibraryScreen(
-            onBack = { currentPage = ProfilePage.MAIN },
-            onCloud = { currentPage = ProfilePage.HISTORY },
-            onComic = onReadComic,
-            onNovel = { onNavigateToNovel(null, it) }
-        )
+            ProfilePage.LOCAL_LIBRARY -> com.rchdliang.copymanga_neo.ui.library.LocalLibraryScreen(
+                onBack = { currentPage = ProfilePage.MAIN },
+                onCloud = { currentPage = ProfilePage.HISTORY },
+                onComic = onReadComic,
+                onNovel = { onNavigateToNovel(null, it) }
+            )
 
-        ProfilePage.HISTORY -> HistoryScreen(
-            onNavigateBack = { currentPage = ProfilePage.LOCAL_LIBRARY },
-            onComicClick = onComicClick,
-            onHistoryCleared = onHistoryCleared,
-            onLoginClick = {
+            ProfilePage.HISTORY -> HistoryScreen(
+                onNavigateBack = { currentPage = ProfilePage.LOCAL_LIBRARY },
+                onComicClick = onComicClick,
+                onHistoryCleared = onHistoryCleared,
+                onLoginClick = {
+                    currentPage = ProfilePage.MAIN
+                    viewModel.showLoginDialog()
+                }
+            )
+
+            ProfilePage.READING, ProfilePage.DOWNLOADS -> SettingsScreen(
+                onNavigateBack = { currentPage = ProfilePage.MAIN },
+                initialDestination = if (currentPage == ProfilePage.READING)
+                    SettingsDestination.READING else SettingsDestination.DOWNLOADS,
+                onOpenDestination = openSettings
+            )
+
+            ProfilePage.ABOUT -> AboutScreen(onNavigateBack = { currentPage = ProfilePage.MAIN })
+
+            ProfilePage.DATA -> DataSettingsScreen(onNavigateBack = {
                 currentPage = ProfilePage.MAIN
-                viewModel.showLoginDialog()
-            }
-        )
+            })
 
-        ProfilePage.SETTINGS -> SettingsScreen(
-            onNavigateBack = { currentPage = ProfilePage.MAIN },
-            onNavigateToData = { currentPage = ProfilePage.DATA },
-            onNavigateToAbout = { currentPage = ProfilePage.ABOUT }
-        )
+            ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = {
+                currentPage = ProfilePage.MAIN
+            })
 
-        ProfilePage.ABOUT -> AboutScreen(onNavigateBack = { currentPage = ProfilePage.SETTINGS })
-
-        ProfilePage.DATA -> DataSettingsScreen(onNavigateBack = {
-            currentPage = ProfilePage.SETTINGS
-        })
-
-        ProfilePage.NETWORK -> NetworkSettingsScreen(onNavigateBack = {
-            currentPage = ProfilePage.MAIN
-        })
-
-        ProfilePage.BLACKLIST -> ThemeBlacklistPage(
-            uiState = uiState,
-            onRemove = viewModel::removeBlockedTheme,
-            onNavigateBack = { currentPage = ProfilePage.MAIN }
-        )
+            ProfilePage.BLACKLIST -> ThemeBlacklistPage(
+                uiState = uiState,
+                onRemove = viewModel::removeBlockedTheme,
+                onNavigateBack = { currentPage = ProfilePage.MAIN }
+            )
+        }
     }
 }
 
@@ -249,7 +267,7 @@ internal fun ProfileMainPage(
     onExportCredential: () -> Unit,
     onImportCredential: () -> Unit,
     onNavigateToHistory: () -> Unit,
-    onNavigateToSettings: () -> Unit,
+    settingsContent: @Composable () -> Unit = {},
     onNavigateToNetwork: () -> Unit = {},
     onNavigateToBlacklist: () -> Unit = {},
     onBlacklistEnabledChange: (Boolean) -> Unit = {},
@@ -295,35 +313,30 @@ internal fun ProfileMainPage(
                     )
                 }
                 item {
-                    val account: @Composable () -> Unit = {
-                        AccountCard(
-                            uiState,
-                            onLogout,
-                            onLoginClick,
-                            onEditProfile,
-                            onExport = onExportCredential,
-                            onImport = onImportCredential
-                        )
-                    }
-                    val menus: @Composable () -> Unit = {
-                        ProfileMenuGroup(
-                            uiState,
-                            onNavigateToHistory = onNavigateToHistory,
-                            onNavigateToSettings,
-                            onNavigateToNetwork,
-                            onNavigateToBlacklist,
-                            onBlacklistEnabledChange
-                        )
+                    val personal: @Composable () -> Unit = {
+                        Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+                            AccountCard(
+                                uiState, onLogout, onLoginClick, onEditProfile,
+                                onExport = onExportCredential, onImport = onImportCredential
+                            )
+                            ProfileMenuGroup(
+                                uiState,
+                                onNavigateToHistory = onNavigateToHistory,
+                                onNavigateToNetwork,
+                                onNavigateToBlacklist,
+                                onBlacklistEnabledChange
+                            )
+                        }
                     }
                     if (wide) {
                         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                            Box(Modifier.weight(0.9f)) { account() }
-                            Box(Modifier.weight(1.1f)) { menus() }
+                            Box(Modifier.weight(0.9f)) { personal() }
+                            Box(Modifier.weight(1.1f)) { settingsContent() }
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            account()
-                            menus()
+                            personal()
+                            settingsContent()
                         }
                     }
                 }
@@ -534,7 +547,6 @@ private fun AccountCard(
 private fun ProfileMenuGroup(
     uiState: ProfileUiState,
     onNavigateToHistory: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     onNavigateToNetwork: () -> Unit,
     onNavigateToBlacklist: () -> Unit,
     onBlacklistEnabledChange: (Boolean) -> Unit
@@ -542,8 +554,8 @@ private fun ProfileMenuGroup(
     val common = listOf(
         ProfileMenuEntry(
             Icons.Filled.History,
-            "本地阅读、书签与小说",
-            "本地历史和书签 · 官方轻小说 · 云端历史",
+            "阅读记录与书签",
+            "本地与云端记录 · 书签 · 轻小说",
             onClick = onNavigateToHistory
         ),
         ProfileMenuEntry(
@@ -568,16 +580,10 @@ private fun ProfileMenuGroup(
         ProfileMenuEntry(
             Icons.Outlined.Wifi, "请求模式与网络", "当前：${uiState.requestMode.profileLabel}",
             onClick = onNavigateToNetwork
-        ),
-        ProfileMenuEntry(
-            Icons.Filled.Settings,
-            "设置",
-            "外观、阅读、下载与通知",
-            onClick = onNavigateToSettings
         )
     )
     Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
-        listOf("常用" to common, "应用" to app).forEach { (title, entries) ->
+        listOf("阅读与内容" to common, "账号与连接" to app).forEach { (title, entries) ->
             ProfileSectionTitle(title)
             entries.forEachIndexed { index, entry ->
                 ProfileListItem(
@@ -855,7 +861,11 @@ private fun ProfileLoggedInPreview() {
             onExportCredential = {},
             onImportCredential = {},
             onNavigateToHistory = {},
-            onNavigateToSettings = {}
+            settingsContent = {
+                SettingsPage(
+                    onNavigateBack = {}, embedded = true,
+                    overviewLayout = { app -> app() })
+            }
         )
     }
 }
@@ -875,7 +885,11 @@ private fun ProfileNotLoggedInPreview() {
             onExportCredential = {},
             onImportCredential = {},
             onNavigateToHistory = {},
-            onNavigateToSettings = {}
+            settingsContent = {
+                SettingsPage(
+                    onNavigateBack = {}, embedded = true,
+                    overviewLayout = { app -> app() })
+            }
         )
     }
 }
@@ -901,7 +915,11 @@ private fun LoginDialogPreview() {
             onExportCredential = {},
             onImportCredential = {},
             onNavigateToHistory = {},
-            onNavigateToSettings = {}
+            settingsContent = {
+                SettingsPage(
+                    onNavigateBack = {}, embedded = true,
+                    overviewLayout = { app -> app() })
+            }
         )
     }
 }

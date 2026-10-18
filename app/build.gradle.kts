@@ -51,8 +51,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
-        versionCode = 30
-        versionName = "0.10.16"
+        versionCode = 31
+        versionName = "0.10.18.1"
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }

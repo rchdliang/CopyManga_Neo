@@ -137,7 +137,8 @@ class HomeViewModel @Inject constructor(
             riskControl = risk,
             showRiskDialog = risk != null && risk.detectedAt != dismissed
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState(isLoading = true))
+        // 与主导航条目同寿命，避免详情返回时重启过滤而暂时移除已显示条目。
+    }.stateIn(viewModelScope, SharingStarted.Lazily, HomeUiState(isLoading = true))
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("HomeViewModel", "Unhandled coroutine exception", throwable)

@@ -5,12 +5,20 @@ import java.io.File
 import java.io.IOException
 
 /** 调用方持有文件写租约；仅复用来源和长度均匹配、已完整发布的图片。 */
-internal fun downloadImageIfNeeded(image: File, url: String, download: () -> Unit) {
+internal suspend fun downloadImageIfNeeded(
+    image: File,
+    url: String,
+    publish: suspend (() -> Unit) -> Unit,
+    download: suspend () -> Unit
+) {
     val receipt = File(image.parentFile, "${image.name}.complete")
-    fun payload(size: Long) = "1\n${ReadingContentHash.sha256(url.toByteArray(Charsets.UTF_8))}\n$size"
+    fun payload(size: Long) =
+        "1\n${ReadingContentHash.sha256(url.toByteArray(Charsets.UTF_8))}\n$size"
+
     val reusable = try {
         image.isFile && image.length() > 0 && receipt.isFile && receipt.length() <= 256 &&
-            receipt.readBytes().decodeToString(throwOnInvalidSequence = true) == payload(image.length())
+                receipt.readBytes()
+                    .decodeToString(throwOnInvalidSequence = true) == payload(image.length())
     } catch (_: IOException) {
         false
     } catch (_: SecurityException) {
@@ -22,5 +30,5 @@ internal fun downloadImageIfNeeded(image: File, url: String, download: () -> Uni
     download()
     if (!image.isFile || image.length() <= 0) throw IOException("下载图片为空，无法记录完成状态")
     val bytes = payload(image.length()).toByteArray(Charsets.UTF_8)
-    writeDownloadedImage(receipt, bytes.inputStream(), bytes.size.toLong())
+    publish { writeDownloadedImage(receipt, bytes.inputStream(), bytes.size.toLong()) }
 }

@@ -12,12 +12,15 @@ import com.rchdliang.copymanga_neo.domain.model.SettingsBackup
 internal object SettingsBackupCodec {
     const val MAX_BYTES =
         com.rchdliang.copymanga_neo.domain.repository.SettingsBackupRepository.MAX_BYTES
+
     fun encode(value: SettingsBackup): String = JsonObject().apply {
         addProperty("format", "copymanga-neo-settings")
         addProperty("version", 2)
         add("settings", JsonObject().apply {
             addProperty("themeMode", value.settings.themeMode.name)
             addProperty("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
+            addProperty("comicImageConcurrency", value.settings.comicImageConcurrency)
+            addProperty("comicDownloadLimitKiB", value.settings.comicDownloadLimitKiB)
         })
         add("readerDefaults", JsonObject().apply {
             addProperty("readingDirection", value.readerDefaults.readingDirection)
@@ -62,7 +65,15 @@ internal object SettingsBackupCodec {
         val homeRank = HomeRankPreferences(rank.string("audience"), rank.string("period"))
         require(homeRank == homeRank.normalized()) { "排行榜设置无效" }
         return SettingsBackup(
-            AppSettings(AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean),
+            AppSettings(
+                AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean,
+                comicImageConcurrency = settings.optionalInt("comicImageConcurrency", 3, 1..10),
+                comicDownloadLimitKiB = settings.optionalInt(
+                    "comicDownloadLimitKiB",
+                    0,
+                    0..Int.MAX_VALUE
+                )
+            ),
             defaults, homeRank,
             root.getAsJsonObject("localReading").toString().also { LocalReadingCodec.decode(it) },
             root.getAsJsonObject("readerTools").toString()
@@ -78,5 +89,14 @@ internal object SettingsBackupCodec {
         val value = get(key)
         require(value?.isJsonPrimitive == true && value.asJsonPrimitive.isString) { "备份缺少有效字段" }
         return value.asString
+    }
+
+    /** 兼容未包含下载偏好的旧备份；新字段存在时严格校验。 */
+    private fun JsonObject.optionalInt(key: String, default: Int, range: IntRange): Int {
+        val raw = get(key) ?: return default
+        require(raw.isJsonPrimitive && raw.asJsonPrimitive.isNumber) { "下载设置无效" }
+        val value = raw.asString.toIntOrNull()
+        require(value != null && value in range) { "下载设置无效" }
+        return value
     }
 }
