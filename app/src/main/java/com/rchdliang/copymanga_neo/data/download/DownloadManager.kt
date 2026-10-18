@@ -79,7 +79,7 @@ class DownloadManager internal constructor(
     private val startForegroundDownload: () -> Unit,
     private val queueStore: DownloadQueueStore? = null,
     private val networkPolicy: DownloadNetworkPolicy? = null,
-    networkSettings: NetworkSettingsStore? = null,
+    private val networkSettings: NetworkSettingsStore? = null,
     private val commentsRepository: CommentRepository? = null,
     private val localAccess: LocalDownloadAccess = LocalDownloadAccess(),
     private val novels: NovelRepository? = null,
@@ -170,6 +170,17 @@ class DownloadManager internal constructor(
 
     private val restoration = scope.async { restoreQueue() }
 
+    suspend fun awaitRestoration() { restoration.await() }
+
+    private data class ComicSource(
+        val networkGeneration: Long?,
+        val session: com.rchdliang.copymanga_neo.domain.model.LocalReadingSession?
+    )
+    private fun comicSource() = ComicSource(networkSettings?.generation, sessions?.getReadingSessionSync())
+    private fun requireComicSource(source: ComicSource) {
+        if (comicSource() != source) throw IOException("账号或请求配置已变化，请重新下载章节")
+    }
+
     init {
         if (appSettings == null) downloadSettingsReady.complete(Unit)
         else scope.launch {
@@ -234,8 +245,10 @@ class DownloadManager internal constructor(
 
     /** 恢复为暂停状态，由用户点击继续；已完成章节只认完整的本地文件。 */
     private suspend fun restoreQueue() {
-        novels?.refreshCachedVolumes()
         val saved = queueStore?.load().orEmpty()
+        if (saved.any { it is NovelDownloadTask }) {
+            novels?.awaitCachedVolumes()?.fold(onSuccess = {}, onFailure = { throw it })
+        }
         stateMutex.withLock {
             saved.forEach { task ->
                 val complete = when (task) {
@@ -985,6 +998,10 @@ class DownloadManager internal constructor(
 
             try {
                 val chapterIndex = idx + 1
+                sessions?.awaitReady()
+                val chapterSource = comicSource()
+                val chapterKey = comicDownloadKey(comicPathWord)
+                val chapterPauseRevision = stateMutex.withLock { pauseRevisions[chapterKey] ?: 0L }
                 val existing = chapterDao.getChapter(chapterItem.chapter.uuid)
                     ?.takeIf { it.comicPathWord == comicPathWord && it.hasCompleteFiles() }
                 // 评论阶段暂停后继续时，复用已经完整保存的图片。
@@ -1041,7 +1058,9 @@ class DownloadManager internal constructor(
                             chapterItem.chapter.uuid,
                             imageUrls,
                             chapterIndex,
-                            chapterItem.chapter.name
+                            chapterItem.chapter.name,
+                            chapterSource,
+                            chapterPauseRevision
                         )
 
                         if (comicDownloadKey(comicPathWord) in pausedTasks) {
@@ -1080,7 +1099,10 @@ class DownloadManager internal constructor(
                         )
                         val committed = stateMutex.withLock {
                             val latest = comicTask(comicPathWord)
-                            if (latest?.taskId == task.taskId && latest.chapters.any {
+                            if (latest?.taskId == task.taskId) requireComicSource(chapterSource)
+                            if (chapterKey !in pausedTasks && chapterKey !in networkWaiting && networkAllowed() &&
+                                (pauseRevisions[chapterKey] ?: 0L) == chapterPauseRevision &&
+                                latest?.taskId == task.taskId && latest.chapters.any {
                                     it.chapter.uuid == chapterItem.chapter.uuid
                                 }) {
                                 chapterDao.insertChapter(entity)
@@ -1282,7 +1304,9 @@ class DownloadManager internal constructor(
         chapterUuid: String,
         imageUrls: List<String>,
         chapterIndex: Int,
-        chapterName: String?
+        chapterName: String?,
+        expectedSource: ComicSource,
+        expectedPauseRevision: Long
     ): List<String> = supervisorScope {
         downloadSettingsReady.await()
         val key = comicDownloadKey(comicPathWord)
@@ -1298,6 +1322,7 @@ class DownloadManager internal constructor(
 
         suspend fun checkActive() {
             currentCoroutineContext().ensureActive()
+            requireComicSource(expectedSource)
             if (!networkAllowed() || key in networkWaiting) throw DownloadNetworkUnavailableException()
             if (key in pausedTasks) throw IOException("下载已暂停")
             val task = comicTask(comicPathWord)
@@ -1309,11 +1334,13 @@ class DownloadManager internal constructor(
         // 与暂停、删除使用同一把锁，旧任务不能发布图片、回执或进度。
         suspend fun publish(action: () -> Unit) = stateMutex.withLock {
             checkActive()
+            if ((pauseRevisions[key] ?: 0L) != expectedPauseRevision) throw IOException("下载已暂停")
             action()
         }
 
         suspend fun report(bytes: Int = 0, finished: Boolean = false) = stateMutex.withLock {
             checkActive()
+            if ((pauseRevisions[key] ?: 0L) != expectedPauseRevision) throw IOException("下载已暂停")
             bytesSinceLastTick += bytes
             if (finished) completed++
             val now = System.nanoTime()

@@ -541,6 +541,9 @@ fun CopyManga_NeoApp(
                             ) {
                                 DetailScreen(
                                     pathWord = pathWord,
+                                    onStartChapterClick = { chapter, comic, name, group, page ->
+                                        navController.navigate(Screen.Reader.createRoute(comic, chapter, name, group, page = page))
+                                    },
                                     onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
                                         navController.navigate(
                                             Screen.Reader.createRoute(

@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.ui.reader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
@@ -93,8 +92,8 @@ fun ReaderChapterComments(
     onShowControls: () -> Unit,
     modifier: Modifier = Modifier,
     refreshVersion: Int = 0,
-    viewModel: ReaderChapterCommentsViewModel = hiltViewModel(key = "reader-comments:${page.chapterUuid}"),
-    commentsViewModel: CommentsViewModel = hiltViewModel(key = "reader-comments-full:${page.chapterUuid}")
+    viewModel: ReaderChapterCommentsViewModel,
+    commentsViewModel: CommentsViewModel
 ) {
     LaunchedEffect(refreshVersion) {
         if (refreshVersion > 0 && commentsViewModel.uiState.value.target?.id == page.chapterUuid) {

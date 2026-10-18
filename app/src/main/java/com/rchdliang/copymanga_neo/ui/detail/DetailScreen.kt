@@ -114,6 +114,7 @@ fun DetailScreen(
     pathWord: String,
     viewModel: DetailViewModel = hiltViewModel(),
     onChapterClick: (String, String, String, String) -> Unit,
+    onStartChapterClick: (String, String, String, String, Int) -> Unit,
     onNavigateBack: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onThemeClick: (Theme) -> Unit = {},
@@ -278,29 +279,18 @@ fun DetailScreen(
                         {
                             val info = viewModel.getStartChapter()
                             if (info != null) {
-                                onChapterClick(
+                                onStartChapterClick(
                                     info.uuid,
                                     uiState.comicDetail!!.pathWord,
                                     info.name,
-                                    info.groupPathWord
+                                    info.groupPathWord,
+                                    info.initialPage
                                 )
                             }
                         }
                     }
                     // 计算点击"继续/开始阅读"后跳转的目标章节，用于按钮文案展示
-                    val startChapterInfo =
-                        remember(
-                            uiState.chapters,
-                            uiState.browse,
-                            uiState.browseGroup,
-                            uiState.sortAscending,
-                            uiState.isProgressLoading,
-                            uiState.isLoading,
-                            uiState.isLoadingChapters,
-                            uiState.isChapterCatalogReady
-                        ) {
-                            viewModel.getStartChapter()
-                        }
+                    val startChapterInfo = remember(uiState) { resolveStartChapter(uiState) }
                     val onChapterToggleSelect = remember {
                         { uuid: String -> viewModel.toggleChapterSelection(uuid) }
                     }

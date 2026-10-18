@@ -32,7 +32,7 @@ data class ComicDetailDto(
     @SerializedName("b_hidden") val bHidden: Boolean,
     @SerializedName("ban") val ban: Int,
     @SerializedName("name") val name: String,
-    @SerializedName("alias") val comicAlias: String,
+    @SerializedName("alias") val comicAlias: String? = null,
     @SerializedName("path_word") val pathWord: String,
     @SerializedName("close_comment") val closeComment: Boolean,
     @SerializedName("close_roast") val closeRoast: Boolean,

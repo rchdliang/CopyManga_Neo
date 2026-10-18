@@ -110,7 +110,8 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel(),
     exportViewModel: ComicExportViewModel = hiltViewModel(),
     initialPage: Int = -1,
-    initialFraction: Double = 0.0
+    initialFraction: Double = 0.0,
+    commentModels: ReaderCommentModels = hiltViewModel()
 ) {
     val exportable by exportViewModel.availableChapters.collectAsStateWithLifecycle()
     LaunchedEffect(comicPathWord) { exportViewModel.watchLocalChapters(comicPathWord) }
@@ -233,7 +234,7 @@ fun ReaderScreen(
             )
 
             is ReaderUiState.Success -> ReaderSuccessContent(
-                images = state.chapters.flatMap { it.content.imageUrls },
+                images = state.content.imageUrls,
                 chapterName = state.content.chapterName.ifEmpty { chapterName },
                 readingDirection = readingDirectionPref,
                 pageScale = pageScalePref,
@@ -256,8 +257,11 @@ fun ReaderScreen(
                 tools = tools, onToolsChange = viewModel::updateTools,
                 commentsAllowed = commentsAllowed, closedChapters = closedChapters,
                 commentRefreshVersion = commentRefreshVersion,
+                commentModels = commentModels,
                 onCloseComments = viewModel::closeChapterComments,
                 onActivateChapter = viewModel::activateChapter,
+                onWindowSettled = viewModel::retainWindow,
+                onPrependPrevious = { viewModel.prependPreviousChapter(it) },
                 savedPosition = viewModel.savedPosition(state.chapterUuid),
                 onPosition = viewModel::recordPosition,
                 onCompleted = viewModel::completeChapter,
@@ -316,6 +320,8 @@ fun ReaderSuccessContent(
     closedChapters: Set<String> = emptySet(),
     onCloseComments: (String) -> Unit = {},
     onActivateChapter: (String) -> Unit = {},
+    onWindowSettled: (String) -> Unit = {},
+    onPrependPrevious: (Boolean) -> Unit = {},
     onAppendNext: (Boolean) -> Unit = {},
     appending: Boolean = false,
     bookmarks: List<ReaderBookmark> = emptyList(),
@@ -333,7 +339,8 @@ fun ReaderSuccessContent(
     onCompleted: (String) -> Unit = {},
     pendingInitialFraction: MutableState<Double?>? = null,
     pendingInitialChapter: MutableState<String?>? = null,
-    activeChapterUuid: String? = null
+    activeChapterUuid: String? = null,
+    commentModels: ReaderCommentModels? = null
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -398,10 +405,16 @@ fun ReaderSuccessContent(
         list,
         pager
     ) { derivedStateOf { if (isContinuous) list.firstVisibleItemIndex else pager.currentPage } }
-    val page = pages.getOrNull(visibleIndex)
+    val visibleKey by remember(isContinuous, list, pager) {
+        derivedStateOf {
+            if (isContinuous) list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == list.firstVisibleItemIndex }?.key
+            else pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pager.currentPage }?.key
+        }
+    }
+    val page = ReaderWindowPolicy.pageAt(pages, visibleIndex, visibleKey)
     // 底栏和章末评论共用同一章节的加载状态，角标取 API 总数，避免重复请求。
     val chapterCommentsViewModel = if (!preview && page != null) {
-        hiltViewModel<ReaderChapterCommentsViewModel>(key = "reader-comments:${page.chapterUuid}")
+        requireNotNull(commentModels).chapter(page.chapterUuid)
     } else null
     val chapterCommentsState =
         chapterCommentsViewModel?.uiState?.collectAsStateWithLifecycle()?.value
@@ -410,6 +423,18 @@ fun ReaderSuccessContent(
     var anchorPage by rememberSaveable { mutableIntStateOf(savedPosition?.page ?: 0) }
     var anchorFraction by rememberSaveable { mutableStateOf(savedPosition?.fraction ?: 0.0) }
     val readyImages = remember { mutableStateMapOf<String, Boolean>() }
+    val visibleKeys by remember(isContinuous, list, pager) {
+        derivedStateOf {
+            if (isContinuous) list.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet()
+            else pager.layoutInfo.visiblePagesInfo.mapNotNull { it.key as? String }.toSet()
+        }
+    }
+    val retainedPageKeys = ReaderWindowPolicy.pageKeys(pages, pages.indexOfFirst { it.key == page?.key }, visibleKeys)
+    val latestRetainedPageKeys by rememberUpdatedState(retainedPageKeys)
+    androidx.compose.runtime.SideEffect {
+        readyImages.keys.toList().filter { it !in retainedPageKeys }.forEach { readyImages.remove(it) }
+        commentModels?.retain(chapters.map { it.uuid }.toSet())
+    }
     var restoring by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -454,6 +479,16 @@ fun ReaderSuccessContent(
         val requestedChapter = pendingInitialChapter?.value
         if (requestedChapter != null && requestedChapter != activeChapterUuid) return@LaunchedEffect
         val explicit = pendingInitialPage.value
+        if (explicit == null && (list.isScrollInProgress || pager.isScrollInProgress)) {
+            snapshotFlow { !list.isScrollInProgress && !pager.isScrollInProgress }.first { it }
+            val index = if (isContinuous) list.firstVisibleItemIndex else pager.settledPage
+            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            val key = if (isContinuous) item?.key else pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == index }?.key
+            ReaderWindowPolicy.pageAt(pages, index, key)?.let {
+                anchor = it.key; anchorChapter = it.chapterUuid; anchorPage = it.page
+                anchorFraction = if (isContinuous) ReadingPositionPolicy.fraction(list.firstVisibleItemScrollOffset, item?.size ?: 0) else 0.0
+            }
+        }
         val target = if (explicit != null)
             resolveReaderPageIndex(
                 pages,
@@ -468,8 +503,12 @@ fun ReaderSuccessContent(
                 ?: 0.0 else anchorFraction
         restoring = true
         if (isContinuous) {
-            list.scrollToItem(target)
-            if (fraction > 0) {
+            val retainedItem = list.layoutInfo.visibleItemsInfo.firstOrNull {
+                it.key == pages[target].key && readyImages[pages[target].key] == true
+            }
+            val measuredSize = retainedItem?.size
+            list.scrollToItem(target, if (measuredSize != null) ReadingPositionPolicy.offset(fraction, measuredSize) else 0)
+            if (fraction > 0 && measuredSize == null) {
                 val size = snapshotFlow {
                     if (!restoring) 0 else list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
                         ?.takeIf { readyImages[pages[target].key] == true }?.size
@@ -521,14 +560,15 @@ fun ReaderSuccessContent(
                 if (!dragging) sliderPreview = it.page.toFloat()
                 if (it.source == null) automatic = false
                 val bottomVisible =
-                    !isContinuous || list.layoutInfo.visibleItemsInfo.any { item ->
+                    it.source == null || !isContinuous || list.layoutInfo.visibleItemsInfo.any { item ->
                         val entry = pages.getOrNull(item.index)
                         entry?.chapterUuid == it.chapterUuid && entry.page == it.imageCount - 1 &&
                                 entry.source != null && readyImages[entry.key] == true && item.offset + item.size <= metrics[1]
                     }
                 val complete = ReadingPositionPolicy.completed(
                     it.page, it.imageCount, metrics[2] == 0,
-                    bottomVisible && (it.source == null || readyImages[it.key] == true)
+                    bottomVisible && (it.source == null || readyImages[it.key] == true),
+                    continuous = isContinuous
                 )
                 onPosition(it.chapterUuid, it.page, anchorFraction, complete)
                 if (isContinuous && metrics[2] == 0) list.layoutInfo.visibleItemsInfo.forEach { item ->
@@ -538,6 +578,7 @@ fun ReaderSuccessContent(
                                 item.offset + item.size <= metrics[1]
                     }?.let { entry -> onCompleted(entry.chapterUuid) }
                 }
+                if (metrics[2] == 0) onWindowSettled(it.chapterUuid)
             }
         }
     }
@@ -616,6 +657,7 @@ fun ReaderSuccessContent(
         page?.key,
         chapters.lastOrNull()?.uuid,
         chapters.lastOrNull()?.content?.nextUuid,
+        chapters.size,
         tools.continuousChapters,
         tools.preloadPages
     ) {
@@ -624,9 +666,14 @@ fun ReaderSuccessContent(
             current.page >= current.imageCount - maxOf(tools.preloadPages, 1)
         ) onAppendNext(false)
     }
+    LaunchedEffect(page?.key, chapters.firstOrNull()?.uuid, chapters.firstOrNull()?.content?.prevUuid, chapters.size, tools.continuousChapters, tools.preloadPages) {
+        val current = page ?: return@LaunchedEffect
+        if (tools.continuousChapters && current.chapterUuid == chapters.firstOrNull()?.uuid &&
+            current.source != null && current.page <= maxOf(tools.preloadPages, 1)) onPrependPrevious(false)
+    }
     DisposableEffect(page?.key, pages, loader, tools.preloadPages) {
         val jobs =
-            if (preview) emptyList() else pages.drop(visibleIndex + 1).filter { it.source != null }
+            if (preview) emptyList() else pages.asSequence().drop(visibleIndex + 1).filter { it.source != null }
                 .take(tools.preloadPages).map { next ->
                     loader.enqueue(
                         ImageRequest.Builder(context)
@@ -637,7 +684,7 @@ fun ReaderSuccessContent(
                             })
                             .size(512).build()
                     )
-                }
+                }.toList()
         onDispose { jobs.forEach { it.dispose() } }
     }
 
@@ -715,7 +762,8 @@ fun ReaderSuccessContent(
             imageLoader = loader,
             tools = tools,
             onUserInteraction = { automatic = false; pendingChapter = null; restoring = false },
-            onImageReady = { readyImages[it] = true },
+            onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },
+            trackedPageKeys = retainedPageKeys,
             commentContent = { comment ->
                 ReaderChapterComments(
                     comment,
@@ -723,7 +771,9 @@ fun ReaderSuccessContent(
                     onClosed = { onCloseComments(comment.chapterUuid) },
                     onShowControls = { showControls = !showControls },
                     refreshVersion = commentRefreshVersion,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    viewModel = requireNotNull(commentModels).chapter(comment.chapterUuid),
+                    commentsViewModel = commentModels.inline(comment.chapterUuid)
                 )
             })
         AnimatedVisibility(

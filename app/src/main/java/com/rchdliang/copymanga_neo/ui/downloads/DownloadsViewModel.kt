@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -46,6 +47,8 @@ sealed interface DownloadedBookItem {
 }
 
 data class DownloadsUiState(
+    val isLoading: Boolean = false,
+    val loadError: String? = null,
     val downloadedBooks: List<DownloadedBookItem> = emptyList(),
     val activeDownloads: Map<String, DownloadProgressInfo> = emptyMap(),
     val isSelectionMode: Boolean = false,
@@ -63,7 +66,7 @@ class DownloadsViewModel @Inject constructor(
     private val novels: NovelRepository,
     private val sessions: ReadingSessionRepository
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(DownloadsUiState())
+    private val _uiState = MutableStateFlow(DownloadsUiState(isLoading = true))
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
     private var displayedSession: LocalReadingSession? = null
 
@@ -74,13 +77,26 @@ class DownloadsViewModel @Inject constructor(
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         android.util.Log.e("DownloadsViewModel", "Unhandled coroutine exception", throwable)
-        _uiState.update { it.copy(message = throwable.message ?: "下载操作失败") }
+        _uiState.update {
+            val message = throwable.message ?: "下载操作失败"
+            it.copy(isLoading = false, loadError = if (it.isLoading) message else it.loadError, message = message)
+        }
     }
 
     init {
         viewModelScope.launch(exceptionHandler) {
+            val restored = downloadRepository.awaitReady()
+            val indexed = novels.awaitCachedVolumes()
+            sessions.awaitReady()
+            _uiState.update {
+                it.copy(loadError = restored.exceptionOrNull()?.message ?: indexed.exceptionOrNull()?.message)
+            }
             val contents = combine(
-                downloadRepository.getAllDownloadedComics(), novels.cachedVolumes,
+                downloadRepository.getAllDownloadedComics().catch { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update { it.copy(loadError = error.message ?: "下载记录无法读取") }
+                    emit(emptyList())
+                }, novels.cachedVolumes,
                 sessions.cacheReadyFlow, sessions.sessionChanges
             ) { comics, cached, ready, _ ->
                 val session = if (ready) sessions.getReadingSessionSync() else null
@@ -115,6 +131,7 @@ class DownloadsViewModel @Inject constructor(
                     val selected =
                         state.selectedKeys.intersect(if (changedSession) comicKeys else validKeys)
                     state.copy(
+                        isLoading = false,
                         downloadedBooks = content.books,
                         activeDownloads = progress,
                         selectedKeys = selected,
@@ -123,15 +140,6 @@ class DownloadsViewModel @Inject constructor(
                     )
                 }
             }
-        }
-        viewModelScope.launch(exceptionHandler) {
-            novels.refreshCachedVolumes().fold(
-                onSuccess = {},
-                onFailure = { error ->
-                    if (error is CancellationException) throw error
-                    _uiState.update { it.copy(message = error.message ?: "小说下载目录加载失败") }
-                }
-            )
         }
     }
 

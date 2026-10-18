@@ -76,7 +76,8 @@ fun ReaderContent(
     onUserInteraction: () -> Unit,
     commentContent: @Composable (ReaderPageEntry) -> Unit,
     modifier: Modifier = Modifier,
-    onImageReady: (String) -> Unit = {}
+    onImageReady: (String) -> Unit = {},
+    trackedPageKeys: Set<String> = pages.map { it.key }.toSet()
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -163,15 +164,27 @@ fun ReaderContent(
                             index == visibleIndex, false, zoomState = zoom,
                             imageLoader = imageLoader,
                             tools = tools,
-                            onReady = { onImageReady(page.key) }
+                            onReady = { onImageReady(page.key) },
+                            trackReadiness = page.key in trackedPageKeys
                         )
                     }
                 }
             }
         } else {
             val zoomStates = remember { mutableMapOf<String, ReaderZoomState>() }
-            val active = pages[pagerState.currentPage.coerceIn(pages.indices)]
+            val activeKey by remember(pagerState) {
+                derivedStateOf { pagerState.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pagerState.currentPage }?.key }
+            }
+            val visibleKeys by remember(pagerState) {
+                derivedStateOf { pagerState.layoutInfo.visiblePagesInfo.mapNotNull { it.key as? String }.toSet() }
+            }
+            val active = ReaderWindowPolicy.pageAt(pages, pagerState.currentPage, activeKey)
+                ?: pages.first()
             val zoom = zoomStates.getOrPut(active.key) { ReaderZoomState() }
+            val retainedKeys = ReaderWindowPolicy.pageKeys(pages, pages.indexOf(active), visibleKeys)
+            androidx.compose.runtime.SideEffect {
+                zoomStates.keys.toList().filter { it !in retainedKeys }.forEach { zoomStates.remove(it)?.stopFling() }
+            }
             DisposableEffect(zoomStates) { onDispose { zoomStates.values.forEach { it.stopFling() } } }
             val gestureModifier =
                 if (active.source == null) Modifier else Modifier.readerTapGestures(
@@ -196,7 +209,8 @@ fun ReaderContent(
                     index == pagerState.currentPage, true,
                     zoomState = zoomStates.getOrPut(page.key) { ReaderZoomState() },
                     isContentScrolling = { pagerState.isScrollInProgress },
-                    imageLoader = imageLoader, tools = tools, onReady = { onImageReady(page.key) }
+                    imageLoader = imageLoader, tools = tools, onReady = { onImageReady(page.key) },
+                    trackReadiness = page.key in trackedPageKeys
                 )
             }
         }
@@ -215,7 +229,8 @@ private fun ReaderImageItem(
     isContentScrolling: () -> Boolean = { false },
     imageLoader: ImageLoader,
     tools: ReaderToolsSettings,
-    onReady: () -> Unit = {}
+    onReady: () -> Unit = {},
+    trackReadiness: Boolean = true
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
@@ -309,8 +324,14 @@ private fun ReaderImageItem(
             is AsyncImagePainter.State.Success -> {
                 LaunchedEffect(
                     path,
-                    retryKey
-                ) { androidx.compose.runtime.withFrameNanos { }; onReady() }
+                        retryKey,
+                        trackReadiness
+                    ) {
+                        if (trackReadiness) {
+                            androidx.compose.runtime.withFrameNanos { }
+                            onReady()
+                        }
+                    }
                 val currentPainter = painter
                 if (enableZoom) {
                     // 分页模式：单个图片缩放

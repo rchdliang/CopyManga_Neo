@@ -15,6 +15,7 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -30,6 +31,14 @@ class DownloadRepositoryImpl @Inject constructor(
     private val downloadManager: DownloadManager,
     private val localAccess: LocalDownloadAccess = LocalDownloadAccess()
 ) : DownloadRepository {
+    override suspend fun awaitReady(): Result<Unit> = try {
+        downloadManager.awaitRestoration()
+        Result.success(Unit)
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
 
     override fun getAllDownloadedComics(): Flow<List<DownloadedComicInfo>> {
         return combine(comicDao.getAllComics(), chapterDao.getAllChapters()) { comics, chapters ->

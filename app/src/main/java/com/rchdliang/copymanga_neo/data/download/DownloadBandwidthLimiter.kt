@@ -19,7 +19,7 @@ internal class DownloadBandwidthLimiter {
     /** 每个读块按实际字节付费；等待期间最多每 100ms 读取一次新设置。 */
     suspend fun consume(bytes: Int) {
         currentCoroutineContext().ensureActive()
-        if (bytes <= 0 || limitKiB == 0) return
+        if (bytes <= 0) return
         mutex.withLock {
             val initialRate = limitKiB.toLong() * 1024L
             if (initialRate != creditedRate) credit = 0.0
@@ -28,7 +28,7 @@ internal class DownloadBandwidthLimiter {
             while (remaining > 0) {
                 currentCoroutineContext().ensureActive()
                 val rate = limitKiB.toLong() * 1024L
-                if (rate <= 0) return
+                if (rate <= 0) { creditedRate = 0; return }
                 val waitMillis = ceil(remaining * 1000.0 / rate).toLong().coerceIn(1L, 100L)
                 val started = System.nanoTime()
                 delay(waitMillis)

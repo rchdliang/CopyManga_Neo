@@ -25,6 +25,7 @@ object LocalReadingCodec {
         r.character
     )
         addProperty("completed", r.completed); addProperty("at", r.updatedAt)
+        addProperty("atChapterEnd", r.atChapterEnd)
     }
 
     fun decodeRecord(o: JsonObject): LocalReadingRecord {
@@ -51,7 +52,11 @@ object LocalReadingCodec {
             string("owner"), string("kind"), string("path"), string("chapter"),
             string("name"), string("group"), string("title"), integer("page"), fraction.asDouble,
             string("section"), integer("line"), integer("character"), complete.asBoolean, timestamp,
-            cover = string("cover"), authors = string("authors")
+            cover = string("cover"), authors = string("authors"),
+            atChapterEnd = o["atChapterEnd"]?.let {
+                require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean)
+                it.asBoolean
+            } ?: false
         )
         require(r.owner.isNotBlank() && r.path.isNotBlank() && r.chapter.isNotBlank())
         require(r.kind in setOf("comic", "novel") && r.page >= 0 && r.line >= 0 && r.character >= 0)

@@ -330,10 +330,10 @@ class NovelViewModel @Inject constructor(
             val session = auth.getReadingSessionSync() ?: return@launch
             val targetPath = resume?.path ?: path
             // 下载列表使用已发布索引；已有目标不能等待后台插图下载持有的扫描锁。
-            if (targetPath != null && repository.cachedVolumes.value.none {
+            if (targetPath == null || repository.cachedVolumes.value.none {
                     it.owner == session.owner && it.mode == session.mode && it.book.path == targetPath
                 }) {
-                repository.refreshCachedVolumes().fold(
+                repository.awaitCachedVolumes().fold(
                     onSuccess = {}, onFailure = { if (it is CancellationException) throw it }
                 )
             }

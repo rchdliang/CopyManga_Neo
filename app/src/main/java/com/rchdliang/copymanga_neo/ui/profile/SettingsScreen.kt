@@ -477,7 +477,7 @@ private fun DownloadLimitDialog(
             )
         )
     }
-    val value = parseDownloadLimitKiB(input)
+    val value = parseDownloadLimitKiB(input, initialValue)
     val valid = value != null
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -604,12 +604,13 @@ private fun DownloadConcurrencyDialog(
 
 /** 展示使用 MiB/s，保留已有 KiB/s 偏好的精度与持久化格式。 */
 private fun formatDownloadLimitMiB(limitKiB: Int): String =
-    BigDecimal(limitKiB).divide(BigDecimal(1024)).stripTrailingZeros().toPlainString()
+    BigDecimal(limitKiB).divide(BigDecimal(1024), 3, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
 
-private fun parseDownloadLimitKiB(input: String): Int? {
+private fun parseDownloadLimitKiB(input: String, initialValue: Int? = null): Int? {
     val normalized = input.trim().replace(',', '.')
     if (normalized.isEmpty()) return 0
-    if (normalized.length > 24 || !normalized.matches(Regex("[0-9]*([.][0-9]*)?"))) return null
+    if (normalized.length > 24 || !normalized.matches(Regex("[0-9]*([.][0-9]{0,3})?"))) return null
+    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(initialValue)) return initialValue
     val kib = normalized.toBigDecimalOrNull()?.multiply(BigDecimal(1024)) ?: return null
     if (kib <= BigDecimal.ZERO || kib > BigDecimal(Int.MAX_VALUE)) return null
     return kib.setScale(0, RoundingMode.HALF_UP).toInt().takeIf { it > 0 }

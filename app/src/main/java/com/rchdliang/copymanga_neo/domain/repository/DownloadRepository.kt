@@ -10,6 +10,8 @@ import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import kotlinx.coroutines.flow.Flow
 
 interface DownloadRepository {
+    /** 下载页区分尚未恢复与真正空列表；失败时保留可独立读取的离线内容。 */
+    suspend fun awaitReady(): Result<Unit> = Result.success(Unit)
     fun getAllDownloadedComics(): Flow<List<DownloadedComicInfo>>
     suspend fun getDownloadedComic(pathWord: String): DownloadedComicInfo?
     suspend fun getDownloadedChapters(comicPathWord: String): List<DownloadedChapterInfo>

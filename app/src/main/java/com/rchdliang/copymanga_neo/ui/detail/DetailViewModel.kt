@@ -84,7 +84,8 @@ data class DetailUiState(
     val blockedThemes: List<Theme> = emptyList(),
     val isBlacklistReady: Boolean = false,
     val isSavingBlacklist: Boolean = false,
-    val completedChapters: Set<String> = emptySet()
+    val completedChapters: Set<String> = emptySet(),
+    val resumePosition: com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord? = null
 )
 
 @HiltViewModel
@@ -125,6 +126,7 @@ class DetailViewModel @Inject constructor(
             ?: precise?.let { BrowseInfo(null, it.path, it.chapter, it.name) }
         val matchingPrecise = precise?.takeIf { it.chapter == browse?.chapterUuid }
         return state.copy(
+            resumePosition = matchingPrecise,
             browse = browse,
             browseGroup = state.chapterCatalog?.findGroup(browse?.chapterUuid)
                 ?: matchingPrecise?.group ?: local?.groupPathWord ?: local?.lastReadGroupPathWord,
@@ -659,40 +661,8 @@ class DetailViewModel @Inject constructor(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
-    fun getStartChapter(): StartChapterInfo? {
-        val state = uiState.value
-        val chapters = state.chapters.sortedBy { it.index }
+    fun getStartChapter(): StartChapterInfo? = resolveStartChapter(uiState.value)
 
-        val browse = state.browse
-        if (browse?.chapterUuid != null) {
-            val lastReadIndex = chapters.indexOfFirst { it.uuid == browse.chapterUuid }
-            if (lastReadIndex >= 0) {
-                // 本地和云端记录都表示最后停留的章节；完成状态不隐式跳章。
-                val current = chapters[lastReadIndex]
-                return StartChapterInfo(
-                    current.uuid, current.name,
-                    current.groupPathWord ?: "default", isContinue = true
-                )
-            }
-        }
-
-        // 记录不在尚未加载完整的目录中，也不能退回本地第一章。
-        if (!browse?.chapterUuid.isNullOrBlank()) {
-            return StartChapterInfo(
-                browse.chapterUuid,
-                browse.chapterName?.takeIf { it.isNotBlank() } ?: "上次阅读章节",
-                state.browseGroup ?: "default", isContinue = true)
-        }
-        if (state.isProgressLoading || state.isLoading || state.isLoadingChapters || !state.isChapterCatalogReady) return null
-        // 确认无阅读记录、且目录加载结束后，才从首章开始。
-        val first = chapters.firstOrNull() ?: return null
-        return StartChapterInfo(
-            uuid = first.uuid,
-            name = first.name,
-            groupPathWord = first.groupPathWord ?: "default",
-            isContinue = false
-        )
-    }
 
     // region 批量管理章节
 
@@ -1058,7 +1028,8 @@ data class StartChapterInfo(
     val uuid: String,
     val name: String,
     val groupPathWord: String,
-    val isContinue: Boolean
+    val isContinue: Boolean,
+    val initialPage: Int = -1
 )
 
 /** 本地目录保留已知分组和关系；旧记录的未知关系不作推断。 */

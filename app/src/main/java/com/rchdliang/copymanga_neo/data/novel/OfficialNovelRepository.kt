@@ -28,10 +28,7 @@ import com.rchdliang.copymanga_neo.domain.reading.NovelTextDocument
 import com.rchdliang.copymanga_neo.domain.repository.NovelRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,17 +65,8 @@ class OfficialNovelRepository @Inject constructor(
     private val mutableCached = MutableStateFlow<List<NovelCachedVolume>>(emptyList())
     override val cachedVolumes = mutableCached.asStateFlow()
     private val bookHints = linkedMapOf<String, NovelBook>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private val initialization = scope.async {
-        refreshCachedVolumes().onFailure {
-            android.util.Log.w(
-                "NovelCache",
-                "小说缓存索引读取失败",
-                it
-            )
-        }
-    }
+    @Volatile
+    private var cacheIndexed = false
 
     override suspend fun discover(
         mode: RequestMode,
@@ -320,11 +308,26 @@ class OfficialNovelRepository @Inject constructor(
         mutex.withLock {
             cache.pruneMetadata()
             mutableCached.value = cache.scan()
+            cacheIndexed = true
+        }
+    }
+
+    override suspend fun awaitCachedVolumes(): Result<Unit> {
+        // 已发布的索引可直接读，不能因后台整卷下载持有 mutex 而阻塞页面进入。
+        if (cacheIndexed) return Result.success(Unit)
+        return result {
+            mutex.withLock {
+                if (!cacheIndexed) {
+                    cache.pruneMetadata()
+                    mutableCached.value = cache.scan()
+                    cacheIndexed = true
+                }
+            }
         }
     }
 
     override suspend fun cacheUsage(): Result<NovelCacheUsage> = result {
-        initialization.join()
+        awaitCachedVolumes().fold(onSuccess = {}, onFailure = { throw it })
         cache.pruneMetadata()
         // 只读统计不等待正在传输的整卷；索引在每次成功发布资源后更新。
         NovelCacheUsage(cache.usageBytes(), mutableCached.value.size)

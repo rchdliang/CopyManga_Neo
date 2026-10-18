@@ -201,6 +201,15 @@ private fun DownloadsContent(
                 }
             }
 
+            if (uiState.isLoading || uiState.loadError != null) {
+                item(span = { GridItemSpan(maxLineSpan) }, key = "restoration") {
+                    Text(
+                        uiState.loadError ?: "正在恢复下载记录…",
+                        color = if (uiState.loadError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
             if (hasActive) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "active_header") {
                     DownloadsSectionHeader(
@@ -246,7 +255,11 @@ private fun DownloadsContent(
             item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_header") {
                 DownloadsSectionHeader(
                     title = "已下载",
-                    countText = "$downloadedCount 部"
+                    countText = when {
+                        uiState.isLoading -> "正在读取"
+                        uiState.loadError != null && !hasDownloaded -> "数据未就绪"
+                        else -> "$downloadedCount 部"
+                    }
                 )
             }
 
@@ -293,7 +306,7 @@ private fun DownloadsContent(
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
-                    EmptyDownloadSection(text = "暂无已下载内容")
+                    if (!uiState.isLoading && uiState.loadError == null) EmptyDownloadSection(text = "暂无已下载内容")
                 }
             }
         }
