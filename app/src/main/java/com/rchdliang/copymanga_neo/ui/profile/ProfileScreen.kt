@@ -278,7 +278,7 @@ internal fun ProfileMainPage(
     onClearLoginError: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onRetryProfile: () -> Unit = {},
-    onSaveProfile: (String, ByteArray?) -> Unit = { _, _ -> },
+    onSaveProfile: (String, ByteArray?, Int?) -> Unit = { _, _, _ -> },
     onDismissProfile: () -> Unit = {}
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
@@ -372,7 +372,7 @@ internal fun ProfileMainPage(
         )
     }
 
-    if (uiState.showProfileEditor) ProfileEditDialog(
+    if (uiState.showProfileEditor) androidx.compose.runtime.key(uiState.requestMode, uiState.username) { ProfileEditDialog(
         profile = uiState.editableProfile,
         isLoading = uiState.isProfileLoading,
         isSaving = uiState.isProfileSaving,
@@ -380,7 +380,7 @@ internal fun ProfileMainPage(
         onRetry = onRetryProfile,
         onSave = onSaveProfile,
         onDismiss = onDismissProfile
-    )
+    ) }
 
 
 }

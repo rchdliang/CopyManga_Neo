@@ -104,8 +104,13 @@ class ProfileViewModel @Inject constructor(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
+    private var profileLoadJob: Job? = null
+    private var profileLoadVersion = 0L
+
     fun showProfileEditor() {
         if (!_uiState.value.isLoggedIn || _uiState.value.isProfileSaving) return
+        val version = ++profileLoadVersion
+        profileLoadJob?.cancel()
         _uiState.update {
             it.copy(
                 showProfileEditor = true, isProfileLoading = true,
@@ -113,10 +118,10 @@ class ProfileViewModel @Inject constructor(
             )
         }
         val generation = userRepository.sessionVersionSync()
-        viewModelScope.launch(exceptionHandler) {
+        profileLoadJob = viewModelScope.launch(exceptionHandler) {
             userRepository.getEditableProfile().fold(
                 onSuccess = { profile ->
-                    if (userRepository.sessionVersionSync() != generation) return@fold
+                    if (userRepository.sessionVersionSync() != generation || profileLoadVersion != version || !_uiState.value.showProfileEditor) return@fold
                     _uiState.update {
                         it.copy(
                             isProfileLoading = false,
@@ -125,7 +130,7 @@ class ProfileViewModel @Inject constructor(
                     }
                 },
                 onFailure = { error ->
-                    if (userRepository.sessionVersionSync() != generation) return@fold
+                    if (userRepository.sessionVersionSync() != generation || profileLoadVersion != version || !_uiState.value.showProfileEditor) return@fold
                     _uiState.update {
                         it.copy(
                             isProfileLoading = false,
@@ -139,21 +144,24 @@ class ProfileViewModel @Inject constructor(
 
     fun hideProfileEditor() {
         if (_uiState.value.isProfileSaving) return
+        profileLoadVersion++
+        profileLoadJob?.cancel()
         _uiState.update {
             it.copy(
                 showProfileEditor = false,
+                isProfileLoading = false,
                 editableProfile = null,
                 profileEditError = null
             )
         }
     }
 
-    fun saveProfile(nickname: String, avatarJpeg: ByteArray?) {
+    fun saveProfile(nickname: String, avatarJpeg: ByteArray?, gender: Int?) {
         if (_uiState.value.isProfileSaving || !_uiState.value.isLoggedIn) return
         _uiState.update { it.copy(isProfileSaving = true, profileEditError = null) }
         val generation = userRepository.sessionVersionSync()
         viewModelScope.launch(exceptionHandler) {
-            userRepository.updateProfile(nickname, avatarJpeg).fold(
+            userRepository.updateProfile(nickname, avatarJpeg, gender).fold(
                 onSuccess = { info ->
                     if (userRepository.sessionVersionSync() != generation) return@fold
                     _uiState.update {

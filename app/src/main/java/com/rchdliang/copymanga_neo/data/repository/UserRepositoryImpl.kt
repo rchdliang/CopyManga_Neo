@@ -59,9 +59,13 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun updateProfile(
         nickname: String,
-        avatarJpeg: ByteArray?
+        avatarJpeg: ByteArray?,
+        gender: Int?
     ): Result<MemberInfo> = try {
         require(nickname.isNotBlank()) { "请输入昵称" }
+        require(gender == null || com.rchdliang.copymanga_neo.domain.model.ProfileGender.entries.any { it.value == gender }) {
+            "请选择有效的性别"
+        }
         val token = authDataStore.getTokenSync() ?: throw IllegalStateException("请先登录")
         val generation = authDataStore.getAuthGeneration()
         val networkGeneration = networkSettings.generation
@@ -97,7 +101,7 @@ class UserRepositoryImpl @Inject constructor(
         } else current.avatarPath ?: current.avatar.orEmpty()
         checkSession()
         val saved =
-            profileApi.update(nickname.trim(), avatarPath, current.gender ?: 0, "Token $token")
+            profileApi.update(nickname.trim(), avatarPath, gender ?: current.gender ?: 0, "Token $token")
         checkProfileResponse(saved, saved.body()?.code, saved.body()?.message)
         try {
             checkSession()
