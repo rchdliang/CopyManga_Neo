@@ -55,7 +55,21 @@ data class NetworkSettings(
     val proxyMode: ProxyMode = ProxyMode.SYSTEM,
     val proxyAddress: String = "",
     val requestMode: RequestMode = RequestMode.WEB,
-    val officialApp: OfficialAppSettings = OfficialAppSettings()
+    val officialApp: OfficialAppSettings = OfficialAppSettings(),
+    val themeFetchConcurrency: Int = ThemeLoadingPolicy.DEFAULT_CONCURRENCY,
+    val themeFetchIntervalMillis: Int = ThemeLoadingPolicy.DEFAULT_INTERVAL_MILLIS
 )
 
 data class NetworkProbe(val host: String, val latencyMillis: Long?, val error: String? = null)
+
+object ThemeLoadingPolicy {
+    const val DEFAULT_CONCURRENCY = 3
+    const val DEFAULT_INTERVAL_MILLIS = 500
+    const val MAX_CONCURRENCY = 6
+    const val MAX_INTERVAL_MILLIS = 5000
+
+    fun validate(settings: NetworkSettings) {
+        require(settings.themeFetchConcurrency in 1..MAX_CONCURRENCY) { "黑名单加载并发数须为 1–6" }
+        require(settings.themeFetchIntervalMillis in 0..MAX_INTERVAL_MILLIS) { "黑名单请求间隔须为 0–5000 毫秒" }
+    }
+}

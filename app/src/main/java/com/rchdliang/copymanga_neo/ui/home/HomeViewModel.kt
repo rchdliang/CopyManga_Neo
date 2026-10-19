@@ -14,6 +14,8 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
 import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics
 import com.rchdliang.copymanga_neo.domain.usecase.FilteredHomeComics
+import com.rchdliang.copymanga_neo.domain.usecase.HomeFilterSection
+import com.rchdliang.copymanga_neo.domain.usecase.inSection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -61,6 +63,7 @@ data class HomeUiState(
     val rankAudience: String = "male",
     val rankPeriod: String = "day",
     val filterReady: Boolean = false,
+    val readyShelves: Set<HomeShelf> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val toastMessage: String? = null,
@@ -123,7 +126,11 @@ class HomeViewModel @Inject constructor(
         state.withComics(if (risk == null) result.comics else HomeComicsData()).copy(
             isLoading = risk == null && (state.isLoading || result.isResolving),
             filterReady = risk == null && state.toComics() == filteredSource &&
-                    !result.isResolving && result.enrichmentComplete,
+                    !result.isResolving,
+            readyShelves = if (risk != null || state.isLoading) emptySet() else HomeShelf.entries.filter { shelf ->
+                val section = HomeFilterSection.valueOf(shelf.name)
+                section in result.readySections && state.toComics().inSection(section) == filteredSource.inSection(section)
+            }.toSet(),
             // 分页追加后先保留已过滤的旧前缀，避免过滤结果更新前清空列表而丢失滚动位置。
             // 切换榜单或替换结果时前缀不匹配，仍隐藏过期榜单。
             rankComics = if (risk != null ||
@@ -285,7 +292,7 @@ class HomeViewModel @Inject constructor(
         val state = _uiState.value
         val paging = state.paging[shelf] ?: return
         val offset = paging.nextOffset ?: return
-        if (state.isLoading || paging.isLoading || automatic && (paging.error != null || !uiState.value.filterReady)) return
+        if (state.isLoading || paging.isLoading || automatic && (paging.error != null || shelf !in uiState.value.readyShelves)) return
         val visibleCount = if (offset == 0 && state.comicsFor(shelf).isEmpty()) 0
         else uiState.value.comicsFor(shelf).size
         val viewportTarget = desiredCounts[shelf] ?: 4

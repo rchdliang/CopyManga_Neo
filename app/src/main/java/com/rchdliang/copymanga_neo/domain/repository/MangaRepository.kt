@@ -36,7 +36,7 @@ interface MangaRepository {
 
     val cachedComicThemes: Flow<Map<String, CachedComicThemes>>
 
-    /** 仅后台标签补全使用：低速串行刷新，未到期缓存不产生网络请求。 */
+    /** 后台标签补全共用受控并发与起始间隔，未到期缓存不产生网络请求。 */
     suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>>
 
     /** 获取 WWW 完整章节目录；刷新详情时强制更新，阅读和下载共用短期缓存。 */

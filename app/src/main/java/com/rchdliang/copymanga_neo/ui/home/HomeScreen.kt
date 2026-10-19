@@ -343,8 +343,8 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("recommended") },
                                 shelf = HomeShelf.RECOMMENDED,
                                 paging = uiState.paging[HomeShelf.RECOMMENDED],
-                                initialLoading = awaitingComics,
-                                filterReady = uiState.filterReady,
+                                initialLoading = awaitingComics && HomeShelf.RECOMMENDED !in uiState.readyShelves,
+                                filterReady = HomeShelf.RECOMMENDED in uiState.readyShelves,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
                             )
@@ -389,8 +389,8 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("newest") },
                                 shelf = HomeShelf.NEWEST,
                                 paging = uiState.paging[HomeShelf.NEWEST],
-                                initialLoading = awaitingComics,
-                                filterReady = uiState.filterReady,
+                                initialLoading = awaitingComics && HomeShelf.NEWEST !in uiState.readyShelves,
+                                filterReady = HomeShelf.NEWEST in uiState.readyShelves,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
                             )
@@ -412,8 +412,8 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("ranks?audience=${uiState.rankAudience}&period=${uiState.rankPeriod}") },
                                 shelf = HomeShelf.RANKS,
                                 paging = uiState.paging[HomeShelf.RANKS],
-                                initialLoading = awaitingComics,
-                                filterReady = uiState.filterReady,
+                                initialLoading = awaitingComics && HomeShelf.RANKS !in uiState.readyShelves,
+                                filterReady = HomeShelf.RANKS in uiState.readyShelves,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore,
                                 ranked = true,
@@ -456,8 +456,8 @@ private fun HomeContent(
                                 onMore = { onNavigateToExplore("finished") },
                                 shelf = HomeShelf.FINISHED,
                                 paging = uiState.paging[HomeShelf.FINISHED],
-                                initialLoading = awaitingComics,
-                                filterReady = uiState.filterReady,
+                                initialLoading = awaitingComics && HomeShelf.FINISHED !in uiState.readyShelves,
+                                filterReady = HomeShelf.FINISHED in uiState.readyShelves,
                                 onViewportChanged = onViewportChanged,
                                 onLoadMore = onLoadMore
                             )

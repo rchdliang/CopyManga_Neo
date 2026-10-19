@@ -28,8 +28,8 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,7 +39,6 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -147,8 +146,11 @@ class MangaRepositoryImpl @Inject constructor(
         }
 
     override val cachedComicThemes = themeCache.entries
-    private val themeRefreshMutex = Mutex()
-    private var nextThemeRequestAtNanos = 0L
+    private val themeRetryMutex = Mutex()
+    private val themeRequests = com.rchdliang.copymanga_neo.data.remote.ThemeRequestScheduler(
+        settings = networkSettings.settings,
+        currentSettings = { networkSettings.settings.value }
+    )
     private val themeRetryAfter = mutableMapOf<String, Long>()
 
     private suspend fun cacheThemes(pathWord: String, themes: List<Theme>) {
@@ -168,35 +170,25 @@ class MangaRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>> =
-        themeRefreshMutex.withLock {
-            if (pathWord.isBlank()) return@withLock Result.failure(IllegalArgumentException("漫画标识为空"))
+        themeRequests.withKey(pathWord) {
+            if (pathWord.isBlank()) return@withKey Result.failure(IllegalArgumentException("漫画标识为空"))
             suspend fun freshThemes(): List<Theme>? = cachedComicThemes.first()[pathWord]
                 ?.takeIf { it.refreshAfterMillis > System.currentTimeMillis() }?.themes
-            freshThemes()?.let { return@withLock Result.success(it) }
-            val retryAt = themeRetryAfter[pathWord] ?: 0L
-            if (retryAt > System.nanoTime()) {
-                return@withLock Result.failure(Exception("标签请求暂缓，稍后重试"))
-            }
-            delay(
-                TimeUnit.NANOSECONDS.toMillis(
-                    (nextThemeRequestAtNanos - System.nanoTime()).coerceAtLeast(
-                        0
-                    )
-                ).milliseconds
-            )
-            // 等待期间用户可能打开详情并写入了新标签，重新检查以避免重复请求。
-            freshThemes()?.let { return@withLock Result.success(it) }
-            try {
+            freshThemes()?.let { return@withKey Result.success(it) }
+            val retryAt = themeRetryMutex.withLock { themeRetryAfter[pathWord] ?: 0L }
+            if (retryAt > System.nanoTime()) return@withKey Result.failure(Exception("标签请求暂缓，稍后重试"))
+            themeRequests.request {
+                // 排队期间详情页面可能已写入新标签，不重复消耗请求。
+                freshThemes()?.let { return@request Result.success(it) }
                 val result = withTimeoutOrNull(8.seconds) { fetchComicThemes(pathWord) }
                     ?: Result.failure(Exception("标签请求超时"))
-                if (result.isFailure) {
-                    themeRetryAfter[pathWord] = System.nanoTime() + TimeUnit.MINUTES.toNanos(15)
-                } else themeRetryAfter.remove(pathWord)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                themeRetryMutex.withLock {
+                    if (result.isFailure) themeRetryAfter[pathWord] = System.nanoTime() + TimeUnit.MINUTES.toNanos(15)
+                    else themeRetryAfter.remove(pathWord)
+                }
                 result
-            } finally {
-                // 即使任务在请求中取消，下一个后台请求也必须等待；并发始终为 1。
-                nextThemeRequestAtNanos =
-                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(500)
             }
         }
 

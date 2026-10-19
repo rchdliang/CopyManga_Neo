@@ -36,6 +36,7 @@ internal object NetworkSettingsCodec {
     }
 
     fun normalize(value: NetworkSettings): NetworkSettings {
+        com.rchdliang.copymanga_neo.domain.model.ThemeLoadingPolicy.validate(value)
         val routes = value.routes.take(20).map { route -> route.take(30).map(::host).distinct() }
             .filter { it.isNotEmpty() }.distinct()
         val fixed = value.fixedHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty()
@@ -63,6 +64,8 @@ internal object NetworkSettingsCodec {
 
     /** 固定持久化字段名，避免正式版混淆后无法恢复配置。 */
     fun encode(value: NetworkSettings): String = JsonObject().apply {
+        addProperty("themeFetchConcurrency", value.themeFetchConcurrency)
+        addProperty("themeFetchIntervalMillis", value.themeFetchIntervalMillis)
         addProperty("requestMode", value.requestMode.name)
         add("officialApp", JsonObject().apply {
             val a = value.officialApp
@@ -104,6 +107,8 @@ internal object NetworkSettingsCodec {
             fun appStr(key: String, fallback: String = "") =
                 app?.get(key)?.takeUnless { it.isJsonNull }?.asString ?: fallback
             normalize(NetworkSettings(
+                themeFetchConcurrency = json.get("themeFetchConcurrency")?.asInt ?: defaults.themeFetchConcurrency,
+                themeFetchIntervalMillis = json.get("themeFetchIntervalMillis")?.asInt ?: defaults.themeFetchIntervalMillis,
                 requestMode = RequestMode.valueOf(str("requestMode", "WEB")),
                 officialApp = OfficialAppSettings(
                     apiHost = appStr("apiHost", appDefaults.apiHost),
