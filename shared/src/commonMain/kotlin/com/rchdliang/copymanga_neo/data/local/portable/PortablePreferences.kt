@@ -7,6 +7,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 
 @Serializable
 internal data class AppPreferenceDocument(
@@ -22,6 +26,9 @@ class PortableAppSettings(storage: DocumentStorage) : AppSettingsRepository {
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun setThemeMode(mode: AppThemeMode) = document.update { it.copy(app = it.app.copy(themeMode = mode)) }
     override suspend fun setWifiOnlyDownloads(enabled: Boolean) = document.update { it.copy(app = it.app.copy(wifiOnlyDownloads = enabled)) }
+    override suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean) = document.update {
+        it.copy(app = it.app.copy(blurNovelIllustrationPreviews = enabled))
+    }
     override suspend fun setComicImageConcurrency(count: Int): Result<Unit> = document.update {
         require(count in 1..10) { "漫画图片并发数须为 1–10" }
         it.copy(app = it.app.copy(comicImageConcurrency = count))
@@ -80,6 +87,16 @@ class PortableReaderPreferences(storage: DocumentStorage) : ReaderPreferencesRep
 }
 
 class PortableNovelPreferences(storage: DocumentStorage) : NovelReaderPreferencesRepository {
+    private val blur = DocumentStore(storage, "novel-illustration-blur.json",
+        MapSerializer(String.serializer(), Boolean.serializer()), emptyMap())
+    override fun illustrationBlur(path: String): Flow<Boolean?> = flow {
+        blur.ensureLoaded().fold({}, { throw it })
+        emitAll(blur.state.map { it[path] })
+    }
+    override suspend fun setIllustrationBlur(path: String, enabled: Boolean): Result<Unit> = blur.update {
+        require(path.isNotBlank())
+        it + (path to enabled)
+    }
     private val document = DocumentStore(storage, "novel-reader-settings.json", NovelReaderPreferences.serializer(), NovelReaderPreferences())
     override val settings = document.state
     suspend fun initialize() = document.ensureLoaded()

@@ -39,7 +39,10 @@ compose.desktop {
             packageVersion = rootProject.extra["copyMangaVersionName"] as String
             description = "CopyManga Neo multiplatform client"
             vendor = "rchdliang"
-            windows { iconFile.set(project.file("icons/copymanga-neo.ico")) }
+            windows {
+                packageVersion = rootProject.extra["copyMangaWindowsVersion"] as String
+                iconFile.set(project.file("icons/copymanga-neo.ico"))
+            }
             linux { iconFile.set(project.file("src/main/resources/copymanga-neo.png")) }
         }
     }

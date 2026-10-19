@@ -34,7 +34,118 @@ import kotlin.test.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PortableAppGraphTest {
-    @Test fun homeCanFillReadyShelfBeforeSlowShelfFinishesFiltering() = runTest {
+    private fun deleteNovelPreviewTemp(root: Path) {
+        val target = root.toAbsolutePath().normalize()
+        val temporary = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize()
+        check(target.startsWith(temporary) && target != temporary && target.fileName.toString().startsWith("novel-preview-"))
+        target.toFile().deleteRecursively()
+    }
+    @Test fun novelPreviewLoadsOnDemandCachesAndRetries() = runTest {
+        val root = Files.createTempDirectory("novel-preview-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val seed = NovelBook("novel", "Novel", "", emptyList())
+        var calls = 0
+        var fail = false
+        val repo = object : com.rchdliang.copymanga_neo.domain.repository.NovelRepository by graph.repositories.novels {
+            override suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook> {
+                calls++
+                return if (fail) Result.failure(Exception("offline"))
+                else Result.success(seed.copy(path = path, brief = "Preview", themes = listOf(NovelTag("Novel tag", "tag"))))
+            }
+        }
+        val vm = com.rchdliang.copymanga_neo.multiplatform.ui.components.NovelPreviewViewModel(
+            repo, graph.repositories.sessions, graph.repositories.network)
+        try {
+            runCurrent()
+            assertEquals(0, calls)
+            vm.show(seed); runCurrent()
+            assertEquals("Preview", vm.state.value.book?.brief)
+            vm.show(null); vm.show(seed); runCurrent()
+            assertEquals(1, calls)
+            vm.show(seed.copy(path = "ready", brief = "Already loaded")); runCurrent()
+            assertEquals(1, calls)
+            fail = true
+            vm.show(seed.copy(path = "failed")); runCurrent()
+            assertEquals("offline", vm.state.value.error)
+            fail = false
+            vm.retry(); runCurrent()
+            assertNull(vm.state.value.error)
+            assertEquals("Preview", vm.state.value.book?.brief)
+            assertEquals(3, calls)
+        } finally { vm.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); deleteNovelPreviewTemp(root) }
+    }
+
+    @Test fun novelPreviewRejectsLateResultAfterSessionAndModeChange() = runTest {
+        val root = Files.createTempDirectory("novel-preview-session-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val seed = NovelBook("novel", "Novel", "", emptyList())
+        val revision = MutableStateFlow(0L)
+        var current = LocalReadingSession(RequestMode.WEB, "owner-a", 0)
+        val networkState = MutableStateFlow(graph.repositories.network.settings.value)
+        val sessions = object : ReadingSessionRepository by graph.repositories.sessions {
+            override val sessionChanges = revision
+            override fun getReadingSessionSync() = current
+        }
+        val network = object : com.rchdliang.copymanga_neo.domain.repository.NetworkSettingsRepository by graph.repositories.network {
+            override val settings = networkState
+        }
+        val release = CompletableDeferred<Unit>()
+        val calls = mutableListOf<Pair<RequestMode, String>>()
+        val repo = object : com.rchdliang.copymanga_neo.domain.repository.NovelRepository by graph.repositories.novels {
+            override suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook> {
+                calls += mode to owner
+                if (owner == "owner-a") kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                return Result.success(seed.copy(brief = owner))
+            }
+        }
+        val vm = com.rchdliang.copymanga_neo.multiplatform.ui.components.NovelPreviewViewModel(repo, sessions, network)
+        try {
+            runCurrent()
+            vm.show(seed); runCurrent()
+            current = LocalReadingSession(RequestMode.OFFICIAL_APP, "owner-b", 1)
+            networkState.value = networkState.value.copy(requestMode = RequestMode.OFFICIAL_APP)
+            revision.value++
+            runCurrent()
+            assertNull(vm.state.value.book)
+            assertTrue(vm.state.value.epoch > 0)
+            vm.show(seed); runCurrent()
+            release.complete(Unit); runCurrent()
+            assertEquals("owner-b", vm.state.value.book?.brief)
+            assertEquals(listOf(RequestMode.WEB to "owner-a", RequestMode.OFFICIAL_APP to "owner-b"), calls)
+        } finally { release.complete(Unit); vm.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); deleteNovelPreviewTemp(root) }
+    }
+
+    @Test fun novelPreviewDismissalCancelsAndDoesNotCacheLateResult() = runTest {
+        val root = Files.createTempDirectory("novel-preview-dismiss-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val seed = NovelBook("novel", "Novel", "", emptyList())
+        val release = CompletableDeferred<Unit>()
+        var calls = 0
+        val repo = object : com.rchdliang.copymanga_neo.domain.repository.NovelRepository by graph.repositories.novels {
+            override suspend fun detail(mode: RequestMode, owner: String, path: String): Result<NovelBook> {
+                val number = ++calls
+                if (number == 1) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                return Result.success(seed.copy(brief = "Preview $number"))
+            }
+        }
+        val vm = com.rchdliang.copymanga_neo.multiplatform.ui.components.NovelPreviewViewModel(
+            repo, graph.repositories.sessions, graph.repositories.network)
+        try {
+            runCurrent()
+            vm.show(seed); runCurrent()
+            vm.show(null)
+            release.complete(Unit); runCurrent()
+            assertFalse(vm.state.value.loading)
+            assertEquals("", vm.state.value.book?.brief)
+            vm.show(seed); runCurrent()
+            assertEquals(2, calls)
+            assertEquals("Preview 2", vm.state.value.book?.brief)
+        } finally { release.complete(Unit); vm.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); deleteNovelPreviewTemp(root) }
+    }
+    @Test fun homePaginationDoesNotWaitForMetadata() = runTest {
         val root = Files.createTempDirectory("home-filter-progress-")
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val graph = PortableAppGraph.create(services(root), backgroundScope)
@@ -54,15 +165,10 @@ class PortableAppGraphTest {
                 return Result.success(ComicPage(listOf(comic("more", allowed)), null))
             }
         }
-        val blacklist = object : com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository by r.blacklist {
-            override val blockedThemes = kotlinx.coroutines.flow.flowOf(listOf(Theme("Blocked", "blocked")))
-            override val isEnabled = kotlinx.coroutines.flow.flowOf(true)
-        }
-        val model = com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel(manga, discovery, blacklist,
-            com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics(manga), r.risk, r.appSettings)
+        val model = com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel(manga, discovery, r.risk, r.appSettings)
         try {
             val ready = model.uiState.first { com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeShelf.RECOMMENDED in it.readyShelves }
-            assertFalse(ready.filterReady)
+            assertTrue(ready.filterReady)
             model.loadMore(com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeShelf.RECOMMENDED, automatic = true)
             model.uiState.first { it.recComicList.size == 2 }
             assertEquals(1, requests)

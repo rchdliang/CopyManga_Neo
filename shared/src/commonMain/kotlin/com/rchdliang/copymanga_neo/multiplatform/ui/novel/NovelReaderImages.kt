@@ -33,11 +33,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -55,6 +60,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
+import coil3.compose.SubcomposeAsyncImageContent
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -87,11 +96,13 @@ internal fun NovelReaderImage(
     modifier: Modifier = Modifier,
     scale: Float = 1f,
     translation: Offset = Offset.Zero,
+    blurred: Boolean = false,
     onDecodedSize: (IntSize) -> Unit = {}
 ) {
     if (LocalInspectionMode.current) {
         Image(
-            painterResource(Res.drawable.preview_reader_page), image.name, modifier,
+            painterResource(Res.drawable.preview_reader_page), image.name,
+            modifier.then(if (blurred) Modifier.blur(24.dp) else Modifier),
             contentScale = ContentScale.Fit
         )
         return
@@ -121,6 +132,9 @@ internal fun NovelReaderImage(
                     )
                 )
             },
+            success = {
+                SubcomposeAsyncImageContent(modifier = if (blurred) Modifier.blur(24.dp) else Modifier)
+            },
             loading = {
                 Box(
                     Modifier.fillMaxSize(),
@@ -149,9 +163,48 @@ internal fun NovelReaderImage(
 }
 
 @Composable
+internal fun NovelReaderImageHeader(
+    count: Int,
+    blurred: Boolean?,
+    onBlurChange: (Boolean) -> Unit,
+    exporting: Boolean,
+    onExport: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "本卷插图 · $count 张", Modifier
+                .weight(1f)
+                .padding(vertical = 12.dp),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        IconToggleButton(
+            checked = blurred == true,
+            enabled = blurred != null,
+            onCheckedChange = onBlurChange
+        ) {
+            Icon(
+                if (blurred == true) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                if (blurred == true) "关闭本书插图预览模糊" else "模糊本书插图预览"
+            )
+        }
+        IconButton(onClick = onExport, enabled = count > 0 && !exporting) {
+            if (exporting) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Outlined.FolderZip, "打包导出本卷全部插图")
+        }
+    }
+}
+
+@Composable
 internal fun ColumnScope.NovelReaderImageGrid(
     volume: NovelReadingVolume,
     images: List<NovelSection>,
+    blurred: Boolean = false,
     onOpen: (String) -> Unit
 ) {
     LazyVerticalGrid(
@@ -171,8 +224,11 @@ internal fun ColumnScope.NovelReaderImageGrid(
                 Column {
                     NovelReaderImage(
                         volume, image, Modifier
+                            .padding(8.dp)
                             .fillMaxWidth()
                             .aspectRatio(.75f)
+                            .clip(MaterialTheme.shapes.medium),
+                        blurred = blurred
                     )
                     Text(
                         image.name.ifBlank { "插图 ${index + 1}" },
@@ -193,6 +249,8 @@ internal fun NovelReaderGallery(
     volume: NovelReadingVolume,
     images: List<NovelSection>,
     selectedKey: String,
+    saving: Boolean = false,
+    onSave: (NovelSection) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     if (images.isEmpty()) return
@@ -202,7 +260,6 @@ internal fun NovelReaderGallery(
     )
     val scope = rememberCoroutineScope()
     var zoomed by remember(pager.currentPage) { mutableStateOf(false) }
-    var reset by remember { mutableIntStateOf(0) }
     if (LocalRouteActive.current) Dialog(
         onDismissRequest = onDismiss,
         properties = edgeToEdgeDialogProperties(dismissOnClickOutside = true)
@@ -229,9 +286,16 @@ internal fun NovelReaderGallery(
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            reset++; zoomed = false
-                        }) { Icon(Icons.Outlined.RestartAlt, "重置缩放") }
+                        IconButton(
+                            onClick = { onSave(images[pager.currentPage]) },
+                            enabled = !saving
+                        ) {
+                            if (saving) CircularProgressIndicator(
+                                Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                            else Icon(Icons.Outlined.SaveAlt, "另存为当前插图")
+                        }
                     },
                     windowInsets = WindowInsets(0)
                 )
@@ -245,12 +309,10 @@ internal fun NovelReaderGallery(
                     var imageSize by remember(images[index].key) { mutableStateOf(IntSize.Zero) }
                     var scale by remember(
                         images[index].key,
-                        reset,
                         pager.currentPage
                     ) { mutableFloatStateOf(1f) }
                     var offset by remember(
                         images[index].key,
-                        reset,
                         pager.currentPage
                     ) { mutableStateOf(Offset.Zero) }
                     Box(
@@ -258,7 +320,7 @@ internal fun NovelReaderGallery(
                             .fillMaxSize()
                             .clipToBounds()
                             .onSizeChanged { size = it }
-                            .pointerInput(images[index].key, reset) {
+                            .pointerInput(images[index].key) {
                                 awaitEachGesture {
                                     awaitFirstDown(requireUnconsumed = false)
                                     do {
@@ -280,7 +342,7 @@ internal fun NovelReaderGallery(
                                     } while (event.changes.any { it.pressed })
                                 }
                             }
-                            .pointerInput(images[index].key, reset) {
+                            .pointerInput(images[index].key) {
                                 detectTapGestures(onDoubleTap = {
                                     scale = if (scale > 1f) 1f else 2.5f
                                     offset = Offset.Zero

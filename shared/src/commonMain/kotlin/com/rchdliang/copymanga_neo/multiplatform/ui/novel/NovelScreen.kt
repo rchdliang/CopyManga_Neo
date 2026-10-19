@@ -98,7 +98,9 @@ fun NovelScreen(
     initialResume: LocalReadingRecord? = null,
     initialPath: String? = null,
     viewModel: NovelViewModel,
-    commentsViewModel: CommentsViewModel
+    commentsViewModel: CommentsViewModel,
+    illustrations: NovelIllustrationsViewModel,
+    readerPlatform: com.rchdliang.copymanga_neo.multiplatform.ui.reader.ReaderPlatform
 ) {
     val currentState by viewModel.state.collectAsStateWithLifecycle()
     var awaitingInitialDetail by remember(initialPath, initialResume) {
@@ -249,7 +251,7 @@ fun NovelScreen(
                             onBack = ::back, onRefresh = viewModel::retry
                         )
 
-                        NovelView.READER -> NovelReader(state, viewModel, ::back)
+                        NovelView.READER -> NovelReader(state, viewModel, ::back, illustrations, readerPlatform)
                     }
                 }
             }

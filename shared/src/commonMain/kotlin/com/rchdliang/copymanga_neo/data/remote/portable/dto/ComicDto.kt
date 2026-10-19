@@ -40,7 +40,8 @@ data class ComicDto(
     @SerialName("author") val author: List<AuthorDto>? = null,
     @SerialName("cover") val cover: String? = null,
     @SerialName("popular") val popular: Int? = null,
-    @SerialName("author_alias") val authorAlias: String? = null
+    @SerialName("author_alias") val authorAlias: String? = null,
+    @SerialName("datetime_updated") val lastUpdate: String? = null
 )
 
 

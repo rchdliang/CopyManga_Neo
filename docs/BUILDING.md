@@ -19,12 +19,14 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 
 | 字段 | 含义 |
 | --- | --- |
-| `COPYMANGA_VERSION_NAME` | 三段数值版本名，用于 Android、桌面安装包、iOS 与共享界面 |
+| `COPYMANGA_VERSION_BASE` | 三段基础版本，如 `0.10.19`；用于 iOS 短版本 |
+| `COPYMANGA_VERSION_HOTFIX` | 可选修订号；填 `1` 时完整显示版本为 `0.10.19.1`，留空时使用基础版本 |
 | `COPYMANGA_VERSION_CODE` | 递增的整数构建号，用于 Android、iOS 与共享界面 |
 
 这个文件的赋值语法同时适用于 Java Properties 和 Xcode 配置，不要在其中放本地路径、密钥或机器专用设置。
 
-- 根 Gradle 脚本读取并校验两个字段；Android 与桌面模块直接使用读取结果。
+- 根 Gradle 脚本组合完整版本名，Android、共享界面及桌面 JAR 使用该版本；Linux 安装包沿用完整版本。
+- Windows MSI/EXE 只接受三段版本，自动使用“基础版本前两段 + 构建号”；例如基础版本 `0.10.19`、修订号 `1`、构建号 `33` 时为 `0.10.33`。iOS 使用三段基础版本和构建号，应用内仍显示完整版本；不需要另改平台版本常量。
 - `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
 - iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
 - Android Debug 自动追加 `-migrationtest`，不需要在版本源中填写后缀。

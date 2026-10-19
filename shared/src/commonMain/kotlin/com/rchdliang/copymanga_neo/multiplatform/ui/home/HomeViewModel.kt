@@ -12,11 +12,6 @@ import com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlNotice
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
-import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
-import com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics
-import com.rchdliang.copymanga_neo.domain.usecase.FilteredHomeComics
-import com.rchdliang.copymanga_neo.domain.usecase.HomeFilterSection
-import com.rchdliang.copymanga_neo.domain.usecase.inSection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -78,8 +73,6 @@ data class HomeUiState(
 class HomeViewModel constructor(
     private val mangaRepository: MangaRepository,
     private val discoveryRepository: ComicDiscoveryRepository,
-    themeBlacklistRepository: ThemeBlacklistRepository,
-    private val filterHomeComics: FilterHomeComics,
     private val riskControl: RiskControlRepository,
     private val appSettings: AppSettingsRepository,
     autoStart: Boolean = true
@@ -96,60 +89,20 @@ class HomeViewModel constructor(
     private val rankPreferenceWrites = Channel<HomeRankPreferences>(Channel.UNLIMITED)
     private val dismissedRisk = MutableStateFlow<Long?>(null)
 
-    private val blockedThemes = combine(
-        themeBlacklistRepository.blockedThemes,
-        themeBlacklistRepository.isEnabled
-    ) { themes, enabled -> if (enabled) themes else emptyList() }
-
-    // 弹窗确认、Toast 等无关状态变化不能重建标签请求队列或重新开始超时计时。
-    private val source = _uiState.map { it.toComics() to it.isLoading }.distinctUntilChanged()
-    private val filtered =
-        combine(source, blockedThemes, riskControl.notice) { source, blocked, risk ->
-            Triple(source, blocked, risk)
-        }.flatMapLatest { (source, blocked, risk) ->
-            if (risk != null) flowOf(source.first to FilteredHomeComics(HomeComicsData()))
-            else filterHomeComics.observe(source.first, blocked, refresh = !source.second)
-                .map { source.first to it }
-                .catch { error ->
-                    if (error is CancellationException) throw error
-                    UiLog.w("HomeViewModel", "标签后台补全已停止", error)
-                    emit(
-                        source.first to FilteredHomeComics(
-                            filterHomeComics.verifiedPreview(source.first, blocked),
-                            showUnresolvedWarning = true
-                        )
-                    )
-                }
-        }
+    // 黑名单只改变封面呈现，列表保持原始顺序和分页数量。
     val uiState: StateFlow<HomeUiState> = combine(
-        _uiState,
-        filtered,
-        riskControl.notice,
-        dismissedRisk
-    ) { state, filteredResult, risk, dismissed ->
-        val (filteredSource, result) = filteredResult
-        state.withComics(if (risk == null) result.comics else HomeComicsData()).copy(
-            isLoading = risk == null && (state.isLoading || result.isResolving),
-            filterReady = risk == null && state.toComics() == filteredSource &&
-                    !result.isResolving,
-            readyShelves = if (risk != null || state.isLoading) emptySet() else HomeShelf.entries.filter { shelf ->
-                val section = HomeFilterSection.valueOf(shelf.name)
-                section in result.readySections && state.toComics().inSection(section) == filteredSource.inSection(section)
-            }.toSet(),
-            // 分页追加后先保留已过滤的旧前缀，避免过滤结果更新前清空列表而丢失滚动位置。
-            // 切换榜单或替换结果时前缀不匹配，仍隐藏过期榜单。
-            rankComics = if (risk != null ||
-                state.rankComics.take(filteredSource.rankComics.size) != filteredSource.rankComics
-            ) emptyList()
-            else result.comics.rankComics,
+        _uiState, riskControl.notice, dismissedRisk
+    ) { state, risk, dismissed ->
+        state.copy(
+            isLoading = risk == null && state.isLoading,
+            filterReady = risk == null && !state.isLoading,
+            readyShelves = if (risk == null && !state.isLoading) HomeShelf.entries.toSet() else emptySet(),
             rankPositions = state.rankComics.mapIndexed { index, comic -> comic.pathWord to index + 1 }
                 .toMap(),
-            filterWarning = if (risk == null && result.showUnresolvedWarning)
-                "漫画标签未加载完成，某些漫画可能未按黑名单设置屏蔽" else null,
+            filterWarning = null,
             riskControl = risk,
             showRiskDialog = risk != null && risk.detectedAt != dismissed
         )
-        // 与主导航条目同寿命，避免详情返回时重启过滤而暂时移除已显示条目。
     }.stateIn(viewModelScope, SharingStarted.Lazily, HomeUiState(isLoading = true))
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->

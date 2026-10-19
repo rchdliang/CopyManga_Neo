@@ -4,10 +4,10 @@ package com.rchdliang.copymanga_neo.data.remote.portable.util
 data class WwwCatalogProtocol(val key: String, val dnts: String) {
     companion object {
         fun fromHtml(html: String): WwwCatalogProtocol {
-            val source = html.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+            val source = html.replace(Regex("<!--[\\s\\S]*?-->"), "")
             val scripts = Regex(
-                "<script\\b[^>]*>(.*?)</script\\s*>",
-                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+                "<script\\b[^>]*>([\\s\\S]*?)</script\\s*>",
+                RegexOption.IGNORE_CASE
             )
                 .findAll(source).map { it.groupValues[1] }
             val declaration =

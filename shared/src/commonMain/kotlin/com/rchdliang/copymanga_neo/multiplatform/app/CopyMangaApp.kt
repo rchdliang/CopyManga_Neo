@@ -38,7 +38,6 @@ import androidx.savedstate.SavedState
 import androidx.savedstate.read
 import com.rchdliang.copymanga_neo.domain.model.*
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
-import com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.home.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.search.*
@@ -206,6 +205,9 @@ fun CopyMangaApp(
                         repositories.export.messages.collect { toast.showToast(it) }
                     }
                 }
+                val presentation = models.get("application") { ComicPresentationViewModel(repositories.comicMetadata, repositories.blacklist) }
+                val novelPreview = models.get("application") { NovelPreviewViewModel(repositories.novels, repositories.sessions, repositories.network) }
+                ComicPresentationHost(presentation, novelPreview) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val wide = maxWidth >= 840.dp
                     Box(Modifier.fillMaxSize().background(if (wide) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)) {
@@ -249,6 +251,7 @@ fun CopyMangaApp(
                             }
                         }
                     }
+                }
                 }
                 ComicExportDialogs(exports)
                 if (platforms.buildInfo.debug) repositories.novelImagePositionDebug?.let { debug ->
@@ -358,7 +361,15 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             onStartChapterClick = { chapter, path, name, group, page -> nav.reader(path, chapter, name, group, page = page) },
             onThemeClick = { theme -> nav.open(AppRoute("search", arguments = mapOf(
                 "themePathWord" to theme.pathWord.orEmpty(), "themeName" to theme.name))) },
-            onAuthorClick = { author -> nav.open(AppRoute("search", arguments = mapOf("query" to author.name, "queryType" to QueryType.AUTHOR.value))) })
+            onAuthorClick = { author -> nav.open(AppRoute("search", arguments = mapOf("query" to author.name, "queryType" to QueryType.AUTHOR.value))) },
+            onOriginalWorkClick = { work ->
+                work.pathWord?.takeIf(String::isNotBlank)?.let { path ->
+                    nav.open(AppRoute("original", arguments = mapOf("originalPath" to path, "originalName" to work.name)))
+                }
+            })
+        "original" -> OriginalWorkScreen(
+            models.get(route.id, defaults = route.arguments) { OriginalWorkViewModel(r.discovery, r.network, r.appSettings, it) },
+            onComic = nav::comic, onBack = back)
         "search" -> SearchScreen(onComicClick = nav::comic, onNavigateBack = back,
             onNavigateToExplore = { theme, top -> nav.open(AppRoute("explore", arguments = buildMap {
                 put("section", "filter"); theme?.let { put("theme", it) }; top?.let { put("top", it) }
@@ -368,7 +379,9 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             models.get(route.id, defaults = route.arguments) { ComicExploreViewModel(r.discovery, it, autoStart = false) })
         "novel" -> NovelScreen(onBack = back, initialResume = route.resume, initialPath = route.path.takeIf { it.isNotBlank() },
             viewModel = models.get(route.id) { NovelViewModel(r.novels, r.novelShelf, r.localReading, r.readingProgress, r.network, r.sessions, r.downloads, r.novelPreferences, r.annotations) },
-            commentsViewModel = comments("novel"))
+            commentsViewModel = comments("novel"),
+            illustrations = models.get(route.id, "novel-illustrations") { NovelIllustrationsViewModel(r.novelPreferences, r.appSettings, r.novelIllustrations, it) },
+            readerPlatform = p.reader)
         "reader" -> ReaderScreen(chapterPathWord = route.chapter, comicPathWord = route.path, chapterName = route.chapterName,
             groupPathWord = route.group, onNavigateBack = back, initialPage = route.page, initialFraction = route.fraction,
             viewModel = models.get(route.id) { ReaderViewModel(r.manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions) },
@@ -378,7 +391,7 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
                 modalComments = { comments(ReaderCommentModelKeys.modal) }), exportViewModel = export())
         "tab" -> when (MainTab.valueOf(route.id.substringAfter(':'))) {
             MainTab.HOME -> HomeScreen(
-                models.get(route.id) { HomeViewModel(r.manga, r.discovery, r.blacklist, FilterHomeComics(r.manga), r.risk, r.appSettings, autoStart = false) },
+                models.get(route.id) { HomeViewModel(r.manga, r.discovery, r.risk, r.appSettings, autoStart = false) },
                 models.get(route.id) { HomeNovelViewModel(r.novels, r.sessions, autoStart = false) }, nav::comic,
                 onNavigateToSearch = { nav.open(AppRoute("search")) },
                 onNavigateToExplore = nav::explore,

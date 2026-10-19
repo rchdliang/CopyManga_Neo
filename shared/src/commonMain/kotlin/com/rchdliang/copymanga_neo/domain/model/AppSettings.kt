@@ -9,5 +9,6 @@ data class AppSettings(
     val wifiOnlyDownloads: Boolean = false,
     val includePasswordInCredentialExport: Boolean = false,
     val comicImageConcurrency: Int = 3,
-    val comicDownloadLimitKiB: Int = 0
+    val comicDownloadLimitKiB: Int = 0,
+    val blurNovelIllustrationPreviews: Boolean = false
 )

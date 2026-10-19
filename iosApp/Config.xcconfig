@@ -1,6 +1,6 @@
-// The two assignments are valid for both Java Properties and Xcode configuration.
+// 同一版本源：iOS 短版本保持三段，修订版由递增构建号区分，应用内显示完整版本。
 #include "../version.properties"
-MARKETING_VERSION = $(COPYMANGA_VERSION_NAME)
+MARKETING_VERSION = $(COPYMANGA_VERSION_BASE)
 CURRENT_PROJECT_VERSION = $(COPYMANGA_VERSION_CODE)
 
 // Safe default. A developer-supplied local file or explicit Xcode build setting may override it.

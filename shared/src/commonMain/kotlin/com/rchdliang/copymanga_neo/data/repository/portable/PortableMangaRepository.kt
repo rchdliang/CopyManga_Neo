@@ -42,6 +42,7 @@ class PortableMangaRepository(
     private val client: com.rchdliang.copymanga_neo.data.remote.portable.CopyMangaClient,
     private val themeCache: PortableComicThemeCache = MemoryComicThemeCache(),
     private val downloadClient: (suspend () -> com.rchdliang.copymanga_neo.data.remote.portable.CopyMangaClient)? = null,
+    val metadata: PortableComicMetadataRepository = PortableComicMetadataRepository(client, legacyThemes = themeCache),
 ) : MangaRepository {
     private val apiService = MangaApiService(client)
     private val wwwApiService = MangaApiService(client, www = true)
@@ -133,78 +134,15 @@ class PortableMangaRepository(
             }
         }
 
-    override val cachedComicThemes = themeCache.entries
-    private val themeRetryMutex = Mutex()
-    private val themeRequests = com.rchdliang.copymanga_neo.data.remote.ThemeRequestScheduler(
-        settings = client.state.snapshots.map { it.settings },
-        currentSettings = { networkSettings.settings.value }
-    )
-    private val themeRetryAfter = mutableMapOf<String, Long>()
+    override val cachedComicThemes = metadata.metadata.map { values ->
+        values.mapNotNull { (path, value) -> value.themes?.let { path to CachedComicThemes(it, value.fetchedAt + com.rchdliang.copymanga_neo.domain.model.ComicCardMetadata.CACHE_MILLIS) } }.toMap()
+    }
+
+    override suspend fun getComicThemes(pathWord: String): Result<List<Theme>> =
+        metadata.themes(pathWord, refresh = false)
 
     override suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>> =
-        themeRequests.withKey(pathWord) {
-            if (pathWord.isBlank()) return@withKey Result.failure(IllegalArgumentException("漫画标识为空"))
-            suspend fun freshThemes(): List<Theme>? = cachedComicThemes.first()[pathWord]
-                ?.takeIf { it.refreshAfterMillis > currentTimeMillis() }?.themes
-            freshThemes()?.let { return@withKey Result.success(it) }
-            val retryAt = themeRetryMutex.withLock { themeRetryAfter[pathWord] ?: 0L }
-            if (retryAt > monotonicNanos()) return@withKey Result.failure(Exception("标签请求暂缓，稍后重试"))
-            themeRequests.request {
-                // 排队期间详情页面可能已写入新标签，不重复消耗请求。
-                freshThemes()?.let { return@request Result.success(it) }
-                val result = withTimeoutOrNull(8.seconds) { fetchComicThemes(pathWord) }
-                    ?: Result.failure(Exception("标签请求超时"))
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
-                themeRetryMutex.withLock {
-                    if (result.isFailure) themeRetryAfter[pathWord] = monotonicNanos() + TimeUnit.MINUTES.toNanos(15)
-                    else themeRetryAfter.remove(pathWord)
-                }
-                result
-            }
-        }
-
-    private suspend fun cacheThemes(pathWord: String, themes: List<Theme>) {
-        themeCache.save(
-            pathWord, CachedComicThemes(
-                themes.toList(),
-                currentTimeMillis() + TimeUnit.DAYS.toMillis(7) +
-                        Random.nextLong(TimeUnit.DAYS.toMillis(2))
-            )
-        )
-    }
-
-    override suspend fun getComicThemes(pathWord: String): Result<List<Theme>> {
-        // 标签过期只影响后台刷新计划，离线或风控时仍可使用旧值。
-        cachedComicThemes.first()[pathWord]?.let { return Result.success(it.themes) }
-        return refreshComicThemes(pathWord)
-    }
-
-    private suspend fun fetchComicThemes(pathWord: String): Result<List<Theme>> {
-        return try {
-            val response = apiService.getComicDetail(pathWord)
-            val body = response.body()
-            if (response.code() == 210 || body?.code == 210) {
-                return Result.failure(
-                    RiskControlException(
-                        body?.message ?: "官方暂时限制了当前网络的访问"
-                    )
-                )
-            }
-            if (response.isSuccessful && body?.code == 200) {
-                val themes = body.results.comicDetail.theme?.map { it.toTheme() }
-                    ?: return Result.failure(Exception("漫画详情未返回标签信息"))
-                cacheThemes(pathWord, themes)
-                Result.success(themes)
-            } else {
-                Result.failure(Exception(body?.message ?: "读取漫画标签失败"))
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+        metadata.themes(pathWord, refresh = true)
 
     override suspend fun getHomeComics(): Result<HomeComicsData> = supervisorScope {
         try {
@@ -287,40 +225,8 @@ class PortableMangaRepository(
         }
     }
 
-    override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> {
-        return try {
-            val response = apiService.getComicDetail(pathWord)
-            val body = response.body()
-
-            val code = body?.code ?: response.code()
-            if (code == 210) {
-                val errorMsg = body?.message ?: response.errorBody()?.string()?.let {
-                    try {
-                        jsonMessage(it)
-                    } catch (_: Exception) {
-                        null
-                    }
-                } ?: "未知风控原因"
-                return Result.failure(Exception("code 210: $errorMsg"))
-            }
-
-            if (response.isSuccessful && body?.code == 200) {
-                val detail = body.results.toDetail()
-                detail.comic.theme?.let { cacheThemes(pathWord, it) }
-                Result.success(detail)
-            } else {
-                val errorCode = body?.code ?: response.code()
-                val errorMessage = body?.message ?: response.message()
-
-                Result.failure(Exception(errorMessage))
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-
-            Result.failure(e)
-        }
-    }
+    override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> =
+        metadata.detail(pathWord).map { it.toDetail() }
 
     override suspend fun getChapters(
         pathWord: String,

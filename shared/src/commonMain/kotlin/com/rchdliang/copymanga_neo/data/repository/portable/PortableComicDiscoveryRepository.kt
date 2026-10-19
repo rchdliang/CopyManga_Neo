@@ -235,6 +235,21 @@ class PortableComicDiscoveryRepository(
         )
     }
 
+    override suspend fun getOriginalWorkComics(
+        pathWord: String, ordering: String, offset: Int
+    ): Result<ComicPage> = result {
+        require(pathWord.isNotBlank() && offset >= 0 &&
+            ordering in setOf("-datetime_updated", "datetime_updated", "-popular", "popular")) {
+            "原作筛选参数无效"
+        }
+        // 此入口两种模式均为 21 项；App 的 platform 与身份头由现有网络层添加。
+        val response = api.getOriginalWorkComics(pathWord, ordering, offset)
+        val body = response.body()
+        val page = checked(response, body?.code, body?.message, body?.results)
+        ComicPage(page.list.map { it.toSummary() },
+            nextOffset(offset, page.offset, page.list.size, page.total, page.limit), page.total)
+    }
+
     private fun usesOfficialApp() =
         networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
 

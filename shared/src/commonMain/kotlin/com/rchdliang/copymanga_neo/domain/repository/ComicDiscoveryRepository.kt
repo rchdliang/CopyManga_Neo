@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicTopicPage
 
 /** 抓包确认的漫画只读入口，支持网页和 App 请求模式。 */
 interface ComicDiscoveryRepository {
+    suspend fun getOriginalWorkComics(pathWord: String, ordering: String, offset: Int): Result<ComicPage>
     fun cachedFilterOptions(): ComicFilterOptions =
         com.rchdliang.copymanga_neo.domain.model.ComicFilterDefaults.options
 

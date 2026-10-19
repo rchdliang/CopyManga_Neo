@@ -283,7 +283,7 @@ class ProfileViewModel constructor(
         // 密码不再通过 Flow 收集到 UiState，避免明文密码驻留内存状态
     }
 
-    /** 从本机首页黑名单移除题材。 */
+    /** 从本机全局黑名单移除题材。 */
     fun removeBlockedTheme(theme: Theme) {
         if (_uiState.value.isBlacklistSaving || _uiState.value.isBlacklistLoading) return
         _uiState.update { it.copy(isBlacklistSaving = true) }

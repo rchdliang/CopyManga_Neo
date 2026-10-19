@@ -8,6 +8,21 @@ import kotlin.test.*
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThemeRequestSchedulerTest {
+    @Test fun interactiveRequestPrecedesQueuedPrefetch() = runTest {
+        val settings = MutableStateFlow(NetworkSettings(themeFetchConcurrency = 1, themeFetchIntervalMillis = 0))
+        val scheduler = ThemeRequestScheduler(settings, { settings.value }, { testScheduler.currentTime })
+        val release = CompletableDeferred<Unit>()
+        val order = mutableListOf<String>()
+        val first = launch { scheduler.request { release.await() } }
+        runCurrent()
+        val normal = launch { scheduler.request { order.add("normal") } }
+        runCurrent()
+        val urgent = launch { scheduler.request(priority = true) { order.add("urgent") } }
+        runCurrent()
+        release.complete(Unit)
+        joinAll(first, normal, urgent)
+        assertEquals(listOf("urgent", "normal"), order)
+    }
     @Test fun limitsConcurrencyAndSpacesStartsAcrossAllCallers() = runTest {
         val settings = MutableStateFlow(NetworkSettings(themeFetchConcurrency = 3, themeFetchIntervalMillis = 100))
         val scheduler = ThemeRequestScheduler(settings, { settings.value }, { testScheduler.currentTime })

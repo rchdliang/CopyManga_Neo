@@ -171,7 +171,8 @@ class PortableAppGraph private constructor(
                 withContext(Dispatchers.Default) {
                     themes.initialize().onFailure { warn("题材缓存无法读取，将暂用内存资料：${it.message}") }
                 }
-                val manga = PortableMangaRepository(client, themeCache = themes, downloadClient = { boundClient() })
+                val metadata = PortableComicMetadataRepository(client, PortableComicCardCache(documents), themes, appScope)
+                val manga = PortableMangaRepository(client, themeCache = themes, downloadClient = { boundClient() }, metadata = metadata)
                 val discovery = PortableComicDiscoveryRepository(client, themeCatalog = themes)
                 val novelCache = VerifiedPortableNovelCache(cache)
                 val debugStore = com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore()
@@ -234,6 +235,8 @@ class PortableAppGraph private constructor(
                     }
                 }
                 val imageActions = PortableReaderImageRepository(KtorReaderImageTransport(client), services.readerImageIo)
+                val novelIllustrations = PortableNovelIllustrationExportRepository(imageActions, services.readerImageIo,
+                    services.comicExportIo, cache, documents) { state.snapshot.generation }
                 val storageBase = PortableStorageRepository(cache, novelCache)
                 suspend fun storageAction(block: suspend () -> Unit): Result<Unit> = try {
                     block(); Result.success(Unit)
@@ -257,7 +260,8 @@ class PortableAppGraph private constructor(
                     PortableShareLinkRepository(client, network::persistShareHosts), localReading, progress, appSettings, readerPreferences, readerTools,
                     novelPreferences, annotations, blacklist, network, risk, storage,
                     PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore,
-                    startBackground = { if (background.start()) trace("shell_frame") })
+                    startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
+                    novelIllustrations = novelIllustrations)
                 trace("core_ready")
                 completed = true
                 return PortableAppGraph(repositories, manager, ::imageLoader, warnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })

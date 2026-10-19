@@ -242,7 +242,7 @@ internal fun NetworkSettingsScreen(
                         }
                     }
                 }
-                if (!advanced) NetworkCard("黑名单加载") {
+                if (!advanced) NetworkCard("漫画详情预加载") {
                     ThemeLoadingControls(
                         draft, enabled,
                         onConcurrency = { value -> viewModel.edit { it.copy(themeFetchConcurrency = value) } },

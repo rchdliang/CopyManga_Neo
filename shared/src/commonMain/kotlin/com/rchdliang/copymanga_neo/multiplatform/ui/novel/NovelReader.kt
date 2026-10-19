@@ -120,6 +120,11 @@ private val NovelSelectionSaver = Saver<NovelTextSelection?, List<Any>>(
 
 /** 请求与持久化操作独立于阅读界面，预览无需构造 ViewModel。 */
 internal data class NovelReaderActions(
+    val illustrationBlur: Boolean? = false,
+    val setIllustrationBlur: (Boolean) -> Unit = {},
+    val illustrationExportBusy: Boolean = false,
+    val exportIllustrations: () -> Unit = {},
+    val saveIllustration: (NovelSection) -> Unit = {},
     val position: (NovelReaderLocation) -> Unit = {},
     val bookmark: () -> Unit = {},
     val preferences: (NovelReaderPreferences) -> Unit = {},
@@ -150,7 +155,11 @@ internal data class NovelReaderActions(
 )
 
 @Composable
-internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack: () -> Unit) {
+internal fun NovelReader(
+    state: NovelUiState, viewModel: NovelViewModel, onBack: () -> Unit,
+    illustrations: NovelIllustrationsViewModel,
+    platform: com.rchdliang.copymanga_neo.multiplatform.ui.reader.ReaderPlatform
+) {
     val committedActive by rememberUpdatedState(LocalRouteActive.current)
     val reportingLifecycle = LocalLifecycleOwner.current.lifecycle
     val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
@@ -158,6 +167,18 @@ internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack:
     val savedAnnotations by viewModel.annotations.collectAsStateWithLifecycle()
     val readerSearch by viewModel.readerSearch.collectAsStateWithLifecycle()
     val path = state.reader?.book?.path ?: state.detailPath
+    val illustrationBlur by key(path) {
+        remember(path, illustrations) { illustrations.blurForBook(path) }
+            .collectAsStateWithLifecycle(initialValue = null)
+    }
+    val exportState by illustrations.state.collectAsStateWithLifecycle()
+    val toast = com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost.current
+    com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect(exportState.pending) {
+        illustrations.launchPending(platform)
+    }
+    com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect(exportState.message) {
+        exportState.message?.let { toast.showToast(it); illustrations.clearMessage() }
+    }
     val bookmarks = local.bookmarks.filter {
         it.owner == state.owner && it.kind == "novel" && it.path == path &&
                 it.group in setOf("default", state.mode.name)
@@ -168,6 +189,11 @@ internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack:
     NovelReaderContent(
         state, preferences, bookmarks, viewModel.currentPosition(), onBack,
         NovelReaderActions(
+            illustrationBlur = illustrationBlur,
+            setIllustrationBlur = { illustrations.setBlur(path, it) },
+            illustrationExportBusy = exportState.busy,
+            exportIllustrations = { state.reader?.let { illustrations.export(it) } },
+            saveIllustration = { image -> state.reader?.let { illustrations.export(it, image) } },
             position = {
                 if (routeProgressAllowed(committedActive, reportingLifecycle.currentState)) viewModel.position(
                     it.section,
@@ -636,7 +662,10 @@ private fun NovelReaderBody(
                 .fillMaxWidth()
                 .fillMaxHeight(.88f)
         ) {
-            NovelSheetHeader(
+            if (sheet == "images") NovelReaderImageHeader(
+                document.images.size, actions.illustrationBlur, actions.setIllustrationBlur,
+                actions.illustrationExportBusy, actions.exportIllustrations
+            ) else NovelSheetHeader(
                 when (sheet) {
                     "directory" -> "目录"
                     "images" -> "本卷插图 · ${document.images.size} 张"
@@ -645,7 +674,7 @@ private fun NovelReaderBody(
                 }
             ) { sheet = null }
             when (sheet) {
-                "images" -> NovelReaderImageGrid(volume, document.images) {
+                "images" -> NovelReaderImageGrid(volume, document.images, blurred = actions.illustrationBlur != false) {
                     galleryKey = it; sheet = null
                 }
 
@@ -683,7 +712,8 @@ private fun NovelReaderBody(
     }
     galleryKey?.let { selected ->
         key(selected) {
-            NovelReaderGallery(volume, document.images, selected) {
+            NovelReaderGallery(volume, document.images, selected,
+                saving = actions.illustrationExportBusy, onSave = actions.saveIllustration) {
                 galleryKey = null
             }
         }

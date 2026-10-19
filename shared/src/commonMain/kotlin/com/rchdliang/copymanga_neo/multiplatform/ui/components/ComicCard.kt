@@ -20,6 +20,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.graphics.graphicsLayer
+import com.rchdliang.copymanga_neo.domain.model.ComicCoverVisibility
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,8 +68,23 @@ fun ComicCard(
     isSelected: Boolean = false,
     sharedTransitionKey: String? = null,
     comicPathWord: String? = sharedTransitionKey,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    enableExpansion: Boolean = false,
+    floating: Boolean = false,
+    allowPendingContent: Boolean = false,
+    novelPreview: com.rchdliang.copymanga_neo.domain.model.NovelBook? = null
 ) {
+    val visibility = comicVisibility(comicPathWord)
+    val presentation = LocalComicPresentation.current
+    val instance = remember { Any().toString() }
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val latestPresentation by androidx.compose.runtime.rememberUpdatedState(presentation)
+    androidx.compose.runtime.DisposableEffect(instance) {
+        onDispose {
+            if (!floating && latestPresentation?.expandedId == instance) latestPresentation?.dismiss?.invoke()
+        }
+    }
+    val blocked = visibility == ComicCoverVisibility.BLURRED
     val transitionOnClick = if (sharedTransitionKey != null) {
         rememberComicSharedTransitionClick(
             transitionKey = sharedTransitionKey,
@@ -90,14 +113,42 @@ fun ComicCard(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(3f / 4f)
+            .onGloballyPositioned {
+                val next = Rect(
+                    it.positionInRoot(),
+                    androidx.compose.ui.geometry.Size(
+                        it.size.width.toFloat(),
+                        it.size.height.toFloat()
+                    )
+                )
+                if (!floating && bounds != Rect.Zero && next != bounds && presentation?.expandedId == instance) {
+                    presentation.dismiss()
+                }
+                bounds = next
+            }
+            .graphicsLayer { if (!floating && presentation?.expandedId == instance) alpha = 0f }
             .clip(MaterialTheme.shapes.large)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                enabled = allowPendingContent || visibility != ComicCoverVisibility.PENDING,
                 onClick = transitionOnClick,
-                onLongClick = onLongClick
+                onLongClick = if (enableExpansion && onLongClick == null && presentation != null && comicPathWord != null) {
+                    {
+                        presentation.expand(
+                            ComicExpansion(
+                                instance, comicPathWord, name, cover,
+                                subtitle, statusText, bounds, transitionOnClick, novelPreview
+                            )
+                        )
+                    }
+                } else onLongClick
             )
     ) {
+        if (visibility == ComicCoverVisibility.PENDING && !allowPendingContent) {
+            ComicPending(comicPathWord, Modifier.fillMaxSize())
+            return@Box
+        }
         Surface(
             shape = MaterialTheme.shapes.large,
             tonalElevation = 1.dp,
@@ -106,7 +157,8 @@ fun ComicCard(
                 .clip(MaterialTheme.shapes.large)
         ) {}
 
-        PreviewAwareAsyncImage(
+        ComicCoverImage(
+            path = comicPathWord,
             model = ImageRequest
                 .Builder(LocalPlatformContext.current)
                 .crossfade(sharedTransitionKey == null)
@@ -132,7 +184,7 @@ fun ComicCard(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                subtitle?.let { sub ->
+                subtitle?.takeUnless { blocked }?.let { sub ->
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = sub,
@@ -142,7 +194,7 @@ fun ComicCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                statusText?.let { status ->
+                statusText?.takeUnless { blocked }?.let { status ->
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = status,

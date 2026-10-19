@@ -72,7 +72,8 @@ fun ComicDto.toSummary() = ComicSummary(
     females = females?.map { it.toCharacter() },
     males = males?.map { it.toCharacter() },
     theme = theme?.map { it.toTheme() },
-    authorAlias = authorAlias
+    authorAlias = authorAlias,
+    lastUpdate = lastUpdate
 )
 
 fun ComicDetailDto.toInfo() = ComicInfo(

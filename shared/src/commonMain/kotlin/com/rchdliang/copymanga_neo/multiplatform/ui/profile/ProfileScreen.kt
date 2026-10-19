@@ -585,7 +585,7 @@ private fun AccountCard(
     }
 }
 
-/** 常用功能与应用配置分组，黑名单始终可用且仅影响首页。 */
+/** 常用功能与应用配置分组，黑名单始终可用，封面模糊对所有漫画列表生效。 */
 @Composable
 private fun ProfileMenuGroup(
     uiState: ProfileUiState,

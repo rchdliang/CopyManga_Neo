@@ -41,14 +41,18 @@ data class ComicDetailDto(
     @SerialName("free_type") val freeType: DisplayAndValue,
     @SerialName("restrict") val restrict: DisplayAndValue,
     @SerialName("reclass") val reclass: DisplayAndValue,
+    @Serializable(with = ComicNameListSerializer::class)
     @SerialName("females") val females: List<String>? = null,
+    @Serializable(with = ComicNameListSerializer::class)
     @SerialName("males") val males: List<String>? = null,
+    @Serializable(with = ComicNameListSerializer::class)
     @SerialName("clubs") val clubs: List<String>? = null,
     @SerialName("region") val region: DisplayAndValue,
     @SerialName("status") val status: DisplayAndValue,
     @SerialName("author") val author: List<AuthorDto>? = null,
     @SerialName("theme") val theme: List<ThemeDto>? = null,
-    @SerialName("parodies") val parodies: List<String>? = null,
+    @Serializable(with = ComicOriginalWorkListSerializer::class)
+    @SerialName("parodies") val parodies: List<com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork>? = null,
     @SerialName("brief") val brief: String? = null,
     @SerialName("datetime_updated") val lastUpdate: String? = null,
     @SerialName("cover") val cover: String? = null,

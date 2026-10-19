@@ -88,6 +88,8 @@ fun LocalLibraryContent(
     onClear: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
+    com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(
+        (state.history + state.bookmarks).filter { it.kind == "comic" }.map { it.path })
     var marks by rememberSaveable { mutableStateOf(false) }
     var kind by rememberSaveable { mutableStateOf("") }
     var clear by remember { mutableStateOf(false) }
@@ -262,6 +264,8 @@ private fun ReadingRecordCard(
 ) {
     val reading = !record.completed
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ReadingHistoryRow(
+        comicPathWord = record.path.takeIf { record.kind == "comic" },
+        allowPendingContent = true,
         title = displayBookTitle(record.path, record.title),
         cover = record.cover, authors = record.authors, onClick = onOpen,
         containerColor = if (reading) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerLow,

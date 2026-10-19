@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -33,10 +34,18 @@ fun ReadingHistoryRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    comicPathWord: String? = null,
+    allowPendingContent: Boolean = false,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
     trailingContent: @Composable () -> Unit = {},
     supportingContent: @Composable ColumnScope.() -> Unit
 ) {
+    if (!allowPendingContent && comicVisibility(comicPathWord) == com.rchdliang.copymanga_neo.domain.model.ComicCoverVisibility.PENDING) {
+        ComicPending(comicPathWord, modifier
+            .fillMaxWidth()
+            .height(120.dp))
+        return
+    }
     Surface(
         onClick = onClick, enabled = enabled, shape = MaterialTheme.shapes.large,
         color = containerColor, modifier = modifier.fillMaxWidth()
@@ -55,7 +64,8 @@ fun ReadingHistoryRow(
                             "暂无封面", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    } else PreviewAwareAsyncImage(
+                    } else ComicCoverImage(
+                        path = comicPathWord,
                         model = cover, contentDescription = title,
                         contentScale = ContentScale.Crop,
                         error = rememberVectorPainter(Icons.Outlined.BrokenImage),

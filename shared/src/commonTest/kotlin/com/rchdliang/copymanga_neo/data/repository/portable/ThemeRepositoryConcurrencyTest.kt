@@ -40,7 +40,7 @@ class ThemeRepositoryConcurrencyTest {
             listOf("a", "a", "b", "c", "d", "b").map { async { repo.refreshComicThemes(it).getOrThrow() } }.awaitAll()
             assertEquals(2, peak)
             assertEquals(4, requests)
-            assertEquals(setOf("a", "b", "c", "d"), cache.entries.value.keys)
+            assertEquals(setOf("a", "b", "c", "d"), repo.metadata.metadata.value.keys)
             repo.refreshComicThemes("a").getOrThrow()
             assertEquals(4, requests)
         } finally { client.close(); http.close() }

@@ -24,6 +24,7 @@ internal class ThemeRequestScheduler(
     private val nowMillis: () -> Long = defaultClock()
 ) {
     private class KeyLock(val mutex: Mutex = Mutex(), var users: Int = 0)
+
     private val mutex = Mutex()
     private val keys = mutableMapOf<String, KeyLock>()
     private val queue = ArrayDeque<Any>()
@@ -34,18 +35,22 @@ internal class ThemeRequestScheduler(
     /** 同一漫画只允许一个刷新者；后来的调用在锁内重新检查缓存和退避时间。 */
     suspend fun <T> withKey(key: String, block: suspend () -> T): T {
         val entry = mutex.withLock { keys.getOrPut(key) { KeyLock() }.also { it.users++ } }
-        try { return entry.mutex.withLock { block() } }
-        finally {
+        try {
+            return entry.mutex.withLock { block() }
+        } finally {
             withContext(NonCancellable) {
                 mutex.withLock { if (--entry.users == 0) keys.remove(key) }
             }
         }
     }
 
-    suspend fun <T> request(block: suspend () -> T): T {
+    suspend fun <T> request(priority: Boolean = false, block: suspend () -> T): T {
         val ticket = Any()
         var acquired = false
-        mutex.withLock { queue.addLast(ticket); changed.update { it + 1 } }
+        mutex.withLock {
+            if (priority) queue.addFirst(ticket) else queue.addLast(ticket)
+            changed.update { it + 1 }
+        }
         try {
             while (!acquired) {
                 currentCoroutineContext().ensureActive()
@@ -55,7 +60,9 @@ internal class ThemeRequestScheduler(
                 val wait = mutex.withLock {
                     if (queue.firstOrNull() !== ticket || active >= limits.first) -1L
                     else {
-                        val remaining = lastStarted?.let { (it + limits.second - nowMillis()).coerceAtLeast(0) } ?: 0L
+                        val remaining =
+                            lastStarted?.let { (it + limits.second - nowMillis()).coerceAtLeast(0) }
+                                ?: 0L
                         if (remaining == 0L) {
                             queue.removeFirst()
                             active++
@@ -89,7 +96,7 @@ internal class ThemeRequestScheduler(
 
     private fun limits(value: NetworkSettings) =
         value.themeFetchConcurrency.coerceIn(1, ThemeLoadingPolicy.MAX_CONCURRENCY) to
-            value.themeFetchIntervalMillis.coerceIn(0, ThemeLoadingPolicy.MAX_INTERVAL_MILLIS)
+                value.themeFetchIntervalMillis.coerceIn(0, ThemeLoadingPolicy.MAX_INTERVAL_MILLIS)
 
     companion object {
         private fun defaultClock(): () -> Long {

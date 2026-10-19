@@ -119,7 +119,8 @@ fun DetailScreen(
     onNavigateBack: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
     onThemeClick: (Theme) -> Unit = {},
-    onAuthorClick: (Author) -> Unit = {}
+    onAuthorClick: (Author) -> Unit = {},
+    onOriginalWorkClick: (com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val detailGridState = rememberLazyGridState()
@@ -305,6 +306,7 @@ fun DetailScreen(
                         comicDetail = uiState.comicDetail!!,
                         onComments = { showComments = true },
                         onAuthorClick = onAuthorClick,
+                        onOriginalWorkClick = onOriginalWorkClick,
                         blockedThemes = uiState.blockedThemes,
                         onThemeClick = { theme ->
                             if (theme.pathWord.isNullOrBlank()) {
@@ -376,8 +378,8 @@ fun DetailScreen(
                     .padding(top = 48.dp)
                     .clipToBounds()
             ) {
-                PreviewAwareAsyncImage(
-                    model = coverData.cover,
+                com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicCoverImage(
+                    path = coverData.pathWord, model = coverData.cover,
                     contentDescription = coverData.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -457,6 +459,7 @@ fun DetailContent(
     comicDetail: ComicInfo,
     onComments: () -> Unit = {},
     onAuthorClick: (Author) -> Unit = {},
+    onOriginalWorkClick: (com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork) -> Unit = {},
     blockedThemes: List<Theme> = emptyList(),
     onThemeClick: (Theme) -> Unit = {},
     onThemeLongClick: (Theme) -> Unit = {},
@@ -573,11 +576,14 @@ fun DetailContent(
         header = { titleModifier ->
             BookDetailHeader(
                 title = comicDetail.name,
+                comicPathWord = comicDetail.pathWord,
                 cover = comicDetail.cover,
                 authors = comicDetail.author.orEmpty().map {
                     BookDetailAuthor(it.name, it.pathWord?.takeIf(String::isNotBlank) ?: it.name)
                 },
                 status = if (comicDetail.status.value == 1) "已完结" else "连载中",
+                originalWorks = comicDetail.parodies.orEmpty(),
+                onOriginalWork = onOriginalWorkClick,
                 updated = comicDetail.lastUpdate ?: "--",
                 popularity = comicDetail.popular?.toCompactLocale() ?: "--",
                 coverWidth = detailCoverWidth,

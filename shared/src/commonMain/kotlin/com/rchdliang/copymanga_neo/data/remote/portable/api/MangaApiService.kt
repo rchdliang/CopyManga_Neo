@@ -64,6 +64,17 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): PortableResponse<ComicFilterTagsResponse> = client.call(ApiRequest(path = "/api/v3/h5/filter/comic/tags", method = "GET", query = listOfNotNull("type" to type.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<ComicFilterTagsResponse>())
 
+    suspend fun getOriginalWorkComics(
+        pathWord: String,
+        ordering: String,
+        offset: Int
+    ): PortableResponse<SearchResponse> = client.call(
+        ApiRequest(path = "/api/v3/comics", query = listOf(
+            "parody" to pathWord, "ordering" to ordering, "offset" to offset.toString(),
+            "limit" to "21", "free_type" to "1"), www = www),
+        serializer<SearchResponse>()
+    )
+
     suspend fun browseComics(
         freeType: Int = 1,
         top: String?,
