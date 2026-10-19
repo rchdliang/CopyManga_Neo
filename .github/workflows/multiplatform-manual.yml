@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       ios:
-        description: iOS ARM64 simulator app (unsigned, build only)
+        description: iOS device IPA (select CMP branch; unsigned)
         type: boolean
         default: false
 

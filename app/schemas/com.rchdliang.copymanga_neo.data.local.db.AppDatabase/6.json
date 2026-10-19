@@ -1,0 +1,331 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 6,
+    "identityHash": "c702b94d5aaf72a562f17632971ccb5c",
+    "entities": [
+      {
+        "tableName": "downloaded_comics",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pathWord` TEXT NOT NULL, `name` TEXT NOT NULL, `cover` TEXT, `authorNames` TEXT NOT NULL, `statusDisplay` TEXT NOT NULL, `lastUpdate` TEXT, `lastChapterName` TEXT, `brief` TEXT, `totalChapters` INTEGER NOT NULL, `downloadedChapters` INTEGER NOT NULL, `downloadAt` INTEGER NOT NULL, PRIMARY KEY(`pathWord`))",
+        "fields": [
+          {
+            "fieldPath": "pathWord",
+            "columnName": "pathWord",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cover",
+            "columnName": "cover",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "authorNames",
+            "columnName": "authorNames",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "statusDisplay",
+            "columnName": "statusDisplay",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdate",
+            "columnName": "lastUpdate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastChapterName",
+            "columnName": "lastChapterName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "brief",
+            "columnName": "brief",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "totalChapters",
+            "columnName": "totalChapters",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadedChapters",
+            "columnName": "downloadedChapters",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadAt",
+            "columnName": "downloadAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pathWord"
+          ]
+        }
+      },
+      {
+        "tableName": "downloaded_chapters",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `comicPathWord` TEXT NOT NULL, `name` TEXT NOT NULL, `index` INTEGER NOT NULL, `imageCount` INTEGER NOT NULL, `imagePaths` TEXT NOT NULL, `status` TEXT NOT NULL, `downloadAt` INTEGER NOT NULL, `groupPathWord` TEXT, `prevChapter` TEXT, `nextChapter` TEXT, PRIMARY KEY(`uuid`), FOREIGN KEY(`comicPathWord`) REFERENCES `downloaded_comics`(`pathWord`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "comicPathWord",
+            "columnName": "comicPathWord",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "index",
+            "columnName": "index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageCount",
+            "columnName": "imageCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagePaths",
+            "columnName": "imagePaths",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "downloadAt",
+            "columnName": "downloadAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupPathWord",
+            "columnName": "groupPathWord",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prevChapter",
+            "columnName": "prevChapter",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "nextChapter",
+            "columnName": "nextChapter",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_downloaded_chapters_comicPathWord",
+            "unique": false,
+            "columnNames": [
+              "comicPathWord"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_downloaded_chapters_comicPathWord` ON `${TABLE_NAME}` (`comicPathWord`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "downloaded_comics",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "comicPathWord"
+            ],
+            "referencedColumns": [
+              "pathWord"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "download_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`comicPathWord` TEXT NOT NULL, `taskJson` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`comicPathWord`))",
+        "fields": [
+          {
+            "fieldPath": "comicPathWord",
+            "columnName": "comicPathWord",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskJson",
+            "columnName": "taskJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "comicPathWord"
+          ]
+        }
+      },
+      {
+        "tableName": "comic_theme_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pathWord` TEXT NOT NULL, `themesJson` TEXT NOT NULL, `refreshAfterMillis` INTEGER NOT NULL, PRIMARY KEY(`pathWord`))",
+        "fields": [
+          {
+            "fieldPath": "pathWord",
+            "columnName": "pathWord",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "themesJson",
+            "columnName": "themesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refreshAfterMillis",
+            "columnName": "refreshAfterMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pathWord"
+          ]
+        }
+      },
+      {
+        "tableName": "downloaded_chapter_comments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`chapterUuid` TEXT NOT NULL, `commentsJson` TEXT NOT NULL, `total` INTEGER NOT NULL, `complete` INTEGER NOT NULL, `closed` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`chapterUuid`), FOREIGN KEY(`chapterUuid`) REFERENCES `downloaded_chapters`(`uuid`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "chapterUuid",
+            "columnName": "chapterUuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commentsJson",
+            "columnName": "commentsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "total",
+            "columnName": "total",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "complete",
+            "columnName": "complete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closed",
+            "columnName": "closed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedAt",
+            "columnName": "savedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "chapterUuid"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "downloaded_chapters",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "chapterUuid"
+            ],
+            "referencedColumns": [
+              "uuid"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "comic_card_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`cacheKey` TEXT NOT NULL, `metadataJson` TEXT NOT NULL, PRIMARY KEY(`cacheKey`))",
+        "fields": [
+          {
+            "fieldPath": "cacheKey",
+            "columnName": "cacheKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "metadataJson",
+            "columnName": "metadataJson",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "cacheKey"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c702b94d5aaf72a562f17632971ccb5c')"
+    ]
+  }
+}

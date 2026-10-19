@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 configurations.all {
@@ -48,11 +49,12 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.rchdliang.copymanga_neo"
+        applicationId = "com.rchdliang.copymanga_neo.Android"
         minSdk = 31
         targetSdk = 37
         versionCode = 34
         versionName = "0.10.19.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
@@ -108,7 +110,7 @@ androidComponents {
             val suffix = if (enableAbiSplits) "-${abi ?: "universal"}" else ""
             output.outputFileName.set(
                 output.versionName.map { versionName ->
-                    "CopyManga_Neo-v$versionName$suffix-release.apk"
+                    "CopyManga_Neo-Android-v$versionName$suffix-release.apk"
                 }
             )
         }
@@ -119,8 +121,14 @@ hilt {
     enableAggregatingTask = true
 }
 
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 dependencies {
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.room.testing)
     val composeBom = platform(libs.androidx.compose.bom)
 
     implementation(composeBom)

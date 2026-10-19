@@ -134,11 +134,23 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var exports: ComicExportRepository
+    @Inject
+    lateinit var authStorage: com.rchdliang.copymanga_neo.data.local.AuthDataStore
     private var openDownloads by mutableStateOf(false)
     private var retryExportId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) (application as CopyMangaApplication).dataRestoreMessage?.let {
+            Toast.makeText(this, it, Toast.LENGTH_LONG).show()
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authStorage.storageError.collect { message ->
+                    if (message != null) Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
         retryExportId =
             if (savedInstanceState != null) savedInstanceState.getString("retryExportId")
             else intent.takeIf { it.action == ComicExportService.RETRY }
@@ -178,6 +190,32 @@ class MainActivity : ComponentActivity() {
             }
             com.rchdliang.copymanga_neo.ui.components.MetadataTextHost(preferences.simplifyChinese, mainViewModel.chineseDictionary) {
                 CopyManga_NeoTheme(darkTheme = darkTheme) {
+                    val authError by authStorage.storageError.collectAsStateWithLifecycle()
+                    var dismissAuthError by rememberSaveable { mutableStateOf(false) }
+                    if (authError != null && !dismissAuthError) androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { dismissAuthError = true },
+                        title = { Text("登录信息暂不可用", color = MaterialTheme.colorScheme.onSurface) },
+                        text = { Text("请先解锁设备并重新启动。若文件已损坏，可重置本机登录信息；历史、标注和下载会保留。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                lifecycleScope.launch {
+                                    val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        runCatching { com.rchdliang.copymanga_neo.data.local.security.requestCredentialReset(this@MainActivity) }
+                                    }
+                                    Toast.makeText(this@MainActivity,
+                                        if (result.isSuccess) "已安排重置登录信息，请完全退出并重新打开应用" else "无法安排重置，请检查可用空间后重试",
+                                        Toast.LENGTH_LONG).show()
+                                    dismissAuthError = result.isSuccess
+                                }
+                            }) { Text("重置登录信息", color = MaterialTheme.colorScheme.primary) }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = { dismissAuthError = true }) {
+                                Text("保留并稍后重试", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    )
                     val exportViewModel: ComicExportViewModel = hiltViewModel()
                     val exportState by exports.state.collectAsStateWithLifecycle()
                     LaunchedEffect(retryExportId) {

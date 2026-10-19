@@ -47,12 +47,21 @@ internal fun DataSettingsScreen(
     val backupState by backup.uiState.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
     var pendingImport by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingUserData by rememberSaveable { mutableStateOf(false) }
+    val userExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        uri?.let(backup::exportUserData)
+    }
+    val userImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingUserData = true
+        pendingImport = uri?.toString()
+    }
     val exporter =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             uri?.let(backup::export)
         }
     val importer =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            pendingUserData = false
             pendingImport = uri?.toString()
         }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { settings.refreshStorage() }
@@ -69,21 +78,29 @@ internal fun DataSettingsScreen(
         settings::resetGlobalDefaults,
         onClearNovelCache = settings::clearNovelCache,
         onCredentialExportPasswordChange = settings::setCredentialExportPassword,
+        onExportUserData = { userExporter.launch("CopyManga-Neo-user-data.json") },
+        onImportUserData = { userImporter.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+        onCancelRestore = backup::cancelRestore,
+        restorePending = backupState.restorePending,
         logsContent = { NetworkLogCard() }
     )
     pendingImport?.let { selected ->
         AlertDialog(
             onDismissRequest = { pendingImport = null },
-            title = { Text("导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
+            title = { Text(if (pendingUserData) "恢复用户数据？" else "导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
+                    if (pendingUserData) "备份通过校验后将在下次启动时覆盖个人数据，包括当前及重启前新增的标注、历史、书签和偏好。建议先导出当前用户数据；登录与下载文件不受影响。"
+                    else "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
             confirmButton = {
                 TextButton(
-                    onClick = { pendingImport = null; backup.import(selected.toUri()) },
+                    onClick = {
+                        pendingImport = null
+                        if (pendingUserData) backup.importUserData(selected.toUri()) else backup.import(selected.toUri())
+                    },
                     enabled = !backupState.busy && !state.isSaving
                 ) {
                     Text("导入", color = MaterialTheme.colorScheme.primary)
@@ -115,6 +132,10 @@ internal fun DataSettingsPage(
     onResetDefaults: () -> Unit = {},
     onClearNovelCache: () -> Unit = {},
     onCredentialExportPasswordChange: (Boolean) -> Unit = {},
+    onExportUserData: () -> Unit = {},
+    onImportUserData: () -> Unit = {},
+    onCancelRestore: () -> Unit = {},
+    restorePending: Boolean = false,
     logsContent: @Composable () -> Unit = {}
 ) {
     var showLogs by rememberSaveable { mutableStateOf(false) }
@@ -169,6 +190,24 @@ internal fun DataSettingsPage(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(8.dp)
             )
+        }
+        ProfileSectionTitle("用户数据备份")
+        Text(
+            "保存小说标注、历史、书签、阅读进度、偏好和屏蔽标签。不含登录凭据、下载文件和网络设置。原 Android 版与跨平台版的用户备份不通用。",
+            Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        ProfileListItem(Icons.Outlined.FileUpload, "导出用户数据", "保存游客及各账号的个人数据",
+            index = 0, count = 2, enabled = enabled, onClick = onExportUserData)
+        ProfileListItem(Icons.Outlined.FileDownload, "恢复用户数据", "校验后暂存，重启时覆盖恢复",
+            index = 1, count = 2, enabled = enabled, onClick = onImportUserData)
+        if (restorePending) {
+            Text("已安排恢复，请完全退出并重新打开应用。重启前仍可取消。",
+                Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onCancelRestore, enabled = !backupBusy) {
+                Text("取消待恢复的数据", color = MaterialTheme.colorScheme.primary)
+            }
         }
         ProfileSectionTitle("设置备份")
         Text(

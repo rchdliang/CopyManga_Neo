@@ -20,6 +20,19 @@ import kotlinx.coroutines.launch
  */
 @HiltAndroidApp
 class CopyMangaApplication : Application(), ImageLoaderFactory {
+    var dataRestoreMessage: String? = null
+        private set
+
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(base)
+        // 先完成恢复/回滚，随后 Hilt 和后台任务才能读取持久化数据。
+        dataRestoreMessage = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            val reset = com.rchdliang.copymanga_neo.data.local.security.applyRequestedCredentialReset(base)
+            val restored = com.rchdliang.copymanga_neo.data.backup.AndroidUserDataBackup(base).recover()
+            listOfNotNull(if (reset) "本机登录信息已重置，请重新登录" else null, restored)
+                .joinToString("；").takeIf { it.isNotBlank() }
+        }
+    }
     @Inject lateinit var networkClient: OkHttpClient
     @Inject lateinit var networkSettings: NetworkSettingsRepository
 

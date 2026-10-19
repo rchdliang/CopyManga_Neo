@@ -1,0 +1,48 @@
+name: Persistence compatibility
+on:
+  pull_request:
+    branches: [Android]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  persistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Unit checks and schema generation
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebugAndroidTest --no-daemon --max-workers=1 --no-configuration-cache
+      - name: Require committed database schemas
+        run: |
+          changes="$(git status --porcelain --untracked-files=all -- app/schemas)"
+          test -z "$changes" || { echo 'Database schema changed; review and commit the schema snapshot.'; exit 1; }
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Published database preservation checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --max-workers=1 --no-configuration-cache
+      - name: Test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: persistence-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/androidTests/
+          if-no-files-found: warn

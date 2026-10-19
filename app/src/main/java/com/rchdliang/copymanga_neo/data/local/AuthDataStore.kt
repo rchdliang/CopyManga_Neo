@@ -10,6 +10,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -27,7 +29,9 @@ import javax.inject.Singleton
 class AuthDataStore(
     private val dataStore: DataStore<Preferences>,
     private val networkSettings: NetworkSettingsStore,
-    private val clearWebCookies: () -> Unit = {}
+    private val clearWebCookies: () -> Unit = {},
+    private val clearLegacyAuth: () -> Unit = {},
+    private val validateStorage: () -> Unit = {}
 ) : com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository {
     private data class Session(
         val token: String? = null,
@@ -47,6 +51,9 @@ class AuthDataStore(
     private val active = MutableStateFlow(ActiveSession(networkSettings.settings.value.requestMode))
     private val revision = MutableStateFlow(0L)
     private val ready = MutableStateFlow(false)
+    private val initialized = CompletableDeferred<Unit>()
+    private val mutableStorageError = MutableStateFlow<String?>(null)
+    val storageError = mutableStorageError.asStateFlow()
     private var authGeneration = 0L
     private var autoLoginAllowed = true
 
@@ -63,25 +70,35 @@ class AuthDataStore(
             }
         }
         scope.launch {
-            val prefs = dataStore.edit {
-                val valid = runCatching {
-                    if (it[SCHEMA] != SCHEMA_VERSION) false else {
-                        RequestMode.entries.forEach { mode -> readSession(it, mode) }
-                        true
+            try {
+                validateStorage()
+                val prefs = dataStore.edit {
+                    if (it.asMap().isEmpty()) {
+                        it[SCHEMA] = SCHEMA_VERSION
+                        clearWebCookies()
                     }
-                }.getOrDefault(false)
-                if (!valid) {
-                    it.clear()
-                    it[SCHEMA] = SCHEMA_VERSION
-                    clearWebCookies()
+                    check(it[SCHEMA] == SCHEMA_VERSION) { "登录信息版本不受支持，原数据已保留" }
+                    RequestMode.entries.forEach { mode -> readSession(it, mode) }
                 }
+                synchronized(lock) {
+                    RequestMode.entries.forEach { mode ->
+                        sessions[mode] = readSession(prefs, mode)
+                    }
+                    publish()
+                    advanceGeneration()
+                }
+                clearLegacyAuth()
+            } catch (cancel: CancellationException) {
+                initialized.cancel(cancel)
+                throw cancel
+            } catch (_: Exception) {
+                mutableStorageError.value =
+                    "无法读取安全登录信息，原数据已保留。请解锁设备并重新启动应用后重试。"
+                autoLoginAllowed = false
+            } finally {
+                ready.value = true
+                initialized.complete(Unit)
             }
-            synchronized(lock) {
-                RequestMode.entries.forEach { mode -> sessions[mode] = readSession(prefs, mode) }
-                publish()
-                advanceGeneration()
-            }
-            ready.value = true
         }
     }
 
@@ -111,7 +128,8 @@ class AuthDataStore(
     }
 
     override suspend fun awaitReady() {
-        ready.first { it }
+        initialized.await()
+        storageError.value?.let { throw IllegalStateException(it) }
     }
 
     fun isCacheReady(): Boolean = ready.value
@@ -128,6 +146,7 @@ class AuthDataStore(
                 )
             }
         }
+
     fun getAuthGeneration(): Long = synchronized(lock) { authGeneration }
     fun getRequestModeSync(): RequestMode = active.value.mode
 

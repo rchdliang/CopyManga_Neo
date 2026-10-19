@@ -24,14 +24,8 @@ object DatabaseModule {
             AppDatabase::class.java,
             "copymanga_downloads.db"
         )
-            .addMigrations(
-                AppDatabase.MIGRATION_2_3,
-                AppDatabase.MIGRATION_3_4,
-                AppDatabase.MIGRATION_4_5,
-                AppDatabase.MIGRATION_5_6
-            )
-            // 未发布版本的下载缓存允许随结构变更重建。
-            .fallbackToDestructiveMigration(true)
+            .addMigrations(*AppDatabase.MIGRATIONS)
+            // 首发后必须提供完整迁移链；缺失迁移时保留数据库，禁止静默重建。
             .build()
     }
 

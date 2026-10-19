@@ -23,9 +23,24 @@ class SettingsBackupRepositoryImpl @Inject constructor(
     private val settings: AppSettingsRepository,
     private val reader: ReaderPreferencesRepository,
     private val localReading: LocalReadingStore,
-    private val tools: ReaderToolsRepository
+    private val tools: ReaderToolsRepository,
+    private val userData: com.rchdliang.copymanga_neo.data.backup.AndroidUserDataBackup
 ) : SettingsBackupRepository {
     private val mutex = Mutex()
+
+    override suspend fun exportUserData(): Result<String> = mutex.withLock {
+        result {
+            localReading.flush().fold({}, { throw it })
+            userData.export()
+        }
+    }
+    override suspend fun importUserData(serialized: String): Result<Unit> = mutex.withLock {
+        result { userData.prepare(serialized) }
+    }
+    override suspend fun hasPendingUserDataRestore(): Boolean = userData.isPending()
+    override suspend fun cancelUserDataRestore(): Result<Unit> = mutex.withLock {
+        result { userData.cancel() }
+    }
 
     override suspend fun exportSettings(): Result<String> = mutex.withLock {
         result { SettingsBackupCodec.encode(snapshot()) }

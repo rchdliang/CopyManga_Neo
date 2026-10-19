@@ -2,10 +2,8 @@ package com.rchdliang.copymanga_neo.di
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.preferencesDataStore
+import com.rchdliang.copymanga_neo.data.local.security.createSecureAuthDataStore
 import com.rchdliang.copymanga_neo.data.local.AuthDataStore
 import com.rchdliang.copymanga_neo.data.repository.UserRepositoryImpl
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
@@ -34,19 +32,25 @@ abstract class AuthModule {
     ): UserRepository
 
     companion object {
-        private val Context.authDataStore: DataStore<Preferences> by preferencesDataStore(
-            name = "auth_prefs",
-            corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
-        )
 
         @Provides
         @Singleton
         fun provideAuthDataStore(
             dataStore: DataStore<Preferences>,
             networkSettings: com.rchdliang.copymanga_neo.data.local.NetworkSettingsStore,
-            cookieJar: PersistentCookieJar
+            cookieJar: PersistentCookieJar,
+            @ApplicationContext context: Context
         ): AuthDataStore {
-            return AuthDataStore(dataStore, networkSettings, cookieJar::clearAll)
+            return AuthDataStore(dataStore, networkSettings, cookieJar::clearAll, clearLegacyAuth = {
+                // 未发布的明文认证文件不再读取；安全库成功初始化后清理。
+                for (suffix in listOf("", ".tmp", ".bak")) {
+                    val legacy =
+                        java.io.File(context.filesDir, "datastore/auth_prefs.preferences_pb$suffix")
+                    if (legacy.exists() && !legacy.delete()) {
+                        android.util.Log.w("Auth", "旧认证文件清理未完成，已排除系统备份")
+                    }
+                }
+            }, validateStorage = cookieJar::requireReady)
         }
 
         @Provides
@@ -54,7 +58,7 @@ abstract class AuthModule {
         fun provideAuthPreferencesDataStore(
             @ApplicationContext context: Context
         ): DataStore<Preferences> {
-            return context.authDataStore
+            return createSecureAuthDataStore(context)
         }
 
         @Provides

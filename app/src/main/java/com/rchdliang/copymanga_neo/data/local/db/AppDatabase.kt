@@ -19,11 +19,12 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
         DownloadedChapterCommentsEntity::class,
         com.rchdliang.copymanga_neo.data.local.entity.ComicCardCacheEntity::class
     ],
-    version = 6,
-    exportSchema = false
+    version = AppDatabase.VERSION,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     companion object {
+        const val VERSION = 6
         /** 展示缓存独立建表，升级保留下载、评论及旧标签缓存。 */
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -51,6 +52,9 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS download_queue (comicPathWord TEXT NOT NULL PRIMARY KEY, taskJson TEXT NOT NULL, createdAt INTEGER NOT NULL)")
             }
         }
+
+        /** 生产代码和兼容性测试共用，避免新增迁移只在一侧注册。 */
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
     }
 
     abstract fun downloadQueueDao(): DownloadQueueDao

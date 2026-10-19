@@ -1,8 +1,9 @@
 package com.rchdliang.copymanga_neo.di
 
 import android.content.Context
-import android.content.SharedPreferences
-import androidx.core.content.edit
+import com.google.gson.JsonArray
+import com.google.gson.JsonParser
+import com.rchdliang.copymanga_neo.data.local.security.EncryptedCookieFile
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -10,22 +11,27 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 持久化 Cookie 管理器
- * 使用 SharedPreferences 存储 Cookie，确保重启后不丢失
+ * 使用系统密钥加密并原子保存 Cookie，密文排除在系统备份之外。
  * 同时支持登录后 set-cookie 返回的 token cookie
  */
 class PersistentCookieJar(context: Context) : CookieJar {
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("copymanga_web_cookies_v2", Context.MODE_PRIVATE)
+    private val persistence = EncryptedCookieFile(context)
+    private var persistenceError: Exception? = null
 
     // 内存缓存，按域名分组，避免频繁读取 SharedPreferences
     private val cookieStore = ConcurrentHashMap<String, List<Cookie>>()
 
     init {
-        // 旧会话格式直接清除，防止旧账号 Cookie 混入新的按模式认证存储。
-        context.getSharedPreferences("copymanga_cookies", Context.MODE_PRIVATE).edit { clear() }
-        // 启动时从 SharedPreferences 恢复 Cookie
-        loadAllCookiesFromPrefs()
+        try {
+            loadAllCookies()
+            // 未发布的明文 Cookie 不迁入正式凭据库。
+            context.deleteSharedPreferences("copymanga_cookies")
+            context.deleteSharedPreferences("copymanga_web_cookies_v2")
+        } catch (error: Exception) {
+            persistenceError = error
+            android.util.Log.w("CookieJar", "安全 Cookie 无法恢复，已保留原文件")
+        }
     }
 
     @Synchronized
@@ -37,16 +43,11 @@ class PersistentCookieJar(context: Context) : CookieJar {
             Triple(it.name, it.domain, it.path) !in incoming
         } + cookies).filter { it.expiresAt > now }
             .distinctBy { Triple(it.name, it.domain, it.path) }
+        check(persistenceError == null) { "安全 Cookie 不可用，请解锁设备并重新启动应用" }
+        val encoded = JsonArray().apply { merged.forEach { add(serializeCookie(it)) } }.toString()
+        persistence.write(encoded)
         cookieStore.clear()
         cookieStore.putAll(merged.groupBy { it.domain })
-        prefs.edit {
-            clear()
-            cookieStore.forEach { (domain, items) ->
-                putString(
-                    domain,
-                    items.joinToString("|") { serializeCookie(it) })
-            }
-        }
     }
 
     @Synchronized
@@ -55,23 +56,25 @@ class PersistentCookieJar(context: Context) : CookieJar {
         .distinctBy { Triple(it.name, it.domain, it.path) }
         .sortedByDescending { it.path.length }
 
+    fun requireReady() {
+        check(persistenceError == null) { "安全 Cookie 不可用，原文件已保留" }
+    }
+
     /** 清除所有 Cookie（登出时调用） */
     @Synchronized
     fun clearAll() {
+        check(persistenceError == null) { "安全 Cookie 不可用，原文件已保留" }
+        persistence.write("[]")
         cookieStore.clear()
-        prefs.edit { clear() }
     }
 
-    private fun loadAllCookiesFromPrefs() {
-        val allEntries = prefs.all
-        for ((host, value) in allEntries) {
-            if (value is String && value.isNotBlank()) {
-                val cookies = value.split("|").mapNotNull { deserializeCookie(it) }
-                if (cookies.isNotEmpty()) {
-                    cookieStore[host] = cookies
-                }
-            }
-        }
+    private fun loadAllCookies() {
+        val raw = persistence.read() ?: return
+        val cookies = JsonParser.parseString(raw).asJsonArray.map {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isString)
+            requireNotNull(deserializeCookie(it.asString)) { "Cookie 记录无效" }
+        }.filter { it.expiresAt > System.currentTimeMillis() }
+        cookieStore.putAll(cookies.groupBy { it.domain })
     }
 
     private fun serializeCookie(cookie: Cookie): String {
@@ -100,7 +103,6 @@ class PersistentCookieJar(context: Context) : CookieJar {
 
             return builder.build()
         } catch (e: Exception) {
-            android.util.Log.w("CookieJar", "Failed to deserialize stored cookie", e)
             return null
         }
     }
