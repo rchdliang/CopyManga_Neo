@@ -191,7 +191,8 @@ class PortableUserRepository(
         val gender=info["gender"]?.takeUnless{it==JsonNull}?.let { value->(if(value is JsonObject)value["value"] else value)?.jsonPrimitive?.content?.toIntOrNull()?:error("账号性别数据格式异常，请重新加载资料") }?:0
         return EditableProfile(text("nickname").orEmpty(),text("avatar"),text("avatar_rp"),gender)
     }
-    override suspend fun updateProfile(nickname:String,avatarJpeg:ByteArray?):Result<MemberInfo> = result {
+    override suspend fun updateProfile(nickname:String,avatarJpeg:ByteArray?,gender:Int?):Result<MemberInfo> = result {
+        require(gender == null || ProfileGender.entries.any { it.value == gender }) { "请选择有效的性别" }
         awaitReady();require(nickname.isNotBlank()){"请输入昵称"};val snapshot=active();val token=snapshot.session().token;require(token.isNotBlank()){"请先登录"}
         val current=editable(token);client.state.requireCurrent(snapshot.generation)
         val headers=CopyMangaNetworkConfig.noAuthApiHeaders()+mapOf("Authorization" to "Token $token")
@@ -199,11 +200,16 @@ class PortableUserRepository(
             require(avatarJpeg.isNotEmpty()&&avatarJpeg.size<=5*1024*1024){"头像文件为空或过大"}
             val response=client.call(ApiRequest("/api/v3/upload/image/1",method="POST",headers=headers,avatarJpeg=avatarJpeg),serializer<JsonObject>())
             client.state.requireCurrent(snapshot.generation)
+            check(response.isSuccessful && response.body()?.get("code")?.jsonPrimitive?.intOrNull == 200) {
+                (response.body()?.get("message") as? JsonPrimitive)?.contentOrNull ?: "头像上传失败"
+            }
             (response.body()?.get("results") as? JsonPrimitive)?.contentOrNull?.takeIf{it.isNotBlank()}?:error("头像上传未返回路径")
         } else current.avatarPath?:current.avatar.orEmpty()
         client.state.requireCurrent(snapshot.generation)
-        val saved=client.call(ApiRequest("/api/v3/member/update/info",method="POST",form=listOf("nickname" to nickname.trim(),"avatar" to avatar,"gender" to current.gender.toString()),headers=headers),serializer<JsonObject>())
-        check(saved.isSuccessful&&saved.body()?.get("code")?.jsonPrimitive?.int==200){"资料保存未确认，请刷新检查"}
+        val saved=client.call(ApiRequest("/api/v3/member/update/info",method="POST",form=listOf("nickname" to nickname.trim(),"avatar" to avatar,"gender" to (gender ?: current.gender).toString()),headers=headers),serializer<JsonObject>())
+        check(saved.isSuccessful&&saved.body()?.get("code")?.jsonPrimitive?.int==200) {
+            (saved.body()?.get("message") as? JsonPrimitive)?.contentOrNull ?: "资料保存未确认，请刷新检查"
+        }
         try { client.state.requireCurrent(snapshot.generation);getMemberInfo().getOrThrow() }catch(e:CancellationException){throw e}catch(e:Exception){throw ProfileSavedRefreshException("资料已保存，但刷新失败，请关闭后刷新账号页",e)}
     }
     override suspend fun exportLoginCredential(includePassword:Boolean):Result<String> = result {

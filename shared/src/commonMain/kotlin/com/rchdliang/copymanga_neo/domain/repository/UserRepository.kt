@@ -18,7 +18,8 @@ interface UserRepository {
     /** 头像为处理后的 JPEG；仅在用户选择新图片时上传。 */
     suspend fun updateProfile(
         nickname: String,
-        avatarJpeg: ByteArray?
+        avatarJpeg: ByteArray?,
+        gender: Int? = null
     ): Result<MemberInfo>
     /**
      * 登录

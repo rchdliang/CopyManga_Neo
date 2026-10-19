@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -60,7 +62,8 @@ internal fun SearchPage(
     val noInsets = WindowInsets(0, 0, 0, 0)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
-        contentWindowInsets = if (applySystemInsets) ScaffoldDefaults.contentWindowInsets else noInsets,
+        contentWindowInsets = if (applySystemInsets)
+            ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal) else noInsets,
         topBar = {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 TopAppBar(

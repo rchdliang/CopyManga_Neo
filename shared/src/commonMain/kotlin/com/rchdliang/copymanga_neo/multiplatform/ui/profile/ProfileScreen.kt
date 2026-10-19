@@ -314,7 +314,7 @@ internal fun ProfileMainPage(
     onClearLoginError: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onRetryProfile: () -> Unit = {},
-    onSaveProfile: (String, ByteArray?) -> Unit = { _, _ -> },
+    onSaveProfile: (String, ByteArray?, Int?) -> Unit = { _, _, _ -> },
     onDismissProfile: () -> Unit = {},
     avatarViewModel: ProfileAvatarViewModel? = null
 ) {
@@ -412,7 +412,7 @@ internal fun ProfileMainPage(
     ActiveRouteLaunchedEffect(uiState.showProfileEditor) {
         if (!uiState.showProfileEditor) avatarViewModel?.clear()
     }
-    if (uiState.showProfileEditor) ProfileEditDialog(
+    if (uiState.showProfileEditor) androidx.compose.runtime.key(uiState.requestMode, uiState.username) { ProfileEditDialog(
         avatarViewModel = requireNotNull(avatarViewModel) { "Provide the retained avatar model before editing a profile." },
         profile = uiState.editableProfile,
         isLoading = uiState.isProfileLoading,
@@ -421,7 +421,7 @@ internal fun ProfileMainPage(
         onRetry = onRetryProfile,
         onSave = onSaveProfile,
         onDismiss = onDismissProfile
-    )
+    ) }
 
 
 }
