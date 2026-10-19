@@ -27,12 +27,18 @@ object DatabaseModule {
             .addMigrations(
                 AppDatabase.MIGRATION_2_3,
                 AppDatabase.MIGRATION_3_4,
-                AppDatabase.MIGRATION_4_5
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6
             )
             // 未发布版本的下载缓存允许随结构变更重建。
             .fallbackToDestructiveMigration(true)
             .build()
     }
+
+    @Provides
+    @Singleton
+    fun provideComicCardCacheDao(db: AppDatabase): com.rchdliang.copymanga_neo.data.local.db.ComicCardCacheDao =
+        db.comicCardCacheDao()
 
     @Provides
     @Singleton

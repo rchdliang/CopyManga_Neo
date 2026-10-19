@@ -149,7 +149,8 @@ internal fun SearchResultsHeader(
     onLayoutToggle: () -> Unit,
     ordering: String? = null,
     onOrdering: (String) -> Unit = {},
-    allowAscending: Boolean = true
+    allowAscending: Boolean = true,
+    title: String? = null
 ) {
     Row(
         Modifier
@@ -159,7 +160,7 @@ internal fun SearchResultsHeader(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                if (searchMode) "搜索结果" else "发现",
+                title ?: if (searchMode) "搜索结果" else "发现",
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.headlineSmall
             )

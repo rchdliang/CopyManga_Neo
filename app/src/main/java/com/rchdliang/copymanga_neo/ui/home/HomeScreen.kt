@@ -179,6 +179,8 @@ private fun HomeContent(
     onNovelClick: (String) -> Unit = {},
     onMoreNovels: () -> Unit = {}
 ) {
+    com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(
+        (uiState.recComicList + uiState.hotComics + uiState.newComics + uiState.finishComics + uiState.rankComics).map { it.pathWord })
     val pullToRefreshState = rememberPullToRefreshState()
     // 横向分区的状态由页面持有，避免 LazyColumn 回收分区后丢失位置。
     val pageScroll = rememberLazyListState()
@@ -783,6 +785,7 @@ private fun ComicGrid(
                 statusText = if (ranked) "第 ${rankPositions[comic.pathWord] ?: (index + 1)} 位" else null,
                 sharedTransitionKey = "$transitionGroupKey:${comic.pathWord}",
                 comicPathWord = comic.pathWord,
+                enableExpansion = true,
                 onClick = { onComicClick(comic.pathWord) },
                 modifier = Modifier.width(cardWidth)
             )

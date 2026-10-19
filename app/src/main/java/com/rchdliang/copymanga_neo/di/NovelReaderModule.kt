@@ -2,6 +2,8 @@ package com.rchdliang.copymanga_neo.di
 
 import com.rchdliang.copymanga_neo.data.local.NovelAnnotationStore
 import com.rchdliang.copymanga_neo.data.local.NovelReaderPreferencesStore
+import com.rchdliang.copymanga_neo.data.repository.NovelIllustrationExportRepositoryImpl
+import com.rchdliang.copymanga_neo.domain.repository.NovelIllustrationExportRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelAnnotationRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelReaderPreferencesRepository
 import dagger.Binds
@@ -13,6 +15,10 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class NovelReaderModule {
+    @Binds
+    @Singleton
+    abstract fun bindNovelIllustrationExport(repository: NovelIllustrationExportRepositoryImpl): NovelIllustrationExportRepository
+
     @Binds
     @Singleton
     abstract fun bindNovelAnnotations(store: NovelAnnotationStore): NovelAnnotationRepository

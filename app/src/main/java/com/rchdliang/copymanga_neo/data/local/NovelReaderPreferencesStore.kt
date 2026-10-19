@@ -62,4 +62,19 @@ class NovelReaderPreferencesStore @Inject constructor(
     } catch (error: Exception) {
         Result.failure(error)
     }
+
+    /** 以作品路径保存，切换分卷或请求模式后仍沿用整本小说的选择。 */
+    override fun illustrationBlur(path: String) = dataStore.data.map {
+        it[booleanPreferencesKey("illustration_blur:$path")]
+    }
+
+    override suspend fun setIllustrationBlur(path: String, enabled: Boolean): Result<Unit> = try {
+        require(path.isNotBlank())
+        dataStore.edit { it[booleanPreferencesKey("illustration_blur:$path")] = enabled }
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
 }

@@ -16,13 +16,21 @@ import com.rchdliang.copymanga_neo.data.local.entity.DownloadedComicEntity
         DownloadedChapterEntity::class,
         DownloadQueueEntity::class,
         ComicThemeCacheEntity::class,
-        DownloadedChapterCommentsEntity::class
+        DownloadedChapterCommentsEntity::class,
+        com.rchdliang.copymanga_neo.data.local.entity.ComicCardCacheEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     companion object {
+        /** 展示缓存独立建表，升级保留下载、评论及旧标签缓存。 */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS comic_card_cache (cacheKey TEXT NOT NULL PRIMARY KEY, metadataJson TEXT NOT NULL)")
+            }
+        }
+
         /** 增加章节评论快照，升级时保留现有图片、章节和下载队列。 */
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -46,6 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     }
 
     abstract fun downloadQueueDao(): DownloadQueueDao
+    abstract fun comicCardCacheDao(): ComicCardCacheDao
     abstract fun comicThemeCacheDao(): ComicThemeCacheDao
     abstract fun downloadedComicDao(): DownloadedComicDao
     abstract fun downloadedChapterDao(): DownloadedChapterDao

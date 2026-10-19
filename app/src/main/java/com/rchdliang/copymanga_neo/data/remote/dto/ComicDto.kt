@@ -35,7 +35,8 @@ data class ComicDto(
     @SerializedName("author") val author: List<AuthorDto>?,
     @SerializedName("cover") val cover: String?,
     @SerializedName("popular") val popular: Int?,
-    @SerializedName("author_alias") val authorAlias: String?
+    @SerializedName("author_alias") val authorAlias: String?,
+    @SerializedName("datetime_updated") val lastUpdate: String? = null
 )
 
 

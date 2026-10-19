@@ -27,6 +27,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private val store = context.appSettingsDataStore
     private val themeKey = stringPreferencesKey("theme_mode")
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only_downloads")
+    private val blurNovelIllustrationsKey =
+        booleanPreferencesKey("blur_novel_illustration_previews")
     private val imageConcurrencyKey = intPreferencesKey("comic_image_concurrency")
     private val downloadLimitKey = intPreferencesKey("comic_download_limit_kib")
     private val exportPasswordKey = booleanPreferencesKey("include_password_in_credential_export")
@@ -38,6 +40,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
             themeMode = AppThemeMode.entries.firstOrNull { it.name == prefs[themeKey] }
                 ?: AppThemeMode.SYSTEM,
             wifiOnlyDownloads = prefs[wifiOnlyKey] ?: false,
+            blurNovelIllustrationPreviews = prefs[blurNovelIllustrationsKey] ?: false,
             includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false,
             comicImageConcurrency = (prefs[imageConcurrencyKey] ?: 3).coerceIn(1, 10),
             comicDownloadLimitKiB = (prefs[downloadLimitKey] ?: 0).coerceAtLeast(0)
@@ -50,6 +53,10 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setWifiOnlyDownloads(enabled: Boolean) = save {
         store.edit { it[wifiOnlyKey] = enabled }
+    }
+
+    override suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean) = save {
+        store.edit { it[blurNovelIllustrationsKey] = enabled }
     }
 
     override suspend fun setCredentialExportPassword(enabled: Boolean) = save {
@@ -108,6 +115,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
         store.edit {
             it.remove(themeKey)
             it.remove(wifiOnlyKey)
+            it.remove(blurNovelIllustrationsKey)
             it.remove(imageConcurrencyKey)
             it.remove(downloadLimitKey)
             it.remove(exportPasswordKey)

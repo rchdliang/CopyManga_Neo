@@ -36,7 +36,7 @@ data class ComicInfo(
     val status: DisplayValue,
     val author: List<Author>?,
     val theme: List<Theme>?,
-    val parodies: List<String>?,
+    val parodies: List<ComicOriginalWork>?,
     val brief: String?,
     val lastUpdate: String?,
     val cover: String?,

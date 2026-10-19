@@ -94,6 +94,7 @@ internal fun HistoryContent(
     onDismissClear: () -> Unit,
     onConfirmClear: () -> Unit
 ) {
+    com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(uiState.items.map { it.pathWord })
     val pullState = rememberPullToRefreshState()
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -258,6 +259,7 @@ private fun HistoryMessage(message: String, action: String? = null, onAction: ()
 @Composable
 private fun HistoryRow(item: BrowseHistoryItem, enabled: Boolean, onClick: () -> Unit) {
     com.rchdliang.copymanga_neo.ui.components.ReadingHistoryRow(
+        comicPathWord = item.pathWord,
         title = item.name,
         cover = item.cover,
         authors = item.authors.joinToString(" / ") { it.name },

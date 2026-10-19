@@ -39,14 +39,18 @@ data class ComicDetailDto(
     @SerializedName("free_type") val freeType: DisplayAndValue,
     @SerializedName("restrict") val restrict: DisplayAndValue,
     @SerializedName("reclass") val reclass: DisplayAndValue,
+    @com.google.gson.annotations.JsonAdapter(ComicNameListDeserializer::class)
     @SerializedName("females") val females: List<String>?,
+    @com.google.gson.annotations.JsonAdapter(ComicNameListDeserializer::class)
     @SerializedName("males") val males: List<String>?,
+    @com.google.gson.annotations.JsonAdapter(ComicNameListDeserializer::class)
     @SerializedName("clubs") val clubs: List<String>?,
     @SerializedName("region") val region: DisplayAndValue,
     @SerializedName("status") val status: DisplayAndValue,
     @SerializedName("author") val author: List<AuthorDto>?,
     @SerializedName("theme") val theme: List<ThemeDto>?,
-    @SerializedName("parodies") val parodies: List<String>?,
+    @com.google.gson.annotations.JsonAdapter(ComicOriginalWorkListDeserializer::class)
+    @SerializedName("parodies") val parodies: List<com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork>?,
     @SerializedName("brief") val brief: String?,
     @SerializedName("datetime_updated") val lastUpdate: String?,
     @SerializedName("cover") val cover: String?,

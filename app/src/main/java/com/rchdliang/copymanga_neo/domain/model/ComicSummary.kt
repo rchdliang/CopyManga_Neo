@@ -12,7 +12,8 @@ data class ComicSummary(
     val females: List<Character>?,
     val males: List<Character>?,
     val theme: List<Theme>?,
-    val authorAlias: String?
+    val authorAlias: String?,
+    val lastUpdate: String? = null
 )
 
 /**

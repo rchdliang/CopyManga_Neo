@@ -406,36 +406,7 @@ private fun SearchResultsContent(
     onLayoutToggle: () -> Unit,
     onOrdering: (String) -> Unit
 ) {
-    val grid = rememberLazyGridState()
-    val criteria = listOf(
-        state.submittedQuery, state.submittedQueryType?.name.orEmpty(),
-        state.selectedDiscoveryTheme?.pathWord.orEmpty(),
-        state.selectedDiscoveryTop?.pathWord.orEmpty(), state.ordering
-    )
-    // 返回详情前的搜索页时保留恢复的位置，仅在结果条件变化后回到顶部。
-    var appliedCriteria by rememberSaveable { mutableStateOf(criteria) }
-    LaunchedEffect(criteria) {
-        if (appliedCriteria != criteria) {
-            grid.scrollToItem(0)
-            appliedCriteria = criteria
-        }
-    }
-    GridLoadMoreEffect(
-        grid,
-        state.hasMore && !state.isLoading && !state.isLoadingMore &&
-                state.loadMoreError == null && state.error == null,
-        state.searchResults.size, onMore
-    )
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val columns = if (state.compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
-        else GridCells.Adaptive(360.dp)
-        LazyVerticalGrid(
-            columns = columns, state = grid, modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item(key = "filters", span = { GridItemSpan(maxLineSpan) }) {
+    ComicResultsGrid(state, onComic, onMore, onRetry) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SearchCategorySelector(state.queryType, onType)
                     SearchResultsHeader(
@@ -468,16 +439,63 @@ private fun SearchResultsContent(
                         }
                     }
                 }
-            }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ComicResultsGrid(
+    state: SearchUiState,
+    onComic: (String) -> Unit,
+    onMore: () -> Unit,
+    onRetry: () -> Unit,
+    criteriaKey: String = "",
+    transitionGroup: String = "search",
+    enableExpansion: Boolean = state.isKeywordSearch,
+    header: @Composable () -> Unit
+) {
+    com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(state.searchResults.map { it.pathWord })
+    val grid = rememberLazyGridState()
+    val criteria = listOf(
+        criteriaKey,
+        state.submittedQuery, state.submittedQueryType?.name.orEmpty(),
+        state.selectedDiscoveryTheme?.pathWord.orEmpty(),
+        state.selectedDiscoveryTop?.pathWord.orEmpty(), state.ordering
+    )
+    // 返回详情前的搜索页时保留恢复的位置，仅在结果条件变化后回到顶部。
+    var appliedCriteria by rememberSaveable { mutableStateOf(criteria) }
+    LaunchedEffect(criteria) {
+        if (appliedCriteria != criteria) {
+            grid.scrollToItem(0)
+            appliedCriteria = criteria
+        }
+    }
+    GridLoadMoreEffect(
+        grid,
+        state.hasMore && !state.isLoading && !state.isLoadingMore &&
+                state.loadMoreError == null && state.error == null,
+        state.searchResults.size, onMore
+    )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = if (state.compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
+        else GridCells.Adaptive(360.dp)
+        LazyVerticalGrid(
+            columns = columns, state = grid, modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item(key = "filters", span = { GridItemSpan(maxLineSpan) }) { header() }
             items(state.searchResults, key = { it.pathWord }) { comic ->
                 if (state.compactLayout) ComicCard(
                     name = comic.name,
                     cover = comic.cover,
                     subtitle = comic.author?.firstOrNull()?.name,
                     comicPathWord = comic.pathWord,
-                    sharedTransitionKey = "search:${comic.pathWord}",
+                    enableExpansion = enableExpansion,
+                    sharedTransitionKey = "$transitionGroup:${comic.pathWord}",
                     onClick = { onComic(comic.pathWord) }
-                ) else SearchComicCard(comic, onClick = { onComic(comic.pathWord) })
+                ) else SearchComicCard(comic, onClick = { onComic(comic.pathWord) }, transitionKey = "$transitionGroup:${comic.pathWord}")
             }
             item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
                 val error = state.loadMoreError ?: state.error
@@ -545,11 +563,11 @@ private fun SearchResultsContent(
 }
 
 @Composable
-private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit) {
+private fun SearchComicCard(comic: ComicSummary, onClick: () -> Unit, transitionKey: String = "search:${comic.pathWord}") {
     SearchBookRow(
         name = comic.name, cover = comic.cover,
         authors = comic.author?.joinToString { it.name }.orEmpty(),
-        transitionKey = "search:${comic.pathWord}", pathWord = comic.pathWord,
+        transitionKey = transitionKey, pathWord = comic.pathWord,
         onClick = onClick,
         popularity = comic.popular?.toCompactLocale() ?: "--"
     )
@@ -562,6 +580,17 @@ internal fun SearchBookRow(
     transitionKey: String, pathWord: String, onClick: () -> Unit,
     popularity: String? = null
 ) {
+    val visibility = com.rchdliang.copymanga_neo.ui.components.comicVisibility(pathWord)
+    if (visibility == com.rchdliang.copymanga_neo.domain.model.ComicCoverVisibility.PENDING) {
+        com.rchdliang.copymanga_neo.ui.components.ComicPending(
+            pathWord,
+            Modifier
+                .fillMaxWidth()
+                .height(136.dp)
+                .clip(MaterialTheme.shapes.medium)
+        )
+        return
+    }
     val click = rememberComicSharedTransitionClick(
         transitionKey, pathWord, cover, name, authors, onClick
     )
@@ -584,8 +613,8 @@ internal fun SearchBookRow(
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            PreviewAwareAsyncImage(
-                model = cover, contentDescription = name,
+            com.rchdliang.copymanga_neo.ui.components.ComicCoverImage(
+                path = pathWord, model = cover, contentDescription = name,
                 modifier = Modifier
                     .width(84.dp)
                     .aspectRatio(3f / 4f)

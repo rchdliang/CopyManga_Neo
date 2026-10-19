@@ -182,11 +182,16 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(retryExportId) {
                     retryExportId?.let { exportViewModel.retry(it); retryExportId = null }
                 }
-                CopyManga_NeoApp(
-                    mainViewModel = mainViewModel,
-                    openDownloads = openDownloads,
-                    hasExports = exportState.running,
-                    onDownloadsOpened = { openDownloads = false })
+                val presentation: com.rchdliang.copymanga_neo.ui.components.ComicPresentationViewModel =
+                    hiltViewModel()
+                val novelPreview: com.rchdliang.copymanga_neo.ui.components.NovelPreviewViewModel = hiltViewModel()
+                com.rchdliang.copymanga_neo.ui.components.ComicPresentationHost(presentation, novelPreview) {
+                    CopyManga_NeoApp(
+                        mainViewModel = mainViewModel,
+                        openDownloads = openDownloads,
+                        hasExports = exportState.running,
+                        onDownloadsOpened = { openDownloads = false })
+                }
                 ComicExportDialogs(exportViewModel)
                 if (BuildConfig.DEBUG) {
                     val samples by mainViewModel.novelImagePositionDebugSamples.collectAsStateWithLifecycle()
@@ -241,6 +246,11 @@ sealed class Screen(val route: String) {
 
     object Detail : Screen("detail/{pathWord}") {
         fun createRoute(pathWord: String) = "detail/$pathWord"
+    }
+
+    object OriginalWork : Screen("original?originalPath={originalPath}&originalName={originalName}") {
+        fun createRoute(path: String, name: String) =
+            "original?originalPath=${Uri.encode(path)}&originalName=${Uri.encode(name)}"
     }
 
     object Reader :
@@ -438,6 +448,21 @@ fun CopyManga_NeoApp(
                         }
                     }
 
+                    composable(
+                        route = Screen.OriginalWork.route,
+                        arguments = listOf(
+                            navArgument("originalPath") { type = NavType.StringType },
+                            navArgument("originalName") { type = NavType.StringType }
+                        )
+                    ) {
+                        ComicSharedTransitionProvider(sharedTransitionScope, this, comicSharedTransitionState) {
+                            com.rchdliang.copymanga_neo.ui.search.OriginalWorkScreen(
+                                onComic = { navController.navigate(Screen.Detail.createRoute(it)) },
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                    }
+
                     // 搜索页（全屏覆盖，无底部导航）
                     composable(
                         route = Screen.Search.route,
@@ -542,7 +567,15 @@ fun CopyManga_NeoApp(
                                 DetailScreen(
                                     pathWord = pathWord,
                                     onStartChapterClick = { chapter, comic, name, group, page ->
-                                        navController.navigate(Screen.Reader.createRoute(comic, chapter, name, group, page = page))
+                                        navController.navigate(
+                                            Screen.Reader.createRoute(
+                                                comic,
+                                                chapter,
+                                                name,
+                                                group,
+                                                page = page
+                                            )
+                                        )
                                     },
                                     onChapterClick = { chapterPathWord, comicPathWord, chapterName, groupPathWord ->
                                         navController.navigate(
@@ -564,6 +597,11 @@ fun CopyManga_NeoApp(
                                     },
                                     onThemeClick = { theme ->
                                         navController.navigate(Screen.Search.createRoute(theme))
+                                    },
+                                    onOriginalWorkClick = { work ->
+                                        work.pathWord?.takeIf(String::isNotBlank)?.let { path ->
+                                            navController.navigate(Screen.OriginalWork.createRoute(path, work.name))
+                                        }
                                     },
                                     onAuthorClick = { author ->
                                         navController.navigate(

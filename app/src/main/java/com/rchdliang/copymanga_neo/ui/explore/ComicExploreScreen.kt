@@ -164,9 +164,17 @@ fun ComicExploreScreen(
                     )
                     .fillMaxSize()
             ) {
+                com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(state.comics.map { it.pathWord })
+                val horizontalCards = state.topic == null && state.section in setOf(
+                    ExploreSection.RECOMMENDED,
+                    ExploreSection.NEWEST,
+                    ExploreSection.FINISHED,
+                    ExploreSection.RANKS
+                )
                 val topicsOnly = state.topic == null && state.section == ExploreSection.TOPICS
                 val columns = if (topicsOnly) ((maxWidth - 32.dp) / 360.dp).toInt().coerceAtLeast(1)
                 else if (state.topic != null) ((maxWidth - 16.dp) / 152.dp).toInt().coerceAtLeast(2)
+                else if (horizontalCards) ((maxWidth - 32.dp) / 340.dp).toInt().coerceAtLeast(1)
                 else comicGridColumns(maxWidth - 32.dp)
                 LaunchedEffect(
                     state.nextOffset,
@@ -266,6 +274,13 @@ fun ComicExploreScreen(
                                     comic = comic,
                                     transitionKey = "explore-${state.section.route}:${comic.pathWord}",
                                     onClick = { onComicClick(comic.pathWord) }
+                                )
+                            } else if (horizontalCards) {
+                                com.rchdliang.copymanga_neo.ui.components.HorizontalComicCard(
+                                    comic,
+                                    "explore:${comic.pathWord}",
+                                    { onComicClick(comic.pathWord) },
+                                    statusText = if (state.section == ExploreSection.RANKS) "第 ${index + 1} 位" else null
                                 )
                             } else ComicCard(
                                 name = comic.name,

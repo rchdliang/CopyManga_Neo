@@ -121,6 +121,11 @@ private fun DownloadsContent(
     exportingComics: Set<String> = emptySet(),
     onNovelClick: (String) -> Unit = {}
 ) {
+    com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(
+        uiState.downloadedBooks.filterIsInstance<DownloadedBookItem.Comic>()
+            .map { it.info.pathWord } +
+                uiState.activeDownloads.values.filter { it.kind == DownloadKind.COMIC }
+                    .map { it.comicPathWord })
     val activeDownloads = uiState.activeDownloads
     val downloadedCount = uiState.downloadedBooks.size
     val selectedComics = uiState.selectedComicPathWords
@@ -295,6 +300,7 @@ private fun DownloadsContent(
                                 isSelected = item.key in uiState.selectedKeys,
                                 sharedTransitionKey = if (uiState.isSelectionMode) null else "downloads:${comic.pathWord}",
                                 comicPathWord = comic.pathWord,
+                                allowPendingContent = true,
                                 onClick = {
                                     if (uiState.isSelectionMode) onToggleSelection(item.key)
                                     else onComicClick(comic.pathWord)

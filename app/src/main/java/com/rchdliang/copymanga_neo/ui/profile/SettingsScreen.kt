@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Download
@@ -89,6 +90,7 @@ internal fun SettingsScreen(
         state = state,
         onThemeChange = viewModel::setThemeMode,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
+        onNovelIllustrationBlurChange = viewModel::setBlurNovelIllustrationPreviews,
         onImageConcurrencyChange = viewModel::setComicImageConcurrency,
         onDownloadLimitChange = viewModel::setComicDownloadLimitKiB,
         onNavigateBack = onNavigateBack,
@@ -121,6 +123,7 @@ internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
+    onNovelIllustrationBlurChange: (Boolean) -> Unit = {},
     onImageConcurrencyChange: (Int) -> Unit = {},
     onDownloadLimitChange: (Int) -> Unit = {},
     onNavigateBack: () -> Unit,
@@ -221,12 +224,12 @@ internal fun SettingsPage(
 
             SettingsDestination.READING -> {
                 Text(
-                    "仅用于首次打开的漫画。",
+                    "漫画默认值仅用于首次打开的漫画；轻小说插图设置对未单独切换的小说生效。",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                ProfileSectionTitle("阅读默认值")
+                ProfileSectionTitle("漫画阅读默认值")
                 ProfileListItem(
                     Icons.Outlined.SwapHoriz,
                     "阅读方向",
@@ -251,6 +254,20 @@ internal fun SettingsPage(
                     count = 3,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.ORIENTATION })
+                ProfileSectionTitle("轻小说插图")
+                ProfileListItem(
+                    Icons.Outlined.VisibilityOff, "默认模糊插图预览",
+                    "防止剧透；全屏查看始终清晰，单本小说可单独切换",
+                    index = 0, count = 1, enabled = enabled,
+                    onClick = { onNovelIllustrationBlurChange(!state.settings.blurNovelIllustrationPreviews) },
+                    trailingContent = {
+                        Switch(
+                            checked = state.settings.blurNovelIllustrationPreviews,
+                            onCheckedChange = onNovelIllustrationBlurChange,
+                            enabled = enabled
+                        )
+                    }
+                )
                 ProfileSectionTitle("恢复")
                 ProfileListItem(
                     Icons.Outlined.Restore, "恢复阅读默认值", "仅恢复全局默认值",
@@ -604,13 +621,17 @@ private fun DownloadConcurrencyDialog(
 
 /** 展示使用 MiB/s，保留已有 KiB/s 偏好的精度与持久化格式。 */
 private fun formatDownloadLimitMiB(limitKiB: Int): String =
-    BigDecimal(limitKiB).divide(BigDecimal(1024), 3, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    BigDecimal(limitKiB).divide(BigDecimal(1024), 3, RoundingMode.HALF_UP).stripTrailingZeros()
+        .toPlainString()
 
 private fun parseDownloadLimitKiB(input: String, initialValue: Int? = null): Int? {
     val normalized = input.trim().replace(',', '.')
     if (normalized.isEmpty()) return 0
     if (normalized.length > 24 || !normalized.matches(Regex("[0-9]*([.][0-9]{0,3})?"))) return null
-    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(initialValue)) return initialValue
+    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(
+            initialValue
+        )
+    ) return initialValue
     val kib = normalized.toBigDecimalOrNull()?.multiply(BigDecimal(1024)) ?: return null
     if (kib <= BigDecimal.ZERO || kib > BigDecimal(Int.MAX_VALUE)) return null
     return kib.setScale(0, RoundingMode.HALF_UP).toInt().takeIf { it > 0 }

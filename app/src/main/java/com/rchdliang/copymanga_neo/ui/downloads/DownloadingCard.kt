@@ -52,6 +52,10 @@ fun DownloadingCard(
     onRetry: (() -> Unit)? = null,
     unitLabel: String = "章"
 ) {
+    val comicPath = progressInfo.comicPathWord.takeIf {
+        progressInfo.kind == com.rchdliang.copymanga_neo.domain.model.DownloadKind.COMIC
+    }
+    // 标签未就绪时只遮住封面，离线也必须能够暂停、取消和重试下载。
     val animatedOverallProgress by animateFloatAsState(
         targetValue = progressInfo.overallProgress.coerceIn(0f, 1f),
         animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec
@@ -107,8 +111,8 @@ fun DownloadingCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                PreviewAwareAsyncImage(
-                    model = cover,
+                com.rchdliang.copymanga_neo.ui.components.ComicCoverImage(
+                    path = comicPath, model = cover,
                     contentDescription = name,
                     modifier = Modifier
                         .width(80.dp)

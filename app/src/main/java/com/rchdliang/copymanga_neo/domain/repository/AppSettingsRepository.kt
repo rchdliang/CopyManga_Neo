@@ -9,6 +9,7 @@ interface AppSettingsRepository {
     val settings: Flow<AppSettings>
     suspend fun setThemeMode(mode: AppThemeMode): Result<Unit>
     suspend fun setWifiOnlyDownloads(enabled: Boolean): Result<Unit>
+    suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean): Result<Unit>
     suspend fun setComicImageConcurrency(count: Int): Result<Unit>
     suspend fun setComicDownloadLimitKiB(limit: Int): Result<Unit>
 

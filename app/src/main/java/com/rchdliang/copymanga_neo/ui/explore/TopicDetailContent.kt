@@ -99,6 +99,9 @@ internal fun TopicComicCard(
     transitionKey: String?,
     onClick: () -> Unit
 ) {
+    val visibility = com.rchdliang.copymanga_neo.ui.components.comicVisibility(comic.pathWord)
+    val pending =
+        visibility == com.rchdliang.copymanga_neo.domain.model.ComicCoverVisibility.PENDING
     val author = comic.author?.joinToString(" / ") { it.name }?.takeIf { it.isNotBlank() }
         ?: comic.authorAlias
     val click = if (transitionKey != null) {
@@ -112,7 +115,7 @@ internal fun TopicComicCard(
         )
     } else onClick
     Card(
-        onClick = click,
+        onClick = { if (!pending) click() },
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier
@@ -122,8 +125,8 @@ internal fun TopicComicCard(
                 else Modifier
             )
     ) {
-        PreviewAwareAsyncImage(
-            model = comic.cover,
+        com.rchdliang.copymanga_neo.ui.components.ComicCoverImage(
+            path = comic.pathWord, model = comic.cover,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -136,7 +139,7 @@ internal fun TopicComicCard(
         )
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                comic.name,
+                if (pending) "" else comic.name,
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 minLines = 2,
@@ -144,7 +147,7 @@ internal fun TopicComicCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                author.orEmpty(),
+                if (pending) "" else author.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -212,4 +215,3 @@ private fun TopicPreviewContent(darkTheme: Boolean) {
         }
     }
 }
-

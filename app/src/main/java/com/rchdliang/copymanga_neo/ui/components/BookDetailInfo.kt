@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Pending
@@ -76,7 +77,10 @@ fun BookDetailHeader(
     coverModifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     popularity: String? = null,
-    onAuthor: ((String) -> Unit)? = null
+    onAuthor: ((String) -> Unit)? = null,
+    comicPathWord: String? = null,
+    originalWorks: List<com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork> = emptyList(),
+    onOriginalWork: ((com.rchdliang.copymanga_neo.domain.model.ComicOriginalWork) -> Unit)? = null
 ) {
     Row(
         modifier
@@ -88,7 +92,12 @@ fun BookDetailHeader(
             .width(coverWidth)
             .aspectRatio(3f / 4f)
             .clip(MaterialTheme.shapes.medium)
-        if (LocalInspectionMode.current && !cover.isNullOrBlank()) {
+        if (comicPathWord != null) {
+            ComicCoverImage(
+                comicPathWord, cover, title, imageModifier,
+                error = androidx.compose.ui.graphics.vector.rememberVectorPainter(Icons.Default.BrokenImage)
+            )
+        } else if (LocalInspectionMode.current && !cover.isNullOrBlank()) {
             PreviewImage(
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
@@ -152,6 +161,27 @@ fun BookDetailHeader(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            val originalWorkNames = originalWorks.filter { it.name.isNotBlank() }.distinct()
+            if (originalWorkNames.isNotEmpty()) {
+                BookDetailInfoRow(Icons.AutoMirrored.Filled.MenuBook, "原作") {
+                    Text(
+                        buildAnnotatedString {
+                            append("原作：")
+                            val linkStyle = TextLinkStyles(SpanStyle(color = MaterialTheme.colorScheme.primary))
+                            originalWorkNames.forEachIndexed { index, work ->
+                                if (index > 0) append("、")
+                                if (onOriginalWork != null && !work.pathWord.isNullOrBlank()) {
+                                    withLink(LinkAnnotation.Clickable(work.pathWord, linkStyle) {
+                                        onOriginalWork(work)
+                                    }) { append(work.name.trim()) }
+                                } else append(work.name.trim())
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             BookDetailInfoRow(Icons.Default.Pending, "状态") {
                 Text(

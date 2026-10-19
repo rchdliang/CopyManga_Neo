@@ -106,6 +106,16 @@ interface MangaApiService {
     ): Response<ComicFilterTagsResponse>
 
     @GET("api/v3/comics")
+    suspend fun getOriginalWorkComics(
+        @Query("parody") pathWord: String,
+        @Query("ordering") ordering: String,
+        @Query("offset") offset: Int,
+        @Query("limit") limit: Int = 21,
+        @Query("free_type") freeType: Int = 1,
+        @HeaderMap headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
+    ): Response<SearchResponse>
+
+    @GET("api/v3/comics")
     suspend fun browseComics(
         @Query("free_type") freeType: Int = 1,
         @Query("top") top: String?,

@@ -19,6 +19,10 @@ internal object SettingsBackupCodec {
         add("settings", JsonObject().apply {
             addProperty("themeMode", value.settings.themeMode.name)
             addProperty("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
+            addProperty(
+                "blurNovelIllustrationPreviews",
+                value.settings.blurNovelIllustrationPreviews
+            )
             addProperty("comicImageConcurrency", value.settings.comicImageConcurrency)
             addProperty("comicDownloadLimitKiB", value.settings.comicDownloadLimitKiB)
         })
@@ -67,6 +71,10 @@ internal object SettingsBackupCodec {
         return SettingsBackup(
             AppSettings(
                 AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean,
+                blurNovelIllustrationPreviews = settings.get("blurNovelIllustrationPreviews")?.let {
+                    require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "插图设置无效" }
+                    it.asBoolean
+                } ?: false,
                 comicImageConcurrency = settings.optionalInt("comicImageConcurrency", 3, 1..10),
                 comicDownloadLimitKiB = settings.optionalInt(
                     "comicDownloadLimitKiB",

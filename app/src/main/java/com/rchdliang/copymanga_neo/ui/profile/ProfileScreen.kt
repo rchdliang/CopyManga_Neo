@@ -372,15 +372,20 @@ internal fun ProfileMainPage(
         )
     }
 
-    if (uiState.showProfileEditor) androidx.compose.runtime.key(uiState.requestMode, uiState.username) { ProfileEditDialog(
-        profile = uiState.editableProfile,
-        isLoading = uiState.isProfileLoading,
-        isSaving = uiState.isProfileSaving,
-        error = uiState.profileEditError,
-        onRetry = onRetryProfile,
-        onSave = onSaveProfile,
-        onDismiss = onDismissProfile
-    ) }
+    if (uiState.showProfileEditor) androidx.compose.runtime.key(
+        uiState.requestMode,
+        uiState.username
+    ) {
+        ProfileEditDialog(
+            profile = uiState.editableProfile,
+            isLoading = uiState.isProfileLoading,
+            isSaving = uiState.isProfileSaving,
+            error = uiState.profileEditError,
+            onRetry = onRetryProfile,
+            onSave = onSaveProfile,
+            onDismiss = onDismissProfile
+        )
+    }
 
 
 }
@@ -542,7 +547,7 @@ private fun AccountCard(
     }
 }
 
-/** 常用功能与应用配置分组，黑名单始终可用且仅影响首页。 */
+/** 常用功能与应用配置分组，黑名单始终可用，封面模糊对所有漫画列表生效。 */
 @Composable
 private fun ProfileMenuGroup(
     uiState: ProfileUiState,

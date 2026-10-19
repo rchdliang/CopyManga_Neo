@@ -6,4 +6,6 @@ import kotlinx.coroutines.flow.Flow
 interface NovelReaderPreferencesRepository {
     val settings: Flow<NovelReaderPreferences>
     suspend fun update(value: NovelReaderPreferences): Result<Unit>
+    fun illustrationBlur(path: String): Flow<Boolean?>
+    suspend fun setIllustrationBlur(path: String, enabled: Boolean): Result<Unit>
 }

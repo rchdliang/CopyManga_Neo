@@ -112,6 +112,8 @@ fun NovelTransitionCard(
             subtitle = book.authors.joinToString(" / ") { it.name }.ifBlank { "作者信息暂缺" },
             sharedTransitionKey = if (selectionMode) null else "novel:$source:${book.path}",
             comicPathWord = novelTransitionPath(book.path),
+            enableExpansion = !selectionMode && onLongClick == null,
+            novelPreview = book,
             onClick = onClick,
             isSelected = isSelected,
             onLongClick = onLongClick,

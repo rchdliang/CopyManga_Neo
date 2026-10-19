@@ -3,9 +3,12 @@ package com.rchdliang.copymanga_neo.ui.novel
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.content.res.Configuration
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -86,6 +89,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.NovelAnnotation
 import com.rchdliang.copymanga_neo.domain.model.NovelBook
@@ -127,6 +132,11 @@ private val NovelSelectionSaver = Saver<NovelTextSelection?, List<Any>>(
 
 /** 请求与持久化操作独立于阅读界面，预览无需构造 ViewModel。 */
 internal data class NovelReaderActions(
+    val illustrationBlur: Boolean? = false,
+    val setIllustrationBlur: (Boolean) -> Unit = {},
+    val illustrationExportBusy: Boolean = false,
+    val exportIllustrations: () -> Unit = {},
+    val saveIllustration: (NovelSection) -> Unit = {},
     val position: (NovelReaderLocation) -> Unit = {},
     val bookmark: () -> Unit = {},
     val preferences: (NovelReaderPreferences) -> Unit = {},
@@ -154,12 +164,45 @@ internal data class NovelReaderActions(
 )
 
 @Composable
-internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack: () -> Unit) {
+internal fun NovelReader(
+    state: NovelUiState,
+    viewModel: NovelViewModel,
+    onBack: () -> Unit,
+    illustrations: NovelIllustrationsViewModel = hiltViewModel()
+) {
     val preferences by viewModel.readerPreferences.collectAsStateWithLifecycle()
     val local by viewModel.localData.collectAsStateWithLifecycle()
     val savedAnnotations by viewModel.annotations.collectAsStateWithLifecycle()
     val readerSearch by viewModel.readerSearch.collectAsStateWithLifecycle()
     val path = state.reader?.book?.path ?: state.detailPath
+    val illustrationBlur by key(path) {
+        remember(path, illustrations) { illustrations.blurForBook(path) }
+            .collectAsStateWithLifecycle(initialValue = null)
+    }
+    val exportState by illustrations.state.collectAsStateWithLifecycle()
+    val toast = LocalToastHost.current
+    val saveLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            illustrations.saveDocument(
+                it.data?.data?.toString().takeIf { _ -> it.resultCode == Activity.RESULT_OK })
+        }
+    LaunchedEffect(exportState.pending) {
+        val file = illustrations.claimPending() ?: return@LaunchedEffect
+        try {
+            saveLauncher.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = file.mimeType
+                putExtra(Intent.EXTRA_TITLE, file.displayName)
+            })
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            illustrations.launchFailed()
+        }
+    }
+    LaunchedEffect(exportState.message) {
+        exportState.message?.let { toast.showToast(it); illustrations.clearMessage() }
+    }
     val bookmarks = local.bookmarks.filter {
         it.owner == state.owner && it.kind == "novel" && it.path == path &&
                 it.group in setOf("default", state.mode.name)
@@ -170,6 +213,11 @@ internal fun NovelReader(state: NovelUiState, viewModel: NovelViewModel, onBack:
     NovelReaderContent(
         state, preferences, bookmarks, viewModel.currentPosition(), onBack,
         NovelReaderActions(
+            illustrationBlur = illustrationBlur,
+            setIllustrationBlur = { illustrations.setBlur(path, it) },
+            illustrationExportBusy = exportState.busy,
+            exportIllustrations = { state.reader?.let { illustrations.export(it) } },
+            saveIllustration = { image -> state.reader?.let { illustrations.export(it, image) } },
             position = {
                 viewModel.position(
                     it.section,
@@ -690,7 +738,13 @@ private fun NovelReaderBody(
                 .fillMaxWidth()
                 .fillMaxHeight(.88f)
         ) {
-            NovelSheetHeader(
+            if (sheet == "images") NovelReaderImageHeader(
+                count = document.images.size,
+                blurred = actions.illustrationBlur,
+                onBlurChange = actions.setIllustrationBlur,
+                exporting = actions.illustrationExportBusy,
+                onExport = actions.exportIllustrations
+            ) else NovelSheetHeader(
                 when (sheet) {
                     "directory" -> "目录"
                     "images" -> "本卷插图 · ${document.images.size} 张"
@@ -699,7 +753,11 @@ private fun NovelReaderBody(
                 }
             ) { sheet = null }
             when (sheet) {
-                "images" -> NovelReaderImageGrid(volume, document.images) {
+                "images" -> NovelReaderImageGrid(
+                    volume,
+                    document.images,
+                    blurred = actions.illustrationBlur != false
+                ) {
                     galleryKey = it; sheet = null
                 }
 
@@ -734,7 +792,11 @@ private fun NovelReaderBody(
     }
     galleryKey?.let { selected ->
         key(selected) {
-            NovelReaderGallery(volume, document.images, selected) {
+            NovelReaderGallery(
+                volume, document.images, selected,
+                saving = actions.illustrationExportBusy,
+                onSave = actions.saveIllustration
+            ) {
                 galleryKey = null
             }
         }
@@ -932,7 +994,7 @@ private fun NovelReaderImagesPreview() {
     com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme(dynamicColor = false) {
         Surface {
             Column(Modifier.fillMaxSize()) {
-                NovelSheetHeader("本卷插图") {}
+                NovelReaderImageHeader(2, false, {}, false, {})
                 NovelReaderImageGrid(volume, volume.sections.filter { it.type == 2 }) {}
             }
         }

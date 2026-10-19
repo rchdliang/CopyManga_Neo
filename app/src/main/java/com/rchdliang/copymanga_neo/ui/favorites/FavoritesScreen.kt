@@ -126,6 +126,7 @@ private fun FavoritesContent(
     onMoreNovels: () -> Unit = {},
     onRetryMoreNovels: () -> Unit = {}
 ) {
+    com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(uiState.favorites.map { it.comic.pathWord })
     val pullToRefreshState = rememberPullToRefreshState()
     BackHandler(enabled = uiState.isSelectionMode, onBack = onExitSelectionMode)
     val showingNovels = uiState.selectedKind == FavoritesKind.NOVEL
