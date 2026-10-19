@@ -242,6 +242,13 @@ internal fun NetworkSettingsScreen(
                         }
                     }
                 }
+                if (!advanced) NetworkCard("黑名单加载") {
+                    ThemeLoadingControls(
+                        draft, enabled,
+                        onConcurrency = { value -> viewModel.edit { it.copy(themeFetchConcurrency = value) } },
+                        onInterval = { value -> viewModel.edit { it.copy(themeFetchIntervalMillis = value) } }
+                    )
+                }
                 if (!advanced) NetworkCard("代理") {
                     Column(Modifier.selectableGroup()) {
                         ProxyMode.entries.forEach { mode ->

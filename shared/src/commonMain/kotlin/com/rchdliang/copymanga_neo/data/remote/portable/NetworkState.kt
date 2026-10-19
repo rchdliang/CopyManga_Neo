@@ -32,7 +32,7 @@ data class NetworkSnapshot(
         if (mode == RequestMode.OFFICIAL_APP) appSession else webSession
 }
 
-/** A single global mode; every settings or identity change invalidates outstanding requests. */
+/** A single global mode; protocol or identity changes invalidate outstanding requests. */
 class PortableNetworkState(initial: NetworkSnapshot = NetworkSnapshot()) {
     private val mutable = MutableStateFlow(initial)
     val snapshots: StateFlow<NetworkSnapshot> = mutable.asStateFlow()
@@ -70,6 +70,16 @@ class PortableNetworkState(initial: NetworkSnapshot = NetworkSnapshot()) {
         } else mutable.update { old ->
             check(old.generation == generation) { "登录状态已更改" }
             replace(old)
+        }
+    }
+    /** 标签调度不改变协议、凭据或连接，不取消正在进行的阅读和下载请求。 */
+    internal fun updateThemeLoading(generation: Long, settings: NetworkSettings): Boolean {
+        while (true) {
+            val old = mutable.value
+            if (old.generation != generation) return false
+            if (old.settings.copy(themeFetchConcurrency = settings.themeFetchConcurrency,
+                    themeFetchIntervalMillis = settings.themeFetchIntervalMillis) != settings) return false
+            if (mutable.compareAndSet(old, old.copy(settings = settings))) return true
         }
     }
     /** Share-link discovery does not change any transport or account identity. */

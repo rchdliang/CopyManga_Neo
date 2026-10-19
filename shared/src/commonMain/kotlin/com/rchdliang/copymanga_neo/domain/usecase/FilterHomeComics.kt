@@ -14,14 +14,27 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.seconds
+
+enum class HomeFilterSection { RECOMMENDED, HOT, NEWEST, FINISHED, RANKS }
+
+fun HomeComicsData.inSection(section: HomeFilterSection): List<ComicSummary> = when (section) {
+    HomeFilterSection.RECOMMENDED -> recComics
+    HomeFilterSection.HOT -> hotComics
+    HomeFilterSection.NEWEST -> newComics
+    HomeFilterSection.FINISHED -> finishComics
+    HomeFilterSection.RANKS -> rankComics
+}
 
 data class FilteredHomeComics(
     val comics: HomeComicsData,
     val unresolvedCount: Int = 0,
     val isResolving: Boolean = false,
     val showUnresolvedWarning: Boolean = false,
-    val enrichmentComplete: Boolean = true
+    val enrichmentComplete: Boolean = true,
+    val readySections: Set<HomeFilterSection> = HomeFilterSection.entries.toSet()
 )
 
 /** 仅用于首页：优先复用持久标签，未知标签超时后放行，确认命中黑名单才隐藏。 */
@@ -29,7 +42,7 @@ class FilterHomeComics constructor(private val mangaRepository: MangaRepository)
     fun verifiedPreview(data: HomeComicsData, blocked: List<Theme>): HomeComicsData =
         resolve(data, blocked, emptyMap(), allowUnknown = false).comics
 
-    /** 页面持续观察缓存；后台补全逐项进行，刷新/风控时由调用方取消。 */
+    /** 页面持续观察缓存；分区轮转取数并受控并发，刷新/风控时取消整轮补全。 */
     fun observe(
         data: HomeComicsData,
         blocked: List<Theme>,
@@ -58,7 +71,10 @@ class FilterHomeComics constructor(private val mangaRepository: MangaRepository)
         if (refresh) launch {
             val cache = mangaRepository.cachedComicThemes.first()
             val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            val candidates = data.allComics().distinctBy { it.pathWord }
+            val sections = HomeFilterSection.entries.map(data::inSection)
+            val candidates = (0 until sections.maxOf { it.size }).flatMap { index ->
+                sections.mapNotNull { it.getOrNull(index) }
+            }.distinctBy { it.pathWord }
                 .filter { comic ->
                     val entry = cache[comic.pathWord]
                     comic.pathWord.isNotBlank() &&
@@ -66,35 +82,43 @@ class FilterHomeComics constructor(private val mangaRepository: MangaRepository)
                                 ?: comic.theme.isNullOrEmpty())
                 }
                 .sortedBy { it.pathWord in cache }
-            var failures = 0
-            for (comic in candidates) {
-                val result = mangaRepository.refreshComicThemes(comic.pathWord)
-                val error = result.exceptionOrNull()
-                if (error is CancellationException) throw error
-                if (error is RiskControlException) throw error
-                failures = if (result.isFailure) failures + 1 else 0
-                // 普通断网连续失败也不遍历整个首页反复请求，旧标签与漫画继续显示。
-                if (failures >= 3) break
+            kotlinx.coroutines.coroutineScope {
+                val guard = kotlinx.coroutines.sync.Mutex()
+                var next = 0
+                var failures = 0
+                var stopped = false
+                lateinit var workers: List<kotlinx.coroutines.Job>
+                workers = List(minOf(candidates.size, com.rchdliang.copymanga_neo.domain.model.ThemeLoadingPolicy.MAX_CONCURRENCY)) {
+                    launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                        while (true) {
+                            val comic = guard.withLock {
+                                if (stopped) null else candidates.getOrNull(next)?.also { next++ }
+                            } ?: break
+                            val result = mangaRepository.refreshComicThemes(comic.pathWord)
+                            val error = result.exceptionOrNull()
+                            if (error is CancellationException || error is RiskControlException) throw error
+                            guard.withLock {
+                                failures = if (result.isFailure) failures + 1 else 0
+                                if (failures >= 3) {
+                                    stopped = true
+                                    // 取消已排队及在途的同轮补全，断网时不把整页继续请求完。
+                                    val current = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+                                    workers.filter { it !== current }.forEach { it.cancel() }
+                                }
+                            }
+                        }
+                    }
+                }
+                workers.forEach { it.start() }
+                workers.joinAll()
             }
             enrichmentComplete.value = true
         }
     }
 
-    /** 一次性调用同样串行处理并保留未知条目；210 必须向上传递，不能当成缺失标签。 */
-    suspend fun filter(data: HomeComicsData, blocked: List<Theme>): FilteredHomeComics {
-        if (blocked.isEmpty()) return FilteredHomeComics(data)
-        val themes = mutableMapOf<String, List<Theme>>()
-        for (comic in data.allComics().distinctBy { it.pathWord }) {
-            if (!comic.theme.isNullOrEmpty()) continue
-            mangaRepository.getComicThemes(comic.pathWord).fold(
-                onSuccess = { themes[comic.pathWord] = it },
-                onFailure = {
-                    if (it is CancellationException || it is RiskControlException) throw it
-                }
-            )
-        }
-        return resolve(data, blocked, themes, allowUnknown = true)
-    }
+    /** 一次性调用复用相同的并发、缓存、失败停止和未知标签回退规则。 */
+    suspend fun filter(data: HomeComicsData, blocked: List<Theme>): FilteredHomeComics =
+        observe(data, blocked).first { it.enrichmentComplete && !it.isResolving }
 
     private fun resolve(
         data: HomeComicsData,
@@ -119,7 +143,10 @@ class FilterHomeComics constructor(private val mangaRepository: MangaRepository)
             filtered,
             missing,
             !allowUnknown && missing > 0,
-            allowUnknown && missing > 0
+            allowUnknown && missing > 0,
+            readySections = HomeFilterSection.entries.filter { section ->
+                allowUnknown || data.inSection(section).all { it.pathWord in known }
+            }.toSet()
         )
     }
 }

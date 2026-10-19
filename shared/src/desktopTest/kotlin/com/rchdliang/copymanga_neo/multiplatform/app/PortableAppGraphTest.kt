@@ -34,6 +34,40 @@ import kotlin.test.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PortableAppGraphTest {
+    @Test fun homeCanFillReadyShelfBeforeSlowShelfFinishesFiltering() = runTest {
+        val root = Files.createTempDirectory("home-filter-progress-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val r = graph.repositories
+        val allowed = listOf(Theme("Allowed", "allowed"))
+        fun comic(id: String, themes: List<Theme>?) = ComicSummary(id, id, null, null, null, null, null, themes, null)
+        val manga = object : MangaRepository by r.manga {
+            override val cachedComicThemes = MutableStateFlow<Map<String, CachedComicThemes>>(emptyMap())
+            override suspend fun getHomeComics() = Result.success(HomeComicsData(
+                recComics = listOf(comic("ready", allowed)), rankComics = listOf(comic("slow", null)), recNextOffset = 1))
+            override suspend fun refreshComicThemes(pathWord: String): Result<List<Theme>> = kotlinx.coroutines.awaitCancellation()
+        }
+        var requests = 0
+        val discovery = object : com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository by r.discovery {
+            override suspend fun getRecommendations(offset: Int, limit: Int): Result<ComicPage> {
+                requests++
+                return Result.success(ComicPage(listOf(comic("more", allowed)), null))
+            }
+        }
+        val blacklist = object : com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository by r.blacklist {
+            override val blockedThemes = kotlinx.coroutines.flow.flowOf(listOf(Theme("Blocked", "blocked")))
+            override val isEnabled = kotlinx.coroutines.flow.flowOf(true)
+        }
+        val model = com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel(manga, discovery, blacklist,
+            com.rchdliang.copymanga_neo.domain.usecase.FilterHomeComics(manga), r.risk, r.appSettings)
+        try {
+            val ready = model.uiState.first { com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeShelf.RECOMMENDED in it.readyShelves }
+            assertFalse(ready.filterReady)
+            model.loadMore(com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeShelf.RECOMMENDED, automatic = true)
+            model.uiState.first { it.recComicList.size == 2 }
+            assertEquals(1, requests)
+        } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
     @Test fun continuousReaderReleasesOldChaptersAndReloadsInBothDirections() = runTest {
         val root = Files.createTempDirectory("reader-window-")
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))

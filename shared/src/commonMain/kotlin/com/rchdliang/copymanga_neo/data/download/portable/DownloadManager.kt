@@ -37,6 +37,8 @@ import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -146,7 +148,12 @@ class DownloadManager(
 
     init {
         scope.launch {
-            networkSettings.settings.drop(1).collect { pauseNovelTasks("连接设置已变化，请确认后继续") }
+            networkSettings.settings.map {
+                it.copy(
+                    themeFetchConcurrency = com.rchdliang.copymanga_neo.domain.model.ThemeLoadingPolicy.DEFAULT_CONCURRENCY,
+                    themeFetchIntervalMillis = com.rchdliang.copymanga_neo.domain.model.ThemeLoadingPolicy.DEFAULT_INTERVAL_MILLIS
+                )
+            }.distinctUntilChanged().drop(1).collect { pauseNovelTasks("连接设置已变化，请确认后继续") }
         }
         sessions.let { sessionRepository ->
             scope.launch {

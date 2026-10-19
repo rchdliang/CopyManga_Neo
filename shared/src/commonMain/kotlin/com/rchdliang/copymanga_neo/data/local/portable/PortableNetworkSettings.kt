@@ -33,6 +33,7 @@ object PortableNetworkValidation {
         return url.host
     }
     fun normalize(value: NetworkSettings): NetworkSettings {
+        ThemeLoadingPolicy.validate(value)
         val routes = value.routes.take(20).map { row -> row.take(30).map(::host).distinct() }.filter { it.isNotEmpty() }.distinct()
         val fixed = value.fixedHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty()
         require(value.version.trim().matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "请求版本格式无效" }
@@ -101,8 +102,12 @@ class PortableNetworkSettings(
         return attempt {
             document.update { old -> NetworkDocument(resolved, if (remember) old.current else old.previous) }.getOrThrow()
             try {
-                check(network.updateIfCurrent(current.generation) { snapshot -> snapshot.copy(settings = resolved,
-                    appSession = if (current.settings.officialApp != resolved.officialApp) PortableSession() else snapshot.appSession) }) {
+                val loadingOnly = current.settings.copy(themeFetchConcurrency = resolved.themeFetchConcurrency,
+                    themeFetchIntervalMillis = resolved.themeFetchIntervalMillis) == resolved
+                val applied = if (loadingOnly) network.updateThemeLoading(current.generation, resolved)
+                else network.updateIfCurrent(current.generation) { snapshot -> snapshot.copy(settings = resolved,
+                    appSession = if (current.settings.officialApp != resolved.officialApp) PortableSession() else snapshot.appSession) }
+                check(applied) {
                     "保存期间账号或网络配置已改变，请重试"
                 }
             } catch (failure: Exception) {

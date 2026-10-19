@@ -11,6 +11,31 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
 class PortableNetworkSettingsTest {
+    @Test fun themeLoadingSettingsPersistRollbackAndDoNotCancelExistingRequests() = runTest {
+        val storage = Storage()
+        val state = PortableNetworkState()
+        val repo = repository(storage, state)
+        repo.initialize().getOrThrow()
+        val generation = state.snapshot.generation
+        val activeRequest = Job()
+        state.register(activeRequest, generation)
+        try {
+            repo.save(repo.settings.value.copy(themeFetchConcurrency = 5, themeFetchIntervalMillis = 1200)).getOrThrow()
+            assertEquals(generation, state.snapshot.generation)
+            assertTrue(activeRequest.isActive)
+            val restored = repository(storage, PortableNetworkState())
+            restored.initialize().getOrThrow()
+            assertEquals(5, restored.settings.value.themeFetchConcurrency)
+            assertEquals(1200, restored.settings.value.themeFetchIntervalMillis)
+            repo.rollback().getOrThrow()
+            assertEquals(3, repo.settings.value.themeFetchConcurrency)
+            assertEquals(500, repo.settings.value.themeFetchIntervalMillis)
+            assertEquals(generation, state.snapshot.generation)
+            assertTrue(repo.save(repo.settings.value.copy(themeFetchConcurrency = 7)).isFailure)
+            assertTrue(repo.save(repo.settings.value.copy(themeFetchIntervalMillis = -1)).isFailure)
+            assertEquals(3, repo.settings.value.themeFetchConcurrency)
+        } finally { state.unregister(activeRequest); activeRequest.cancel() }
+    }
     private class Storage : DocumentStorage {
         val files = mutableMapOf<String, String>()
         var afterWrite: (() -> Unit)? = null

@@ -123,7 +123,8 @@ class DownloadManagerTest {
             return byteArrayOf(1, 2, 3)
         }
     }
-    private class Fixture(scope: CoroutineScope, val documents: Documents = Documents(), val files: Files = Files()) {
+    private class Fixture(scope: CoroutineScope, val documents: Documents = Documents(), val files: Files = Files(),
+                          network: NetworkSettingsRepository = NetworkSettings) {
         val records = DownloadRecords(documents, files)
         val queue = DownloadQueueStore(documents)
         val manga = Manga()
@@ -140,7 +141,7 @@ class DownloadManagerTest {
                 override fun onWorkAvailable() { foregroundRequests++ }
                 override suspend fun awaitReady() { onWorkAvailable(); foregroundGate?.await() }
             },
-            queue, policy, NetworkSettings, Comments(records), LocalDownloadAccess(), Novels, Sessions, scope)
+            queue, policy, network, Comments(records), LocalDownloadAccess(), Novels, Sessions, scope)
     }
     private fun task() = ComicDownloadTask("book", "作品", null, listOf(ChapterDownloadItem(
         ChapterInfo(1, "chapter", 1, 1, null, "第一章", "id", "book", null, "default", 0, null, null, null, null),
@@ -221,6 +222,27 @@ class DownloadManagerTest {
         f.manager.resumeDownload(task().taskKey); runCurrent()
         assertNotNull(f.records.getChapter("chapter"))
         assertEquals(2, f.manga.contentCalls)
+    }
+
+    @Test fun themeLoadingChangesDoNotPauseQueuedNovelButHostChangesStillDo() = runTest {
+        val config = MutableStateFlow(com.rchdliang.copymanga_neo.domain.model.NetworkSettings())
+        val network = object : NetworkSettingsRepository by NetworkSettings {
+            override val settings = config
+        }
+        val f = Fixture(backgroundScope, network = network)
+        f.settings.setWifiOnlyDownloads(true).getOrThrow()
+        f.connection.value = DownloadConnection(true, false)
+        runCurrent()
+        val novel = NovelDownloadTask(RequestMode.WEB, "guest", NovelBook("novel", "Novel", "", emptyList()),
+            listOf(NovelDownloadItem(NovelVolume("volume", "Volume", 1, null, null))))
+        f.manager.enqueue(novel); runCurrent()
+        assertEquals(DownloadTaskStatus.WAITING_FOR_WIFI, f.manager.downloadProgress.value[novel.taskKey]?.status)
+        config.value = config.value.copy(themeFetchConcurrency = 5, themeFetchIntervalMillis = 1000)
+        runCurrent()
+        assertEquals(DownloadTaskStatus.WAITING_FOR_WIFI, f.manager.downloadProgress.value[novel.taskKey]?.status)
+        config.value = config.value.copy(apiHost = "changed.example")
+        runCurrent()
+        assertEquals(DownloadTaskStatus.PAUSED, f.manager.downloadProgress.value[novel.taskKey]?.status)
     }
 
     @Test fun disallowedNetworkDoesNotConsumeOfficialAuthorization() = runTest {
