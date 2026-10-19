@@ -32,6 +32,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
     private val imageConcurrencyKey = intPreferencesKey("comic_image_concurrency")
     private val downloadLimitKey = intPreferencesKey("comic_download_limit_kib")
     private val exportPasswordKey = booleanPreferencesKey("include_password_in_credential_export")
+    private val simplifyChineseKey = booleanPreferencesKey("simplify_chinese")
+    private val chineseDefaultKey = booleanPreferencesKey("chinese_default_initialized")
     private val rankAudienceKey = stringPreferencesKey("home_rank_audience")
     private val rankPeriodKey = stringPreferencesKey("home_rank_period")
 
@@ -42,6 +44,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
             wifiOnlyDownloads = prefs[wifiOnlyKey] ?: false,
             blurNovelIllustrationPreviews = prefs[blurNovelIllustrationsKey] ?: false,
             includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false,
+            simplifyChinese = prefs[simplifyChineseKey] ?: false,
             comicImageConcurrency = (prefs[imageConcurrencyKey] ?: 3).coerceIn(1, 10),
             comicDownloadLimitKiB = (prefs[downloadLimitKey] ?: 0).coerceAtLeast(0)
         )
@@ -49,6 +52,20 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setThemeMode(mode: AppThemeMode) = save {
         store.edit { it[themeKey] = mode.name }
+    }
+
+    override suspend fun setSimplifyChinese(enabled: Boolean) = save {
+        store.edit { it[simplifyChineseKey] = enabled; it[chineseDefaultKey] = true }
+    }
+
+    override suspend fun initializeChineseDefault(languageTag: String) = save {
+        store.edit { prefs ->
+            if (prefs[chineseDefaultKey] != true) {
+                if (!prefs.contains(simplifyChineseKey))
+                    prefs[simplifyChineseKey] = com.rchdliang.copymanga_neo.domain.model.ChineseLanguageDefault.enabled(languageTag)
+                prefs[chineseDefaultKey] = true
+            }
+        }
     }
 
     override suspend fun setWifiOnlyDownloads(enabled: Boolean) = save {
@@ -119,6 +136,8 @@ class AppSettingsRepositoryImpl @Inject constructor(
             it.remove(imageConcurrencyKey)
             it.remove(downloadLimitKey)
             it.remove(exportPasswordKey)
+            it.remove(simplifyChineseKey)
+            it[chineseDefaultKey] = true
             it.remove(rankAudienceKey)
             it.remove(rankPeriodKey)
             it.remove(searchLayoutKey(true))

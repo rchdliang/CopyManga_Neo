@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.search
 
+import com.rchdliang.copymanga_neo.ui.components.metadataText
+
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -288,7 +290,7 @@ internal fun SearchOptionRow(
                         onClick = { onSelected(option) },
                         label = {
                             Text(
-                                option.label, color = when {
+                                metadataText(option.label), color = when {
                                     !option.enabled -> MaterialTheme.colorScheme.onSurface.copy(
                                         alpha = 0.38f
                                     )
@@ -630,7 +632,7 @@ internal fun SearchBookRow(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    name, color = MaterialTheme.colorScheme.onSurface,
+                    metadataText(name), color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )

@@ -52,7 +52,7 @@ fun TopicCard(topic: ComicTopic, onClick: () -> Unit, modifier: Modifier = Modif
                     .aspectRatio(1920f / 412f)
             )
             Text(
-                topic.title.replace(Regex(" +"), "\n"),
+                metadataText(topic.title).replace(Regex(" +"), "\n"),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 minLines = 2,

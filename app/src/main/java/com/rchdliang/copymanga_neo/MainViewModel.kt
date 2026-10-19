@@ -24,6 +24,7 @@ class MainViewModel @Inject constructor(
     private val userRepository: UserRepository,
     downloadRepository: DownloadRepository,
     appSettingsRepository: AppSettingsRepository,
+    val chineseDictionary: com.rchdliang.copymanga_neo.domain.repository.ChineseDictionaryRepository,
     private val novelImagePositionDebug: NovelImagePositionDebugStore
 ) : ViewModel() {
     val downloadProgress = downloadRepository.getDownloadProgress()
@@ -48,6 +49,11 @@ class MainViewModel @Inject constructor(
     private var hasTriedAutoLoginAfterExpiry = false
 
     init {
+        viewModelScope.launch {
+            appSettingsRepository.initializeChineseDefault(
+                android.content.res.Resources.getSystem().configuration.locales[0].toLanguageTag()
+            ).onFailure { android.util.Log.w("MainViewModel", "系统语言默认设置初始化失败", it) }
+        }
         android.util.Log.d(
             "MainViewModel",
             "init: isLoggedInSync=${userRepository.isLoggedInSync()}, autoLogin=${userRepository.getAutoLoginSync()}"

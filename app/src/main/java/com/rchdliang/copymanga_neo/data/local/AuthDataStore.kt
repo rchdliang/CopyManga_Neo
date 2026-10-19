@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Singleton
 
 /** 分模式保存登录偏好；同一账号只保留最近恢复的会话，避免旧模式自动登录互踢。 */
@@ -236,7 +237,8 @@ class AuthDataStore(
         networkGeneration: Long,
         settings: NetworkSettings,
         savedLogin: SavedLoginCredential? = null
-    ): Long? {
+    ): Long? = withContext(Dispatchers.IO) {
+        // 身份变更会同步清理旧连接；DataStore 的编辑回调沿用调用上下文，必须离开主线程。
         require(imported.mode == settings.requestMode)
         awaitReady()
         var savedGeneration: Long? = null
@@ -286,7 +288,7 @@ class AuthDataStore(
                 }
             }
         }
-        return savedGeneration
+        savedGeneration
     }
 
     suspend fun saveCredentials(

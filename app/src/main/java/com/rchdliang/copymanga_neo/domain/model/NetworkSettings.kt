@@ -54,7 +54,7 @@ data class NetworkSettings(
     val autoDiscover: Boolean = false,
     val proxyMode: ProxyMode = ProxyMode.SYSTEM,
     val proxyAddress: String = "",
-    val requestMode: RequestMode = RequestMode.WEB,
+    val requestMode: RequestMode = RequestMode.OFFICIAL_APP,
     val officialApp: OfficialAppSettings = OfficialAppSettings(),
     val themeFetchConcurrency: Int = ThemeLoadingPolicy.DEFAULT_CONCURRENCY,
     val themeFetchIntervalMillis: Int = ThemeLoadingPolicy.DEFAULT_INTERVAL_MILLIS

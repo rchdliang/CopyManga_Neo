@@ -177,7 +177,7 @@ fun ChapterTitleItem(
             .padding(horizontal = 4.dp, vertical = 4.dp)
     ) {
         Text(
-            text = name,
+            text = metadataText(name),
             style = MaterialTheme.typography.bodySmall,
             color = contentColor,
             maxLines = 1,

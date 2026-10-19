@@ -109,7 +109,7 @@ internal object NetworkSettingsCodec {
             normalize(NetworkSettings(
                 themeFetchConcurrency = json.get("themeFetchConcurrency")?.asInt ?: defaults.themeFetchConcurrency,
                 themeFetchIntervalMillis = json.get("themeFetchIntervalMillis")?.asInt ?: defaults.themeFetchIntervalMillis,
-                requestMode = RequestMode.valueOf(str("requestMode", "WEB")),
+                requestMode = RequestMode.valueOf(str("requestMode", defaults.requestMode.name)),
                 officialApp = OfficialAppSettings(
                     apiHost = appStr("apiHost", appDefaults.apiHost),
                     loginHost = appStr("loginHost", appDefaults.loginHost),

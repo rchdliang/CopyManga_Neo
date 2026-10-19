@@ -19,6 +19,16 @@ import javax.inject.Singleton
 abstract class RepositoryModule {
     @Binds
     @Singleton
+    abstract fun bindAppInfoRepository(implementation: com.rchdliang.copymanga_neo.data.repository.AppInfoRepositoryImpl): com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindChineseDictionaryRepository(
+        implementation: com.rchdliang.copymanga_neo.data.repository.ChineseDictionaryRepositoryImpl
+    ): com.rchdliang.copymanga_neo.domain.repository.ChineseDictionaryRepository
+
+    @Binds
+    @Singleton
     abstract fun bindComicMetadataRepository(
         implementation: com.rchdliang.copymanga_neo.data.repository.ComicMetadataRepositoryImpl
     ): com.rchdliang.copymanga_neo.domain.repository.ComicMetadataRepository

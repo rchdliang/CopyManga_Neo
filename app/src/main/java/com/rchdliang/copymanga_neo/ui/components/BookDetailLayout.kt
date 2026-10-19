@@ -204,7 +204,7 @@ fun BookDetailLayout(
                             exit = fadeOut()
                         ) {
                             Text(
-                                title,
+                                metadataText(title),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleLarge,
                                 maxLines = 1,
@@ -338,6 +338,7 @@ fun BookDetailTags(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         tags.forEach { tag ->
+            val displayName = metadataText(tag.name)
             Box(
                 Modifier
                     .clip(MaterialTheme.shapes.large)
@@ -345,7 +346,7 @@ fun BookDetailTags(
                     .combinedClickable(
                         enabled = tag.enabled,
                         role = Role.Button,
-                        onClickLabel = "查看${tag.name}作品",
+                        onClickLabel = "查看${displayName}作品",
                         onLongClickLabel = if (onLongClick == null) null else if (tag.blocked) "取消屏蔽此标签" else "屏蔽此标签",
                         onClick = { onClick(tag) },
                         onLongClick = onLongClick?.let { action -> { action(tag) } }
@@ -354,7 +355,7 @@ fun BookDetailTags(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    tag.name, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                    displayName, style = MaterialTheme.typography.labelMedium, maxLines = 1,
                     color = if (tag.blocked) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }

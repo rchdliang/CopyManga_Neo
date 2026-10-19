@@ -176,29 +176,31 @@ class MainActivity : ComponentActivity() {
                 else SystemBarStyle.light(Color.Transparent.toArgb(), Color.Transparent.toArgb())
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
-            CopyManga_NeoTheme(darkTheme = darkTheme) {
-                val exportViewModel: ComicExportViewModel = hiltViewModel()
-                val exportState by exports.state.collectAsStateWithLifecycle()
-                LaunchedEffect(retryExportId) {
-                    retryExportId?.let { exportViewModel.retry(it); retryExportId = null }
-                }
-                val presentation: com.rchdliang.copymanga_neo.ui.components.ComicPresentationViewModel =
-                    hiltViewModel()
-                val novelPreview: com.rchdliang.copymanga_neo.ui.components.NovelPreviewViewModel = hiltViewModel()
-                com.rchdliang.copymanga_neo.ui.components.ComicPresentationHost(presentation, novelPreview) {
-                    CopyManga_NeoApp(
-                        mainViewModel = mainViewModel,
-                        openDownloads = openDownloads,
-                        hasExports = exportState.running,
-                        onDownloadsOpened = { openDownloads = false })
-                }
-                ComicExportDialogs(exportViewModel)
-                if (BuildConfig.DEBUG) {
-                    val samples by mainViewModel.novelImagePositionDebugSamples.collectAsStateWithLifecycle()
-                    samples.firstOrNull()?.let { sample ->
-                        androidx.compose.runtime.key(sample.id) {
-                            NovelImagePositionDebugDialog(sample) {
-                                mainViewModel.dismissNovelImagePositionDebugSample(sample.id)
+            com.rchdliang.copymanga_neo.ui.components.MetadataTextHost(preferences.simplifyChinese, mainViewModel.chineseDictionary) {
+                CopyManga_NeoTheme(darkTheme = darkTheme) {
+                    val exportViewModel: ComicExportViewModel = hiltViewModel()
+                    val exportState by exports.state.collectAsStateWithLifecycle()
+                    LaunchedEffect(retryExportId) {
+                        retryExportId?.let { exportViewModel.retry(it); retryExportId = null }
+                    }
+                    val presentation: com.rchdliang.copymanga_neo.ui.components.ComicPresentationViewModel =
+                        hiltViewModel()
+                    val novelPreview: com.rchdliang.copymanga_neo.ui.components.NovelPreviewViewModel = hiltViewModel()
+                    com.rchdliang.copymanga_neo.ui.components.ComicPresentationHost(presentation, novelPreview) {
+                        CopyManga_NeoApp(
+                            mainViewModel = mainViewModel,
+                            openDownloads = openDownloads,
+                            hasExports = exportState.running,
+                            onDownloadsOpened = { openDownloads = false })
+                    }
+                    ComicExportDialogs(exportViewModel)
+                    if (BuildConfig.DEBUG) {
+                        val samples by mainViewModel.novelImagePositionDebugSamples.collectAsStateWithLifecycle()
+                        samples.firstOrNull()?.let { sample ->
+                            androidx.compose.runtime.key(sample.id) {
+                                NovelImagePositionDebugDialog(sample) {
+                                    mainViewModel.dismissNovelImagePositionDebugSample(sample.id)
+                                }
                             }
                         }
                     }

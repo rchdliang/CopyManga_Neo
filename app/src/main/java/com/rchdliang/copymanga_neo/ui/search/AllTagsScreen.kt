@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.search
 
+import com.rchdliang.copymanga_neo.ui.components.metadataText
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -57,8 +59,10 @@ fun AllTagsScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     BackHandler(onBack = onBack)
+    val displayNames = tags.associateWith { metadataText(it.name) }
     val visible = tags.filter {
         it.name.contains(query.trim(), ignoreCase = true) ||
+                displayNames.getValue(it).contains(query.trim(), ignoreCase = true) ||
                 it.pathWord.contains(query.trim(), ignoreCase = true)
     }
     Scaffold(
@@ -188,7 +192,7 @@ private fun TagChoice(
         label = {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(
-                    tag.name, color = color, style = MaterialTheme.typography.titleSmall,
+                    metadataText(tag.name), color = color, style = MaterialTheme.typography.titleSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 tag.count?.let {

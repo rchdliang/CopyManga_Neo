@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.search
 
+import com.rchdliang.copymanga_neo.ui.components.metadataText
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -160,7 +162,7 @@ internal fun SearchResultsHeader(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                title ?: if (searchMode) "搜索结果" else "发现",
+                metadataText(title ?: if (searchMode) "搜索结果" else "发现"),
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.headlineSmall
             )

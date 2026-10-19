@@ -163,7 +163,7 @@ fun ComicCard(
                 .crossfade(sharedTransitionKey == null)
                 .data(cover)
                 .build(),
-            contentDescription = name,
+            contentDescription = metadataText(name),
             contentScale = ContentScale.Crop,
             modifier = coverTransitionModifier
                 .fillMaxSize()
@@ -176,7 +176,7 @@ fun ComicCard(
         ) {
             Column(Modifier.padding(8.dp)) {
                 Text(
-                    text = name,
+text = metadataText(name),
                     minLines = 2,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

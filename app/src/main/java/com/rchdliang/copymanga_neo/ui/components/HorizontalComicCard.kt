@@ -108,7 +108,7 @@ internal fun BookCardInformation(
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Text(
-                        theme, Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                        metadataText(theme), Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -126,8 +126,8 @@ internal fun BookCardInformation(
                     Text("重试", color = MaterialTheme.colorScheme.primary)
                 } else LoadingIndicator(Modifier.size(40.dp), color = MaterialTheme.colorScheme.primary)
             }
-        } else Text(brief?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotBlank() }
-            ?: "暂无简介",
+        } else Text(metadataText(brief?.replace(Regex("\\s+"), " ")?.trim()?.takeIf { it.isNotBlank() }
+            ?: "暂无简介"),
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

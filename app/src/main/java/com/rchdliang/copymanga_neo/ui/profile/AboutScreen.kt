@@ -1,5 +1,18 @@
 package com.rchdliang.copymanga_neo.ui.profile
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rchdliang.copymanga_neo.domain.repository.ProjectLinks
+import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,13 +37,81 @@ import com.rchdliang.copymanga_neo.BuildConfig
 import com.rchdliang.copymanga_neo.R
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 
-/** 关于只显示应用信息，维护工具集中到数据管理。 */
+/** 版本检查、项目主页与开源致谢集中在关于页面。 */
 @Composable
-internal fun AboutScreen(onNavigateBack: () -> Unit) = AboutPage(onNavigateBack)
+internal fun AboutScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: AboutViewModel = androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val toast = LocalToastHost.current
+    LaunchedEffect(state.message) {
+        state.message?.let { toast.showToast(it); viewModel.clearMessage() }
+    }
+    val current = BuildConfig.VERSION_NAME
+    AboutPage(
+        onNavigateBack,
+        state,
+        { viewModel.checkForUpdate(current) },
+        viewModel::dismissUpdate
+    )
+}
 
 @Composable
-internal fun AboutPage(onNavigateBack: () -> Unit = {}) {
-    ProfileSettingsScaffold("关于", onNavigateBack) { AppIdentityCard() }
+internal fun AboutPage(
+    onNavigateBack: () -> Unit = {},
+    state: AboutUiState = AboutUiState(),
+    onCheckUpdate: () -> Unit = {},
+    onDismissUpdate: () -> Unit = {}
+) {
+    var libraries by rememberSaveable { mutableStateOf(false) }
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val toast = LocalToastHost.current
+    fun open(url: String) {
+        runCatching { uri.openUri(url) }.onFailure { toast.showToast("无法打开浏览器") }
+    }
+    BackHandler(enabled = libraries) { libraries = false }
+    if (libraries) {
+        ThirdPartyLibrariesPage { libraries = false }
+        return
+    }
+    ProfileSettingsScaffold("关于", onNavigateBack) {
+        AppIdentityCard()
+        ProfileSectionTitle("应用与开源")
+        ProfileListItem(
+            Icons.Outlined.Refresh, "检查更新",
+            if (state.checking) "正在检查最新版本…" else "获取最新发布版本",
+            0, 3, enabled = !state.checking, onClick = onCheckUpdate
+        )
+        ProfileListItem(
+            Icons.Outlined.OpenInNew, "GitHub", "项目源码、发布与反馈", 1, 3,
+            onClick = { open(ProjectLinks.GITHUB) })
+        ProfileListItem(
+            Icons.Outlined.Code, "第三方库", "使用的库、许可证与开源致谢", 2, 3,
+            onClick = { libraries = true })
+    }
+    state.update?.let { release ->
+        AlertDialog(
+            onDismissRequest = onDismissUpdate,
+            title = { Text("发现新版本", color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Text(
+                    "最新版本：${release.version}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { open(release.pageUrl); onDismissUpdate() }) {
+                    Text("查看发布页", color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissUpdate) {
+                    Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -98,4 +179,53 @@ private fun AboutPhonePreview() {
 @Composable
 private fun AboutTabletPreview() {
     CopyManga_NeoTheme(darkTheme = true) { AboutPage() }
+}
+
+private data class ThirdPartyLibrary(val name: String, val license: String, val url: String)
+
+/** 直接使用的库及阅读器参考项目；版本由构建依赖统一管理。 */
+private val thirdPartyLibraries = listOf(
+    ThirdPartyLibrary("Kotlin", "Apache-2.0", "https://github.com/JetBrains/kotlin"),
+    ThirdPartyLibrary(
+        "AndroidX · Compose、Material 3、Lifecycle、Navigation",
+        "Apache-2.0",
+        "https://github.com/androidx/androidx"
+    ),
+    ThirdPartyLibrary(
+        "Kotlin Coroutines",
+        "Apache-2.0",
+        "https://github.com/Kotlin/kotlinx.coroutines"
+    ),
+    ThirdPartyLibrary(
+        "Kotlin Immutable Collections",
+        "Apache-2.0",
+        "https://github.com/Kotlin/kotlinx.collections.immutable"
+    ),
+    ThirdPartyLibrary("Coil", "Apache-2.0", "https://github.com/coil-kt/coil"),
+    ThirdPartyLibrary("Okio", "Apache-2.0", "https://github.com/square/okio"),
+    ThirdPartyLibrary("OpenCC · 简化词典", "Apache-2.0", "https://github.com/BYVoid/OpenCC"),
+    ThirdPartyLibrary("kixyubook · 阅读器参考实现", "MIT", "https://github.com/kkyu9527/kixyubook"),
+    ThirdPartyLibrary("Hilt / Dagger", "Apache-2.0", "https://github.com/google/dagger"),
+    ThirdPartyLibrary("Retrofit", "Apache-2.0", "https://github.com/square/retrofit"),
+    ThirdPartyLibrary("OkHttp", "Apache-2.0", "https://github.com/square/okhttp"),
+    ThirdPartyLibrary("Gson", "Apache-2.0", "https://github.com/google/gson"),
+    ThirdPartyLibrary(
+        "AndroidX DataStore、Room",
+        "Apache-2.0",
+        "https://github.com/androidx/androidx"
+    ),
+)
+
+@Composable
+private fun ThirdPartyLibrariesPage(onBack: () -> Unit) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val toast = LocalToastHost.current
+    ProfileSettingsScaffold("第三方库与开源项目", onBack) {
+        thirdPartyLibraries.forEachIndexed { index, library ->
+            ProfileListItem(
+                Icons.Outlined.Code, library.name, library.license, index, thirdPartyLibraries.size,
+                onClick = { runCatching { uri.openUri(library.url) }.onFailure { toast.showToast("无法打开浏览器") } }
+            )
+        }
+    }
 }

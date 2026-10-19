@@ -19,6 +19,7 @@ internal object SettingsBackupCodec {
         add("settings", JsonObject().apply {
             addProperty("themeMode", value.settings.themeMode.name)
             addProperty("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
+            addProperty("simplifyChinese", value.settings.simplifyChinese)
             addProperty(
                 "blurNovelIllustrationPreviews",
                 value.settings.blurNovelIllustrationPreviews
@@ -71,6 +72,10 @@ internal object SettingsBackupCodec {
         return SettingsBackup(
             AppSettings(
                 AppThemeMode.valueOf(settings.string("themeMode")), wifiOnly.asBoolean,
+                simplifyChinese = settings.get("simplifyChinese")?.let {
+                    require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "繁转简设置无效" }
+                    it.asBoolean
+                } ?: false,
                 blurNovelIllustrationPreviews = settings.get("blurNovelIllustrationPreviews")?.let {
                     require(it.isJsonPrimitive && it.asJsonPrimitive.isBoolean) { "插图设置无效" }
                     it.asBoolean
