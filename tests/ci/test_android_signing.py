@@ -63,7 +63,9 @@ class SigningPreparationTest(unittest.TestCase):
             self.assertIn("secrets." + name, release)
             self.assertIn("secrets." + name, android)
         build = (ROOT / "app/build.gradle.kts").read_text()
-        self.assertIn('applicationIdSuffix = ".migrationtest"', build)
+        self.assertIn('applicationId = "com.rchdliang.copymanga_neo"', build)
+        self.assertNotIn('applicationIdSuffix', build)
+        self.assertNotIn('versionNameSuffix', build)
         self.assertIn("require(hasReleaseSigning)", build)
         self.assertIn('getProperty("storeFile")).isFile', build)
 

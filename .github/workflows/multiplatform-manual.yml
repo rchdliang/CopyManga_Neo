@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       ios:
-        description: iOS ARM64 simulator app (unsigned, build only)
+        description: iOS ARM64 device IPA (unsigned, for SideStore / AltStore)
         type: boolean
         default: false
 
@@ -253,21 +253,22 @@ jobs:
           test "$(uname -m)" = arm64
           xcodebuild -version
           xcodebuild -list -project iosApp/iosApp.xcodeproj
-      - name: Build unsigned ARM64 iOS simulator app
-        run: |
-          xcodebuild -project iosApp/iosApp.xcodeproj -scheme CopyMangaNeo             -configuration Debug -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             -derivedDataPath build/ios-simulator             -resultBundlePath build/ios-simulator-build.xcresult             ARCHS=arm64 ONLY_ACTIVE_ARCH=YES             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
-      - name: Archive simulator app preserving bundle permissions
-        run: |
-          test -d build/ios-simulator/Build/Products/Debug-iphonesimulator/CopyMangaNeo.app
-          tar -czf build/CopyMangaNeo-ios-simulator-arm64.tar.gz             -C build/ios-simulator/Build/Products/Debug-iphonesimulator CopyMangaNeo.app
-      - name: Upload ios-simulator-arm64
+      - name: Validate IPA packaging checks
+        run: python3 -m unittest discover -s tests/ci -p 'test_ios_ipa.py'
+      - name: Build and validate unsigned device IPA
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: bash .github/scripts/build-ios-ipa.sh
+      - name: Upload ios-device-ipa
         uses: actions/upload-artifact@v6
         with:
-          name: ios-simulator-arm64-${{ github.sha }}-${{ github.run_attempt }}
+          name: ios-device-ipa-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
           path: |
-            build/CopyMangaNeo-ios-simulator-arm64.tar.gz
+            build/*-ios-arm64-unsigned.ipa
+            build/*-ios-arm64-unsigned.ipa.sha256
+            build/ios-device-build.json
       - name: Upload ios-build-result
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
@@ -276,4 +277,5 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
           path: |
-            build/ios-simulator-build.xcresult/
+            build/ios-device-build.xcresult/
+            build/ios-device/Build/Products/Release-iphoneos/*.dSYM/

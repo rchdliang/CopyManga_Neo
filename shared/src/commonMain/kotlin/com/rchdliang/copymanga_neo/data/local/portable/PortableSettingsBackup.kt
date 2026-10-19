@@ -17,9 +17,24 @@ class PortableSettingsBackup constructor(
     private val settings: AppSettingsRepository,
     private val reader: ReaderPreferencesRepository,
     private val localReading: PortableLocalReading,
-    private val tools: ReaderToolsRepository
+    private val tools: ReaderToolsRepository,
+    private val userData: PortableUserDataBackup? = null
 ) : SettingsBackupRepository {
     private val mutex = Mutex()
+
+    override suspend fun exportUserData(): Result<String> = mutex.withLock {
+        result {
+            localReading.flush().fold({}, { throw it })
+            requireNotNull(userData).export()
+        }
+    }
+    override suspend fun importUserData(serialized: String): Result<Unit> = mutex.withLock {
+        result { requireNotNull(userData).prepare(serialized) }
+    }
+    override suspend fun hasPendingUserDataRestore(): Boolean = userData?.isPending() == true
+    override suspend fun cancelUserDataRestore(): Result<Unit> = mutex.withLock {
+        result { requireNotNull(userData).cancel() }
+    }
 
     override suspend fun exportSettings(): Result<String> = mutex.withLock {
         result { PortableBackupCodec.encode(snapshot()) }

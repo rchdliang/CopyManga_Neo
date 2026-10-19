@@ -106,6 +106,9 @@ class PortableAppGraph private constructor(
                 val documents = services.documents; val cache = services.cache
                 val warnings = MutableStateFlow(services.startupWarnings)
                 fun warn(message: String) { warnings.update { (it + message).distinct() } }
+                // 必须先恢复个人数据，再创建任何持久化状态和后台消费者。
+                val userData = PortableUserDataBackup(documents)
+                withContext(Dispatchers.Default) { userData.recover()?.let(::warn) }
                 services.imageDiskCache?.let { cleanup += { it.shutdown() } }
                 val appSettings = PortableAppSettings(documents)
                 val readerPreferences = PortableReaderPreferences(documents)
@@ -259,7 +262,7 @@ class PortableAppGraph private constructor(
                 val repositories = AppRepositories(manga, discovery, novels, novelShelf, users, session, downloads, comments,
                     PortableShareLinkRepository(client, network::persistShareHosts), localReading, progress, appSettings, readerPreferences, readerTools,
                     novelPreferences, annotations, blacklist, network, risk, storage,
-                    PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore,
+                    PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools, userData), logs, imageActions, export, debugStore,
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
                     novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client),
                     appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {

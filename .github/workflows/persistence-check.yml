@@ -1,0 +1,31 @@
+name: Persistence compatibility
+on:
+  pull_request:
+    branches: [CMP]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  persistence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Shared document migration and backup checks
+        run: ./gradlew :shared:desktopTest -PenableAndroid=false -Pkotlin.incremental=false --tests '*DocumentMigrationTest' --tests '*UserDataRestoreTest' --tests '*UserDataBackupTest' --tests '*PortableBackupCodecTest' --tests '*DownloadPersistenceTest' --tests '*DownloadQueueStoreTest' --tests '*PortableNetworkSettingsTest' --no-daemon --max-workers=1 --no-configuration-cache
+      - name: Device IPA packaging validation
+        run: python3 -m unittest discover -s tests/ci -p 'test_ios_ipa.py'
+      - name: Reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: persistence-reports
+          path: shared/build/reports/tests/
+          if-no-files-found: warn

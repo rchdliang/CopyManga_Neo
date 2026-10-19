@@ -24,7 +24,7 @@ class PortableReadingSession(private val state: PortableNetworkState) : ReadingS
 }
 
 @Serializable
-private data class ProgressDocument(
+internal data class ProgressDocument(
     val owners: Map<String, Map<String, ReadingProgress>> = emptyMap(),
     val cleared: Map<String, Long> = emptyMap()
 )

@@ -9,11 +9,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-private data class BlockedTheme(val name: String, @SerialName("path_word") val path: String? = null) {
+internal data class BlockedTheme(val name: String, @SerialName("path_word") val path: String? = null) {
     fun model() = Theme(name, path)
 }
 @Serializable
-private data class BlacklistDocument(
+internal data class BlacklistDocument(
     val enabled: Boolean = true,
     @SerialName("blocked_themes") val themes: List<BlockedTheme> = emptyList()
 )

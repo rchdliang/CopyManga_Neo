@@ -7,7 +7,7 @@
 - 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
 - Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
 - 桌面安装包使用对应操作系统及架构的 JDK；Windows MSI/EXE 需要 WiX，Linux DEB/RPM 需要系统打包工具。
-- iOS 应用需要 macOS、Xcode 和签名团队；当前模拟器目标是 ARM64。
+- iOS 构建需要 macOS 和 Xcode；直接安装需要签名。未签名设备 IPA 可交给 SideStore / AltStore 使用用户自己的账号重签名。
 - 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
 - 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。
 
@@ -29,7 +29,7 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 - Windows MSI/EXE 只接受三段版本，自动使用“基础版本前两段 + 构建号”；例如基础版本 `0.10.19`、修订号 `1`、构建号 `33` 时为 `0.10.33`。iOS 使用三段基础版本和构建号，应用内仍显示完整版本；不需要另改平台版本常量。
 - `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
 - iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
-- Android Debug 自动追加 `-migrationtest`，不需要在版本源中填写后缀。
+- Android Debug 与 Release 使用相同版本名，不再追加测试后缀。
 - 版本回归测试读取 Gradle 传入的期望值，升级时不需要另改测试常量。
 
 可以单独检查版本生成及桌面默认元数据：
@@ -47,7 +47,7 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 ./gradlew :app:lintDebug
 ```
 
-Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`，包名为 `com.rchdliang.copymanga_neo.migrationtest`，桌面名称为“CopyManga Neo 测试版”。它与原版应用的私有账号、设置和下载数据分开；导出目录、相册和用户选中的共享文件夹仍需自行区分。
+Debug APK 位于 `app/build/outputs/apk/debug/app-debug.apk`，Debug 与 Release 包名均为 `com.rchdliang.copymanga_neo`，桌面名称为“CopyManga_Neo”。原 Android 分支改用 `com.rchdliang.copymanga_neo.Android` 与“CopyManga_Neo-Android”，两个分支可以并存，私有数据分别保存。
 
 App 请求模式所需的 `COPYMANGA_TAP_STRING` 从构建进程环境变量或本地 `local.properties` 读取，环境变量优先。没有该配置仍能构建，但 App 模式不可用。新 worktree 不会自动复制被忽略的本地配置，需要单独配置。不要把实际值写入源码、示例或日志。
 
@@ -57,9 +57,9 @@ Release 构建：
 ./gradlew :app:assembleRelease
 ```
 
-需要本地 `keystore.properties` 的 `storeFile`、`storePassword`、`keyAlias`、`keyPassword` 及对应密钥库。普通本地 Debug 使用调试签名；`-PuseReleaseSigningForTest=true` 让独立测试包使用已有发布签名，签名材料不完整时构建失败。
+需要本地 `keystore.properties` 的 `storeFile`、`storePassword`、`keyAlias`、`keyPassword` 及对应密钥库。普通本地 Debug 使用调试签名；`-PuseReleaseSigningForTest=true` 让 CMP Debug 包使用已有发布签名，签名材料不完整时构建失败。
 
-相同包名只有相同签名才能覆盖安装。切换本地调试签名与 CI 发布签名可能需要先备份再重装测试版；不要卸载原版应用。设备测试使用 `:app:connectedDebugAndroidTest`，需先连接目标设备；构建成功不等于设备操作验证完成。
+CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满足要求时会覆盖安装并使用同一份数据。切换调试签名与发布签名前先备份个人数据。旧的 `.migrationtest` 安装不会自动迁入新包。设备测试使用 `:app:connectedDebugAndroidTest`，需先连接目标设备；构建成功不等于设备操作验证完成。
 
 ## 桌面
 
@@ -93,6 +93,18 @@ App 模式配置可通过复制 `iosApp/LocalSecrets.xcconfig.example` 为被 Gi
 
 `:shared:compileKotlinIosArm64` 只验证共享 KLIB；Swift 编译、框架链接、签名、系统选择器和设备运行需要 Xcode 环境验证。
 
+未签名真机发行包（JDK 21、macOS/Xcode，在仓库根运行）：
+
+```sh
+bash .github/scripts/build-ios-ipa.sh
+```
+
+脚本构建 Release / iphoneos / arm64，验证 Mach-O 平台、Bundle ID、版本和随包资源，再生成 `build/CopyMangaNeo-v<版本>-ios-arm64-unsigned.ipa`、SHA-256 与提交/版本清单。不会上传、签名或发布。CI 的 iOS 选项执行相同脚本，Artifact 可下载后交给 SideStore / AltStore Classic 重签名安装；模拟器包不能改名充当 IPA。
+
+首次发布前在真实 iPhone 验证安装、登录、阅读、离线重开，以及两个版本覆盖安装后历史/书签/小说标注/下载保持。刷新签名与更换 Apple Account 分别验证；不要卸载原应用来更新。当前下载引擎要求保持前台。
+
+通过真机验收后，将已验收的同一 IPA 与校验文件附到对应提交的 GitHub Release；在此之前不自动发布未经验证的设备产物。免费侧载的刷新周期与数量限制以 SideStore / AltStore 当前说明为准。
+
 ## 浏览器
 
 ```sh
@@ -112,7 +124,7 @@ App 模式配置可通过复制 `iosApp/LocalSecrets.xcconfig.example` 为被 Gi
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
 - [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
-- 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 模拟器应用，不是实体设备 IPA。
+- 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 设备 IPA，仍须用户重签名及真机验收。
 - 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。
 
 按改动选择相关检查：

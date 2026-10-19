@@ -17,7 +17,7 @@ val hasReleaseSigning =
         !keystoreProperties.getProperty(key).isNullOrBlank()
     }
 
-// Only the independent manual CI test build opts in; never fall back to debug keys.
+// 手动 CI 可显式使用发布签名；配置不完整时禁止回退到调试密钥。
 val useReleaseSigningForTest = providers.gradleProperty("useReleaseSigningForTest")
     .map(String::toBooleanStrict)
     .getOrElse(false)
@@ -75,9 +75,7 @@ android {
 
     buildTypes {
         debug {
-            // Install beside the daily release without sharing its private app data.
-            applicationIdSuffix = ".migrationtest"
-            versionNameSuffix = "-migrationtest"
+            // 与 Release 使用相同的 CMP 安装标识；原 Android 分支使用 .Android。
             if (useReleaseSigningForTest) {
                 signingConfig = signingConfigs.getByName("release")
             }

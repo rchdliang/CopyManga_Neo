@@ -57,16 +57,21 @@ internal fun DataSettingsScreen(
         backup::chooseImport,
         settings::resetGlobalDefaults,
         onCredentialExportPasswordChange = settings::setCredentialExportPassword,
+        onExportUserData = backup::chooseExportUserData,
+        onImportUserData = backup::chooseImportUserData,
+        onCancelRestore = backup::cancelRestore,
+        restorePending = backupState.restorePending,
         onClearNovelCache = settings::clearNovelCache,
         logsContent = { NetworkLogCard(logs) }
     )
     backupState.pendingImport?.let {
         if (LocalRouteActive.current) AlertDialog(
             onDismissRequest = backup::dismissImport,
-            title = { Text("导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
+            title = { Text(if (backupState.pendingImportUserData) "恢复用户数据？" else "导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
+                    if (backupState.pendingImportUserData) "备份通过校验后将在下次启动时覆盖个人数据，包括当前及重启前新增的标注、历史、书签和偏好。建议先导出当前用户数据；登录与下载文件不受影响。"
+                    else "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -104,6 +109,10 @@ internal fun DataSettingsPage(
     onResetDefaults: () -> Unit = {},
     onClearNovelCache: () -> Unit = {},
     onCredentialExportPasswordChange: (Boolean) -> Unit = {},
+    onExportUserData: () -> Unit = {},
+    onImportUserData: () -> Unit = {},
+    onCancelRestore: () -> Unit = {},
+    restorePending: Boolean = false,
     logsContent: @Composable () -> Unit = {}
 ) {
     var showLogs by rememberSaveable { mutableStateOf(false) }
@@ -154,6 +163,24 @@ internal fun DataSettingsPage(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(8.dp)
             )
+        }
+        ProfileSectionTitle("用户数据备份")
+        Text(
+            "保存小说标注、历史、书签、阅读进度、偏好和屏蔽标签。不含登录凭据、下载文件和网络设置。原 Android 版与跨平台版的用户备份不通用。",
+            Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        ProfileListItem(Icons.Outlined.FileUpload, "导出用户数据", "保存游客及各账号的个人数据",
+            index = 0, count = 2, enabled = enabled, onClick = onExportUserData)
+        ProfileListItem(Icons.Outlined.FileDownload, "恢复用户数据", "校验后暂存，重启时覆盖恢复",
+            index = 1, count = 2, enabled = enabled, onClick = onImportUserData)
+        if (restorePending) {
+            Text("已安排恢复，请完全退出并重新打开应用。重启前仍可取消。",
+                Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onCancelRestore, enabled = !backupBusy) {
+                Text("取消待恢复的数据", color = MaterialTheme.colorScheme.primary)
+            }
         }
         ProfileSectionTitle("设置备份")
         Text(
