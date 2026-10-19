@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.detail
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
@@ -193,8 +195,8 @@ fun DetailScreen(
             },
             text = {
                 Text(
-                    text = if (isBlocked) "首页将显示包含「${theme.name}」的漫画。"
-                    else "首页将隐藏包含「${theme.name}」的漫画。",
+                    text = if (isBlocked) "首页将显示包含「${metadataText(theme.name)}」的漫画。"
+                    else "首页将隐藏包含「${metadataText(theme.name)}」的漫画。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

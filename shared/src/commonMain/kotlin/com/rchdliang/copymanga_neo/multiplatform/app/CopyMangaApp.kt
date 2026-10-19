@@ -149,6 +149,8 @@ fun CopyMangaApp(
     onExportRetryConsumed: () -> Unit = {}
 ) {
     LaunchedEffect(repositories) {
+        repositories.appSettings.initializeChineseDefault(androidx.compose.ui.text.intl.Locale.current.toLanguageTag())
+            .onFailure { UiLog.w("Main", "系统语言默认设置初始化失败", it) }
         withFrameNanos { }
         withFrameNanos { }
         repositories.startBackground()
@@ -196,68 +198,70 @@ fun CopyMangaApp(
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, LocalUiPlatform provides platforms.ui, LocalShareViewModel provides share,
         LocalAppImageLoader provides appImageLoader,
         LocalNovelReaderPlatform provides platforms.novel, LocalComicExportPlatform provides platforms.export) {
-        CopyManga_NeoTheme(darkTheme = dark) {
-            AppToastHost {
-                val toast = LocalToastHost.current
-                val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-                LaunchedEffect(repositories.export, lifecycle) {
-                    lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                        repositories.export.messages.collect { toast.showToast(it) }
+        MetadataTextHost(preferences.simplifyChinese, repositories.chineseDictionary) {
+            CopyManga_NeoTheme(darkTheme = dark) {
+                AppToastHost {
+                    val toast = LocalToastHost.current
+                    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+                    LaunchedEffect(repositories.export, lifecycle) {
+                        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            repositories.export.messages.collect { toast.showToast(it) }
+                        }
                     }
-                }
-                val presentation = models.get("application") { ComicPresentationViewModel(repositories.comicMetadata, repositories.blacklist) }
-                val novelPreview = models.get("application") { NovelPreviewViewModel(repositories.novels, repositories.sessions, repositories.network) }
-                ComicPresentationHost(presentation, novelPreview) {
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val wide = maxWidth >= 840.dp
-                    Box(Modifier.fillMaxSize().background(if (wide) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)) {
-                        val transitionState = rememberComicSharedTransitionState()
-                        SharedTransitionLayout(Modifier.fillMaxSize()) {
-                            val sharedScope = this
-                            AppRouteNavHost(
-                                navigation = navigation,
-                                backDispatcher = platforms.ui.backDispatcher,
-                                onRetainRoutes = { retained ->
-                                    navigation.retain(retained).forEach(stateHolder::removeState)
-                                    models.retain(retained + permanentModelIds)
-                                }
-                            ) { route ->
-                                ComicSharedTransitionProvider(sharedScope, this, transitionState) {
-                                    if (route.destination == "main") {
-                                        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { favorites.onMainScreenResumed() }
-                                        Box(Modifier.statusBarsPadding()) {
-                                            MainNavigationShell(navigation.tab, navigation::select, loggedIn, avatar, favoritesState.updatedComicCount) {
-                                                AnimatedContent(
-                                                    navigation.tab, label = "main destination transition",
-                                                    transitionSpec = {
-                                                        val direction = if (targetState.ordinal > initialState.ordinal)
-                                                            AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
-                                                        (slideIntoContainer(direction, tween(300, easing = EaseInOut)) + fadeIn(tween(300, easing = EaseInOut))) togetherWith
-                                                            (slideOutOfContainer(direction, tween(300, easing = EaseInOut)) + fadeOut(tween(300, easing = EaseInOut)))
-                                                    }
-                                                ) { tab ->
-                                                    RouteLifecycleScope(active = tab == navigation.tab) {
-                                                        stateHolder.SaveableStateProvider("tab:${tab.name}") {
-                                                            RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites)
+                    val presentation = models.get("application") { ComicPresentationViewModel(repositories.comicMetadata, repositories.blacklist) }
+                    val novelPreview = models.get("application") { NovelPreviewViewModel(repositories.novels, repositories.sessions, repositories.network) }
+                    ComicPresentationHost(presentation, novelPreview) {
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val wide = maxWidth >= 840.dp
+                        Box(Modifier.fillMaxSize().background(if (wide) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)) {
+                            val transitionState = rememberComicSharedTransitionState()
+                            SharedTransitionLayout(Modifier.fillMaxSize()) {
+                                val sharedScope = this
+                                AppRouteNavHost(
+                                    navigation = navigation,
+                                    backDispatcher = platforms.ui.backDispatcher,
+                                    onRetainRoutes = { retained ->
+                                        navigation.retain(retained).forEach(stateHolder::removeState)
+                                        models.retain(retained + permanentModelIds)
+                                    }
+                                ) { route ->
+                                    ComicSharedTransitionProvider(sharedScope, this, transitionState) {
+                                        if (route.destination == "main") {
+                                            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { favorites.onMainScreenResumed() }
+                                            Box(Modifier.statusBarsPadding()) {
+                                                MainNavigationShell(navigation.tab, navigation::select, loggedIn, avatar, favoritesState.updatedComicCount) {
+                                                    AnimatedContent(
+                                                        navigation.tab, label = "main destination transition",
+                                                        transitionSpec = {
+                                                            val direction = if (targetState.ordinal > initialState.ordinal)
+                                                                AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
+                                                            (slideIntoContainer(direction, tween(300, easing = EaseInOut)) + fadeIn(tween(300, easing = EaseInOut))) togetherWith
+                                                                (slideOutOfContainer(direction, tween(300, easing = EaseInOut)) + fadeOut(tween(300, easing = EaseInOut)))
+                                                        }
+                                                    ) { tab ->
+                                                        RouteLifecycleScope(active = tab == navigation.tab) {
+                                                            stateHolder.SaveableStateProvider("tab:${tab.name}") {
+                                                                RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites)
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
+                                        } else stateHolder.SaveableStateProvider(route.id) {
+                                            RouteContent(route, navigation, repositories, platforms, models, favorites)
                                         }
-                                    } else stateHolder.SaveableStateProvider(route.id) {
-                                        RouteContent(route, navigation, repositories, platforms, models, favorites)
                                     }
                                 }
                             }
                         }
                     }
-                }
-                }
-                ComicExportDialogs(exports)
-                if (platforms.buildInfo.debug) repositories.novelImagePositionDebug?.let { debug ->
-                    val samples by debug.samples.collectAsStateWithLifecycle()
-                    samples.firstOrNull()?.let { sample ->
-                        key(sample.id) { NovelImagePositionDebugDialog(sample) { debug.dismiss(sample.id) } }
+                    }
+                    ComicExportDialogs(exports)
+                    if (platforms.buildInfo.debug) repositories.novelImagePositionDebug?.let { debug ->
+                        val samples by debug.samples.collectAsStateWithLifecycle()
+                        samples.firstOrNull()?.let { sample ->
+                            key(sample.id) { NovelImagePositionDebugDialog(sample) { debug.dismiss(sample.id) } }
+                        }
                     }
                 }
             }
@@ -404,7 +408,8 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             MainTab.PROFILE -> ProfileScreen(
                 models.get(route.id) { ProfileViewModel(r.users, r.blacklist, r.network, r.appSettings, autoStart = false) },
                 ProfileUiServices(p.profile, p.buildInfo,
-                    models.get(route.id) { SettingsViewModel(r.appSettings, r.readerPreferences, r.storage) },
+                    models.get(route.id) { SettingsViewModel(r.appSettings, r.readerPreferences, r.storage, r.chineseDictionary) },
+                    models.get(route.id) { AboutViewModel(r.appInfo) },
                     models.get(route.id) { SettingsBackupViewModel(r.backup, p.profile, it) },
                     models.get(route.id) { NetworkSettingsViewModel(r.network) },
                     models.get(route.id) { NetworkLogViewModel(r.networkLog, p.profile, it) },

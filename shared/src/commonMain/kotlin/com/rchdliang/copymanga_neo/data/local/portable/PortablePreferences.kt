@@ -17,14 +17,28 @@ internal data class AppPreferenceDocument(
     val app: AppSettings = AppSettings(),
     val ranks: HomeRankPreferences = HomeRankPreferences(),
     val compactSearch: Boolean = false,
-    val compactDiscovery: Boolean = false
+    val compactDiscovery: Boolean = false,
+    val chineseDefaultInitialized: Boolean = false
 )
 
-class PortableAppSettings(storage: DocumentStorage) : AppSettingsRepository {
+class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRepository {
     private val document = DocumentStore(storage, "app-settings.json", AppPreferenceDocument.serializer(), AppPreferenceDocument())
     override val settings: Flow<AppSettings> = document.state.map { it.app.copy(comicImageConcurrency = it.app.comicImageConcurrency.coerceIn(1, 10), comicDownloadLimitKiB = it.app.comicDownloadLimitKiB.coerceAtLeast(0)) }
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun setThemeMode(mode: AppThemeMode) = document.update { it.copy(app = it.app.copy(themeMode = mode)) }
+    override suspend fun setSimplifyChinese(enabled: Boolean) = document.update {
+        it.copy(app = it.app.copy(simplifyChinese = enabled), chineseDefaultInitialized = true)
+    }
+    override suspend fun initializeChineseDefault(languageTag: String): Result<Unit> {
+        val existing = try { storage.read("app-settings.json") != null }
+        catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (error: Exception) { return Result.failure(error) }
+        return document.update {
+            if (it.chineseDefaultInitialized) it
+            else it.copy(app = if (existing) it.app else it.app.copy(simplifyChinese = ChineseLanguageDefault.enabled(languageTag)),
+                chineseDefaultInitialized = true)
+        }
+    }
     override suspend fun setWifiOnlyDownloads(enabled: Boolean) = document.update { it.copy(app = it.app.copy(wifiOnlyDownloads = enabled)) }
     override suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean) = document.update {
         it.copy(app = it.app.copy(blurNovelIllustrationPreviews = enabled))
@@ -46,7 +60,7 @@ class PortableAppSettings(storage: DocumentStorage) : AppSettingsRepository {
     override suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean) = document.update {
         if (keywordSearch) it.copy(compactSearch = compact) else it.copy(compactDiscovery = compact)
     }
-    override suspend fun resetDefaults() = document.update { AppPreferenceDocument() }
+    override suspend fun resetDefaults() = document.update { AppPreferenceDocument(chineseDefaultInitialized = true) }
 }
 
 @Serializable

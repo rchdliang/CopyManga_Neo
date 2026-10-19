@@ -54,6 +54,7 @@ data class ProfileUiServices(
     val platform: ProfilePlatform,
     val appBuildInfo: AppBuildInfo,
     val settings: SettingsViewModel,
+    val about: AboutViewModel,
     val backup: SettingsBackupViewModel,
     val network: NetworkSettingsViewModel,
     val logs: NetworkLogViewModel,

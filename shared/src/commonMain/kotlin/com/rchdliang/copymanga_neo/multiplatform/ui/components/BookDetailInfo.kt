@@ -102,7 +102,7 @@ fun BookDetailHeader(
             )
         } else if (LocalInspectionMode.current && !cover.isNullOrBlank()) {
             PreviewImage(
-                contentDescription = title,
+                contentDescription = metadataText(title),
                 contentScale = ContentScale.Crop,
                 modifier = imageModifier
             )
@@ -112,7 +112,7 @@ fun BookDetailHeader(
             RouteImageScope {
                 SubcomposeAsyncImage(
                     imageLoader = requireAppImageLoader(),
-                    model = routeImageModel(cover), contentDescription = title,
+                    model = routeImageModel(cover), contentDescription = metadataText(title),
                     contentScale = ContentScale.Crop, modifier = imageModifier
                 ) {
                     when (painter.state.collectAsState().value) {
@@ -132,7 +132,7 @@ fun BookDetailHeader(
                         )
 
                         is AsyncImagePainter.State.Success -> Image(
-                            painter = painter, contentDescription = title,
+                            painter = painter, contentDescription = metadataText(title),
                             contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
                         )
 
@@ -143,7 +143,7 @@ fun BookDetailHeader(
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                title,
+                metadataText(title),
                 modifier = titleModifier,
                 style = MaterialTheme.typography.headlineSmallEmphasized,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -169,6 +169,7 @@ fun BookDetailHeader(
                 )
             }
             val originalWorkNames = originalWorks.filter { it.name.isNotBlank() }.distinct()
+            val originalWorkLabels = originalWorkNames.map { metadataText(it.name.trim()) }
             if (originalWorkNames.isNotEmpty()) {
                 BookDetailInfoRow(Icons.AutoMirrored.Filled.MenuBook, "原作") {
                     Text(
@@ -180,8 +181,8 @@ fun BookDetailHeader(
                                 if (onOriginalWork != null && !work.pathWord.isNullOrBlank()) {
                                     withLink(LinkAnnotation.Clickable(work.pathWord, linkStyle) {
                                         onOriginalWork(work)
-                                    }) { append(work.name.trim()) }
-                                } else append(work.name.trim())
+                                    }) { append(originalWorkLabels[index]) }
+                                } else append(originalWorkLabels[index])
                             }
                         },
                         style = MaterialTheme.typography.bodyMedium,
@@ -255,7 +256,7 @@ fun BookDetailBrief(bookKey: String, brief: String, modifier: Modifier = Modifie
             .padding(vertical = 6.dp)
     ) {
         Text(
-            brief.trim().ifBlank { "简介暂缺" },
+            metadataText(brief.trim().ifBlank { "简介暂缺" }),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else 1,

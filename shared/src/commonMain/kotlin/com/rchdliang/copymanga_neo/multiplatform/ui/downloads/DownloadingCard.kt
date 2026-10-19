@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.downloads
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -128,7 +130,7 @@ fun DownloadingCard(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = name,
+text = metadataText(name),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,

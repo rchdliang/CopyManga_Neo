@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.explore
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -416,7 +418,7 @@ private fun OptionRow(
                 onClick = { onSelect(option.pathWord) },
                 label = {
                     Text(
-                        option.label,
+                        metadataText(option.label),
                         color = if (option.enabled) MaterialTheme.colorScheme.onSurface
                         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                     )

@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -133,14 +135,14 @@ internal fun ThemeBlacklistPage(
                             onClick = { pendingRemoval = theme },
                             label = {
                                 Text(
-                                    theme.name,
+                                    metadataText(theme.name),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             },
                             trailingIcon = {
-                                Icon(Icons.Outlined.Close, contentDescription = "移除${theme.name}")
+                                Icon(Icons.Outlined.Close, contentDescription = "移除${metadataText(theme.name)}")
                             }
                         )
                     }
@@ -155,7 +157,7 @@ internal fun ThemeBlacklistPage(
             title = { Text("取消屏蔽标签", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    "是否将「${theme.name}」移出黑名单？",
+                    "是否将「${metadataText(theme.name)}」移出黑名单？",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

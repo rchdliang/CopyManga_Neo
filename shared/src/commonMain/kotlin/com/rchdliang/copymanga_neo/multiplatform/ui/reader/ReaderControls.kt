@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -80,7 +82,7 @@ fun ReaderTopBar(
                 )
             }
             Text(
-                chapterName,
+                metadataText(chapterName),
                 Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleMedium,
@@ -375,7 +377,7 @@ fun ReaderBookmarksDialog(
                 items(bookmarks, key = { "${it.chapterUuid}:${it.page}" }) { mark ->
                     TextButton(onClick = { onSelect(mark) }) {
                         Text(
-                            "${mark.chapterName} · 第 ${mark.page + 1} 页",
+                            "${metadataText(mark.chapterName)} · 第 ${mark.page + 1} 页",
                             color = MaterialTheme.colorScheme.primary
                         )
                     }

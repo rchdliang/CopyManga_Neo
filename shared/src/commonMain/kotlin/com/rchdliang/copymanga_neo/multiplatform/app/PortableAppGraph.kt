@@ -261,7 +261,12 @@ class PortableAppGraph private constructor(
                     novelPreferences, annotations, blacklist, network, risk, storage,
                     PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools), logs, imageActions, export, debugStore,
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
-                    novelIllustrations = novelIllustrations)
+                    novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client),
+                    appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {
+                        override suspend fun latestRelease() = try { Result.success(GitHubMetadata(client).latestApp()) }
+                        catch (cancel: CancellationException) { throw cancel }
+                        catch (error: Exception) { Result.failure(error) }
+                    })
                 trace("core_ready")
                 completed = true
                 return PortableAppGraph(repositories, manager, ::imageLoader, warnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })

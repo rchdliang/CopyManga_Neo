@@ -10,6 +10,8 @@ interface AppSettingsRepository {
     suspend fun setThemeMode(mode: AppThemeMode): Result<Unit>
     suspend fun setWifiOnlyDownloads(enabled: Boolean): Result<Unit>
     suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean): Result<Unit>
+    suspend fun setSimplifyChinese(enabled: Boolean): Result<Unit>
+    suspend fun initializeChineseDefault(languageTag: String): Result<Unit>
     suspend fun setComicImageConcurrency(count: Int): Result<Unit>
     suspend fun setComicDownloadLimitKiB(limit: Int): Result<Unit>
 

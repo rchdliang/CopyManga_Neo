@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlinx.coroutines.flow.first
 
 class PortableAppSettingsTest {
     private class Documents : DocumentStorage {
@@ -11,6 +12,39 @@ class PortableAppSettingsTest {
         override suspend fun read(key: String) = values[key]
         override suspend fun write(key: String, value: String) { values[key] = value }
         override suspend fun remove(key: String) { values.remove(key) }
+    }
+
+    @Test fun initialLanguageDefaultIsPersistedOnlyOnce() = runTest {
+        for ((language, enabled) in listOf("zh-Hans" to true, "zh-CN" to true, "en-US" to false, "zh-TW" to false)) {
+            val documents = Documents()
+            val settings = PortableAppSettings(documents)
+            settings.initialize().getOrThrow()
+            settings.initializeChineseDefault(language).getOrThrow()
+            assertEquals(enabled, settings.settings.first().simplifyChinese)
+            val restored = PortableAppSettings(documents)
+            restored.initialize().getOrThrow()
+            restored.initializeChineseDefault(if (enabled) "en-US" else "zh-CN").getOrThrow()
+            assertEquals(enabled, restored.settings.first().simplifyChinese)
+        }
+    }
+
+    @Test fun explicitUserChoiceOverridesSystemLanguageAcrossRestart() = runTest {
+        val documents = Documents()
+        val settings = PortableAppSettings(documents)
+        settings.setSimplifyChinese(false).getOrThrow()
+        val restored = PortableAppSettings(documents)
+        restored.initialize().getOrThrow()
+        restored.initializeChineseDefault("zh-CN").getOrThrow()
+        assertFalse(restored.settings.first().simplifyChinese)
+    }
+
+    @Test fun legacySettingsKeepTheirStoredChoice() = runTest {
+        val documents = Documents()
+        documents.values["app-settings.json"] = """{"app":{"simplifyChinese":true}}"""
+        val settings = PortableAppSettings(documents)
+        settings.initialize().getOrThrow()
+        settings.initializeChineseDefault("en-US").getOrThrow()
+        assertEquals(true, settings.settings.first().simplifyChinese)
     }
 
     @Test fun freshAndMissingLayoutPreferencesMatchAndroidDefaults() = runTest {

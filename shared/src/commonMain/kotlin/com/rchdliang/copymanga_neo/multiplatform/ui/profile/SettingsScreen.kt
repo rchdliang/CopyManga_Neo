@@ -35,6 +35,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -84,6 +89,8 @@ internal fun SettingsScreen(
         onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
+        onSimplifyChineseChange = viewModel::setSimplifyChinese,
+        onDictionaryUpdate = viewModel::updateChineseDictionary,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
         onNovelIllustrationBlurChange = viewModel::setBlurNovelIllustrationPreviews,
         onImageConcurrencyChange = viewModel::setComicImageConcurrency,
@@ -116,6 +123,8 @@ private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
+    onSimplifyChineseChange: (Boolean) -> Unit = {},
+    onDictionaryUpdate: () -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
     onNovelIllustrationBlurChange: (Boolean) -> Unit = {},
     onImageConcurrencyChange: (Int) -> Unit = {},
@@ -184,9 +193,40 @@ internal fun SettingsPage(
                             "主题",
                             state.settings.themeMode.label,
                             index = 0,
-                            count = 1,
+                            count = 2,
                             enabled = enabled,
                             onClick = { picker = SettingsPicker.THEME })
+                        ProfileListItem(
+                            Icons.Outlined.SwapHoriz, "繁体简化",
+                            "由OpenCC提供简化能力",
+                            index = 1, count = 2, enabled = enabled,
+                            onClick = { onSimplifyChineseChange(!state.settings.simplifyChinese || !state.dictionaryReady) },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = onDictionaryUpdate,
+                                        enabled = enabled && !state.dictionaryWorking && !state.isDictionaryDownloading
+                                    ) {
+                                        if (state.dictionaryWorking || state.isDictionaryDownloading) {
+                                            CircularProgressIndicator(
+                                                Modifier.size(20.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else Icon(
+                                            Icons.Outlined.Refresh,
+                                            contentDescription = state.dictionaryVersion?.let { "更新词典，当前版本 $it" }
+                                                ?: "下载或更新词典",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = state.settings.simplifyChinese,
+                                        onCheckedChange = onSimplifyChineseChange,
+                                        enabled = enabled
+                                    )
+                                }
+                            }
+                        )
                         ProfileSectionTitle("应用管理")
                         ProfileListItem(
                             Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
@@ -260,8 +300,10 @@ internal fun SettingsPage(
                     index = 0, count = 1, enabled = enabled,
                     onClick = { onNovelIllustrationBlurChange(!state.settings.blurNovelIllustrationPreviews) },
                     trailingContent = {
-                        Switch(checked = state.settings.blurNovelIllustrationPreviews,
-                            onCheckedChange = onNovelIllustrationBlurChange, enabled = enabled)
+                        Switch(
+                            checked = state.settings.blurNovelIllustrationPreviews,
+                            onCheckedChange = onNovelIllustrationBlurChange, enabled = enabled
+                        )
                     }
                 )
                 ProfileSectionTitle("恢复")
@@ -624,7 +666,10 @@ internal fun parseDownloadLimitKiB(input: String, initialValue: Int? = null): In
     val normalized = input.trim().replace(',', '.')
     if (normalized.isEmpty()) return 0
     if (normalized.length > 24 || !normalized.matches(Regex("[0-9]*([.][0-9]{0,3})?"))) return null
-    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(initialValue)) return initialValue
+    if (initialValue != null && initialValue > 0 && normalized == formatDownloadLimitMiB(
+            initialValue
+        )
+    ) return initialValue
     val digits = normalized.replace(".", "")
     if (digits.isEmpty()) return null
     val decimals = if ('.' in normalized) normalized.substringAfter('.').length else 0

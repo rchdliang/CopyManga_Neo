@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.routeProgressAllowed
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
@@ -572,7 +574,7 @@ private fun NovelReaderBody(
                             }) { Icon(Icons.Outlined.ChevronLeft, "上一章 / 上一卷") }
                         Column(Modifier.weight(1f)) {
                             Text(
-                                chapterTitle,
+                                metadataText(chapterTitle),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelLarge,
@@ -770,14 +772,14 @@ private fun NovelReaderHeader(
         title = {
             Column {
                 Text(
-                    title,
+                    metadataText(title),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 if (subtitle.isNotBlank()) Text(
-                    subtitle,
+                    metadataText(subtitle),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,

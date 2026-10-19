@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.explore
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -78,13 +80,13 @@ private fun TopicBanner(topic: ComicTopic, modifier: Modifier) {
 private fun TopicIntroduction(topic: ComicTopic, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            topic.title,
+            metadataText(topic.title),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface
         )
         topic.brief?.takeIf { it.isNotBlank() }?.let {
             Text(
-                it,
+                metadataText(it),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

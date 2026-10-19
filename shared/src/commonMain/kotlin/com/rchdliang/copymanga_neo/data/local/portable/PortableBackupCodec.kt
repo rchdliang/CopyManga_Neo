@@ -68,7 +68,14 @@ object PortableBackupCodec {
         value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).also { require(it == it.normalized()) }
     fun encode(value: SettingsBackup): String = buildJsonObject {
         put("format", "copymanga-neo-settings"); put("version", 2)
-        put("settings", buildJsonObject { put("themeMode", value.settings.themeMode.name); put("wifiOnlyDownloads", value.settings.wifiOnlyDownloads); put("blurNovelIllustrationPreviews", value.settings.blurNovelIllustrationPreviews); put("comicImageConcurrency", value.settings.comicImageConcurrency); put("comicDownloadLimitKiB", value.settings.comicDownloadLimitKiB) })
+        put("settings", buildJsonObject {
+            put("themeMode", value.settings.themeMode.name)
+            put("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
+            put("blurNovelIllustrationPreviews", value.settings.blurNovelIllustrationPreviews)
+            put("comicImageConcurrency", value.settings.comicImageConcurrency)
+            put("comicDownloadLimitKiB", value.settings.comicDownloadLimitKiB)
+            put("simplifyChinese", value.settings.simplifyChinese)
+        })
         put("readerDefaults", storageJson.encodeToJsonElement(ReaderPreferences.serializer(), value.readerDefaults))
         put("homeRank", storageJson.encodeToJsonElement(HomeRankPreferences.serializer(), value.homeRank))
         put("localReading", storageJson.parseToJsonElement(value.localReading))
@@ -97,6 +104,7 @@ object PortableBackupCodec {
         val limit = if ("comicDownloadLimitKiB" in app) app.integer("comicDownloadLimitKiB") else 0
         require(concurrency in 1..10 && limit >= 0) { "下载设置无效" }
         return SettingsBackup(AppSettings(AppThemeMode.valueOf(app.string("themeMode")), app.boolean("wifiOnlyDownloads"), comicImageConcurrency = concurrency, comicDownloadLimitKiB = limit,
+            simplifyChinese = if ("simplifyChinese" in app) app.boolean("simplifyChinese") else false,
             blurNovelIllustrationPreviews = if ("blurNovelIllustrationPreviews" in app) app.boolean("blurNovelIllustrationPreviews") else false), reader, rank, local.toString(), tools.toString(), comics)
     }
 }

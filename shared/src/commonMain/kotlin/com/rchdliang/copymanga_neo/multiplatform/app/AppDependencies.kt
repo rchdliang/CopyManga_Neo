@@ -39,7 +39,9 @@ data class AppRepositories(
     val novelImagePositionDebug: com.rchdliang.copymanga_neo.domain.reading.NovelImagePositionDebugStore? = null,
     val startBackground: () -> Unit = {},
     val comicMetadata: ComicMetadataRepository,
-    val novelIllustrations: NovelIllustrationExportRepository
+    val novelIllustrations: NovelIllustrationExportRepository,
+    val chineseDictionary: ChineseDictionaryRepository,
+    val appInfo: AppInfoRepository
 )
 
 data class AppPlatforms(
