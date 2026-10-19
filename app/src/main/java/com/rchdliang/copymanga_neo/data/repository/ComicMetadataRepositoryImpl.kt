@@ -12,9 +12,23 @@ import com.rchdliang.copymanga_neo.domain.model.ComicCardMetadata
 import com.rchdliang.copymanga_neo.domain.repository.ComicMetadataRepository
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import com.rchdliang.copymanga_neo.domain.repository.RiskControlRepository
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -94,7 +108,15 @@ class ComicMetadataRepositoryImpl @Inject constructor(
                     val stored = rows.filter { it.cacheKey.startsWith(key) }.mapNotNull { row ->
                         try {
                             gson.fromJson(row.metadataJson, ComicCardMetadata::class.java)
-                                ?.let { it.pathWord to it }
+                                ?.let { value ->
+                                    // 旧混淆包可能写入缩短字段名或丢失题材类型，不能交给 UI 才检查。
+                                    require(value.pathWord == row.cacheKey.removePrefix(key))
+                                    require(value.pathWord.isNotBlank())
+                                    value.themes?.forEach { theme ->
+                                        require(!theme.name.isNullOrBlank())
+                                    }
+                                    value.pathWord to value
+                                }
                         } catch (e: Exception) {
                             Log.w("ComicMetadata", "忽略损坏的展示缓存", e)
                             null

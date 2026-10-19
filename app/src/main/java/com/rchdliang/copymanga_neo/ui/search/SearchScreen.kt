@@ -1,7 +1,5 @@
 package com.rchdliang.copymanga_neo.ui.search
 
-import com.rchdliang.copymanga_neo.ui.components.metadataText
-
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -94,8 +92,8 @@ import com.rchdliang.copymanga_neo.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.ui.components.comicContainerSharedBounds
 import com.rchdliang.copymanga_neo.ui.components.comicCoverSharedElement
 import com.rchdliang.copymanga_neo.ui.components.comicGridColumns
+import com.rchdliang.copymanga_neo.ui.components.metadataText
 import com.rchdliang.copymanga_neo.ui.components.rememberComicSharedTransitionClick
-import com.rchdliang.copymanga_neo.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.ui.theme.CopyManga_NeoTheme
 import com.rchdliang.copymanga_neo.ui.util.toCompactLocale
 
@@ -453,7 +451,7 @@ internal fun ComicResultsGrid(
     onRetry: () -> Unit,
     criteriaKey: String = "",
     transitionGroup: String = "search",
-    enableExpansion: Boolean = state.isKeywordSearch,
+    enableExpansion: Boolean = true,
     header: @Composable () -> Unit
 ) {
     com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(state.searchResults.map { it.pathWord })
