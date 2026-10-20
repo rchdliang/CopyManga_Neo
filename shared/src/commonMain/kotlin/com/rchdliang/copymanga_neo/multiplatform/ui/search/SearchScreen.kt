@@ -453,7 +453,7 @@ internal fun ComicResultsGrid(
     onRetry: () -> Unit,
     criteriaKey: String = "",
     transitionGroup: String = "search",
-    enableExpansion: Boolean = state.isKeywordSearch,
+    enableExpansion: Boolean = true,
     header: @Composable () -> Unit
 ) {
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(state.searchResults.map { it.pathWord })
