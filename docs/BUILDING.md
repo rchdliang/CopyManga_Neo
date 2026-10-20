@@ -6,7 +6,7 @@
 
 - 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
 - Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
-- 桌面安装包使用对应操作系统及架构的 JDK；Windows MSI/EXE 需要 WiX，Linux DEB/RPM 需要系统打包工具。
+- 桌面安装包使用对应操作系统及架构的 JDK；Windows EXE 安装向导需要 Inno Setup 6.5+，Linux DEB/RPM 需要系统打包工具。Windows 编译器可放入 PATH，也可通过环境变量 `ISCC` 指定 `ISCC.exe` 完整路径；标准的 Inno Setup 6 安装目录会自动检测。
 - iOS 构建需要 macOS 和 Xcode；直接安装需要签名。未签名设备 IPA 可交给 SideStore / AltStore 使用用户自己的账号重签名。
 - 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
 - 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。
@@ -26,7 +26,7 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 这个文件的赋值语法同时适用于 Java Properties 和 Xcode 配置，不要在其中放本地路径、密钥或机器专用设置。
 
 - 根 Gradle 脚本组合完整版本名，Android、共享界面及桌面 JAR 使用该版本；Linux 安装包沿用完整版本。
-- Windows MSI/EXE 只接受三段版本，自动使用“基础版本前两段 + 构建号”；例如基础版本 `0.10.19`、修订号 `1`、构建号 `33` 时为 `0.10.33`。iOS 使用三段基础版本和构建号，应用内仍显示完整版本；不需要另改平台版本常量。
+- Windows Inno Setup 安装向导显示完整版本（含修订号）；Compose 内部应用镜像仍使用“基础版本前两段 + 构建号”的三段版本。iOS 使用三段基础版本和构建号，应用内仍显示完整版本；不需要另改平台版本常量。
 - `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
 - iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
 - Android Debug 与 Release 使用相同版本名，不再追加测试后缀。
@@ -68,7 +68,19 @@ CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满�
 ./gradlew :desktopApp:run -PenableAndroid=false
 ```
 
-`-PenableAndroid=false` 排除 Android 应用模块，适用于桌面、浏览器及独立 iOS 构建。Windows 使用 `:desktopApp:packageMsi`、`:desktopApp:packageExe`；Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`。输出位于 `desktopApp/build/compose/binaries`，安装包必须在匹配的平台验证。
+`-PenableAndroid=false` 排除 Android 应用模块，适用于桌面、浏览器及独立 iOS 构建。Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`，输出位于 `desktopApp/build/compose/binaries`。
+
+Windows 安装包在对应架构的 Windows / JDK 21 上构建：
+
+```powershell
+.\gradlew.bat :desktopApp:packageInnoSetup -PenableAndroid=false --no-daemon
+```
+
+任务先生成包含运行时的 Compose 应用镜像，再编译 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss)。输出为 `desktopApp/build/installer/CopyMangaNeo-<完整版本>-windows-<架构>-setup.exe` 和 SHA-256 文件；x64 / ARM64 由构建 JDK 架构确定。CI 的 Windows 任务生成 x64 安装包，不再生成旧的 MSI / jpackage EXE。
+
+安装向导提供简体中文／英文，允许选择目录，默认安装到当前用户的 `%LOCALAPPDATA%\Programs\CopyMangaNeo`，创建开始菜单入口；桌面快捷方式可选，完成页默认勾选「运行 CopyManga Neo」，静默安装不启动应用。安装程序使用 `desktopApp/icons/copymanga-neo.ico`，快捷方式与卸载入口使用应用 EXE 图标。简体中文资源固定来自 [Inno Setup is-6_7_1](https://github.com/jrsoftware/issrc/blob/is-6_7_1/Files/Languages/Unofficial/ChineseSimplified.isl)，保留译者声明。
+
+首次从旧 MSI / jpackage EXE 切换时，先备份个人数据，并从 Windows 设置卸载旧程序，再安装新包；两种安装器的卸载记录不同，不能视为自动迁移。后续 Inno Setup 版本使用固定 AppId，直接覆盖安装。卸载脚本只移除安装文件，不主动删除应用数据。安装向导、快捷方式、完成页启动、卸载与跨版本覆盖安装仍需在 Windows 实机验收，编译成功不能替代这些检查。
 
 仅制作需要外部 JDK 的便携 JAR 时，可以选择 Windows 原生库：
 

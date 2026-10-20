@@ -34,7 +34,7 @@ compose.desktop {
             // Dependency analysis finds these runtime modules; charset providers are loaded
             // dynamically and preserve the full-JDK decoder catalog in packaged apps.
             modules("java.instrument", "java.management", "jdk.unsupported", "jdk.charsets")
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.Rpm)
+            targetFormats(TargetFormat.Deb, TargetFormat.Rpm)
             packageName = "CopyMangaNeo"
             packageVersion = rootProject.extra["copyMangaVersionName"] as String
             description = "CopyManga Neo multiplatform client"
@@ -44,6 +44,35 @@ compose.desktop {
                 iconFile.set(project.file("icons/copymanga-neo.ico"))
             }
             linux { iconFile.set(project.file("src/main/resources/copymanga-neo.png")) }
+        }
+    }
+}
+
+// Windows 安装向导由 Inno Setup 生成，Compose 只负责包含运行时的应用目录。
+val installerVersion = rootProject.extra["copyMangaVersionName"] as String
+val installerArchitecture = when (System.getProperty("os.arch").lowercase()) {
+    "amd64", "x86_64" -> "x64"
+    "aarch64", "arm64" -> "arm64"
+    else -> "unsupported"
+}
+val installerHostIsWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+tasks.register<Exec>("packageInnoSetup") {
+    val supportedHost = installerHostIsWindows && installerArchitecture != "unsupported"
+    group = "distribution"
+    description = "Build the Windows installer with Inno Setup 6.5+"
+    dependsOn("createDistributable")
+    workingDir(rootProject.projectDir)
+    commandLine(
+        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        rootProject.file(".github/scripts/build-windows-installer.ps1").absolutePath,
+        "-AppImage", layout.buildDirectory.dir("compose/binaries/main/app/CopyMangaNeo").get().asFile.absolutePath,
+        "-AppVersion", installerVersion,
+        "-Architecture", installerArchitecture,
+        "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath,
+    )
+    doFirst {
+        check(supportedHost) {
+            "Inno Setup packaging requires a matching Windows x64 or ARM64 JDK"
         }
     }
 }

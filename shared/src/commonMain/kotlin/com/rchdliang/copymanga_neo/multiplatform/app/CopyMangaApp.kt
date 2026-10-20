@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -280,10 +281,27 @@ internal fun MainNavigationShell(
         if (expanded) {
             val rail = rememberWideNavigationRailState(initialValue = WideNavigationRailValue.Collapsed)
             val scope = rememberCoroutineScope()
+            val railInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start)
+            val insetPadding = railInsets.asPaddingValues()
+            val railHeight = maxHeight - insetPadding.calculateTopPadding() - insetPadding.calculateBottomPadding()
+            val canExpand = railHeight >= 480.dp
+            LaunchedEffect(canExpand) { if (!canExpand) rail.collapse() }
+            val density = LocalDensity.current
+            val labelHeight = with(density) { MaterialTheme.typography.labelMedium.lineHeight.toDp() }
+            val itemHeight = maxOf(80.dp, 48.dp + labelHeight)
+            // 正常高度保留头像、展开按钮和标准留白；紧凑高度只保留导航与最小边距。
+            val reservedHeight = if (canExpand) 248.dp else 16.dp
+            val visibleCount = with(density) {
+                navigationRailVisibleCount(MainTab.entries.size,
+                    (railHeight - reservedHeight).roundToPx(), itemHeight.roundToPx())
+            }
+            val visibleTabs = MainTab.entries.take(visibleCount)
+            val overflowTabs = MainTab.entries.drop(visibleCount)
+            var overflowOpen by remember(overflowTabs) { mutableStateOf(false) }
             Row(Modifier.fillMaxSize()) {
                 WideNavigationRail(
                     state = rail,
-                    windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start),
+                    windowInsets = railInsets,
                     colors = WideNavigationRailColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer,
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -291,11 +309,9 @@ internal fun MainNavigationShell(
                         modalScrimColor = WideNavigationRailDefaults.colors().modalScrimColor,
                         modalContentColor = WideNavigationRailDefaults.colors().modalContentColor
                     ),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    AdaptiveNavigationRailColumn(
-                        expanded = rail.targetValue == WideNavigationRailValue.Expanded,
-                        header = {
+                    contentPadding = if (canExpand) PaddingValues(top = 60.dp, bottom = 44.dp) else PaddingValues(vertical = 8.dp),
+                    header = if (canExpand) {
+                        {
                             Column(Modifier.padding(start = 24.dp)) {
                                 NavigationAvatar(
                                     loggedIn = loggedIn, avatar = avatar,
@@ -309,13 +325,44 @@ internal fun MainNavigationShell(
                                     if (rail.targetValue == WideNavigationRailValue.Expanded) "折叠侧栏" else "展开侧栏") }
                             }
                         }
-                    ) {
-                        MainTab.entries.forEach { tab ->
+                    } else null
+                ) {
+                        visibleTabs.forEach { tab ->
+                            key(tab) {
+                            // 与 Android 同步使用目标状态，让图标、文字和侧栏宽度同时过渡。
                             WideNavigationRailItem(railExpanded = rail.targetValue == WideNavigationRailValue.Expanded,
                                 selected = current == tab, onClick = { onSelect(tab) },
-                                icon = { TabIcon(tab, current == tab, updates) }, label = { Text(tab.title) })
+                                icon = { TabIcon(tab, current == tab, updates) },
+                                label = { Text(tab.title, color = if (current == tab)
+                                    MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) })
+                            }
                         }
-                    }
+                        if (overflowTabs.isNotEmpty()) Box {
+                            WideNavigationRailItem(
+                                railExpanded = rail.targetValue == WideNavigationRailValue.Expanded,
+                                selected = current in overflowTabs,
+                                onClick = { overflowOpen = true },
+                                icon = {
+                                    BadgedBox(badge = {
+                                        if (MainTab.FAVORITES in overflowTabs && updates > 0) Badge {
+                                            Text(updates.toString(), color = MaterialTheme.colorScheme.onError)
+                                        }
+                                    }) { Icon(Icons.Filled.MoreVert, "更多导航") }
+                                },
+                                label = { Text("更多", color = if (current in overflowTabs)
+                                    MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant) }
+                            )
+                            DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                                overflowTabs.forEach { tab ->
+                                    DropdownMenuItem(
+                                        text = { Text(tab.title, color = MaterialTheme.colorScheme.onSurface) },
+                                        leadingIcon = { TabIcon(tab, current == tab, updates) },
+                                        trailingIcon = { if (current == tab) Icon(Icons.Filled.Check, "当前页面") },
+                                        onClick = { overflowOpen = false; onSelect(tab) }
+                                    )
+                                }
+                            }
+                        }
                 }
                 Box(Modifier.weight(1f).fillMaxSize().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surface)) { content() }
             }
