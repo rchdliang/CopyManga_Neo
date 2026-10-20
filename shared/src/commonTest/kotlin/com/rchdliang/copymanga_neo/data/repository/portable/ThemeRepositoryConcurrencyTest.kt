@@ -21,7 +21,7 @@ class ThemeRepositoryConcurrencyTest {
     """.trimIndent()
 
     @Test fun realRepositorySharesLimitAndDeduplicatesSameComic() = runTest {
-        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(themeFetchConcurrency = 2, themeFetchIntervalMillis = 0)))
+        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB, themeFetchConcurrency = 2, themeFetchIntervalMillis = 0)))
         var active = 0
         var peak = 0
         var requests = 0
@@ -47,7 +47,7 @@ class ThemeRepositoryConcurrencyTest {
     }
 
     @Test fun failureCooldownKeepsStaleTagsAndRiskGateStopsFurtherTransport() = runTest {
-        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(themeFetchIntervalMillis = 0)))
+        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB, themeFetchIntervalMillis = 0)))
         var requests = 0
         var risk = false
         val http = HttpClient(MockEngine(MockEngineConfig().apply {

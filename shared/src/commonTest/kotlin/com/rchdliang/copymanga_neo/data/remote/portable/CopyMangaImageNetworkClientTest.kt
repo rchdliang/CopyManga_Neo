@@ -2,6 +2,8 @@ package com.rchdliang.copymanga_neo.data.remote.portable
 
 import coil3.network.*
 import com.rchdliang.copymanga_neo.data.remote.portable.util.ProtocolCrypto
+import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
@@ -54,7 +56,7 @@ class CopyMangaImageNetworkClientTest {
     @Test fun gzipApiResponseIsDecodedBeforeJsonParsing()=runTest {
         val compressed=ProtocolCrypto.unhex("1f8b0800000000000203ab564ace4f4955b2323230d0512a4a2d2ecd292956b2aa56cacf56b22a292a4dadad0500306556f422000000")
         val engine=engine{respond(compressed,headers=headersOf(HttpHeaders.ContentEncoding to listOf("gzip"),HttpHeaders.ContentType to listOf("application/json")))}
-        val client=CopyMangaClient(HttpClient(engine),PortableNetworkState())
+        val client=CopyMangaClient(HttpClient(engine),PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         assertEquals("true",client.results(ApiRequest("/api/v3/comics"))["ok"].toString());client.close()
     }
     @Test fun cacheOnlyMissNeverConnectsEvenWithMixedCaseDirectives() = runTest {

@@ -23,7 +23,7 @@ class OriginalWorkViewModelTest {
         override suspend fun remove(key: String) { values.remove(key) }
     }
     private class Network : NetworkSettingsRepository {
-        override val settings = MutableStateFlow(NetworkSettings())
+        override val settings = MutableStateFlow(NetworkSettings(requestMode = RequestMode.WEB))
         override val officialAppDefaults = OfficialAppSettings()
         override fun generatePseudoId() = ""
         override fun generateUmString() = ""
@@ -40,7 +40,7 @@ class OriginalWorkViewModelTest {
         val network = Network()
         val app = PortableAppSettings(Documents())
         val http = HttpClient(MockEngine { error("No transport expected") })
-        val client = CopyMangaClient(http, PortableNetworkState())
+        val client = CopyMangaClient(http, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         val calls = mutableListOf<Triple<String, String, Int>>()
         var reply: suspend (String, Int) -> Result<ComicPage> = { order, offset ->
             Result.success(ComicPage(listOf(comic("$order:$offset")), if (offset == 0) 21 else null, 42))

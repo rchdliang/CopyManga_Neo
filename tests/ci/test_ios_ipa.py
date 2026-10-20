@@ -1,8 +1,14 @@
+import hashlib
 import importlib.util
+import json
 import plistlib
+import subprocess
+import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[2] / ".github/scripts/package-ios-ipa.py"
 SPEC = importlib.util.spec_from_file_location("ios_ipa", MODULE)
@@ -53,6 +59,33 @@ class IosIpaTests(unittest.TestCase):
         self.save()
         with self.assertRaises(ValueError):
             ipa.validate_app(self.app, self.versions, "platform IOS\n")
+
+    @unittest.skipUnless(sys.platform == "darwin", "Requires Apple's device toolchain and ditto")
+    def test_real_device_executable_packages_with_checksum_and_manifest(self):
+        # 使用真正的 ARM64 设备可执行文件覆盖 vtool、lipo 和 ditto 调用。
+        source = Path(self.temp.name) / "main.c"
+        source.write_text("int main(void) { return 0; }\n", encoding="utf-8")
+        sdk = subprocess.check_output(
+            ["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
+        subprocess.run(["xcrun", "--sdk", "iphoneos", "clang",
+                        "-target", "arm64-apple-ios15.0", "-isysroot", sdk,
+                        str(source), "-o", str(self.app / "CopyMangaNeo")], check=True)
+        output = Path(self.temp.name) / "output with spaces"
+        with patch.object(ipa, "version_properties", return_value=self.versions):
+            ipa.package(self.app, output)
+        archive_path, = output.glob("*.ipa")
+        with zipfile.ZipFile(archive_path) as archive:
+            self.assertIsNone(archive.testzip())
+            self.assertIn("Payload/CopyMangaNeo.app/CopyMangaNeo", archive.namelist())
+            self.assertEqual(self.info, plistlib.loads(archive.read("Payload/CopyMangaNeo.app/Info.plist")))
+        digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        manifest = json.loads((output / "ios-device-build.json").read_text(encoding="utf-8"))
+        self.assertEqual(digest, manifest["sha256"])
+        self.assertEqual("arm64", manifest["architecture"])
+        self.assertEqual("iphoneos", manifest["platform"])
+        self.assertFalse(manifest["signed"])
+        self.assertEqual(digest + "  " + archive_path.name + "\n",
+                         archive_path.with_suffix(".ipa.sha256").read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository.portable
 
 import com.rchdliang.copymanga_neo.data.remote.portable.*
+import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
@@ -14,6 +15,9 @@ import kotlin.test.*
 
 /** Synthetic requests only: never contacts a service or uses real credentials. */
 class PortableLoginRetryTest {
+    // Web 会话测试显式固定协议，不依赖产品的首次启动默认值。
+    private fun webState() = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))
+
     private class Storage(initial: Map<RequestMode, StoredCredential> = emptyMap()) : SecureCredentialStorage {
         override val persistent = true
         var values = initial
@@ -45,7 +49,7 @@ class PortableLoginRetryTest {
                     respond(if (raw == "synthetic-wrong") """{"code":210,"message":"密码错误"}""" else success, headers = headers)
                 } else respond(success, headers = headers)
             })
-            val client = CopyMangaClient(http, PortableNetworkState())
+            val client = CopyMangaClient(http, webState())
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -66,7 +70,7 @@ class PortableLoginRetryTest {
                 assertEquals(generation + 1, repository.sessionVersionSync())
                 assertEquals(1, storage.writes)
                 val restoredHttp = HttpClient(MockEngine { error("Restoring must not log in") })
-                val restoredClient = CopyMangaClient(restoredHttp, PortableNetworkState())
+                val restoredClient = CopyMangaClient(restoredHttp, webState())
                 try {
                     val restored = PortableUserRepository(restoredClient, storage)
                     restored.restoreSecureSessions()
@@ -93,7 +97,7 @@ class PortableLoginRetryTest {
                 } else respond(success, headers = headers)
             } else respond(success, headers = headers)
         })
-        val client = CopyMangaClient(http, PortableNetworkState())
+        val client = CopyMangaClient(http, webState())
         try {
             val repository = PortableUserRepository(client, storage)
             repository.restoreSecureSessions()
@@ -133,7 +137,7 @@ class PortableLoginRetryTest {
                 }
             } else respond(success, headers = headers)
         })
-        val client = CopyMangaClient(http, PortableNetworkState())
+        val client = CopyMangaClient(http, webState())
         try {
             val repository = PortableUserRepository(client, storage)
             repository.restoreSecureSessions()
@@ -166,7 +170,7 @@ class PortableLoginRetryTest {
                 requests++
                 respond("""{"code":210,"message":"$reason"}""", headers = headers)
             })
-            val client = CopyMangaClient(http, PortableNetworkState())
+            val client = CopyMangaClient(http, webState())
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()

@@ -29,7 +29,7 @@ class ComicMetadataRepositoryTest {
     """.trimIndent()
 
     private inner class Fixture(val test: TestScope, val storage: Storage = Storage()) {
-        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(themeFetchConcurrency = 1, themeFetchIntervalMillis = 0)))
+        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB, themeFetchConcurrency = 1, themeFetchIntervalMillis = 0)))
         var calls = 0
         var fail = false
         var risk = false

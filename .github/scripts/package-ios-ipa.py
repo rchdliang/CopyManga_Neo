@@ -45,7 +45,7 @@ def package(app, output):
     versions = version_properties(Path("version.properties"))
     executable = app / "CopyMangaNeo"
     info_text = subprocess.check_output(["xcrun", "vtool", "-show-build", str(executable)], text=True)
-    subprocess.run(["xcrun", "lipo", "-verify_arch", "arm64", str(executable)], check=True)
+    subprocess.run(["xcrun", "lipo", str(executable), "-verify_arch", "arm64"], check=True)
     info = validate_app(app, versions, info_text)
     output.mkdir(parents=True, exist_ok=True)
     version = versions["COPYMANGA_VERSION_BASE"].strip()

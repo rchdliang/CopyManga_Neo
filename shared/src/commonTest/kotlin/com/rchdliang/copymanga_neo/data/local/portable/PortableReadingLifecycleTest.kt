@@ -50,7 +50,7 @@ class PortableReadingLifecycleTest {
     private fun Documents.progress(data: ProgressData) {
         values["reading-progress.json"] = storageJson.encodeToString(ProgressData.serializer(), data)
     }
-    private fun state(owner: String = "user:a") = PortableNetworkState(NetworkSnapshot(webSession = PortableSession("token", owner)))
+    private fun state(owner: String = "user:a") = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB), webSession = PortableSession("token", owner)))
     private class Manga : MangaRepository {
         var calls = 0
         var clears = 0

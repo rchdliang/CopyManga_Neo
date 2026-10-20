@@ -10,7 +10,7 @@ import kotlin.test.*
 class PortableUserRepositoryTest {
     @Test fun savingPreferencesRollsBackIfNetworkChangesDuringSecureWrite()=runTest {
         val initial=StoredCredential(PortableSession("existing-token","owner","user"),savedUsername="user")
-        val state=PortableNetworkState()
+        val state=PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))
         var onWrite:(()->Unit)?=null
         val storage=object:SecureCredentialStorage {
             override val persistent=true

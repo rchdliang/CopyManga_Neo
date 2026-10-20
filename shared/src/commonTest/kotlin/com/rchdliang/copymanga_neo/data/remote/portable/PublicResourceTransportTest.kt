@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.remote.portable
 
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
+import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
@@ -99,7 +100,7 @@ class PublicResourceTransportTest {
     @Test fun siteResourcesCannotEscapeBoundaryAndApiRedirectsRemainDisabled() = runTest {
         var calls = 0
         val http = HttpClient(MockEngine { calls++; respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://cdn.example/image")) })
-        val client = CopyMangaClient(http, PortableNetworkState())
+        val client = CopyMangaClient(http, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         try {
             assertFailsWith<IllegalArgumentException> { client.resource("https://${CopyMangaNetworkConfig.WWW_HOST}/comic/test", 32) }
             assertEquals(1, calls)

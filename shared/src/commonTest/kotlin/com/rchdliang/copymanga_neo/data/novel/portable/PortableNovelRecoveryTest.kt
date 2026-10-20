@@ -3,8 +3,10 @@ package com.rchdliang.copymanga_neo.data.novel.portable
 import com.rchdliang.copymanga_neo.data.image.portable.ReaderImageMetadata
 import com.rchdliang.copymanga_neo.data.novel.portable.cache.VerifiedPortableNovelCache
 import com.rchdliang.copymanga_neo.data.remote.portable.CopyMangaClient
+import com.rchdliang.copymanga_neo.data.remote.portable.NetworkSnapshot
 import com.rchdliang.copymanga_neo.data.remote.portable.PortableNetworkState
 import com.rchdliang.copymanga_neo.data.storage.CacheStorage
+import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -40,7 +42,7 @@ class PortableNovelRecoveryTest {
                 if (request.url.host == "assets.example.org") respond("repaired", headers = headersOf(HttpHeaders.ContentType, "text/plain"))
                 else respond("""{"code":200,"results":${metadata()}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
             })
-            val client = CopyMangaClient(engine, PortableNetworkState())
+            val client = CopyMangaClient(engine, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
             try {
                 val repository = PortableNovelRepository(client, cache)
                 val reading = repository.readVolume(mode, "guest", "book", "v1", false, refresh, {}).getOrThrow()
@@ -60,7 +62,7 @@ class PortableNovelRecoveryTest {
         }
         var requests = 0
         val engine = HttpClient(MockEngine { requests++; error("must not request") })
-        val client = CopyMangaClient(engine, PortableNetworkState())
+        val client = CopyMangaClient(engine, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         try {
             assertFailsWith<CancellationException> {
                 PortableNovelRepository(client, cache).readVolume(mode, "guest", "book", "v1", false, false, {})
@@ -77,7 +79,7 @@ class PortableNovelRecoveryTest {
         val engine = HttpClient(MockEngine {
             respond(if (valid) "valid-image-fixture" else "<html>error</html>")
         })
-        val client = CopyMangaClient(engine, PortableNetworkState())
+        val client = CopyMangaClient(engine, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         try {
             val repository = PortableNovelRepository(client, cache, inspectImage = { bytes ->
                 inspections++

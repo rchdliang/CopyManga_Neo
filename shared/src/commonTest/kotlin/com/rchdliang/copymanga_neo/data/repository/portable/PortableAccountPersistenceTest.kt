@@ -9,6 +9,9 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
 class PortableAccountPersistenceTest {
+    // Web 会话测试显式固定协议，不依赖产品的首次启动默认值。
+    private fun webState() = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))
+
     private val web = RequestMode.WEB
     private val app = RequestMode.OFFICIAL_APP
     private val identity = AppCredentialIdentity("1.0", "1", "pseudo", "um", "device", "info", "build")
@@ -39,7 +42,7 @@ class PortableAccountPersistenceTest {
         for (otherName in listOf("alice", "bob")) {
             val other = credential(otherName, app)
             val storage = Storage(mapOf(web to credential("alice", web), app to other))
-            val http = engine(); val state = PortableNetworkState(); val client = CopyMangaClient(http, state)
+            val http = engine(); val state = webState(); val client = CopyMangaClient(http, state)
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -59,7 +62,7 @@ class PortableAccountPersistenceTest {
     @Test fun uncheckedRememberClearsSavedLoginAcrossLogoutAndRestart() = runTest {
         for (clearViaPreferences in listOf(false, true)) {
             val storage = Storage(mapOf(web to credential("alice", web)))
-            val http = engine(); val client = CopyMangaClient(http, PortableNetworkState())
+            val http = engine(); val client = CopyMangaClient(http, webState())
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -79,7 +82,7 @@ class PortableAccountPersistenceTest {
                 storage.afterWrite = { error("Logged-out preferences must not write") }
                 repository.saveCredentials("unexpected-user", "unexpected-password", true, true, repository.sessionVersionSync())
                 assertEquals(before, storage.values)
-                val secondHttp = engine(); val secondClient = CopyMangaClient(secondHttp, PortableNetworkState())
+                val secondHttp = engine(); val secondClient = CopyMangaClient(secondHttp, webState())
                 try {
                     val restored = PortableUserRepository(secondClient, storage)
                     restored.restoreSecureSessions()
@@ -97,7 +100,7 @@ class PortableAccountPersistenceTest {
         for (otherName in listOf("login-alias", "alice", "bob")) {
             val other = credential(otherName, app)
             val storage = Storage(mapOf(app to other))
-            val http = engine(); val state = PortableNetworkState(); val client = CopyMangaClient(http, state)
+            val http = engine(); val state = webState(); val client = CopyMangaClient(http, state)
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -119,7 +122,7 @@ class PortableAccountPersistenceTest {
         for (other in listOf<StoredCredential?>(null, credential("alice", app), credential("bob", app),
             credential("alice", app).copy(savedUsername = "bob"))) {
             val storage = Storage(if (other == null) emptyMap() else mapOf(app to other))
-            val http = engine(); val state = PortableNetworkState(); val client = CopyMangaClient(http, state)
+            val http = engine(); val state = webState(); val client = CopyMangaClient(http, state)
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -142,7 +145,7 @@ class PortableAccountPersistenceTest {
     @Test fun failedSnapshotWriteRollsBackBothModesBeforePublishing() = runTest {
         val initial = mapOf(web to credential("alice", web), app to credential("alice", app))
         val storage = Storage(initial)
-        val http = engine(); val state = PortableNetworkState(); val client = CopyMangaClient(http, state)
+        val http = engine(); val state = webState(); val client = CopyMangaClient(http, state)
         try {
             val repository = PortableUserRepository(client, storage)
             repository.restoreSecureSessions()
@@ -162,7 +165,7 @@ class PortableAccountPersistenceTest {
 
     @Test fun metadataRefreshPersistsAndSurvivesPreferenceWritesAndRestart() = runTest {
         val storage = Storage(mapOf(web to credential("alice", web)))
-        val http = engine(); val client = CopyMangaClient(http, PortableNetworkState())
+        val http = engine(); val client = CopyMangaClient(http, webState())
         try {
             val repository = PortableUserRepository(client, storage)
             repository.restoreSecureSessions()
@@ -171,7 +174,7 @@ class PortableAccountPersistenceTest {
             assertEquals(generation, repository.sessionVersionSync())
             repository.saveCredentials("alice", "password", true, false, generation)
             assertEquals("new-avatar", storage.values.getValue(web).session.avatar)
-            val secondHttp = engine(); val secondState = PortableNetworkState(); val secondClient = CopyMangaClient(secondHttp, secondState)
+            val secondHttp = engine(); val secondState = webState(); val secondClient = CopyMangaClient(secondHttp, secondState)
             try {
                 PortableUserRepository(secondClient, storage).restoreSecureSessions()
                 assertEquals("new-avatar", secondState.snapshot.webSession.avatar)
@@ -183,7 +186,7 @@ class PortableAccountPersistenceTest {
         for (changeSession in listOf(false, true)) {
             val old = credential("legacy-alias", web)
             val storage = Storage(mapOf(web to old))
-            val http = engine(); val state = PortableNetworkState(); val client = CopyMangaClient(http, state)
+            val http = engine(); val state = webState(); val client = CopyMangaClient(http, state)
             try {
                 val repository = PortableUserRepository(client, storage)
                 repository.restoreSecureSessions()
@@ -205,7 +208,7 @@ class PortableAccountPersistenceTest {
         val otherMode = credential("bob", app)
         val storage = Storage(mapOf(web to old, app to otherMode))
         val http = engine()
-        val state = PortableNetworkState()
+        val state = webState()
         val client = CopyMangaClient(http, state)
         val pendingOldRequest = kotlinx.coroutines.Job()
         try {
@@ -228,7 +231,7 @@ class PortableAccountPersistenceTest {
             assertEquals("legacy-alias", repository.getSavedUsernameSync(),
                 "Remembered login input is distinct from verified reading identity")
             val restartedHttp = engine()
-            val restartedState = PortableNetworkState()
+            val restartedState = webState()
             val restartedClient = CopyMangaClient(restartedHttp, restartedState)
             try {
                 PortableUserRepository(restartedClient, storage).restoreSecureSessions()

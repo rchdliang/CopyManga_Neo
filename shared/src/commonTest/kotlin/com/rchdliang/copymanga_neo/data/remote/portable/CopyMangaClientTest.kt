@@ -129,7 +129,7 @@ class CopyMangaClientTest {
             else assertEquals("Token synthetic-token",request.headers["Authorization"])
             respond("""{"code":200,"results":{}}""")
         }
-        val settings=NetworkSettings(apiHost="custom-api.example",wwwHost="custom-www.example",loginHost="custom-login.example")
+        val settings=NetworkSettings(requestMode=RequestMode.WEB,apiHost="custom-api.example",wwwHost="custom-www.example",loginHost="custom-login.example")
         val state=PortableNetworkState(NetworkSnapshot(settings=settings,webSession=PortableSession("synthetic-token")))
         val client=CopyMangaClient(HttpClient(engine),state)
         try {
@@ -162,7 +162,7 @@ class CopyMangaClientTest {
             }
             respond("<html>content</html>")
         }
-        val state=PortableNetworkState(NetworkSnapshot(settings=NetworkSettings(wwwHost="custom-www.example"),webSession=PortableSession("synthetic-token")))
+        val state=PortableNetworkState(NetworkSnapshot(settings=NetworkSettings(requestMode=RequestMode.WEB,wwwHost="custom-www.example"),webSession=PortableSession("synthetic-token")))
         val client=CopyMangaClient(HttpClient(engine),state)
         try {
             val api=MangaApiService(client,www=true)

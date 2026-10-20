@@ -57,7 +57,7 @@ class OriginalWorkRepositoryTest {
             """{"code":200,"results":{"list":[{"name":"Book","path_word":"book"}],"offset":21,"limit":21,"total":42}}"""
         )) {
             val http = HttpClient(MockEngine { respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json")) })
-            val client = CopyMangaClient(http, PortableNetworkState())
+            val client = CopyMangaClient(http, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
             try {
                 assertTrue(PortableComicDiscoveryRepository(client).getOriginalWorkComics("LoveLive", "-datetime_updated", 0).isFailure)
             } finally { client.close(); http.close() }
@@ -70,7 +70,7 @@ class OriginalWorkRepositoryTest {
             calls++
             respond("""{"code":210,"message":"blocked"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val client = CopyMangaClient(http, PortableNetworkState())
+        val client = CopyMangaClient(http, PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB))))
         try {
             val repo = PortableComicDiscoveryRepository(client)
             assertIs<RiskControlException>(repo.getOriginalWorkComics("LoveLive", "-datetime_updated", 0).exceptionOrNull())
