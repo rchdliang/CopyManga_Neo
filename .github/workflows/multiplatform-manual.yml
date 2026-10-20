@@ -68,10 +68,14 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: python3 .github/scripts/prepare-test-signing.py
       - name: Build debug APK and run Android unit tests
-        # Optional official-App mode; empty is supported by the app build.
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
         run: ./gradlew :app:assembleDebug :app:testDebugUnitTest -PuseReleaseSigningForTest=true --no-configuration-cache --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Verify Android packaged configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python3 .github/scripts/verify-app-config.py android 'app/build/outputs/apk/debug/*.apk'
       - name: Remove ephemeral signing material
         if: ${{ always() }}
         run: |
@@ -120,7 +124,14 @@ jobs:
           if (-not (Test-Path (Join-Path $wixBin 'light.exe'))) { throw 'WiX light.exe missing' }
           $wixBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test desktop and build Windows installers
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
         run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageMsi :desktopApp:packageExe -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Verify Windows packaged configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python .github/scripts/verify-app-config.py desktop desktopApp/build/compose/binaries/main/app
       - name: Upload windows-x64-installers
         uses: actions/upload-artifact@v6
         with:
@@ -163,7 +174,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes rpm fakeroot xvfb libgl1 libfontconfig1
       - name: Test desktop and build Linux installers
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
         run: xvfb-run --auto-servernum ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageDeb :desktopApp:packageRpm -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+      - name: Verify Linux packaged configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python3 .github/scripts/verify-app-config.py desktop desktopApp/build/compose/binaries/main/app
       - name: Upload linux-x64-installers
         uses: actions/upload-artifact@v6
         with:
@@ -254,11 +272,16 @@ jobs:
           xcodebuild -version
           xcodebuild -list -project iosApp/iosApp.xcodeproj
       - name: Validate IPA packaging checks
-        run: python3 -m unittest discover -s tests/ci -p 'test_ios_ipa.py'
+        run: python3 -m unittest discover -s tests/ci -p 'test_*.py'
       - name: Build and validate unsigned device IPA
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
         run: bash .github/scripts/build-ios-ipa.sh
+      - name: Verify iOS packaged configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python3 .github/scripts/verify-app-config.py ios 'build/*-ios-arm64-unsigned.ipa'
       - name: Upload ios-device-ipa
         uses: actions/upload-artifact@v6
         with:

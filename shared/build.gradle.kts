@@ -6,6 +6,8 @@ import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import java.util.Properties
+import org.gradle.work.DisableCachingByDefault
 
 plugins {
     kotlin("multiplatform")
@@ -47,6 +49,46 @@ val generateReleaseVersion = tasks.register<GenerateReleaseVersion>("generateRel
     outputDirectory.set(layout.buildDirectory.dir("generated/releaseVersion/commonMain"))
 }
 
+/** 桌面安装包内置协议配置，生成文件不进入源码仓库或浏览器源码集。 */
+@DisableCachingByDefault(because = "Generated source contains private build configuration")
+abstract class GenerateOfficialAppConfig : DefaultTask() {
+    @get:Input abstract val tapString: Property<String>
+    @get:Input abstract val requireConfigured: Property<Boolean>
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val value = tapString.get().trim()
+        require(value.isEmpty() || value.matches(Regex("[0-9a-fA-F]{32}"))) {
+            "COPYMANGA_TAP_STRING must contain 32 hexadecimal characters"
+        }
+        require(!requireConfigured.get() || value.isNotEmpty()) {
+            "COPYMANGA_TAP_STRING is required for this build"
+        }
+        val target = outputDirectory.file("com/rchdliang/copymanga_neo/multiplatform/app/OfficialAppBuildConfig.kt").get().asFile
+        target.parentFile.mkdirs()
+        target.writeText("""
+            package com.rchdliang.copymanga_neo.multiplatform.app
+
+            // 编译时生成；不要将此文件提交到 Git。
+            object OfficialAppBuildConfig {
+                const val TAP_STRING = "$value"
+            }
+        """.trimIndent() + "\n")
+    }
+}
+
+val localOfficialAppTapString = providers.fileContents(rootProject.layout.projectDirectory.file("local.properties"))
+    .asText.orElse("").map { text ->
+        Properties().apply { text.reader().use { load(it) } }
+            .getProperty("COPYMANGA_TAP_STRING").orEmpty().trim()
+    }
+val generateOfficialAppConfig = tasks.register<GenerateOfficialAppConfig>("generateOfficialAppConfig") {
+    tapString.set(providers.environmentVariable("COPYMANGA_TAP_STRING").map(String::trim)
+        .filter { it.isNotEmpty() }.orElse(localOfficialAppTapString))
+    requireConfigured.set(providers.gradleProperty("requireOfficialAppConfig").map(String::toBooleanStrict).orElse(false))
+    outputDirectory.set(layout.buildDirectory.dir("generated/officialAppConfig/desktopMain"))
+}
 
 kotlin {
     android {
@@ -65,7 +107,10 @@ kotlin {
     }
     wasmJs { browser { commonWebpackConfig { outputFileName = "copymanga-neo.js" } }; binaries.executable() }
     sourceSets {
-        commonMain { kotlin.srcDir(generateReleaseVersion.flatMap { it.outputDirectory }) }
+        commonMain {
+            kotlin.srcDir(generateReleaseVersion.flatMap { it.outputDirectory })
+        }
+        named("desktopMain") { kotlin.srcDir(generateOfficialAppConfig.flatMap { it.outputDirectory }) }
         commonMain.dependencies {
             // Production shared NavHost; platform inputs use the standalone dispatcher bridge.
             implementation("org.jetbrains.androidx.navigation:navigation-compose:2.10.0-beta01")

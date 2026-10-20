@@ -54,19 +54,12 @@ private external fun installBrowserBack(back: () -> Boolean, exit: () -> Unit): 
 @JsFun("""(id, action) => { const map=globalThis.__copyMangaBack; const value=map?.get(id); value?.[action]?.(); if(action==='dispose')map?.delete(id); }""")
 private external fun browserBackAction(id: String, action: String)
 
-/** Browser runtime configuration is public to page scripts and visitors; it is not secret storage. */
-@JsFun("""() => {
- const value = globalThis.copyMangaNeoConfig?.tapString;
- return typeof value === 'string' ? value : '';
-}""")
-private external fun browserTapString(): String
-
 /** HTTPS/localhost is required for secure file pickers and persistent browser storage. */
 fun main() {
     val host = BrowserPlatformHost()
     ComposeViewport {
         PortableAppEntry(
-            create = { BrowserGraph.create(it, host, tapString = browserTapString()).core },
+            create = { BrowserGraph.create(it, host).core },
             platforms = { AppPlatforms(host, host, host, host, host, it.imageLoader, host) },
             capabilityWarnings = host.capabilityWarnings,
             lifecycle = { graph, scope, report ->

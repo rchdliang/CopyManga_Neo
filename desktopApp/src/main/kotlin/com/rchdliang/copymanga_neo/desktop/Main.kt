@@ -84,7 +84,8 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             try {
                 // Keep ownership even if withContext is canceled after create succeeds but before delivery.
                 withContext(Dispatchers.IO) {
-                    uninstalled = DesktopGraph.create(instance.directory, scope, System.getenv("COPYMANGA_TAP_STRING").orEmpty())
+                    uninstalled = DesktopGraph.create(instance.directory, scope,
+                        System.getenv("COPYMANGA_TAP_STRING").orEmpty().ifBlank { OfficialAppBuildConfig.TAP_STRING })
                 }
                 currentCoroutineContext().ensureActive()
                 if (phase != DesktopWindowPhase.FLUSH_QUIT) {

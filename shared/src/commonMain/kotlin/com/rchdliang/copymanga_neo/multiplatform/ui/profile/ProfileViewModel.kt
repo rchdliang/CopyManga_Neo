@@ -55,7 +55,8 @@ data class ProfileUiState(
     val isBlacklistEnabled: Boolean = true,
     val isBlacklistLoading: Boolean = true,
     val isBlacklistSaving: Boolean = false,
-    val blacklistError: String? = null
+    val blacklistError: String? = null,
+    val canChooseRequestMode: Boolean = true
 )
 
 /** 账号页一次性事件。敏感凭据只通过事件传递，不进入可恢复的 UiState。 */
@@ -75,7 +76,8 @@ class ProfileViewModel constructor(
 ) : ViewModel() {
 
     private val _uiState =
-        MutableStateFlow(ProfileUiState(requestMode = networkSettings.settings.value.requestMode))
+        MutableStateFlow(ProfileUiState(requestMode = networkSettings.settings.value.requestMode,
+            canChooseRequestMode = networkSettings.supportedRequestModes.size > 1))
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     private var memberInfoJob: Job? = null

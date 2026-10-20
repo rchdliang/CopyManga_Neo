@@ -225,6 +225,7 @@ class PortableUserRepository(
     }
     override suspend fun importLoginCredential(serializedCredential:String):Result<CredentialImportResult> = result {
         awaitReady();val snapshot=active();val bundle=PortableCredentialCodec.decode(serializedCredential)
+        require(bundle.activeMode in client.state.supportedRequestModes) { "当前平台仅支持导入网页模式凭据" }
         if(bundle.savedLogin!=null)requirePersistence(true,false)
         val credential=bundle.sessions.single{it.mode==bundle.activeMode};val mode=credential.mode
         val response=api.getMemberInfoWithCredential("Token ${credential.token}",requestMode=mode,appIdentity=bundle.appIdentity.takeIf{mode==RequestMode.OFFICIAL_APP})

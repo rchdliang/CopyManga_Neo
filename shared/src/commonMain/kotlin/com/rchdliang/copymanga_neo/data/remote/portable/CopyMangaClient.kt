@@ -116,6 +116,7 @@ class CopyMangaClient(
         val snapshot = state.snapshot
         val settings = snapshot.settings
         val mode = request.mode ?: settings.requestMode
+        require(mode in state.supportedRequestModes) { "当前平台仅支持网页模式" }
         val app = mode == RequestMode.OFFICIAL_APP && "X-Copy-Comment" !in request.headers && !request.www
         val job = currentCoroutineContext().job
         state.register(job, snapshot.generation)

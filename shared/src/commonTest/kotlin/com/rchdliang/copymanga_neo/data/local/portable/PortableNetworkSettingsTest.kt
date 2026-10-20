@@ -11,6 +11,57 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
 class PortableNetworkSettingsTest {
+    @Test fun webOnlyRestoresLegacyAppSettingsAndKeepsWebAcrossSaveRollbackAndReset() = runTest {
+        val storage = Storage()
+        val native = repository(storage, PortableNetworkState())
+        native.initialize().getOrThrow()
+        assertEquals(RequestMode.OFFICIAL_APP, native.settings.value.requestMode)
+        native.save(native.settings.value.copy(version = "legacy")).getOrThrow()
+
+        val state = PortableNetworkState(webOnly = true)
+        val browser = repository(storage, state)
+        browser.initialize().getOrThrow()
+        assertEquals(listOf(RequestMode.WEB), browser.supportedRequestModes)
+        assertEquals(RequestMode.WEB, browser.settings.value.requestMode)
+        assertEquals("legacy", browser.settings.value.version)
+        browser.rollback().getOrThrow()
+        assertEquals(RequestMode.WEB, browser.settings.value.requestMode)
+        browser.save(browser.settings.value.copy(requestMode = RequestMode.OFFICIAL_APP, version = "edited")).getOrThrow()
+        assertEquals(RequestMode.WEB, browser.settings.value.requestMode)
+        assertEquals("edited", browser.settings.value.version)
+        browser.reset().getOrThrow()
+        assertEquals(RequestMode.WEB, browser.settings.value.requestMode)
+        // 已保存的当前模式也应为 Web，而不只是内存投影。
+        val restarted = repository(storage, PortableNetworkState())
+        restarted.initialize().getOrThrow()
+        assertEquals(RequestMode.WEB, restarted.settings.value.requestMode)
+    }
+
+    @Test fun webOnlyStateRejectsAppProtocolBeforeTransportAndSurvivesDirectUpdates() = runTest {
+        val state = PortableNetworkState(webOnly = true)
+        state.update { it.copy(settings = it.settings.copy(requestMode = RequestMode.OFFICIAL_APP)) }
+        assertEquals(RequestMode.WEB, state.snapshot.settings.requestMode)
+        assertTrue(state.updateIfCurrent(state.snapshot.generation) {
+            it.copy(settings = it.settings.copy(requestMode = RequestMode.OFFICIAL_APP))
+        })
+        assertEquals(RequestMode.WEB, state.snapshot.settings.requestMode)
+        var requests = 0
+        val http = HttpClient(MockEngine {
+            requests++
+            assertEquals("1", it.headers["platform"])
+            respond("""{"code":200,"results":{}}""")
+        })
+        val client = CopyMangaClient(http, state)
+        try {
+            assertFailsWith<IllegalArgumentException> {
+                client.raw(ApiRequest("/api/v3/comics", mode = RequestMode.OFFICIAL_APP))
+            }
+            assertEquals(0, requests)
+            client.raw(ApiRequest("/api/v3/comics"))
+            assertEquals(1, requests)
+        } finally { client.close(); http.close() }
+    }
+
     @Test fun themeLoadingSettingsPersistRollbackAndDoNotCancelExistingRequests() = runTest {
         val storage = Storage()
         val state = PortableNetworkState()

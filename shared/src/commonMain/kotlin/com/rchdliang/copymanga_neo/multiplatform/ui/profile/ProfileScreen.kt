@@ -621,7 +621,7 @@ private fun ProfileMenuGroup(
     )
     val app = listOf(
         ProfileMenuEntry(
-            Icons.Outlined.Wifi, "请求模式与网络", "当前：${uiState.requestMode.profileLabel}",
+            Icons.Outlined.Wifi, if (uiState.canChooseRequestMode) "请求模式与网络" else "网络设置", "当前：${uiState.requestMode.profileLabel}",
             onClick = onNavigateToNetwork
         )
     )

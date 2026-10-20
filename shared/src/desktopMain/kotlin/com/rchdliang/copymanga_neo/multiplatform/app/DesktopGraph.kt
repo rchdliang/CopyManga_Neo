@@ -24,7 +24,7 @@ class DesktopGraph private constructor(
     override fun close() = graph.close()
     suspend fun shutdown() = graph.shutdown()
     companion object {
-        suspend fun create(directory: Path, parentScope: CoroutineScope, tapString: String = ""): DesktopGraph {
+        suspend fun create(directory: Path, parentScope: CoroutineScope, tapString: String = OfficialAppBuildConfig.TAP_STRING): DesktopGraph {
             val buildInfo = desktopBuildInfo()
             val cacheDirectory = directory.resolve("cache")
             val secure = DesktopSecureCredentialStorage(directory.resolve("credentials"))

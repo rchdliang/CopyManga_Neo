@@ -33,15 +33,20 @@ data class NetworkSnapshot(
 }
 
 /** A single global mode; protocol or identity changes invalidate outstanding requests. */
-class PortableNetworkState(initial: NetworkSnapshot = NetworkSnapshot()) {
-    private val mutable = MutableStateFlow(initial)
+class PortableNetworkState(initial: NetworkSnapshot = NetworkSnapshot(), private val webOnly: Boolean = false) {
+    val supportedRequestModes: List<RequestMode> = if (webOnly) listOf(RequestMode.WEB) else RequestMode.entries
+    /** 平台约束优先于旧配置、备份恢复或会话更新中的模式。 */
+    fun normalizeSettings(settings: NetworkSettings): NetworkSettings =
+        if (webOnly) settings.copy(requestMode = RequestMode.WEB) else settings
+    private fun restrict(snapshot: NetworkSnapshot) = snapshot.copy(settings = normalizeSettings(snapshot.settings))
+    private val mutable = MutableStateFlow(restrict(initial))
     val snapshots: StateFlow<NetworkSnapshot> = mutable.asStateFlow()
     val snapshot: NetworkSnapshot get() = mutable.value
     private val jobs = MutableStateFlow<Map<Job,Long>>(emptyMap())
     fun update(transform: (NetworkSnapshot) -> NetworkSnapshot) {
         while(true) {
             val old=mutable.value
-            val next=transform(old).copy(generation=old.generation+1)
+            val next=restrict(transform(old)).copy(generation=old.generation+1)
             if(mutable.compareAndSet(old,next)) {
                 jobs.value.filterValues { it < next.generation }.keys.forEach { it.cancel() }
                 return
@@ -51,7 +56,7 @@ class PortableNetworkState(initial: NetworkSnapshot = NetworkSnapshot()) {
     fun updateIfCurrent(generation:Long,transform:(NetworkSnapshot)->NetworkSnapshot):Boolean {
         val old=mutable.value
         if(old.generation!=generation)return false
-        val next=transform(old).copy(generation=old.generation+1)
+        val next=restrict(transform(old)).copy(generation=old.generation+1)
         if(!mutable.compareAndSet(old,next))return false
         jobs.value.filterValues { it < next.generation }.keys.forEach { it.cancel() }
         return true

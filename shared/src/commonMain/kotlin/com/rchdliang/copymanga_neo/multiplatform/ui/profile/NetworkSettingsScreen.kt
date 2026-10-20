@@ -85,7 +85,7 @@ internal fun NetworkSettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        if (advanced) "高级连接配置" else "请求模式与网络",
+                        if (advanced) "高级连接配置" else if (viewModel.canChooseRequestMode) "请求模式与网络" else "网络设置",
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },
@@ -106,7 +106,7 @@ internal fun NetworkSettingsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (!advanced) NetworkCard("请求模式") {
+                if (!advanced && viewModel.canChooseRequestMode) NetworkCard("请求模式") {
                     Column(Modifier.selectableGroup()) {
                         NetworkChoice(
                             "网页模式",
@@ -125,7 +125,7 @@ internal fun NetworkSettingsScreen(
                     }
                 }
                 if (advanced) {
-                    OutlinedButton(
+                    if (viewModel.canChooseRequestMode) OutlinedButton(
                         onClick = viewModel::inspectDevice,
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth()

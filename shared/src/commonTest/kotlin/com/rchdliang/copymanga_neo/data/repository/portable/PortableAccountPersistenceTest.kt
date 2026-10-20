@@ -38,6 +38,30 @@ class PortableAccountPersistenceTest {
         savedLogin = if (password) SavedLoginCredential("alice", "imported-password") else null
     ))
 
+    @Test fun webOnlyImportRejectsAppBeforeVerificationButAcceptsWebCredentials() = runTest {
+        var requests = 0
+        val http = HttpClient(MockEngine {
+            requests++
+            respond("""{"code":200,"results":{"username":"alice"}}""",
+                headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val state = PortableNetworkState(webOnly = true)
+        val client = CopyMangaClient(http, state)
+        try {
+            val repository = PortableUserRepository(client)
+            val appBundle = PortableCredentialCodec.encode(LoginCredentialBundle(
+                app, listOf(LoginCredential(app, "app-token", "alice")), appIdentity = identity))
+            assertIs<IllegalArgumentException>(repository.importLoginCredential(appBundle).exceptionOrNull())
+            assertEquals(0, requests)
+            assertEquals(RequestMode.WEB, state.snapshot.settings.requestMode)
+            assertTrue(state.snapshot.webSession.token.isEmpty())
+            repository.importLoginCredential(imported(password = false)).getOrThrow()
+            assertEquals(1, requests)
+            assertEquals("imported-token", state.snapshot.webSession.token)
+            assertEquals(RequestMode.WEB, state.snapshot.settings.requestMode)
+        } finally { client.close(); http.close() }
+    }
+
     @Test fun verifiedLoginInvalidatesOnlySameAccountOtherModeAndRetainsItsPassword() = runTest {
         for (otherName in listOf("alice", "bob")) {
             val other = credential(otherName, app)

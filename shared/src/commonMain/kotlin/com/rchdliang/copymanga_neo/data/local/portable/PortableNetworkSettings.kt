@@ -70,6 +70,8 @@ class PortableNetworkSettings(
     private val risk: RiskControlRepository,
     private val clearAppSession: suspend (expectedGeneration: Long) -> Unit
 ) : NetworkSettingsRepository {
+    override val supportedRequestModes get() = network.supportedRequestModes
+    private fun normalize(value: NetworkSettings) = PortableNetworkValidation.normalize(network.normalizeSettings(value))
     private val document = DocumentStore(storage, "network-settings.json", NetworkDocument.serializer(), NetworkDocument())
     override val settings: StateFlow<NetworkSettings> = object : StateFlow<NetworkSettings> {
         override val value get() = network.snapshot.settings
@@ -82,7 +84,7 @@ class PortableNetworkSettings(
     override fun generatePseudoId() = Uuid.random().toHexString().take(16)
     override fun generateUmString() = Uuid.random().toHexString()
     suspend fun initialize(): Result<Unit> = document.load().map {
-        val loaded = PortableNetworkValidation.normalize(document.state.value.current)
+        val loaded = normalize(document.state.value.current)
         val resolved = loaded.copy(officialApp = identity.resolve(loaded.officialApp))
         document.update { it.copy(current = resolved) }.getOrThrow()
         apply(resolved)
@@ -94,7 +96,7 @@ class PortableNetworkSettings(
         if (old.requestMode != value.requestMode || old.officialApp != value.officialApp) risk.resumeByUser()
     }
     private suspend fun persist(value: NetworkSettings, remember: Boolean = true): Result<Unit> {
-        val resolved = PortableNetworkValidation.normalize(value.copy(officialApp = identity.resolve(value.officialApp)))
+        val resolved = normalize(value.copy(officialApp = identity.resolve(value.officialApp)))
         val current = network.snapshot
         if (current.settings.officialApp != resolved.officialApp) clearAppSession(current.generation)
         network.requireCurrent(current.generation)
@@ -120,7 +122,7 @@ class PortableNetworkSettings(
     /** Import transaction writes settings before publishing the matching session; no auth side effects. */
     suspend fun persistImportedConfiguration(value: NetworkSettings, expectedGeneration: Long) = mutex.withLock {
         network.requireCurrent(expectedGeneration)
-        val normalized = PortableNetworkValidation.normalize(value)
+        val normalized = normalize(value)
         val previous = document.state.value
         document.update { old -> old.copy(current = normalized) }.getOrThrow()
         try { network.requireCurrent(expectedGeneration) }
@@ -144,7 +146,7 @@ class PortableNetworkSettings(
     }
     override suspend fun save(settings: NetworkSettings): Result<Unit> = attempt {
         mutex.withLock {
-            val value = PortableNetworkValidation.normalize(settings)
+            val value = normalize(settings)
             val old = network.snapshot.settings
             persist(if (value.apiHost != old.apiHost || value.wwwHost != old.wwwHost) value.copy(
                 routes = emptyList(), shareHosts = emptyList(), discoveredAt = 0, selection = NetworkSelection.DEFAULT, fixedHost = "", routeIndex = 0) else value).getOrThrow()
@@ -181,7 +183,7 @@ class PortableNetworkSettings(
         }
     }
     override suspend fun test(settings: NetworkSettings): Result<List<NetworkProbe>> = try {
-        Result.success(diagnostics.probe(PortableNetworkValidation.normalize(settings)))
+        Result.success(diagnostics.probe(normalize(settings)))
     } catch (cancel: CancellationException) { throw cancel } catch (e: Exception) { Result.failure(e) }
     override suspend fun refreshIfNeeded() {
         val value = network.snapshot.settings

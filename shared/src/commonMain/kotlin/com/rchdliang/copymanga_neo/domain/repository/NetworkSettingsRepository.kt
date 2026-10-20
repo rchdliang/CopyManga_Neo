@@ -5,6 +5,8 @@ import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import kotlinx.coroutines.flow.StateFlow
 
 interface NetworkSettingsRepository {
+    val supportedRequestModes: List<com.rchdliang.copymanga_neo.domain.model.RequestMode>
+        get() = com.rchdliang.copymanga_neo.domain.model.RequestMode.entries
     val officialAppDefaults: com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
     val settings: StateFlow<NetworkSettings>
     fun generatePseudoId(): String

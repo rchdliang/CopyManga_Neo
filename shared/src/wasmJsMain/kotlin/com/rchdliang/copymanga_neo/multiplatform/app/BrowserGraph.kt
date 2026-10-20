@@ -18,7 +18,7 @@ class BrowserGraph private constructor(val core: PortableAppGraph, val host: Bro
     companion object {
         suspend fun create(
             scope: CoroutineScope, host: BrowserPlatformHost, namespace: String = "copymanga-neo",
-            tapString: String = "", debugBuild: Boolean = false
+            debugBuild: Boolean = false
         ): BrowserGraph {
             require(namespace.matches(Regex("[A-Za-z0-9_.-]{1,50}")))
             val cacheNamespace = "$namespace-cache"
@@ -31,7 +31,7 @@ class BrowserGraph private constructor(val core: PortableAppGraph, val host: Bro
                 },
                 comicExportIo = BrowserComicExportIo(cacheNamespace),
                 readerImageIo = BrowserReaderImageIo("$namespace-image-exports", host::chooseImageDestination),
-                imageContext = PlatformContext.INSTANCE, tapString = tapString, debugBuild = debugBuild,
+                imageContext = PlatformContext.INSTANCE, webOnly = true, debugBuild = debugBuild,
                 startupWarnings = listOf(
                     "浏览器登录仅保留到页面关闭；不会明文保存密码或令牌。",
                     "浏览器请求受站点跨域和受限请求头规则约束；下载只在页面可见时进行。"

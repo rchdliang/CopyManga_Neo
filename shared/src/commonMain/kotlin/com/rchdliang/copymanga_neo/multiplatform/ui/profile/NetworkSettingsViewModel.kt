@@ -29,6 +29,7 @@ data class NetworkSettingsUiState(
 class NetworkSettingsViewModel constructor(private val repository: NetworkSettingsRepository) :
     ViewModel() {
     val officialAppDefaults = repository.officialAppDefaults
+    val canChooseRequestMode = repository.supportedRequestModes.size > 1
     private val state = MutableStateFlow(
         NetworkSettingsUiState(
             repository.settings.value,
@@ -53,7 +54,10 @@ class NetworkSettingsViewModel constructor(private val repository: NetworkSettin
     fun edit(transform: (NetworkSettings) -> NetworkSettings) {
         if (!state.value.busy) state.update {
             it.copy(
-                draft = transform(it.draft),
+                draft = transform(it.draft).let { draft ->
+                    if (draft.requestMode in repository.supportedRequestModes) draft
+                    else draft.copy(requestMode = repository.settings.value.requestMode)
+                },
                 probes = emptyList(),
                 message = null
             )

@@ -40,6 +40,9 @@ val officialAppTapString =
 require(officialAppTapString.isEmpty() || officialAppTapString.matches(Regex("[0-9a-fA-F]{32}"))) {
     "COPYMANGA_TAP_STRING 必须是 32 位十六进制字符"
 }
+require(!providers.gradleProperty("requireOfficialAppConfig").map(String::toBooleanStrict).orElse(false).get() || officialAppTapString.isNotEmpty()) {
+    "COPYMANGA_TAP_STRING is required for this build"
+}
 
 // 仅标签发布任务显式开启，普通 CI 和本地构建默认生成通用包。
 val enableAbiSplits = providers.gradleProperty("enableAbiSplits")

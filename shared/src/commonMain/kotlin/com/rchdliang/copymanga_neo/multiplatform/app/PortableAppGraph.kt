@@ -43,7 +43,8 @@ data class PortableAppServices(
     val startupWarnings: List<String> = emptyList(),
     val debugBuild: Boolean = false,
     val beforeExport: suspend () -> Unit = {},
-    val webApiUserAgent: String = CopyMangaNetworkConfig.WEB_API_USER_AGENT
+    val webApiUserAgent: String = CopyMangaNetworkConfig.WEB_API_USER_AGENT,
+    val webOnly: Boolean = false
 )
 
 /** Thread-safe closeable resource pool, also available on Native and Wasm without JVM collections. */
@@ -135,7 +136,7 @@ class PortableAppGraph private constructor(
                 val identity = withContext(Dispatchers.Default) {
                     PersistedOfficialIdentity.create(documents, services.deviceName, services.deviceModel, services.tapString)
                 }
-                val state = PortableNetworkState(); val risk = PortableRiskControlGate()
+                val state = PortableNetworkState(webOnly = services.webOnly); val risk = PortableRiskControlGate()
                 val cleanClients = AppResourcePool<Triple<Long, NetworkSettings, Int>, HttpClient> { it.close() }
                 cleanup += cleanClients::close
                 fun engine(settings: NetworkSettings? = null, timeout: Int = 30): HttpClient {

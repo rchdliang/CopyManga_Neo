@@ -8,7 +8,7 @@ trap 'rm -f -- "$config"' EXIT
 python3 - "$config" <<'PY'
 import os, re, sys
 value = os.environ.get("COPYMANGA_TAP_STRING", "").strip()
-if value and not re.fullmatch(r"[0-9a-fA-F]{32}", value):
+if not re.fullmatch(r"[0-9a-fA-F]{32}", value):
     raise SystemExit("COPYMANGA_TAP_STRING has an invalid format")
 with open(sys.argv[1], "w", encoding="utf-8") as target:
     target.write("COPYMANGA_TAP_STRING = " + value + "\n")
