@@ -3,6 +3,12 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.home
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.ripple
+import androidx.compose.ui.draw.clip
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -299,6 +305,7 @@ fun HomeContent(
                         state = pageScroll,
                         modifier = Modifier
                             .fillMaxSize()
+                            .mouseDragScroll(pageScroll, Orientation.Vertical)
                             .padding(horizontal = 16.dp),
                         contentPadding = PaddingValues(bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -626,10 +633,17 @@ private fun HomeSectionHeader(
     rankAudience: String? = null,
     onRankAudienceSelected: (String) -> Unit = {}
 ) {
+    // 整行保留点击区域，但悬停/按下反馈只画在“查看更多”上，避免桌面端整行高亮。
+    val moreInteraction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = onMore != null, role = Role.Button) {
+            .clickable(
+                interactionSource = moreInteraction,
+                indication = null,
+                enabled = onMore != null,
+                role = Role.Button
+            ) {
                 onMore?.invoke()
             },
         verticalAlignment = Alignment.CenterVertically,
@@ -664,7 +678,11 @@ private fun HomeSectionHeader(
         if (onMore != null) {
             Text(
                 "查看更多  ›", style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.small)
+                    .indication(moreInteraction, ripple())
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             )
         }
     }
@@ -726,7 +744,11 @@ private fun HomeTopicsSection(
                     }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
                 }
             }
-            LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyRow(
+                state = listState,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.mouseDragScroll(listState, Orientation.Horizontal)
+            ) {
                 if (topics.isEmpty() && (initialLoading || paging.nextOffset != null || paging.isLoading)) {
                     items(visibleCards, key = { "topic-placeholder-$it" }) {
                         HomeBookPlaceholder(cardWidth, aspectRatio = 16f / 9f)
@@ -773,7 +795,7 @@ private fun ComicGrid(
         contentPadding = PaddingValues(0.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         state = state,
-        modifier = modifier
+        modifier = modifier.mouseDragScroll(state, Orientation.Horizontal)
     ) {
         itemsIndexed(
             items = comics,
@@ -1079,7 +1101,11 @@ private fun HomeNovelSection(
             state.books.isNotEmpty() || state.loading -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val count = homeBookColumns(maxWidth)
                 val width = (maxWidth - 8.dp * (count - 1)) / count
-                LazyRow(state = listState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyRow(
+                    state = listState,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.mouseDragScroll(listState, Orientation.Horizontal)
+                ) {
                     items(state.books, key = { it.path }) { book ->
                         NovelTransitionCard(
                             book = book, source = "home",

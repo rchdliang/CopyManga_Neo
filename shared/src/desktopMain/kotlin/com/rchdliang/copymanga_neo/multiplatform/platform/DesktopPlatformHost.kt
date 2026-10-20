@@ -3,7 +3,6 @@ package com.rchdliang.copymanga_neo.multiplatform.platform
 import com.rchdliang.copymanga_neo.domain.model.UserActionCancelled
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.rchdliang.copymanga_neo.data.export.portable.DesktopExportDestinations
@@ -82,14 +81,8 @@ class DesktopPlatformHost(
 
     @Composable
     override fun ImmersiveEffect(orientation: ScreenOrientationSetting?) {
-        DisposableEffect(windowPolicy, orientation != null) {
-            val lease = if (orientation != null) acquireFullscreen() else null
-            if (orientation != null && orientation != ScreenOrientationSetting.SYSTEM_DEFAULT &&
-                orientation != ScreenOrientationSetting.AUTO) {
-                warn("桌面窗口不能旋转物理显示器；阅读方向使用当前窗口尺寸")
-            }
-            onDispose { closeLease(lease) }
-        }
+        // Reading orientation and immersive system bars are mobile concerns.
+        // Desktop fullscreen is explicitly controlled by the window's F11 shortcut.
     }
 
     @Composable
@@ -109,19 +102,7 @@ class DesktopPlatformHost(
 
     @Composable
     override fun ReaderWindow(keepScreenOn: Boolean, controlsVisible: Boolean, lightBars: Boolean) {
-        DisposableEffect(windowPolicy, controlsVisible) {
-            val lease = if (!controlsVisible) acquireFullscreen() else null
-            onDispose { closeLease(lease) }
-        }
         KeepScreenOnEffect(keepScreenOn)
-    }
-
-    private fun acquireFullscreen(): AutoCloseable? = windowPolicy?.acquireFullscreen()?.fold(
-        onSuccess = { it }, onFailure = { warn(it.message ?: "无法进入全屏"); null }
-    ) ?: run { warn("此桌面主机未提供全屏窗口控制"); null }
-
-    private fun closeLease(lease: AutoCloseable?) {
-        runCatching { lease?.close() }.onFailure { warn(it.message ?: "无法恢复阅读前的窗口状态") }
     }
 
     override fun formatDate(epochMilliseconds: Long): String =

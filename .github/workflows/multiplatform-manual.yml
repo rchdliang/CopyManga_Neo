@@ -232,8 +232,8 @@ jobs:
           node --version
           yarn --version
           "$RUNNER_TEMP/binaryen-version_130/bin/wasm-opt" --version
-      - name: Test browser activation host logic
-        run: node --test tests/host/browser-activation.test.mjs
+      - name: Test browser host logic
+        run: node --test tests/host/*.test.mjs
       - name: Build optimized Wasm production distribution
         # Keep development and production webpack in separate Gradle invocations.
         run: ./gradlew :shared:wasmJsBrowserDistribution -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false

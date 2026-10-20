@@ -54,6 +54,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
@@ -286,6 +287,9 @@ internal fun NovelReaderTextMenuSurface(
                 TextButton(
                     onClick = action.second, enabled = action.first,
                     modifier = Modifier
+                        // Selection toolbar actions must keep focus in the selected text.
+                        // Taking focus clears the selection and removes this button before release.
+                        .focusProperties { canFocus = false }
                         .width(56.dp)
                         .heightIn(min = 52.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)

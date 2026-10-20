@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ComposeFoundationFlags
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +32,10 @@ private fun dataDirectory(): Path {
     else Path.of(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "copymanga-neo")
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 fun main() {
+    // Desktop defaults to the legacy selection menu, which bypasses the reader's menu provider.
+    ComposeFoundationFlags.isNewContextMenuEnabled = true
     System.setProperty("java.net.useSystemProxies", "true")
     val instance = try { DesktopInstanceGuard.acquire(dataDirectory()) }
     catch (failure: Exception) {
@@ -100,18 +105,74 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             }
         }
         val windowState = rememberWindowState(width = 1200.dp, height = 820.dp)
+        var restoreMaximized by remember { mutableStateOf(false) }
+        var fullscreenKeyPressed by remember { mutableStateOf(false) }
+        var placementBeforeFullscreen by remember { mutableStateOf(WindowPlacement.Floating) }
+        var sizeBeforeFullscreen by remember { mutableStateOf(windowState.size) }
+        var positionBeforeFullscreen by remember { mutableStateOf(windowState.position) }
+        var floatingSize by remember { mutableStateOf(windowState.size) }
+        var floatingPosition by remember { mutableStateOf(windowState.position) }
+        LaunchedEffect(windowState) {
+            snapshotFlow { Triple(windowState.placement, windowState.size, windowState.position) }
+                .collect { (placement, size, position) ->
+                    if (placement == WindowPlacement.Floating) {
+                        floatingSize = size
+                        floatingPosition = position
+                    }
+                }
+        }
         Window(
             title = "CopyManga Neo",
             icon = appIcon,
             state = windowState,
             visible = phase.visible,
+            onPreviewKeyEvent = fullscreenKey@ { event ->
+                if (phase.showApplication && event.key == Key.F11 &&
+                    !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) {
+                    when (event.type) {
+                        KeyEventType.KeyDown -> if (!fullscreenKeyPressed) {
+                            fullscreenKeyPressed = true
+                            if (windowState.placement == WindowPlacement.Fullscreen) {
+                                restoreMaximized = placementBeforeFullscreen == WindowPlacement.Maximized
+                                windowState.size = sizeBeforeFullscreen
+                                windowState.position = positionBeforeFullscreen
+                                // Always leave exclusive fullscreen through Floating. Restore
+                                // maximization after the native peer and DPI bounds have settled.
+                                windowState.placement = WindowPlacement.Floating
+                            } else {
+                                placementBeforeFullscreen = windowState.placement
+                                sizeBeforeFullscreen = floatingSize
+                                positionBeforeFullscreen = floatingPosition
+                                windowState.placement = WindowPlacement.Fullscreen
+                            }
+                        }
+                        KeyEventType.KeyUp -> fullscreenKeyPressed = false
+                    }
+                    return@fullscreenKey true
+                }
+                false
+            },
             // Removing the app is phase one; persistence runs only after that disposal commit.
             onCloseRequest = { if (!phase.flushing) phase = desktopCloseRequest(activeTransfers()) }
         ) {
+            DesktopFullscreenRestoreEffect(window, windowState.placement) {
+                if (restoreMaximized) {
+                    restoreMaximized = false
+                    window.setSize(sizeBeforeFullscreen.width.value.toInt(), sizeBeforeFullscreen.height.value.toInt())
+                    val position = positionBeforeFullscreen
+                    if (position is WindowPosition.Absolute) {
+                        window.setLocation(position.x.value.toInt(), position.y.value.toInt())
+                    }
+                    windowState.placement = WindowPlacement.Maximized
+                }
+            }
             val escapeKeys = remember { DesktopEscapeKeyHandler() }
             val focused = LocalWindowInfo.current.isWindowFocused
             LaunchedEffect(focused, phase.showApplication) {
-                if (!focused || !phase.showApplication) escapeKeys.reset()
+                if (!focused || !phase.showApplication) {
+                    escapeKeys.reset()
+                    fullscreenKeyPressed = false
+                }
             }
             val host = remember(window, windowState) {
                 DesktopPlatformHost(window, ComposeDesktopWindowPolicy(windowState))

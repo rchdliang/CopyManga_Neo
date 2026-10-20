@@ -63,6 +63,8 @@ CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满�
 
 ## 桌面
 
+Windows 下在 IntelliJ IDEA / Android Studio 打开项目并完成 Gradle 同步后，在顶部运行配置下拉框选择 **Windows Desktop**，点击 ▶ Run 即可启动桌面窗口，无需选择 Android 设备。共享配置位于 `.run/Windows Desktop.run.xml`，执行 `:desktopApp:run -PenableAndroid=false`，由项目工具链使用 JDK 21。若配置尚未出现，重新打开项目以加载共享运行配置。
+
 ```sh
 ./gradlew :shared:desktopTest :desktopApp:compileKotlin -PenableAndroid=false
 ./gradlew :desktopApp:run -PenableAndroid=false
@@ -125,6 +127,17 @@ bash .github/scripts/build-ios-ipa.sh
 ```
 
 生产输出位于 `shared/build/dist/wasmJs/productionExecutable`。生产站点使用 HTTPS；本地开发可使用 localhost。开发和生产 webpack 任务请分开调用，避免共用 npm 输出产生冲突。
+
+漫画图片 CDN 未提供跨域许可，纯静态服务器无法供 Compose 画布读取这些图片。本地验证封面和详情页时，使用仓库提供的同源图片转发宿主：
+
+```sh
+./gradlew :shared:wasmJsBrowserDevelopmentExecutableDistribution -PenableAndroid=false
+node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutable 8081
+```
+
+打开 `http://localhost:8081/`。该服务仅监听本机，启动时给页面启用 `copyMangaNeoConfig.imageProxy`；只转发指定漫画 CDN 的 HTTPS 公开图片，验证公网地址、图片签名和大小，不携带账号凭据、不跟随重定向。停止服务使用 Ctrl+C。也可将目录参数换成生产输出目录。
+
+普通静态托管不会自动开启图片转发；发布到其他宿主时需要部署同源 `/__copymanga_image?url=...` 图片服务并显式启用配置。不要把本地脚本直接开放到公网；公网部署需要独立的访问控制和资源限额。API、登录和章节目录仍由浏览器直连，仍受上游跨域策略约束。
 
 构建使用 PATH 中的 Node、Yarn 和 Binaryen；也可通过 `-Pcopymanga.nodeCommand=...`、`-Pcopymanga.yarnCommand=...`、`-Pcopymanga.binaryenCommand=...` 指定。保持自动工具下载关闭，以遵守设置中的仓库策略。
 

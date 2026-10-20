@@ -40,6 +40,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.pager.PagerDefaults
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -154,6 +157,7 @@ fun ReaderContent(
                             translationX = zoom.offset.x; translationY = zoom.offset.y
                         }
                         .nestedScroll(continuousNestedScrollConnection)
+                        .mouseDragScroll(listState, Orientation.Vertical)
                 ) {
                     itemsIndexed(pages, key = { _, page -> page.key }) { index, page ->
                         if (page.source == null) {
@@ -201,7 +205,16 @@ fun ReaderContent(
                 state = pagerState, reverseLayout = isRtl, userScrollEnabled = !zoom.zoomed,
                 key = { pages[it].key }, modifier = Modifier
                     .fillMaxSize()
-                    .then(gestureModifier),
+                    .then(gestureModifier)
+                    .mouseDragScroll(
+                        pagerState, Orientation.Horizontal, enabled = !zoom.zoomed,
+                        reverseLayout = isRtl, flingBehavior = PagerDefaults.flingBehavior(pagerState)
+                    )
+                    .readerWheelPaging(
+                        enabled = !zoom.zoomed && active.source != null,
+                        onForward = onForward,
+                        onBackward = onBackward
+                    ),
                 beyondViewportPageCount = 1
             ) { index ->
                 val page = pages[index]
