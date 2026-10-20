@@ -127,7 +127,7 @@ jobs:
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
           ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageMsi :desktopApp:packageExe -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:createDistributable :desktopApp:packageMsi :desktopApp:packageExe -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
       - name: Verify Windows packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
@@ -177,7 +177,7 @@ jobs:
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
           ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: xvfb-run --auto-servernum ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageDeb :desktopApp:packageRpm -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
+        run: xvfb-run --auto-servernum ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:createDistributable :desktopApp:packageDeb :desktopApp:packageRpm -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
       - name: Verify Linux packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
