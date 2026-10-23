@@ -39,6 +39,17 @@ class IosIpaTests(unittest.TestCase):
     def test_device_metadata_and_resources(self):
         self.assertEqual(ipa.validate_app(self.app, self.versions, "    platform IOS\n")["CFBundleVersion"], "10")
 
+    def test_version_properties_with_whitespace_validate_app(self):
+        versions_file = Path(self.temp.name) / "version.properties"
+        versions_file.write_text(
+            "  # Version properties = shared with Xcode\n\n"
+            "COPYMANGA_VERSION_BASE = 1.2.3\n"
+            "COPYMANGA_VERSION_HOTFIX =\n"
+            "COPYMANGA_VERSION_CODE=10\n", encoding="utf-8")
+        versions = ipa.version_properties(versions_file)
+        self.assertEqual(versions, dict(self.versions, COPYMANGA_VERSION_HOTFIX=""))
+        self.assertEqual(ipa.validate_app(self.app, versions, "platform IOS\n"), self.info)
+
     def test_arm64_simulator_is_rejected(self):
         with self.assertRaises(ValueError):
             ipa.validate_app(self.app, self.versions, "    platform IOSSIMULATOR\n")

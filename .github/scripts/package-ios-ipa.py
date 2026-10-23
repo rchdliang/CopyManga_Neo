@@ -12,7 +12,8 @@ from pathlib import Path
 BUNDLE_ID = "com.rchdliang.copymanga-neo"
 
 def version_properties(path):
-    return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines()
+    return dict(tuple(part.strip() for part in line.split("=", 1))
+                for line in path.read_text(encoding="utf-8").splitlines()
                 if "=" in line and not line.lstrip().startswith("#"))
 
 def validate_app(app, versions, macho_info):
