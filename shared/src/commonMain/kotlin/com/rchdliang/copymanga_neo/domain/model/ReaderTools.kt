@@ -9,13 +9,18 @@ data class ReaderToolsSettings(
     val autoIntervalSeconds: Int = 8,
     val imageRetries: Int = 2,
     val imageTimeoutSeconds: Int = 15,
-    val preloadPages: Int = 2
+    val preloadPages: Int = 2,
+    val pageLayout: String = "SINGLE",
+    val pageAnimation: Boolean = true,
+    val pairingRestarts: Map<String, List<Int>> = emptyMap()
 ) {
     fun normalized() = copy(
         autoIntervalSeconds = autoIntervalSeconds.coerceIn(2, 30),
         imageRetries = imageRetries.coerceIn(0, 3),
         imageTimeoutSeconds = imageTimeoutSeconds.coerceIn(5, 60),
-        preloadPages = preloadPages.coerceIn(0, 3)
+        preloadPages = preloadPages.coerceIn(0, 3),
+        pageLayout = pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: "SINGLE",
+        pairingRestarts = pairingRestarts.mapValues { (_, pages) -> pages.filter { it >= 0 }.distinct().sorted() }.filterValues { it.isNotEmpty() }
     )
 }
 
