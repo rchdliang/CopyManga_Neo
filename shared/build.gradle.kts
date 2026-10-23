@@ -141,13 +141,26 @@ kotlin {
             implementation("io.ktor:ktor-client-mock:3.6.0")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         }
+        getByName("androidMain").kotlin.srcDir("src/jvmMain/kotlin")
+        getByName("desktopMain").kotlin.srcDir("src/jvmMain/kotlin")
         androidMain.dependencies {
+            implementation("androidx.exifinterface:exifinterface:1.4.2")
             // Compile shared Android UI against the same Material3 ABI packaged by :app.
             // CMP's transitive alpha22 has experimental methods removed in beta01 (ToggleButton).
             implementation(libs.androidx.compose.material3)
             implementation("io.ktor:ktor-client-okhttp:3.6.0")
             implementation(libs.okhttp)
             implementation("androidx.core:core-ktx:1.19.1")
+        }
+        getByName("desktopMain").resources.srcDir(providers.gradleProperty("readerSrBundle").map { "$it/resources" }.orElse("build/reader-sr-empty"))
+        val srDesktopTarget = portableDesktopTarget ?: when {
+            System.getProperty("os.name").startsWith("Windows") -> "windows-" + if (System.getProperty("os.arch") == "aarch64") "arm64" else "x64"
+            System.getProperty("os.name").startsWith("Linux") && System.getProperty("os.arch") in listOf("amd64", "x86_64") -> "linux-x64"
+            else -> "unsupported"
+        }
+        getByName("desktopMain").resources.exclude("reader-sr/android-*/**")
+        listOf("linux-x64", "windows-x64", "windows-arm64").filter { it != srDesktopTarget }.forEach {
+            getByName("desktopMain").resources.exclude("reader-sr/$it/**")
         }
         getByName("desktopMain").dependencies {
             implementation(when (portableDesktopTarget) {

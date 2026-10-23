@@ -49,7 +49,35 @@ val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
     .map(String::toBooleanStrict)
     .getOrElse(false)
 
+abstract class PrepareReaderSrAssets @javax.inject.Inject constructor(
+    private val files: org.gradle.api.file.FileSystemOperations,
+) : DefaultTask() {
+    @get:InputDirectory abstract val bundleDirectory: org.gradle.api.file.DirectoryProperty
+    @get:OutputDirectory abstract val outputDirectory: org.gradle.api.file.DirectoryProperty
+    @TaskAction fun prepare() {
+        val bundle = bundleDirectory.get().asFile
+        check(bundle.resolve("jniLibs/arm64-v8a/libcopymanga_sr.so").isFile) { "Build the Android arm64 native bundle first" }
+        files.sync {
+            from(bundle.resolve("resources")) {
+                include("reader-sr/models/**", "reader-sr/NOTICE.txt", "reader-sr/android-*/**")
+            }
+            into(outputDirectory)
+        }
+    }
+}
+val readerSrAssets = providers.gradleProperty("readerSrBundle").orNull?.let { bundle ->
+    tasks.register<PrepareReaderSrAssets>("prepareReaderSrAssets") {
+        bundleDirectory.set(file(bundle))
+        outputDirectory.set(layout.buildDirectory.dir("generated/readerSrAssets"))
+    }
+}
+
 android {
+    // Explicit source-built bundle. No runtime download and no implicit native build in Gradle.
+    providers.gradleProperty("readerSrBundle").orNull?.let { bundle ->
+        sourceSets.getByName("main").jniLibs.srcDir("$bundle/jniLibs")
+    }
+    packaging.jniLibs.useLegacyPackaging = true
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
@@ -113,6 +141,10 @@ android {
         buildConfig = true
     }
     compileSdkMinor = 0
+}
+
+androidComponents.onVariants { variant ->
+    readerSrAssets?.let { task -> variant.sources.assets?.addGeneratedSourceDirectory(task) { it.outputDirectory } }
 }
 
 androidComponents {

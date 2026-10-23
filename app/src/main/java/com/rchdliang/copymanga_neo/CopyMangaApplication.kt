@@ -9,6 +9,8 @@ class CopyMangaApplication : Application() {
         private set
     override fun onCreate() {
         super.onCreate()
+        // The disposable SR worker must not initialize databases, downloads or UI services.
+        if (getProcessName().endsWith(":reader_sr")) return
         container = AndroidAppContainer(this)
     }
 }

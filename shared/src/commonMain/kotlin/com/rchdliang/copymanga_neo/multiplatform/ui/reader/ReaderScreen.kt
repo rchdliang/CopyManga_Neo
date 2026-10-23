@@ -459,6 +459,14 @@ fun ReaderSuccessContent(
         if (preview) SingletonImageLoader.get(context) else services!!.imageLoader(tools.imageTimeoutSeconds)
     }
     val pressedVolumeKeys = remember { mutableSetOf<Key>() }
+    val srSession = rememberReaderSrSession(loader)
+    val srLifecycle by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val srSinglePage = readerAllowsSuperResolution(isContinuous, spreads.getOrNull(pager.currentPage)?.indices?.size ?: 0)
+    LaunchedEffect(srSession, page?.key, page?.source, routeActive, srLifecycle, srSinglePage) {
+        // 双页暂用原图，切换布局时也取消旧任务，避免双叶同时推理及错误显示。
+        srSession.select(if (srSinglePage && routeActive && srLifecycle.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
+            page?.source?.let { com.rchdliang.copymanga_neo.domain.reading.SrPage(page.key, it) } else null)
+    }
 
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
@@ -879,6 +887,7 @@ fun ReaderSuccessContent(
             onBottomAreaTap = { showControls = !showControls },
             imageLoader = loader,
             imageQuality = services?.platform?.imageQuality,
+            srSession = srSession,
             tools = tools,
             onUserInteraction = { focus.requestFocus(); viewportCorrection.invalidate(); viewportAnchor.invalidate(); automatic = false; pendingChapter = null; restoring = false },
             onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },
@@ -996,7 +1005,11 @@ fun ReaderSuccessContent(
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
         },
-        extraSettings = { ReaderToolsOptions(tools, onToolsChange) })
+        extraSettings = {
+            ReaderToolsOptions(tools, onToolsChange)
+            ReaderSuperResolutionOptions(srSession)
+            if (!srSinglePage) Text("双页暂用原图；单页可使用超分。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,
         onSelect = {

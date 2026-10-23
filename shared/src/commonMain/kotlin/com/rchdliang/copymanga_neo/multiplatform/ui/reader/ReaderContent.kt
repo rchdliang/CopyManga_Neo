@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.RouteImageScope
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.routeImageModel
+import com.rchdliang.copymanga_neo.domain.reading.ReaderSrSession
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -90,6 +91,7 @@ internal fun ReaderContent(
     onImageReady: (String) -> Unit = {},
     trackedPageKeys: Set<String> = pages.map { it.key }.toSet(),
     imageQuality: ReaderImageQuality? = null,
+    srSession: ReaderSrSession? = null,
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -181,6 +183,7 @@ internal fun ReaderContent(
                             index == visibleIndex, false, zoomState = zoom,
                             imageLoader = imageLoader,
                             imageQuality = imageQuality,
+                            srSession = srSession, srPageKey = page.key,
                             tools = tools,
                             onReady = { onImageReady(page.key) },
                             trackReadiness = page.key in trackedPageKeys
@@ -191,7 +194,7 @@ internal fun ReaderContent(
         } else {
             ReaderSpreadContent(pages, spreads, pagerState, isRtl, contentScale, imageLoader, tools,
                 onForward, onBackward, onShowMenu, onImageLongPress, onUserInteraction,
-                onImageReady, onDimensions, onZoomAvailable, commentContent, imageQuality)
+                onImageReady, onDimensions, onZoomAvailable, commentContent, imageQuality, srSession)
         }
     }
 }
@@ -211,7 +214,9 @@ internal fun ReaderImageItem(
     imageQuality: ReaderImageQuality? = null,
     onReady: () -> Unit = {},
     onDimensions: (Float, Float) -> Unit = { _, _ -> },
-    trackReadiness: Boolean = true
+    trackReadiness: Boolean = true,
+    srSession: ReaderSrSession? = null,
+    srPageKey: String = path,
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
@@ -327,7 +332,9 @@ internal fun ReaderImageItem(
                         }
                         val intrinsic = result.painter.intrinsicSize
                         LaunchedEffect(path, intrinsic) { onDimensions(intrinsic.width, intrinsic.height) }
-                        val currentPainter = if (imageQuality != null) result.painter else painter
+                        val currentPainter = readerSrPainter(srSession, srPageKey, retryKey,
+                            if (imageQuality != null) result.painter else painter)
+                        val sharpness = if (isActivePage) LocalReaderSharpness.current else 0f
                         if (enableZoom) {
                             // 分页模式：单个图片缩放
                             Box(
@@ -355,7 +362,8 @@ internal fun ReaderImageItem(
                                             scaleY = zoomState.scale
                                             translationX = zoomState.offset.x
                                             translationY = zoomState.offset.y
-                                        },
+                                        }
+                                        .readerSharpen(sharpness),
                                     contentScale = contentScale
                                 )
                             }
@@ -364,7 +372,7 @@ internal fun ReaderImageItem(
                             Image(
                                 painter = currentPainter,
                                 contentDescription = null,
-                                modifier = imageModifier,
+                                modifier = imageModifier.readerSharpen(sharpness),
                                 contentScale = contentScale
                             )
                         }
