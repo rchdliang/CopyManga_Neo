@@ -34,6 +34,7 @@ reasonix.toml
 /docs/*
 !/docs/BUILDING.md
 !/docs/ARCHITECTURE.md
+!/docs/dual-page-reader.md
 **/build/
 
 # Local protocol configuration. Never add real values to tracked source or examples.
