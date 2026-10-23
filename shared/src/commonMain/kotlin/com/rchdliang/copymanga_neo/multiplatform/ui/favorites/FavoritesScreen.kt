@@ -1,5 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.favorites
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
+import androidx.compose.runtime.*
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.background
@@ -74,9 +77,16 @@ fun FavoritesScreen(
     viewModel: FavoritesViewModel,
     onComicClick: (String) -> Unit,
     onNavigateToProfile: () -> Unit = {},
+    onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var confirmRemoval by remember(uiState.selectedIds) { mutableStateOf(false) }
+    if (confirmRemoval && LocalRouteActive.current) ConfirmRemovalDialog(
+        "移出书架？", "将从当前书架移除 ${uiState.selectedIds.size} 部作品；此操作不会删除下载文件。",
+        onConfirm = { confirmRemoval = false; viewModel.removeSelected() },
+        onDismiss = { confirmRemoval = false }, confirmLabel = "移出书架"
+    )
     val toastHost = LocalToastHost.current
 
     ActiveRouteLaunchedEffect(uiState.toastMessage) {
@@ -90,6 +100,7 @@ fun FavoritesScreen(
         uiState = uiState,
         onComicClick = onComicClick,
         onNavigateToProfile = onNavigateToProfile,
+        onDiscover = onDiscover,
         onRefresh = viewModel::refreshSelectedShelf,
         onKindSelected = viewModel::selectKind,
         onNovelClick = onNovelClick,
@@ -100,7 +111,7 @@ fun FavoritesScreen(
         onInvertSelection = viewModel::invertSelection,
         onToggleSelection = viewModel::toggleSelection,
         onEnterSelectionMode = viewModel::enterSelectionMode,
-        onRemoveSelected = viewModel::removeSelected
+        onRemoveSelected = { confirmRemoval = true }
     )
 }
 
@@ -122,6 +133,7 @@ fun FavoritesContent(
     onRemoveSelected: () -> Unit,
     modifier: Modifier = Modifier,
     onKindSelected: (FavoritesKind) -> Unit = {},
+    onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {},
     onMoreNovels: () -> Unit = {},
     onRetryMoreNovels: () -> Unit = {}
@@ -197,11 +209,10 @@ fun FavoritesContent(
                 }
 
                 isEmpty -> {
-                    Text(
-                        text = "暂无收藏，快去添加喜欢的${uiState.selectedKind.label}吧！",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("还没有收藏", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = onDiscover) { Text("去发现作品") }
+                    }
                 }
 
                 else -> {
@@ -349,13 +360,13 @@ private fun NotLoggedInContent(onNavigateToProfile: () -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "请先登录以查看书架",
+            text = "登录后查看书架",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "登录后即可查看收藏的漫画与轻小说",
+            text = "漫画与轻小说收藏将在这里显示",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.userFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -25,10 +26,10 @@ class ProfileAvatarViewModel(private val platform: ProfilePlatform) : ViewModel(
             try {
                 platform.pickAvatarJpeg().fold(
                     onSuccess = { bytes -> if (expected == generation) mutableState.value = mutableState.value.copy(bytes = bytes ?: mutableState.value.bytes) },
-                    onFailure = { if (expected == generation) mutableState.value = mutableState.value.copy(error = it.message ?: "无法读取头像图片") }
+                    onFailure = { if (expected == generation) mutableState.value = mutableState.value.copy(error = userFacingError(it, "无法读取头像图片")) }
                 )
             } catch (error: CancellationException) { throw error }
-            catch (error: Exception) { if (expected == generation) mutableState.value = mutableState.value.copy(error = error.message ?: "无法读取头像图片") }
+            catch (error: Exception) { if (expected == generation) mutableState.value = mutableState.value.copy(error = userFacingError(error, "无法读取头像图片")) }
             finally { if (expected == generation) mutableState.value = mutableState.value.copy(busy = false) }
         }
     }

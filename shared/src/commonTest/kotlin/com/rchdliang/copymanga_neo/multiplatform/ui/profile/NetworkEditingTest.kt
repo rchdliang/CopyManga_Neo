@@ -17,6 +17,13 @@ class NetworkEditingTest {
         stores += ViewModelStore().also { it.put("network", vm) }
     }
 
+    @Test fun fieldErrorsExplainInvalidInputWithoutEchoingPrivateValues() {
+        assertNull(networkFieldError("登录域名（留空跟随 API）", ""))
+        assertNotNull(networkFieldError("API 域名", ""))
+        assertEquals("版本号须为大于 0 的整数", networkFieldError("版本号", "0"))
+        assertNull(networkFieldError("SDK 标识", "abc 123"))
+        assertFalse(networkFieldError("API 域名", "https://example.com/private?token=secret")!!.contains("secret"))
+    }
     @Test fun unchangedAndNormalizedEquivalentHostsAreClean() {
         val saved = NetworkSettings()
         assertFalse(NetworkSettingsUiState(saved, saved).dirty)
@@ -81,7 +88,7 @@ class NetworkEditingTest {
     }
 }
 
-private class FakeNetwork : NetworkSettingsRepository {
+internal class FakeNetwork : NetworkSettingsRepository {
     override val settings = MutableStateFlow(NetworkSettings())
     override val officialAppDefaults = OfficialAppSettings()
     var previous = NetworkSettings()

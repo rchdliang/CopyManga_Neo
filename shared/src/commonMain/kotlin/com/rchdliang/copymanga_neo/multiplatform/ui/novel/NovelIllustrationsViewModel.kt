@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.userFacingError
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -78,7 +79,7 @@ class NovelIllustrationsViewModel constructor(
                 },
                 onFailure = {
                     mutable.value =
-                        NovelIllustrationExportState(message = it.message ?: "插图准备失败，请重试")
+                        NovelIllustrationExportState(message = userFacingError(it, "插图准备失败，请重试"))
                 }
             )
         }
@@ -126,7 +127,7 @@ class NovelIllustrationsViewModel constructor(
                 },
                 onFailure = {
                     mutable.value =
-                        NovelIllustrationExportState(message = it.message ?: "保存失败，请重试")
+                        NovelIllustrationExportState(message = userFacingError(it, "保存失败，请重试"))
                 }
             )
         }

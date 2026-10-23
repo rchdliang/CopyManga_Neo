@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.userFacingError
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 
 import androidx.lifecycle.ViewModel
@@ -128,8 +129,8 @@ class ReaderViewModel constructor(
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         UiLog.e("ReaderViewModel", "Unhandled coroutine exception", throwable)
-        _uiState.value = ReaderUiState.Error(throwable.message ?: "未知错误")
-        _toastMessage.value = throwable.message ?: "操作失败"
+        _uiState.value = ReaderUiState.Error(userFacingError(throwable, "未知错误"))
+        _toastMessage.value = userFacingError(throwable, "操作失败")
     }
 
     fun clearToastMessage() {
@@ -318,14 +319,14 @@ class ReaderViewModel constructor(
                     .onFailure { error ->
                         ensureActive()
                         if (error is CancellationException) throw error
-                        loadFailed(error.message ?: "未知错误", preserveOnFailure)
+                        loadFailed(userFacingError(error, "未知错误"), preserveOnFailure)
                     }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 UiLog.e("ReaderViewModel", "loadChapter failed", e)
                 ensureActive()
-                loadFailed(e.message ?: "加载失败", preserveOnFailure)
+                loadFailed(userFacingError(e, "加载失败"), preserveOnFailure)
             }
         }
     }

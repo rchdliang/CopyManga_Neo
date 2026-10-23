@@ -147,7 +147,7 @@ internal fun DownloadSelectionTopBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("选中之间", color = LocalContentColor.current) },
+                            text = { Text("选择两端之间", color = LocalContentColor.current) },
                             onClick = {
                                 onSelectBetween()
                                 menuExpanded = false
@@ -189,7 +189,7 @@ internal fun DownloadSelectionTopBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("取消选中之间", color = LocalContentColor.current) },
+                            text = { Text("取消区间选择", color = LocalContentColor.current) },
                             onClick = {
                                 onUnselectBetween()
                                 menuExpanded = false
@@ -225,6 +225,10 @@ internal fun DownloadManageBottomBar(
     modifier: Modifier = Modifier,
     unitLabel: String = "章"
 ) {
+    var confirmDelete by remember(downloadCount, deleteCount, cancelCount) { mutableStateOf(false) }
+    if (confirmDelete) ConfirmRemovalDialog("应用下载更改？",
+        "下载 $downloadCount $unitLabel，取消任务 $cancelCount $unitLabel，并删除本地 $deleteCount $unitLabel。删除后离线阅读需重新下载。",
+        onConfirm = { confirmDelete = false; onApply() }, onDismiss = { confirmDelete = false }, confirmLabel = "应用更改")
     val hasChanges = downloadCount > 0 || deleteCount > 0 || cancelCount > 0
     val parts = buildList {
         if (downloadCount > 0) add("下载 $downloadCount $unitLabel")
@@ -255,7 +259,7 @@ internal fun DownloadManageBottomBar(
                 )
             }
             Button(
-                onClick = onApply,
+                onClick = { if (deleteCount > 0) confirmDelete = true else onApply() },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = hasChanges,
                 colors = if (deleteCount > 0) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

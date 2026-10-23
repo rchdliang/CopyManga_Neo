@@ -15,9 +15,10 @@ internal fun UnsavedChangesDialog(
     onDiscard: () -> Unit,
     onSave: (() -> Unit)? = null
 ) {
+    if (!LocalRouteActive.current) return
     AlertDialog(
         onDismissRequest = { if (!busy) onContinue() },
-        title = { Text("保存更改？") },
+        title = { Text(if (onSave != null) "保存更改？" else "放弃未保存的更改？") },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("更改尚未保存。")
             if (onSave != null) Button(onClick = onSave, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("保存并返回") }
@@ -28,8 +29,9 @@ internal fun UnsavedChangesDialog(
 }
 
 @Composable
-internal fun ConfirmRemovalDialog(title: String, description: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun ConfirmRemovalDialog(title: String, description: String, onConfirm: () -> Unit, onDismiss: () -> Unit, confirmLabel: String = "删除") {
+    if (!LocalRouteActive.current) return
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Text(description) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("确认移除") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
 }

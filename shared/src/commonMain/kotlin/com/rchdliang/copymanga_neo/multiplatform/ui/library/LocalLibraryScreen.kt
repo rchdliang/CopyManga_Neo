@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.library
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -93,6 +94,11 @@ fun LocalLibraryContent(
     var marks by rememberSaveable { mutableStateOf(false) }
     var kind by rememberSaveable { mutableStateOf("") }
     var clear by remember { mutableStateOf(false) }
+    var pendingRemoval by remember { mutableStateOf<Pair<LocalReadingRecord, Boolean>?>(null) }
+    pendingRemoval?.let { (record, bookmark) ->
+        ConfirmRemovalDialog(if (bookmark) "删除书签？" else "删除阅读记录？", "仅移除此条本地记录，不影响下载和云端历史。",
+            onConfirm = { pendingRemoval = null; onRemove(record, bookmark) }, onDismiss = { pendingRemoval = null })
+    }
     val records =
         (if (marks) state.bookmarks else state.history).filter { kind.isEmpty() || it.kind == kind }
     Scaffold(topBar = {
@@ -221,7 +227,7 @@ fun LocalLibraryContent(
                             record,
                             marks,
                             { onOpen(record) },
-                            { onRemove(record, marks) })
+                            { pendingRemoval = record to marks })
                     }
                 }
             }
@@ -233,7 +239,7 @@ fun LocalLibraryContent(
         title = { Text("清空本地历史？", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "清除当前账号的本地位置和完成状态，并屏蔽旧章节续读回退。书签、云端历史和缓存保留；新阅读会重新保存。",
+                "清空当前账号的本地阅读历史与续读位置。书签、云端历史和下载内容保留；再次阅读后会重新记录。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },

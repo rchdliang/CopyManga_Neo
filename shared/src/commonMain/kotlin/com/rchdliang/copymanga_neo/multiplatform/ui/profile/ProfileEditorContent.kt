@@ -69,7 +69,8 @@ internal fun ProfileEditorContent(
     onRetry: () -> Unit,
     onSave: (String, Int?) -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDirtyChange: (Boolean) -> Unit = {}
 ) = key(profile) {
     val nickname = rememberTextFieldState(initialText = profile?.nickname.orEmpty())
     var gender by rememberSaveable {
@@ -79,6 +80,7 @@ internal fun ProfileEditorContent(
     val invalidName = profile != null && name.isEmpty()
     val changed =
         profile != null && (name != profile.nickname || avatarChanged || (gender != null && gender != profile.gender))
+    SideEffect { onDirtyChange(changed) }
     val canSave =
         profile != null && !isLoading && !isSaving && !imageLoading && !invalidName && changed
 

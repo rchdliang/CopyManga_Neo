@@ -339,8 +339,6 @@ internal fun ReaderImageItem(
 
                     is AsyncImagePainter.State.Error -> {
                         val error = result
-                        val message = error.result.throwable.message
-                            ?: error.result.throwable::class.simpleName.orEmpty()
                         LaunchedEffect(path, retryKey, isActivePage) {
                             val riskControlled = generateSequence(error.result.throwable) { it.cause }
                                 .any { it is com.rchdliang.copymanga_neo.domain.repository.RiskControlException }
@@ -355,7 +353,7 @@ internal fun ReaderImageItem(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "加载失败:$message",
+                                "图片加载失败，点按重试",
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleMedium
                             )

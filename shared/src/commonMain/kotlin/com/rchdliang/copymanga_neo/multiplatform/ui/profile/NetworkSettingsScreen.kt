@@ -120,24 +120,26 @@ internal fun NetworkSettingsScreen(
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (!advanced) {
-                    Text("连接方式", style = MaterialTheme.typography.titleMedium)
-                    if (viewModel.canChooseRequestMode) ProfileListItem(
-                        Icons.Outlined.Wifi, "请求模式",
-                        if (draft.requestMode == RequestMode.WEB) "网页模式" else "App 模式",
-                        index = 0, count = 2, onClick = { choice = "mode" }, enabled = enabled
-                    )
-                    ProfileListItem(
-                        Icons.Outlined.Settings, "代理",
-                        when (draft.proxyMode) { ProxyMode.SYSTEM -> "跟随系统代理"; ProxyMode.MANUAL -> "手动 HTTP 代理"; ProxyMode.DIRECT -> "直连" },
-                        index = 1, count = 2, onClick = { choice = "proxy" }, enabled = enabled
-                    )
-                    Text("加载偏好", style = MaterialTheme.typography.titleMedium)
+                    Text("连接方式", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+                        if (viewModel.canChooseRequestMode) ProfileListItem(
+                            Icons.Outlined.Wifi, "请求模式",
+                            if (draft.requestMode == RequestMode.WEB) "网页模式" else "App 模式",
+                            index = 0, count = 2, onClick = { choice = "mode" }, enabled = enabled
+                        )
+                        ProfileListItem(
+                            Icons.Outlined.Settings, "代理",
+                            when (draft.proxyMode) { ProxyMode.SYSTEM -> "跟随系统代理"; ProxyMode.MANUAL -> "手动 HTTP 代理"; ProxyMode.DIRECT -> "直连" },
+                            index = if (viewModel.canChooseRequestMode) 1 else 0, count = if (viewModel.canChooseRequestMode) 2 else 1, onClick = { choice = "proxy" }, enabled = enabled
+                        )
+                    }
+                    Text("加载偏好", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     ProfileListItem(
                         Icons.Outlined.Speed, "漫画详情预加载",
                         "同时预加载 ${draft.themeFetchConcurrency} 部 · 间隔 ${draft.themeFetchIntervalMillis / 1000.0} 秒",
                         index = 0, count = 1, onClick = { choice = "loading" }, enabled = enabled
                     )
-                    Text("高级与诊断", style = MaterialTheme.typography.titleMedium)
+                    Text("高级与诊断", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     NetworkHint("配置保存后生效；切换页面会保留未保存的编辑。")
                 }
                 if (advanced) {
@@ -435,6 +437,7 @@ private fun NetworkField(
     onRandomize: (() -> Unit)? = null,
     onChange: (String) -> Unit
 ) {
+    val fieldError = networkFieldError(label, value)
     OutlinedTextField(
         value,
         onChange,
@@ -443,6 +446,8 @@ private fun NetworkField(
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyLarge,
         label = { Text(label) },
+        isError = fieldError != null,
+        supportingText = if (fieldError != null) { { Text(fieldError) } } else null,
         trailingIcon = if (onReset == null && onRandomize == null) null else {
             {
                 Row {
@@ -489,7 +494,7 @@ private fun OfficialAppSettingsCard(
     onRandomizeUmString: () -> Unit,
     onChange: (com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings) -> Unit
 ) {
-    NetworkCard("App 连接配置") {
+    NetworkCard("服务地址与版本") {
         NetworkField(
             value.apiHost, "API 域名", enabled,
             onReset = { onChange(value.copy(apiHost = defaults.apiHost)) }
@@ -506,6 +511,9 @@ private fun OfficialAppSettingsCard(
             value.versionCode, "版本号", enabled,
             onReset = { onChange(value.copy(versionCode = defaults.versionCode)) }
         ) { onChange(value.copy(versionCode = it)) }
+    }
+    NetworkCard("设备身份") {
+        NetworkHint("修改设备身份后可能需要重新登录。")
         NetworkField(
             value.pseudoId, "SDK 标识", enabled, onRandomize = onRandomizePseudoId
         ) { onChange(value.copy(pseudoId = it)) }

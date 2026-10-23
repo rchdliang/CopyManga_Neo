@@ -454,8 +454,8 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
                 onNavigateToDownloads = { nav.select(MainTab.DOWNLOADS) },
                 onNavigateToTopic = { path, title -> nav.open(AppRoute("explore", arguments = mapOf("section" to "topics", "topic" to path, "topicTitle" to title))) },
                 onNavigateToNovel = { nav.novel(it) })
-            MainTab.FAVORITES -> FavoritesScreen(favorites, nav::comic, profile) { nav.novel(it) }
-            MainTab.DOWNLOADS -> DownloadsScreen(onComicClick = nav::comic,
+            MainTab.FAVORITES -> FavoritesScreen(favorites, nav::comic, profile, onDiscover = { if (favorites.uiState.value.selectedKind == com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.NOVEL) nav.novel() else nav.open(AppRoute("search")) }) { nav.novel(it) }
+            MainTab.DOWNLOADS -> DownloadsScreen(onComicClick = nav::comic, onDiscover = { nav.open(AppRoute("search")) },
                 viewModel = models.get(route.id) { DownloadsViewModel(r.downloads, r.novels, r.sessions) }, exportViewModel = export(),
                 onExportChapters = { comics -> nav.open(AppRoute("export-chapters", arguments = mapOf("comics" to Json.encodeToString(comics)))) },
                 onNovelClick = { nav.novel(it) })

@@ -40,11 +40,11 @@ class EditingDialogsUiTest {
         assertEquals(0, deleted)
         onNodeWithText("取消").performClick()
         assertEquals(1, dismissed); assertEquals(0, deleted)
-        onNodeWithText("确认移除").performClick()
+        onNodeWithText("删除").performClick()
         assertEquals(1, deleted)
     }
     private fun ComposeUiTest.saveRender(name: String) {
-        val pixels = onRoot().captureToImage().toPixelMap()
+        val pixels = onAllNodes(isRoot())[1].captureToImage().toPixelMap()
         val image = BufferedImage(pixels.width, pixels.height, BufferedImage.TYPE_INT_ARGB)
         for (y in 0 until pixels.height) for (x in 0 until pixels.width) image.setRGB(x, y, pixels[x, y].toArgb())
         val file = File("build/reports/ui-audit/$name.png"); file.parentFile.mkdirs(); ImageIO.write(image, "png", file)

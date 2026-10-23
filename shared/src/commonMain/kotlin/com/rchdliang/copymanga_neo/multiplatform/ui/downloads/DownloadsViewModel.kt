@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.downloads
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.userFacingError
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 
 import androidx.lifecycle.ViewModel
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class DownloadedNovelInfo(val book: NovelBook, val volumes: List<NovelCachedVolume>)
 
@@ -76,19 +78,24 @@ class DownloadsViewModel constructor(
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         UiLog.e("DownloadsViewModel", "Unhandled coroutine exception", throwable)
-        _uiState.update { it.copy(message = throwable.message ?: "下载操作失败") }
+        _uiState.update { it.copy(isLoading = false, loadError = if (it.isLoading) "下载记录无法读取，请重新读取" else it.loadError, message = userFacingError(throwable, "下载操作失败，请重试")) }
     }
 
-    init {
-        viewModelScope.launch(exceptionHandler) {
+    private var contentsJob: Job? = null
+    init { reload() }
+
+    fun reload() {
+        contentsJob?.cancel()
+        _uiState.update { it.copy(isLoading = true, loadError = null) }
+        contentsJob = viewModelScope.launch(exceptionHandler) {
             val restored = downloadRepository.awaitReady()
-            val indexed = novels.awaitCachedVolumes()
-            _uiState.update { it.copy(loadError = restored.exceptionOrNull()?.message ?: indexed.exceptionOrNull()?.message) }
+            val indexed = novels.refreshCachedVolumes()
+            _uiState.update { it.copy(loadError = if (restored.isFailure || indexed.isFailure) userFacingError(restored.exceptionOrNull() ?: indexed.exceptionOrNull(), "部分下载记录无法读取，原文件已保留。请重新读取；仍失败时检查存储后重启。") else null) }
             val contents = combine(
                 downloadRepository.getAllDownloadedComics().catch { error ->
                     if (error is CancellationException) throw error
-                    _uiState.update { it.copy(loadError = error.message ?: "下载记录无法读取，原数据已保留") }
-                    emit(emptyList())
+                    _uiState.update { it.copy(loadError = userFacingError(error, "下载记录无法读取，原数据已保留")) }
+                    emit(_uiState.value.downloadedBooks.filterIsInstance<DownloadedBookItem.Comic>().map { it.info })
                 }, novels.cachedVolumes,
                 sessions.cacheReadyFlow, sessions.sessionChanges
             ) { comics, cached, ready, _ ->
@@ -218,7 +225,7 @@ class DownloadsViewModel constructor(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    failures += error.message ?: "删除失败"
+                    failures += userFacingError(error, "删除失败")
                 }
             }
             _uiState.update {

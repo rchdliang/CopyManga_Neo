@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -289,13 +290,17 @@ internal fun ColumnScope.NovelReaderBookmarks(
     ) {
         if (bookmarks.isEmpty()) item {
             Text(
-                "还没有书签。点击阅读器右上角的书签按钮保存当前位置。",
+                "暂无书签。阅读时点“添加书签”保存位置。",
                 Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         items(
             bookmarks,
             key = { "${it.chapter}:${it.section}:${it.line}:${it.character}:${it.fraction}" }) { bookmark ->
+            var confirmDelete by remember(bookmark) { mutableStateOf(false) }
+            if (confirmDelete) ConfirmRemovalDialog("删除书签？", "将移除这个阅读位置，阅读历史保留。",
+                onConfirm = { confirmDelete = false; onDelete(bookmark) }, onDismiss = { confirmDelete = false })
+
             ListItem(
                 headlineContent = {
                     Text(
@@ -329,7 +334,7 @@ internal fun ColumnScope.NovelReaderBookmarks(
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 modifier = Modifier.clickable { onOpen(bookmark) },
                 trailingContent = {
-                    IconButton(onClick = { onDelete(bookmark) }) {
+                    IconButton(onClick = { confirmDelete = true }) {
                         Icon(Icons.Outlined.DeleteOutline, "删除书签")
                     }
                 }

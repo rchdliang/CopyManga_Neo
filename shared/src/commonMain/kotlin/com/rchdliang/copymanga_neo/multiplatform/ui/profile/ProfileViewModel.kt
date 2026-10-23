@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.userFacingError
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 
 import androidx.lifecycle.ViewModel
@@ -97,7 +98,7 @@ class ProfileViewModel constructor(
                     "账号已注册，请尝试登录" else it.loginError,
                 isRefreshing = false,
                 isCredentialLoading = false,
-                toastMessage = throwable.message ?: "操作失败"
+                toastMessage = userFacingError(throwable, "操作失败")
             )
         }
     }
@@ -136,7 +137,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isProfileLoading = false,
-                            profileEditError = error.message ?: "资料加载失败"
+                            profileEditError = userFacingError(error, "资料加载失败")
                         )
                     }
                 }
@@ -186,7 +187,7 @@ class ProfileViewModel constructor(
                             )
                         else state.copy(
                             isProfileSaving = false,
-                            profileEditError = error.message ?: "资料保存失败"
+                            profileEditError = userFacingError(error, "资料保存失败")
                         )
                     }
                 }
@@ -218,7 +219,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isBlacklistLoading = false,
-                            blacklistError = error.message ?: "读取黑名单失败"
+                            blacklistError = userFacingError(error, "读取黑名单失败")
                         )
                     }
                 }
@@ -303,7 +304,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isBlacklistSaving = false,
-                            toastMessage = error.message ?: "移除失败"
+                            toastMessage = userFacingError(error, "移除失败")
                         )
                     }
                 }
@@ -322,7 +323,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isBlacklistSaving = false,
-                            toastMessage = error.message ?: "保存开关失败"
+                            toastMessage = userFacingError(error, "保存开关失败")
                         )
                     }
                 }
@@ -362,7 +363,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isRefreshing = false,
-                            toastMessage = error.message ?: "刷新失败"
+                            toastMessage = userFacingError(error, "刷新失败")
                         )
                     }
                 }
@@ -467,7 +468,7 @@ class ProfileViewModel constructor(
                                     it.copy(
                                         isRegisterLoading = false, showRegisterDialog = false,
                                         showLoginDialog = true, registeredUsername = account,
-                                        loginError = "注册已成功，登录失败：${loginError.message ?: "请重试登录"}",
+                                        loginError = "注册已成功，登录失败：${userFacingError(loginError, "请重试登录")}",
                                         toastMessage = "账号已注册，请登录，无需再次注册"
                                     )
                                 }
@@ -478,7 +479,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isRegisterLoading = false,
-                            registerError = registerError.message ?: "注册失败"
+                            registerError = userFacingError(registerError, "注册失败")
                         )
                     }
                 }
@@ -526,7 +527,7 @@ class ProfileViewModel constructor(
                 },
                 onFailure = { error ->
                     _uiState.update {
-                        it.copy(isLoginLoading = false, loginError = error.message ?: "登录失败")
+                        it.copy(isLoginLoading = false, loginError = userFacingError(error, "登录失败"))
                     }
                 }
             )
@@ -556,7 +557,7 @@ class ProfileViewModel constructor(
             },
             onFailure = { error ->
                 _uiState.update {
-                    it.copy(isCredentialLoading = false, toastMessage = error.message ?: "导出失败")
+                    it.copy(isCredentialLoading = false, toastMessage = userFacingError(error, "导出失败"))
                 }
             }
         )
@@ -604,7 +605,7 @@ class ProfileViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isCredentialLoading = false,
-                            toastMessage = error.message ?: "导入登录凭据失败"
+                            toastMessage = userFacingError(error, "导入登录凭据失败")
                         )
                     }
                 }

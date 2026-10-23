@@ -195,8 +195,8 @@ fun DetailScreen(
             },
             text = {
                 Text(
-                    text = if (isBlocked) "首页将显示包含「${metadataText(theme.name)}」的漫画。"
-                    else "首页将隐藏包含「${metadataText(theme.name)}」的漫画。",
+                    text = if (isBlocked) "各漫画列表将恢复显示含「${metadataText(theme.name)}」的封面。"
+                    else "各漫画列表将模糊含「${metadataText(theme.name)}」的封面，标题和条目保留。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

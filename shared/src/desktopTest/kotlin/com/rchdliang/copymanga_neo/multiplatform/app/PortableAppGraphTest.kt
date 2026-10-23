@@ -67,7 +67,7 @@ class PortableAppGraphTest {
             assertEquals(1, calls)
             fail = true
             vm.show(seed.copy(path = "failed")); runCurrent()
-            assertEquals("offline", vm.state.value.error)
+            assertEquals("简介加载失败，请重试", vm.state.value.error)
             fail = false
             vm.retry(); runCurrent()
             assertNull(vm.state.value.error)
@@ -301,6 +301,36 @@ class PortableAppGraphTest {
             switched.open(CommentTarget(CommentKind.CHAPTER, "0"), false)
             assertEquals("", switched.uiState.value.draft)
         } finally { store.clear(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun downloadListFailureCanBeRetriedWithoutDiscardingReadableRecords() = runTest {
+        val root = Files.createTempDirectory("copymanga-download-retry-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        var fail = true
+        var subscriptions = 0
+        val book = DownloadedComicInfo("book", "Offline book", null, "Author", "", null, null, null, 1, 1, 1)
+        val repository = object : com.rchdliang.copymanga_neo.domain.repository.DownloadRepository by graph.repositories.downloads {
+            override suspend fun awaitReady() = Result.success(Unit)
+            override fun getAllDownloadedComics() = kotlinx.coroutines.flow.flow {
+                subscriptions++
+                if (fail) error("private storage path")
+                emit(listOf(book))
+            }
+        }
+        val model = DownloadsViewModel(repository, graph.repositories.novels, graph.repositories.sessions)
+        try {
+            model.uiState.first { !it.isLoading }
+            assertNotNull(model.uiState.value.loadError)
+            assertFalse(model.uiState.value.isLoading)
+            fail = false; model.reload(); model.uiState.first { !it.isLoading }
+            assertNull(model.uiState.value.loadError)
+            assertEquals(1, model.uiState.value.downloadedBooks.size)
+            fail = true; model.reload(); model.uiState.first { !it.isLoading }
+            assertNotNull(model.uiState.value.loadError)
+            assertEquals(1, model.uiState.value.downloadedBooks.size)
+            assertEquals(3, subscriptions)
+        } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
     }
 
     private fun services(root: Path) = PortableAppServices(

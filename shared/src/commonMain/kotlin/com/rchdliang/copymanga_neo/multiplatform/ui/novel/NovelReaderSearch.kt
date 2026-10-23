@@ -212,7 +212,7 @@ internal fun NovelReaderSearchPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val text = when {
-                dirty -> "点击右侧按钮开始新的搜索"
+                dirty -> "点“搜索”查找新关键词"
                 state.query.isBlank() -> "输入文字，或从长按菜单搜索"
                 state.running && state.progress.totalVolumes == 0 -> "正在获取分卷目录…"
                 state.progress.totalHits == 0 && !state.running && state.progress.complete -> "没有匹配的文字"

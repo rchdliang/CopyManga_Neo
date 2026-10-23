@@ -86,7 +86,7 @@ class AndroidSharedActivity : ComponentActivity() {
                 MaterialTheme {
                     Surface(Modifier.fillMaxSize()) {
                         com.rchdliang.copymanga_neo.multiplatform.app.StartupSurface(
-                            startup?.exceptionOrNull()?.message,
+                            if (startup?.isFailure == true) "启动失败，请重试；仍失败时检查存储空间" else null,
                             onRetry = { sharedContainer.start() }
                         )
                     }
