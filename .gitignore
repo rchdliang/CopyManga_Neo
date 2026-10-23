@@ -21,7 +21,8 @@ AGENTS.md
 reasonix.toml
 /.codex/config.toml
 /work
-/docs/
+/docs/*
+!/docs/dual-page-reader.md
 /app/src/main/assets/official_app_identity_har.json
 /tools/
 /.codex/
