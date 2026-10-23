@@ -75,8 +75,8 @@ internal fun ProfileListItem(
         leadingContent = {
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                contentColor = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                 modifier = Modifier.size(IconButtonDefaults.smallContainerSize())
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -89,13 +89,13 @@ internal fun ProfileListItem(
             Text(
                 supportingText,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = LocalContentColor.current
             )
         },
         trailingContent = trailingContent ?: {
             Icon(
                 Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = LocalContentColor.current
             )
         }
     ) {

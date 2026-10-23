@@ -14,6 +14,7 @@ interface NetworkSettingsRepository {
     suspend fun diagnoseOfficialApp(): Result<String>
     suspend fun save(settings: NetworkSettings): Result<Unit>
     suspend fun reset(): Result<Unit>
+    suspend fun previousSettings(): Result<NetworkSettings> = Result.failure(IllegalStateException("没有可载入的上次配置"))
     suspend fun rollback(): Result<Unit>
     suspend fun discover(): Result<Unit>
     suspend fun test(settings: NetworkSettings): Result<List<NetworkProbe>>

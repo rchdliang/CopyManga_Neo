@@ -19,18 +19,18 @@ internal fun ThemeLoadingControls(
     onConcurrency: (Int) -> Unit,
     onInterval: (Int) -> Unit
 ) {
-    Text("并发数：${settings.themeFetchConcurrency}", color = MaterialTheme.colorScheme.onSurface)
+    Text("同时预加载：${settings.themeFetchConcurrency} 部", color = MaterialTheme.colorScheme.onSurface)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         (1..ThemeLoadingPolicy.MAX_CONCURRENCY).forEach { count ->
             FilterChip(
                 selected = count == settings.themeFetchConcurrency,
                 onClick = { onConcurrency(count) },
                 enabled = enabled,
-                label = { Text(count.toString(), color = MaterialTheme.colorScheme.onSurface) }
+                label = { Text(count.toString()) }
             )
         }
     }
-    Text("请求间隔：${settings.themeFetchIntervalMillis} 毫秒", color = MaterialTheme.colorScheme.onSurface)
+    Text("间隔：${settings.themeFetchIntervalMillis / 1000.0} 秒", color = MaterialTheme.colorScheme.onSurface)
     Slider(
         value = settings.themeFetchIntervalMillis.toFloat(),
         onValueChange = { onInterval((it / 100).roundToInt() * 100) },

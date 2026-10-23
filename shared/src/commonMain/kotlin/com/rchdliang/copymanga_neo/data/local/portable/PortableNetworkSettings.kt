@@ -47,9 +47,9 @@ object PortableNetworkValidation {
         require(value.selection != NetworkSelection.FIXED || fixed in routes.flatten()) { "请选择已发现的节点" }
         val app = value.officialApp
         require(app.version.matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "App 请求版本格式无效" }
-        require((app.versionCode.toIntOrNull() ?: 0) > 0) { "App versionCode 必须为正整数" }
+        require((app.versionCode.toIntOrNull() ?: 0) > 0) { "版本号须为大于 0 的整数" }
         listOf(app.pseudoId, app.umString, app.device, app.deviceInfo, app.buildTime).forEach { field ->
-            require(field.length <= 256 && field.all { it.code in 32..126 }) { "App 身份字段仅支持最多 256 位可打印 ASCII 字符" }
+            require(field.length <= 256 && field.all { it.code in 32..126 }) { "此字段最多 256 个字符，仅支持英文字母、数字、空格和半角符号。" }
         }
         return value.copy(apiHost = host(value.apiHost), wwwHost = host(value.wwwHost),
             loginHost = value.loginHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty(),
@@ -153,6 +153,7 @@ class PortableNetworkSettings(
         }
     }
     override suspend fun reset() = attempt { mutex.withLock { persist(NetworkSettings()).getOrThrow() } }
+    override suspend fun previousSettings(): Result<NetworkSettings> = runCatching { document.state.value.previous ?: error("没有可载入的上次配置") }
     override suspend fun rollback() = attempt { mutex.withLock { persist(document.state.value.previous ?: error("没有可恢复的上次配置")).getOrThrow() } }
     override suspend fun diagnoseOfficialApp() = try { Result.success(diagnostics.officialReport(network.snapshot.settings)) } catch (e: Exception) { Result.failure(e) }
     override suspend fun discover() = attempt {
