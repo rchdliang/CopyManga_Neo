@@ -33,6 +33,26 @@ class NativeReaderSrTest {
         assertFalse(cache.walkTopDown().any { it.extension == "rgba" })
     }
 
+    @Test fun realPackagedGpuProducesFourValidTwoTimesImagesWithoutCpuFallback() = runBlocking {
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
+        val cache = File(root, "real-gpu").apply { deleteRecursively(); mkdirs() }
+        val assets = bundle(cache)
+        val (models, binary) = assets.prepare()
+        assumeTrue("No validated GPU available", withTimeout(20_000) { DesktopSrWorker(binary).probe(models, true) } >= 0)
+        val backend = NativeReaderSrBackend(assets, { bytes(it) }, DesktopSrCodec(), { DesktopSrWorker(it) })
+        for (name in listOf("small-text", "screentone", "thin-lines", "color-page")) {
+            val source = backend.source(SrPage("chapter:image:$name", name))
+            val start = System.nanoTime()
+            val artifact = backend.upscale(request(source, SrExecutionMode.GPU, fallback = false))
+            assertEquals(384, artifact.width); assertEquals(256, artifact.height)
+            Image.makeFromEncoded(artifact.png).use { image -> assertEquals(384, image.width); assertEquals(256, image.height) }
+            assertTrue(backend.detail.value.startsWith("GPU"))
+            File(root, "$name-gpu-native.png").writeBytes(artifact.png)
+            println("SR_REAL_GPU $name seconds=${(System.nanoTime()-start)/1e9} bytes=${artifact.png.size}")
+        }
+        assertFalse(cache.walkTopDown().any { it.extension == "rgba" })
+    }
+
     @Test fun childSignalFailureDoesNotCrashJvmAndCancellationReapsProcess() = runBlocking {
         assumeTrue(System.getProperty("os.name").startsWith("Linux"))
         val directory = File(root, "process").apply { mkdirs() }
