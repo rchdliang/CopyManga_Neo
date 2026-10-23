@@ -116,8 +116,6 @@ fun ReaderScreen(
     initialFraction: Double = 0.0,
     commentModels: ReaderCommentModels = hiltViewModel()
 ) {
-    val exportable by exportViewModel.availableChapters.collectAsStateWithLifecycle()
-    LaunchedEffect(comicPathWord) { exportViewModel.watchLocalChapters(comicPathWord) }
     ComicExportDialogs(exportViewModel)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentChapter = uiState as? ReaderUiState.Success
@@ -280,13 +278,9 @@ fun ReaderScreen(
                 onLoadCatalog = viewModel::loadCatalog,
                 onSelectCatalog = viewModel::selectCatalogChapter,
                 shareComicPathWord = comicPathWord,
-                exportableChapters = exportable,
-                onExportChapter = {
+                onExportChapter = { chapterUuid ->
                     exportViewModel.prepare(
-                        ComicExportRequest(
-                            listOf(comicPathWord),
-                            setOf(it)
-                        )
+                        ComicExportRequest(listOf(comicPathWord), setOf(chapterUuid))
                     )
                 }
             )
@@ -335,8 +329,7 @@ fun ReaderSuccessContent(
     onLoadCatalog: () -> Unit = {},
     onSelectCatalog: (String) -> Unit = {},
     shareComicPathWord: String? = null,
-    exportableChapters: Set<String> = emptySet(),
-    onExportChapter: (String) -> Unit = {},
+    onExportChapter: ((String) -> Unit)? = null,
     savedPosition: LocalReadingRecord? = null,
     onPosition: (String, Int, Double, Boolean) -> Unit = { _, _, _, _ -> },
     onCompleted: (String) -> Unit = {},
@@ -917,10 +910,6 @@ fun ReaderSuccessContent(
         leadingSettings = {
             ReaderSpreadOptions(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0,
                 page?.imageCount ?: 0, spreadEnabled, isContinuous)
-            androidx.compose.material3.TextButton(
-                onClick = { showSettings = false; page?.let { onExportChapter(it.chapterUuid) } },
-                enabled = page?.chapterUuid in exportableChapters
-            ) { Text("导出本章", color = MaterialTheme.colorScheme.primary) }
             ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
@@ -941,8 +930,9 @@ fun ReaderSuccessContent(
     if (showImageMenu) ReaderImageActionDialog(
         selectedTitle, selectedSource,
         onRefresh = { showImageMenu = false; onRefresh() }, onDismiss = { showImageMenu = false },
-        onExportChapter = { showImageMenu = false; onExportChapter(selectedChapter) },
-        chapterExportEnabled = selectedChapter in exportableChapters
+        onExportChapter = onExportChapter?.let { export ->
+            { showImageMenu = false; export(selectedChapter) }
+        }
     )
 }
 

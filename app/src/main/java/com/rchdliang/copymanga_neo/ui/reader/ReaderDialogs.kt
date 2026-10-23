@@ -172,8 +172,7 @@ fun ReaderImageActionDialog(
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
     viewModel: ReaderImageActionsViewModel = hiltViewModel(),
-    onExportChapter: (() -> Unit)? = null,
-    chapterExportEnabled: Boolean = false
+    onExportChapter: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val toastHost = LocalToastHost.current
@@ -275,8 +274,11 @@ fun ReaderImageActionDialog(
                 }
                 if (onExportChapter != null) {
                     ActionRow(
-                        icon = Icons.Default.SaveAlt, label = "导出本章",
-                        enabled = !state.busy && chapterExportEnabled, onClick = onExportChapter
+                        icon = Icons.Default.SaveAlt,
+                        label = "导出本章",
+                        supportingText = "需先完整下载本章",
+                        enabled = !state.busy,
+                        onClick = onExportChapter
                     )
                 }
                 if (state.busy) {
@@ -304,6 +306,7 @@ private fun ActionRow(
     icon: ImageVector,
     label: String,
     enabled: Boolean = true,
+    supportingText: String? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -324,10 +327,19 @@ private fun ActionRow(
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
-        )
+        Column {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
+            )
+            supportingText?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f)
+                )
+            }
+        }
     }
 }

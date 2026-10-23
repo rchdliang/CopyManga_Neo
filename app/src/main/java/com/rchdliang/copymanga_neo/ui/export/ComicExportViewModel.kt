@@ -10,7 +10,6 @@ import com.rchdliang.copymanga_neo.domain.model.ComicExportOutput
 import com.rchdliang.copymanga_neo.domain.model.ComicExportPlan
 import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
 import com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
-import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -31,15 +30,11 @@ data class ComicExportUiState(
 @HiltViewModel
 class ComicExportViewModel @Inject constructor(
     private val repository: ComicExportRepository,
-    private val downloads: DownloadRepository,
     private val savedState: SavedStateHandle
 ) : ViewModel() {
     private val mutableUi = MutableStateFlow(ComicExportUiState())
     val uiState = mutableUi.asStateFlow()
     val progress = repository.state
-    private val mutableAvailable = MutableStateFlow<Set<String>>(emptySet())
-    val availableChapters = mutableAvailable.asStateFlow()
-    private var watching: Job? = null
     private var preparation: Job? = null
     private val handler = CoroutineExceptionHandler { _, error ->
         android.util.Log.e("ComicExport", "导出界面操作失败", error)
@@ -190,14 +185,6 @@ class ComicExportViewModel @Inject constructor(
     }
 
     fun cancel() = repository.cancel()
-    fun watchLocalChapters(comic: String) {
-        watching?.cancel()
-        watching = viewModelScope.launch(handler) {
-            downloads.getAllDownloadedComics().collect {
-                mutableAvailable.value = downloads.getDownloadedChapterUuids(comic)
-            }
-        }
-    }
 
     fun dismissProgress() {
         viewModelScope.launch(handler) {
