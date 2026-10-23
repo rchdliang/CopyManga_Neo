@@ -74,7 +74,9 @@ class DesktopInstanceGuardTest {
                     val result = worker.submit<Boolean> { secondary.requestOpen(200) }
                     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
                     var attempted = false
-                    while (!result.isDone && System.nanoTime() < deadline) {
+                    // Once the callback has failed, only the secondary timeout is under test.
+                    // Further polls race Windows deletion of its expired request.
+                    while (!attempted && !result.isDone && System.nanoTime() < deadline) {
                         try { primary.pollOpenRequests { attempted = true; error("cannot reopen") } }
                         catch (_: IllegalStateException) { }
                         Thread.sleep(10)
