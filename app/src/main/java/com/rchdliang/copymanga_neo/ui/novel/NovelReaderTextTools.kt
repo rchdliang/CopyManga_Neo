@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.ui.novel
 
+import com.rchdliang.copymanga_neo.ui.components.UnsavedChangesDialog
+import com.rchdliang.copymanga_neo.ui.components.ConfirmRemovalDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -162,8 +164,15 @@ internal fun NovelAnnotationEditor(
 ) {
     var style by rememberSaveable { mutableStateOf(existing?.style ?: "PRIMARY") }
     var note by rememberSaveable { mutableStateOf(existing?.note.orEmpty()) }
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    val changed = note != existing?.note.orEmpty() || style != (existing?.style ?: "PRIMARY")
+    val requestDismiss = { if (!saving) { if (changed) confirmDiscard = true else onDismiss() } }
+    if (confirmDiscard) UnsavedChangesDialog(
+        busy = saving, onContinue = { confirmDiscard = false },
+        onDiscard = { confirmDiscard = false; onDismiss() }
+    )
     AlertDialog(
-        onDismissRequest = { if (!saving) onDismiss() },
+        onDismissRequest = requestDismiss,
         title = {
             Text(
                 if (existing == null) "添加标注" else "编辑标注",
@@ -240,7 +249,7 @@ internal fun NovelAnnotationEditor(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !saving) {
+            TextButton(onClick = requestDismiss, enabled = !saving) {
                 Text(
                     "取消",
                     color = MaterialTheme.colorScheme.primary
@@ -269,6 +278,9 @@ internal fun ColumnScope.NovelReaderAnnotations(
             )
         }
         itemsIndexed(annotations, key = { _, annotation -> annotation.id }) { _, annotation ->
+            var confirmDelete by remember(annotation.id) { mutableStateOf(false) }
+            if (confirmDelete) ConfirmRemovalDialog("删除标注？", "标注及笔记将被删除，无法撤销。",
+                onConfirm = { confirmDelete = false; onDelete(annotation) }, onDismiss = { confirmDelete = false })
             val (color, foreground) = annotationColors(annotation.style)
             ListItem(
                 content = {
@@ -307,7 +319,7 @@ internal fun ColumnScope.NovelReaderAnnotations(
                                 "编辑标注"
                             )
                         }
-                        IconButton(onClick = { onDelete(annotation) }) {
+                        IconButton(onClick = { confirmDelete = true }) {
                             Icon(
                                 Icons.Outlined.DeleteOutline,
                                 "删除标注"

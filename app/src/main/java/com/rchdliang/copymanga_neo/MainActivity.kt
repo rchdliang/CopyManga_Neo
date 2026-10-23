@@ -999,11 +999,13 @@ private fun MainDestinationContent(
                 )
 
                 AppDestinations.DOWNLOADS -> DownloadsScreen(
+                    onDiscover = onNavigateToSearch,
                     onComicClick = onNavigateToDetail,
                     onNovelClick = { onNavigateToNovel(it, null) }
                 )
 
                 AppDestinations.BOOKSHELF -> FavoritesScreen(
+                    onDiscover = { if (favoritesViewModel.uiState.value.selectedKind == com.rchdliang.copymanga_neo.ui.favorites.FavoritesKind.NOVEL) onNavigateToNovel(null, null) else onNavigateToSearch() },
                     viewModel = favoritesViewModel,
                     onComicClick = onNavigateToDetail,
                     onNovelClick = { onNavigateToNovel(it, null) },

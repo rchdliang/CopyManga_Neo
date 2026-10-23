@@ -90,7 +90,7 @@ internal fun DataSettingsScreen(
             title = { Text(if (pendingUserData) "恢复用户数据？" else "导入软件设置？", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Text(
-                    if (pendingUserData) "备份通过校验后将在下次启动时覆盖个人数据，包括当前及重启前新增的标注、历史、书签和偏好。建议先导出当前用户数据；登录与下载文件不受影响。"
+                    if (pendingUserData) "重启后将用备份覆盖个人数据，重启前新增的数据也会被覆盖。建议先备份当前数据。登录状态与下载文件不受影响。"
                     else "将恢复软件偏好并合并本地历史、进度和书签。较新的阅读位置会保留，不包含登录凭据和缓存正文。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -193,7 +193,7 @@ internal fun DataSettingsPage(
         }
         ProfileSectionTitle("用户数据备份")
         Text(
-            "保存小说标注、历史、书签、阅读进度、偏好和屏蔽标签。不含登录凭据、下载文件和网络设置。原 Android 版与跨平台版的用户备份不通用。",
+            "个人数据备份：标注、历史、书签、进度、偏好与屏蔽标签。\n不含登录凭据、下载文件和网络配置。\n不兼容跨平台版备份。",
             Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
@@ -267,7 +267,7 @@ internal fun DataSettingsPage(
             },
             text = {
                 Text(
-                    if (clearNovel) "将取消小说下载任务并删除本机所有账号的小说正文、插图和接口缓存。阅读记录、书签与漫画下载保留；离线阅读需要重新下载。"
+                    if (clearNovel) "将停止小说下载，并清除所有账号的小说离线内容与缓存。阅读记录、书签和漫画下载保留。再次离线阅读需重新下载。"
                     else if (clear) "已下载漫画和小说不受影响。"
                     else "账号、下载和漫画独立设置不变。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant

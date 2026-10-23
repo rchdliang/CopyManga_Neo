@@ -151,7 +151,7 @@ internal fun HistoryContent(
                     HistoryMessage(uiState.error, "重试", onRefresh)
                 }
 
-                uiState.items.isEmpty() -> HistoryMessage("暂无浏览记录，下拉刷新")
+                uiState.items.isEmpty() -> HistoryMessage("暂无云端漫画浏览记录")
                 else -> {
                     LazyColumn(
                         modifier = Modifier

@@ -314,7 +314,7 @@ private fun ReaderImageItem(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "加载失败:$message",
+                        "图片加载失败，点按重试",
                         color = Color.White,
                         style = MaterialTheme.typography.titleMedium
                     )

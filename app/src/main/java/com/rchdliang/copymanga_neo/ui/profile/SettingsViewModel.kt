@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.profile
 
+import com.rchdliang.copymanga_neo.ui.components.userFacingError
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.AppSettings
@@ -166,7 +167,7 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                 },
-                onFailure = {
+                onFailure = { failure ->
                     mutableState.update {
                         it.copy(
                             storageLoading = false,
@@ -197,12 +198,12 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                 },
-                onFailure = {
+                onFailure = { failure ->
                     mutableState.update {
                         it.copy(
                             clearingCache = false,
                             clearingNovelCache = false,
-                            message = it.message ?: "清理缓存失败，请重试"
+                            message = userFacingError(failure, "清理缓存失败，请重试")
                         )
                     }
                 }
@@ -225,7 +226,7 @@ class SettingsViewModel @Inject constructor(
                     mutableState.update {
                         it.copy(
                             isSaving = false,
-                            error = failure.message ?: "保存失败，请重试"
+                            error = userFacingError(failure, "保存失败，请重试")
                         )
                     }
                 }

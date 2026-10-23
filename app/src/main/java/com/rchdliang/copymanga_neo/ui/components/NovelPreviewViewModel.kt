@@ -31,7 +31,7 @@ class NovelPreviewViewModel @javax.inject.Inject constructor(
     private var job: Job? = null
     private var seed: NovelBook? = null
     private val errors = CoroutineExceptionHandler { _, error ->
-        mutable.update { it.copy(loading = false, error = error.message ?: "简介加载失败") }
+        mutable.update { it.copy(loading = false, error = userFacingError(error, "简介加载失败，请重试")) }
     }
 
     init {
@@ -112,7 +112,7 @@ class NovelPreviewViewModel @javax.inject.Inject constructor(
                         if (error is CancellationException) throw error
                         ensureActive()
                         if (version == revision && captured == currentContext()) mutable.update {
-                            it.copy(loading = false, error = error.message ?: "简介加载失败")
+                            it.copy(loading = false, error = userFacingError(error, "简介加载失败，请重试"))
                         }
                     })
             } catch (cancel: CancellationException) {

@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.ui.novel
 
+import com.rchdliang.copymanga_neo.ui.components.userFacingError
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -196,7 +197,7 @@ class NovelViewModel @Inject constructor(
                 busy = false,
                 caching = false,
                 refreshing = false,
-                error = e.message ?: "小说请求失败"
+                error = userFacingError(e, "小说请求失败")
             )
         }
     }
@@ -210,7 +211,7 @@ class NovelViewModel @Inject constructor(
                     onSuccess = {},
                     onFailure = { error ->
                         if (error is CancellationException) throw error
-                        mutable.update { it.copy(notice = error.message ?: "阅读设置保存失败") }
+                        mutable.update { it.copy(notice = userFacingError(error, "阅读设置保存失败")) }
                     }
                 )
             }
@@ -443,7 +444,7 @@ class NovelViewModel @Inject constructor(
                     mutable.update {
                         it.copy(
                             tagsLoading = false,
-                            tagsError = error.message ?: "题材数量更新失败"
+                            tagsError = userFacingError(error, "题材数量更新失败")
                         )
                     }
                 }
@@ -496,9 +497,8 @@ class NovelViewModel @Inject constructor(
                     mutable.update {
                         it.copy(
                             busy = false, loadingMore = false,
-                            error = if (append) null else error.message ?: "小说列表加载失败",
-                            loadMoreError = if (append) error.message
-                                ?: "后续作品加载失败" else null
+                            error = if (append) null else userFacingError(error, "小说列表加载失败"),
+                            loadMoreError = if (append) userFacingError(error, "后续作品加载失败") else null
                         )
                     }
                 }
@@ -579,7 +579,7 @@ class NovelViewModel @Inject constructor(
                             if (current(owner, mode)) mutable.update {
                                 it.copy(
                                     bookLoading = false, busy = it.volumesLoading,
-                                    bookError = error.message ?: "作品详情加载失败"
+                                    bookError = userFacingError(error, "作品详情加载失败")
                                 )
                             }
                         }
@@ -603,7 +603,7 @@ class NovelViewModel @Inject constructor(
                             if (current(owner, mode)) mutable.update {
                                 it.copy(
                                     volumesLoading = false, busy = it.bookLoading,
-                                    volumesError = error.message ?: "分卷目录加载失败"
+                                    volumesError = userFacingError(error, "分卷目录加载失败")
                                 )
                             }
                         }
@@ -695,7 +695,7 @@ class NovelViewModel @Inject constructor(
                             mode
                         ) && auth.getReadingSessionSync() == session
                     ) mutable.update {
-                        it.copy(busy = false, error = error.message ?: "正文加载失败")
+                        it.copy(busy = false, error = userFacingError(error, "正文加载失败"))
                     }
                 }
             )
@@ -812,7 +812,7 @@ class NovelViewModel @Inject constructor(
                         mutable.update {
                             it.copy(
                                 volumesLoading = false,
-                                volumesError = error.message ?: "分卷目录暂时无法加载"
+                                volumesError = userFacingError(error, "分卷目录暂时无法加载")
                             )
                         }
                     }
@@ -903,7 +903,7 @@ class NovelViewModel @Inject constructor(
                                 it.copy(
                                     running = false,
                                     progress = it.progress.copy(
-                                        error = failure?.message ?: "暂时无法获取全书分卷目录"
+                                        error = userFacingError(failure, "暂时无法获取全书分卷目录")
                                     )
                                 )
                             }
@@ -941,7 +941,7 @@ class NovelViewModel @Inject constructor(
                 if (valid()) mutableReaderSearch.update {
                     it.copy(
                         running = false,
-                        progress = it.progress.copy(error = error.message ?: "暂时无法完成搜索")
+                        progress = it.progress.copy(error = userFacingError(error, "暂时无法完成搜索"))
                     )
                 }
             }
@@ -1109,7 +1109,7 @@ class NovelViewModel @Inject constructor(
                 onSuccess = { mutable.update { it.copy(notice = "书签已删除") } },
                 onFailure = { error ->
                     if (error is CancellationException) throw error
-                    mutable.update { it.copy(notice = error.message ?: "书签删除失败") }
+                    mutable.update { it.copy(notice = userFacingError(error, "书签删除失败")) }
                 }
             )
         }
@@ -1129,7 +1129,7 @@ class NovelViewModel @Inject constructor(
                 onFailure = { error ->
                     if (error is CancellationException) throw error; mutable.update {
                     it.copy(
-                        error = error.message ?: "书签保存失败"
+                        error = userFacingError(error, "书签保存失败")
                     )
                 }
                 }
@@ -1197,7 +1197,7 @@ class NovelViewModel @Inject constructor(
                     if (current(owner, mode)) mutable.update {
                         it.copy(
                             refreshing = false, refreshFailed = true,
-                            error = "检查更新失败，原缓存仍可阅读：${error.message ?: "请重试"}"
+                            error = "检查更新失败，原缓存仍可阅读：${userFacingError(error, "请重试")}"
                         )
                     }
                 }
@@ -1248,7 +1248,7 @@ class NovelViewModel @Inject constructor(
                 onFailure = { error ->
                     if (error is CancellationException) throw error
                     if (current(owner, selected.mode)) mutable.update {
-                        it.copy(notice = error.message ?: "删除下载失败")
+                        it.copy(notice = userFacingError(error, "删除下载失败"))
                     }
                 }
             )
@@ -1286,7 +1286,7 @@ class NovelViewModel @Inject constructor(
                     mutable.update {
                         it.copy(
                             shelfLoading = false,
-                            notice = error.message ?: "书架状态加载失败"
+                            notice = userFacingError(error, "书架状态加载失败")
                         )
                     }
                 }
@@ -1333,8 +1333,7 @@ class NovelViewModel @Inject constructor(
                     mutable.update {
                         it.copy(
                             shelfLoading = false,
-                            notice = error.message
-                                ?: if (collected) "添加失败" else "删除失败"
+                            notice = userFacingError(error, if (collected) "添加失败，请重试" else "移除失败，请重试")
                         )
                     }
                 }
@@ -1480,7 +1479,7 @@ class NovelViewModel @Inject constructor(
                 throw error
             } catch (error: Exception) {
                 if (current(owner, selected.mode)) mutable.update {
-                    it.copy(notice = error.message ?: "下载更改未完成，请重试")
+                    it.copy(notice = userFacingError(error, "下载更改未完成，请重试"))
                 }
             } finally {
                 if (current(

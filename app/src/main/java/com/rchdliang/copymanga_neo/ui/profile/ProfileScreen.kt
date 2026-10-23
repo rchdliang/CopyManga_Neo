@@ -569,7 +569,7 @@ private fun ProfileMenuGroup(
                 uiState.isBlacklistLoading -> "正在读取标签"
                 uiState.blacklistError != null -> "读取失败，点击查看"
                 !uiState.isBlacklistEnabled -> "已停用 · ${uiState.blockedThemes.size} 个标签"
-                else -> "首页 · ${uiState.blockedThemes.size} 个标签"
+                else -> "封面模糊 · ${uiState.blockedThemes.size} 个标签"
             },
             onClick = onNavigateToBlacklist,
             trailingContent = {
@@ -583,7 +583,7 @@ private fun ProfileMenuGroup(
     )
     val app = listOf(
         ProfileMenuEntry(
-            Icons.Outlined.Wifi, "请求模式与网络", "当前：${uiState.requestMode.profileLabel}",
+            Icons.Outlined.Wifi, "网络与连接", "当前：${uiState.requestMode.profileLabel}",
             onClick = onNavigateToNetwork
         )
     )

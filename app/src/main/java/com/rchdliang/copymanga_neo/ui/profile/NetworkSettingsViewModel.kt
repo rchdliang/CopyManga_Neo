@@ -194,3 +194,18 @@ internal fun networkValidationMessage(message: String?): String = when (message)
     "请先获取并选择线路", "请选择已发现的节点" -> message
     else -> "配置格式无效，请检查域名、代理及预加载数值"
 }
+
+/** Field-level validation uses the same normalization as saving, without applying it. */
+internal fun networkFieldError(label: String, value: String): String? {
+    val failure = runCatching {
+        when {
+            "域名" in label -> if (value.isNotBlank() || "留空" !in label) NetworkSettingsCodec.host(value)
+            label == "代理地址" -> NetworkSettingsCodec.normalize(NetworkSettings(proxyMode = com.rchdliang.copymanga_neo.domain.model.ProxyMode.MANUAL, proxyAddress = value))
+            label == "版本号" -> require((value.toIntOrNull() ?: 0) > 0) { "版本号须为大于 0 的整数" }
+            label == "请求版本" || label == "App 版本" -> require((if (label == "请求版本") value.trim() else value).matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "请求版本格式无效" }
+            label in setOf("SDK 标识", "统计标识", "设备构建号", "设备型号", "构建日期") ->
+                require(value.length <= 256 && value.all { it.code in 32..126 }) { "此字段最多 256 个字符，仅支持英文字母、数字、空格和半角符号。" }
+        }
+    }.exceptionOrNull()
+    return failure?.let { networkValidationMessage(it.message) }
+}

@@ -264,7 +264,7 @@ internal fun SettingsPage(
 
             SettingsDestination.READING -> {
                 Text(
-                    "漫画默认值仅用于首次打开的漫画；轻小说插图设置对未单独切换的小说生效。",
+                    "漫画：只用于新打开的作品。轻小说：未单独设置的作品沿用此项。",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -297,7 +297,7 @@ internal fun SettingsPage(
                 ProfileSectionTitle("轻小说插图")
                 ProfileListItem(
                     Icons.Outlined.VisibilityOff, "默认模糊插图预览",
-                    "防止剧透；全屏查看始终清晰，单本小说可单独切换",
+                    "预览防剧透；全屏清晰，可按作品调整。",
                     index = 0, count = 1, enabled = enabled,
                     onClick = { onNovelIllustrationBlurChange(!state.settings.blurNovelIllustrationPreviews) },
                     trailingContent = {
@@ -335,14 +335,14 @@ internal fun SettingsPage(
                     onClick = { downloadNumber = "concurrency" }
                 )
                 ProfileListItem(
-                    Icons.Outlined.Download, "漫画图片总限速",
+                    Icons.Outlined.Download, "漫画下载总限速",
                     if (state.settings.comicDownloadLimitKiB == 0) "不限速" else
                         "${formatDownloadLimitMiB(state.settings.comicDownloadLimitKiB)} MiB/s",
                     index = 2, count = 3, enabled = enabled,
                     onClick = { downloadNumber = "bandwidth" }
                 )
                 Text(
-                    "仅影响漫画图片，限速由并行下载共享。",
+                    "所有图片下载共用此上限。",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -538,7 +538,7 @@ private fun DownloadLimitDialog(
     val valid = value != null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("漫画图片总限速", color = MaterialTheme.colorScheme.onSurface) },
+        title = { Text("漫画下载总限速", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column {
                 OutlinedTextField(

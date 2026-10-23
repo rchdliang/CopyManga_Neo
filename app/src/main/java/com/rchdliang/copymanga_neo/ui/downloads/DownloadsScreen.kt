@@ -1,7 +1,10 @@
 package com.rchdliang.copymanga_neo.ui.downloads
 
+import androidx.compose.runtime.*
+import com.rchdliang.copymanga_neo.ui.components.ConfirmRemovalDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -66,9 +69,19 @@ fun DownloadsScreen(
     onComicClick: (String) -> Unit = {},
     viewModel: DownloadsViewModel = hiltViewModel(),
     exportViewModel: ComicExportViewModel = hiltViewModel(),
+    onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var confirmRemoval by remember(uiState.selectedKeys) { mutableStateOf(false) }
+    val selectedBooks = uiState.downloadedBooks.filter { it.key in uiState.selectedKeys }
+    val selectedChapters = selectedBooks.filterIsInstance<DownloadedBookItem.Comic>().sumOf { it.info.downloadedChapters }
+    val selectedVolumes = selectedBooks.filterIsInstance<DownloadedBookItem.Novel>().sumOf { it.info.volumes.size }
+    if (confirmRemoval) ConfirmRemovalDialog(
+        "删除所选下载？", "将删除 ${uiState.selectedKeys.size} 部作品，共 $selectedChapters 章漫画、$selectedVolumes 卷小说的离线内容。再次离线阅读需要重新下载。",
+        onConfirm = { confirmRemoval = false; viewModel.deleteSelected() },
+        onDismiss = { confirmRemoval = false }
+    )
     val exportState by exportViewModel.progress.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
     LaunchedEffect(uiState.message) {
@@ -78,6 +91,8 @@ fun DownloadsScreen(
 
     DownloadsContent(
         uiState = uiState,
+        onReload = viewModel::reload,
+        onDiscover = onDiscover,
         onComicClick = onComicClick,
         onNovelClick = onNovelClick,
         onExitSelectionMode = viewModel::exitSelectionMode,
@@ -88,7 +103,7 @@ fun DownloadsScreen(
         onCancel = viewModel::cancelTask,
         onToggleSelection = viewModel::toggleSelection,
         onEnterSelectionMode = viewModel::enterSelectionMode,
-        onDeleteSelected = viewModel::deleteSelected,
+        onDeleteSelected = { confirmRemoval = true },
         onExportSelected = {
             val request = ComicExportRequest(uiState.selectedComicPathWords.toList())
             viewModel.exitSelectionMode()
@@ -116,9 +131,11 @@ private fun DownloadsContent(
     onToggleSelection: (String) -> Unit,
     onEnterSelectionMode: (String) -> Unit,
     onDeleteSelected: () -> Unit,
+    onReload: () -> Unit = {},
     modifier: Modifier = Modifier,
     onExportSelected: () -> Unit = {},
     exportingComics: Set<String> = emptySet(),
+    onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {}
 ) {
     com.rchdliang.copymanga_neo.ui.components.ComicPreloadEffect(
@@ -208,11 +225,14 @@ private fun DownloadsContent(
 
             if (uiState.isLoading || uiState.loadError != null) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "restoration") {
+                    Column {
                     Text(
                         uiState.loadError ?: "正在恢复下载记录…",
                         color = if (uiState.loadError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)
                     )
+                    if (uiState.loadError != null) androidx.compose.material3.TextButton(onClick = onReload, enabled = !uiState.isLoading) { Text("重新读取") }
+                    }
                 }
             }
             if (hasActive) {
@@ -312,7 +332,10 @@ private fun DownloadsContent(
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
-                    if (!uiState.isLoading && uiState.loadError == null) EmptyDownloadSection(text = "暂无已下载内容")
+                    if (!uiState.isLoading && uiState.loadError == null) Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                        EmptyDownloadSection(text = "暂无下载")
+                        androidx.compose.material3.TextButton(onClick = onDiscover) { Text("去找作品") }
+                    }
                 }
             }
         }

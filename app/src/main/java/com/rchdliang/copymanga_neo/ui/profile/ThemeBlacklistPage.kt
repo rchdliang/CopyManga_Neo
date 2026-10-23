@@ -62,7 +62,7 @@ internal fun ThemeBlacklistPage(
             windowInsets = WindowInsets(0, 0, 0, 0)
         )
         Text(
-            "在所有漫画列表中模糊包含这些标签的封面，仍保留标题和漫画条目。",
+            "各漫画列表会模糊匹配封面，标题和条目保留。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

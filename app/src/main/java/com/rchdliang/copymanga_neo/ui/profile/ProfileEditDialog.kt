@@ -1,5 +1,8 @@
 package com.rchdliang.copymanga_neo.ui.profile
 
+import com.rchdliang.copymanga_neo.ui.components.userFacingError
+import androidx.compose.runtime.*
+import com.rchdliang.copymanga_neo.ui.components.UnsavedChangesDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
@@ -28,6 +31,13 @@ internal fun ProfileEditDialog(
     onSave: (String, ByteArray?, Int?) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var dirty by remember(profile) { mutableStateOf(false) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val requestDismiss = { if (!isSaving) { if (dirty) confirmDiscard = true else onDismiss() } }
+    if (confirmDiscard) UnsavedChangesDialog(
+        busy = isSaving, onContinue = { confirmDiscard = false },
+        onDiscard = { confirmDiscard = false; onDismiss() }
+    )
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var avatarBytes by remember { mutableStateOf<ByteArray?>(null) }
@@ -45,13 +55,13 @@ internal fun ProfileEditDialog(
                 } catch (cancel: CancellationException) {
                     throw cancel
                 } catch (failure: Exception) {
-                    imageError = failure.message ?: "无法读取头像图片"
+                    imageError = userFacingError(failure, "无法读取头像图片")
                 } finally {
                     imageLoading = false
                 }
             }
         }
-    ProfileEditorFrame(isSaving, onDismiss) { modifier ->
+    ProfileEditorFrame(isSaving, requestDismiss) { modifier ->
         ProfileEditorContent(
             profile, isLoading, isSaving, imageLoading,
             avatarUri ?: profile?.avatar, avatarBytes != null, imageError ?: error,
@@ -59,7 +69,8 @@ internal fun ProfileEditDialog(
             onResetAvatar = { avatarBytes = null; avatarUri = null; imageError = null },
             onRetry = onRetry,
             onSave = { nickname, gender -> onSave(nickname, avatarBytes, gender) },
-            onDismiss = onDismiss,
+            onDismiss = requestDismiss,
+            onDirtyChange = { dirty = it },
             modifier = modifier
         )
     }
