@@ -11,9 +11,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.res.loadImageBitmap
-import androidx.compose.ui.res.useResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import androidx.lifecycle.ViewModelStore
@@ -66,7 +63,7 @@ private fun showLaunchFailure(message: String) {
 
 private fun runPrimary(instance: DesktopInstanceGuard) {
     application(exitProcessOnExit = false) {
-        val appIcon = remember { BitmapPainter(useResource("copymanga-neo.png", ::loadImageBitmap)) }
+        val appIcons = remember { DesktopAppIcons.load() }
         val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
         val owner = remember { object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() } }
         var graph by remember { mutableStateOf<DesktopGraph?>(null) }
@@ -123,7 +120,6 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
         }
         Window(
             title = "CopyManga Neo",
-            icon = appIcon,
             state = windowState,
             visible = phase.visible,
             onPreviewKeyEvent = fullscreenKey@ { event ->
@@ -155,6 +151,10 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             // Removing the app is phase one; persistence runs only after that disposal commit.
             onCloseRequest = { if (!phase.flushing) phase = desktopCloseRequest(activeTransfers()) }
         ) {
+            LaunchedEffect(window, appIcons) {
+                // Supply native sizes for title bar, taskbar and Alt+Tab instead of one rescaled bitmap.
+                window.iconImages = appIcons.variants
+            }
             DesktopFullscreenRestoreEffect(window, windowState.placement) {
                 if (restoreMaximized) {
                     restoreMaximized = false
@@ -252,9 +252,15 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             LaunchedEffect(trayStatus) {
                 if (desktopRecoverTrayLoss(phase, trayStatus) != phase) reopen()
             }
-            DisposableEffect(graph) {
+            DisposableEffect(graph, window) {
+                val taskbarProgress = graph?.let { ready -> DesktopTaskbarProgress(
+                    applicationScope = scope, window = window,
+                    downloads = ready.repositories.downloads, exports = ready.repositories.export,
+                    onWarning = { warning -> scope.launch { if (warning !in transferWarnings) transferWarnings += warning } }
+                ) }
                 val notifications = graph?.let { ready -> DesktopTransferNotifications(
                     applicationScope = scope, downloads = ready.repositories.downloads, exports = ready.repositories.export,
+                    applicationIcon = appIcons.trayImage,
                     onOpenDownloads = { scope.launch { reopen(downloads = true) } },
                     onOpenApplication = { scope.launch { reopen() } },
                     onQuit = { scope.launch {
@@ -268,7 +274,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                 val statusJob = scope.launch {
                     notifications?.status?.collect { trayStatus = it }
                 }
-                onDispose { statusJob.cancel(); notifications?.close() }
+                onDispose { statusJob.cancel(); notifications?.close(); taskbarProgress?.close() }
             }
             LaunchedEffect(warnings, graph, transferWarnings.toList()) {
                 for (warning in (graph?.startupWarnings.orEmpty() + warnings + transferWarnings).distinct()) {

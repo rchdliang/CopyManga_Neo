@@ -40,4 +40,9 @@ class DesktopTransferNotificationsTest {
         assertTrue(text.contains("作品 50%"))
         assertTrue(text.contains("导出 25%"))
     }
+    @Test fun idleTooltipOnlyShowsApplicationName() {
+        assertEquals("CopyManga Neo", desktopTransferPresentation(emptyList(), ComicExportState()))
+        assertEquals("CopyManga Neo", desktopTransferPresentation(
+            listOf(download(DownloadTaskStatus.COMPLETED)), ComicExportState(status = ComicExportStatus.COMPLETED)))
+    }
 }

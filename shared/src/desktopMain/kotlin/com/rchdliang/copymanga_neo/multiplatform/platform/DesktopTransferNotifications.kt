@@ -6,16 +6,14 @@ import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.swing.Swing
-import java.awt.Color
 import java.awt.GraphicsEnvironment
+import java.awt.Image
 import java.awt.MenuItem
 import java.awt.PopupMenu
-import java.awt.RenderingHints
 import java.awt.SystemTray
 import java.awt.TrayIcon
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.awt.image.BufferedImage
 
 sealed interface DesktopNotificationStatus {
     data object Starting : DesktopNotificationStatus
@@ -29,6 +27,7 @@ class DesktopTransferNotifications(
     applicationScope: CoroutineScope,
     private val downloads: DownloadRepository,
     private val exports: ComicExportRepository,
+    private val applicationIcon: Image,
     private val onOpenDownloads: () -> Unit,
     private val onWarning: (String) -> Unit,
     private val onOpenApplication: () -> Unit = onOpenDownloads,
@@ -50,7 +49,7 @@ class DesktopTransferNotifications(
                     return@launch
                 }
                 tray = SystemTray.getSystemTray()
-                val progressItem = MenuItem("没有正在进行的下载或导出").apply { isEnabled = false }
+                val progressItem = MenuItem().apply { isEnabled = false }
                 val pause = MenuItem("暂停全部下载").apply { addActionListener { action {
                     downloads.awaitReady().getOrThrow()
                     downloads.getTasks().value.forEach { downloads.pauseDownload(it.taskKey) }
@@ -65,12 +64,13 @@ class DesktopTransferNotifications(
                 val menu = PopupMenu().apply {
                     add(MenuItem("打开应用").apply { addActionListener { onOpenApplication() } })
                     add(MenuItem("打开下载").apply { addActionListener { openDownloads() } })
-                    add(progressItem); addSeparator()
+                    addSeparator()
                     add(pause); add(resume); add(cancelDownloads); add(cancelExport)
                     addSeparator()
                     add(MenuItem("退出应用…").apply { addActionListener { onQuit() } })
                 }
-                val created = TrayIcon(trayImage(null), "CopyManga Neo", menu).apply {
+                // Preserve the multi-resolution variants: shrinking to 16px here loses HiDPI detail.
+                val created = TrayIcon(applicationIcon, "CopyManga Neo", menu).apply {
                     isImageAutoSize = true
                     // Tray action events include a clicked native notification balloon.
                     addActionListener { openDownloads() }
@@ -88,14 +88,16 @@ class DesktopTransferNotifications(
                 }.collect { (progress, hasTasks, export) ->
                     val presentation = desktopTransferPresentation(progress, export)
                     created.toolTip = presentation.take(120)
-                    progressItem.label = presentation.take(100)
+                    if (presentation == "CopyManga Neo") {
+                        if (progressItem.parent != null) menu.remove(progressItem)
+                    } else {
+                        progressItem.label = presentation.take(100)
+                        if (progressItem.parent == null) menu.insert(progressItem, 2)
+                    }
                     pause.isEnabled = hasTasks && progress.any { it.status in activeStatuses }
                     resume.isEnabled = progress.any { it.status in resumableStatuses }
                     cancelDownloads.isEnabled = hasTasks
                     cancelExport.isEnabled = export.running
-                    val active = progress.firstOrNull { it.status in activeStatuses }
-                    val fraction = active?.overallProgress ?: export.progress.takeIf { export.running }
-                    created.image = trayImage(fraction)
                     tracker.events(progress, export).forEach { event ->
                         created.displayMessage(event.title, event.message,
                             if (event.error) TrayIcon.MessageType.ERROR else TrayIcon.MessageType.INFO)
@@ -174,20 +176,5 @@ internal fun desktopTransferPresentation(downloads: List<DownloadProgressInfo>, 
     val downloadText = active?.let { "${it.name} ${(it.overallProgress.coerceIn(0f, 1f) * 100).toInt()}% · ${it.statusText}" }
         ?: downloads.firstOrNull { it.status !in setOf(DownloadTaskStatus.IDLE, DownloadTaskStatus.COMPLETED) }?.let { "${it.name} · ${it.statusText}" }
     val exportText = if (export.running) "导出 ${(export.progress * 100).toInt()}% · ${export.current}" else null
-    return listOfNotNull(downloadText, exportText).joinToString(" | ").ifBlank { "CopyManga Neo · 没有正在进行的下载或导出" }
-}
-
-private fun trayImage(progress: Float?): BufferedImage = BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB).apply {
-    val graphics = createGraphics()
-    try {
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        graphics.color = Color(0x46, 0x66, 0x36); graphics.fillRoundRect(1, 1, 30, 30, 9, 9)
-        graphics.color = Color.WHITE; graphics.fillRect(14, 7, 4, 12)
-        graphics.fillPolygon(intArrayOf(9, 23, 16), intArrayOf(16, 16, 23), 3)
-        graphics.fillRect(8, 25, 16, 2)
-        progress?.let {
-            graphics.color = Color(0xe3, 0xf6, 0xb5)
-            graphics.drawArc(2, 2, 27, 27, 90, -(it.coerceIn(0f, 1f) * 360).toInt())
-        }
-    } finally { graphics.dispose() }
+    return listOfNotNull(downloadText, exportText).joinToString(" | ").ifBlank { "CopyManga Neo" }
 }
