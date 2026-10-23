@@ -29,7 +29,7 @@ internal fun ReaderSpreadContent(
     onReady: (String) -> Unit, onDimensions: (String, Float, Float) -> Unit,
     onZoomAvailable: (ReaderZoomState) -> Unit,
     commentContent: @Composable (ReaderPageEntry) -> Unit,
-    
+
 ) {
     val scope = rememberCoroutineScope()
     val zooms = remember { mutableMapOf<String, ReaderZoomState>() }
@@ -85,7 +85,7 @@ internal fun ReaderSpreadContent(
                                         zoomState = state, imageLoader = imageLoader, tools = tools,
                                         onReady = { onReady(leaf.key) },
                                         onDimensions = { width, height -> onDimensions(leaf.key, width, height) },
-                                        
+
                                     )
                                 }
                             }
