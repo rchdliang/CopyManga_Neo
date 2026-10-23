@@ -39,6 +39,8 @@ class ReaderZoomState {
     private var flingJob: Job? = null
     private var brakeTap = false
 
+    internal fun viewportCenter() = Offset(viewport.width / 2f, viewport.height / 2f)
+
     internal fun updateViewport(size: IntSize) {
         viewport = size
         offset = clamp(offset)

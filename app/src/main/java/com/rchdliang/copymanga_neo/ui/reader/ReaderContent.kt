@@ -58,8 +58,11 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /** 图片页与章末评论页共享稳定索引，评论页独立处理触摸和滚动。 */
 @Composable
-fun ReaderContent(
+internal fun ReaderContent(
     pages: List<ReaderPageEntry>,
+    spreads: List<ReaderSpread>,
+    onDimensions: (String, Float, Float) -> Unit,
+    onZoomAvailable: (ReaderZoomState) -> Unit,
     isContinuous: Boolean,
     isRtl: Boolean,
     contentScale: ContentScale,
@@ -171,54 +174,15 @@ fun ReaderContent(
                 }
             }
         } else {
-            val zoomStates = remember { mutableMapOf<String, ReaderZoomState>() }
-            val activeKey by remember(pagerState) {
-                derivedStateOf { pagerState.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pagerState.currentPage }?.key }
-            }
-            val visibleKeys by remember(pagerState) {
-                derivedStateOf { pagerState.layoutInfo.visiblePagesInfo.mapNotNull { it.key as? String }.toSet() }
-            }
-            val active = ReaderWindowPolicy.pageAt(pages, pagerState.currentPage, activeKey)
-                ?: pages.first()
-            val zoom = zoomStates.getOrPut(active.key) { ReaderZoomState() }
-            val retainedKeys = ReaderWindowPolicy.pageKeys(pages, pages.indexOf(active), visibleKeys)
-            androidx.compose.runtime.SideEffect {
-                zoomStates.keys.toList().filter { it !in retainedKeys }.forEach { zoomStates.remove(it)?.stopFling() }
-            }
-            DisposableEffect(zoomStates) { onDispose { zoomStates.values.forEach { it.stopFling() } } }
-            val gestureModifier =
-                if (active.source == null) Modifier else Modifier.readerTapGestures(
-                    isRtl, false, onForward, onBackward, onShowMenu,
-                    onLongPress = { onImageLongPress(active) },
-                    onBottomAreaTap = onBottomAreaTap,
-                    onDoubleTap = { zoom.toggleZoom(it, 5f) },
-                    allowTap = zoom::allowTap
-                )
-            HorizontalPager(
-                state = pagerState, reverseLayout = isRtl, userScrollEnabled = !zoom.zoomed,
-                key = { pages[it].key }, modifier = Modifier
-                    .fillMaxSize()
-                    .then(gestureModifier),
-                beyondViewportPageCount = 1
-            ) { index ->
-                val page = pages[index]
-                if (page.source == null) {
-                    if (index == pagerState.currentPage) commentContent(page)
-                } else ReaderImageItem(
-                    page.page, page.source, contentScale, false,
-                    index == pagerState.currentPage, true,
-                    zoomState = zoomStates.getOrPut(page.key) { ReaderZoomState() },
-                    isContentScrolling = { pagerState.isScrollInProgress },
-                    imageLoader = imageLoader, tools = tools, onReady = { onImageReady(page.key) },
-                    trackReadiness = page.key in trackedPageKeys
-                )
-            }
+            ReaderSpreadContent(pages, spreads, pagerState, isRtl, contentScale, imageLoader, tools,
+                onForward, onBackward, onShowMenu, onImageLongPress, onUserInteraction,
+                onImageReady, onDimensions, onZoomAvailable, commentContent)
         }
     }
 }
 
 @Composable
-private fun ReaderImageItem(
+internal fun ReaderImageItem(
     pageNumber: Int,
     path: String,
     contentScale: ContentScale,
@@ -230,6 +194,7 @@ private fun ReaderImageItem(
     imageLoader: ImageLoader,
     tools: ReaderToolsSettings,
     onReady: () -> Unit = {},
+    onDimensions: (Float, Float) -> Unit = { _, _ -> },
     trackReadiness: Boolean = true
 ) {
     if (LocalInspectionMode.current) {
@@ -332,6 +297,8 @@ private fun ReaderImageItem(
                             onReady()
                         }
                     }
+                val intrinsic = painter.intrinsicSize
+                LaunchedEffect(path, intrinsic) { onDimensions(intrinsic.width, intrinsic.height) }
                 val currentPainter = painter
                 if (enableZoom) {
                     // 分页模式：单个图片缩放

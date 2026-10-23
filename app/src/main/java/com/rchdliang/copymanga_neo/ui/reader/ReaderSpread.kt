@@ -35,4 +35,4 @@ internal fun List<ReaderSpread>.rawIndex(groupIndex: Int, preferred: Int): Int =
     getOrNull(groupIndex)?.anchor(preferred) ?: 0
 
 internal fun readerWideImage(width: Float, height: Float) =
-    width.isFinite() && height.isFinite() && height > 0 && width > height * 1.15f
+    width.isFinite() && height.isFinite() && height > 0 && width > height
