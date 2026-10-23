@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -83,7 +85,8 @@ fun ReaderContent(
     commentContent: @Composable (ReaderPageEntry) -> Unit,
     modifier: Modifier = Modifier,
     onImageReady: (String) -> Unit = {},
-    trackedPageKeys: Set<String> = pages.map { it.key }.toSet()
+    trackedPageKeys: Set<String> = pages.map { it.key }.toSet(),
+    imageQuality: ReaderImageQuality? = null,
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -125,6 +128,10 @@ fun ReaderContent(
                     .onSizeChanged {
                         height = it.height; zoom.updateViewport(it)
                     }
+                    .readerWheelZoom(
+                        zoom, imageQuality != null, 3f, onUserInteraction,
+                        enabledAt = { touchedPage(it.y)?.source != null }
+                    )
                     .readerImageZoomable(
                         zoom, zoomScope, true, 3f,
                         isContentScrolling = { listState.isScrollInProgress },
@@ -170,6 +177,7 @@ fun ReaderContent(
                             page.page, page.source, contentScale, true,
                             index == visibleIndex, false, zoomState = zoom,
                             imageLoader = imageLoader,
+                            imageQuality = imageQuality,
                             tools = tools,
                             onReady = { onImageReady(page.key) },
                             trackReadiness = page.key in trackedPageKeys
@@ -210,6 +218,7 @@ fun ReaderContent(
                         pagerState, Orientation.Horizontal, enabled = !zoom.zoomed,
                         reverseLayout = isRtl, flingBehavior = PagerDefaults.flingBehavior(pagerState)
                     )
+                    .readerWheelZoom(zoom, imageQuality != null && active.source != null, 5f, onUserInteraction)
                     .readerWheelPaging(
                         enabled = !zoom.zoomed && active.source != null,
                         onForward = onForward,
@@ -226,6 +235,7 @@ fun ReaderContent(
                     zoomState = zoomStates.getOrPut(page.key) { ReaderZoomState() },
                     isContentScrolling = { pagerState.isScrollInProgress },
                     imageLoader = imageLoader, tools = tools, onReady = { onImageReady(page.key) },
+                    imageQuality = imageQuality,
                     trackReadiness = page.key in trackedPageKeys
                 )
             }
@@ -234,7 +244,7 @@ fun ReaderContent(
 }
 
 @Composable
-private fun ReaderImageItem(
+internal fun ReaderImageItem(
     pageNumber: Int,
     path: String,
     contentScale: ContentScale,
@@ -245,6 +255,7 @@ private fun ReaderImageItem(
     isContentScrolling: () -> Boolean = { false },
     imageLoader: ImageLoader,
     tools: ReaderToolsSettings,
+    imageQuality: ReaderImageQuality? = null,
     onReady: () -> Unit = {},
     trackReadiness: Boolean = true
 ) {
@@ -261,13 +272,7 @@ private fun ReaderImageItem(
     var retryKey by rememberSaveable(path) { mutableIntStateOf(0) }
     val data: Any = readerImageData(path)
     var automaticRetries by remember(path) { mutableIntStateOf(0) }
-    val request = remember(data, retryKey) {
-        ImageRequest.Builder(context)
-            .data(data)
-            .memoryCacheKeyExtra("retry_hash", retryKey.toString())
-            .diskCachePolicy(if (retryKey > 0) CachePolicy.WRITE_ONLY else CachePolicy.ENABLED)
-            .build()
-    }
+    var lastSuccess by remember(data, retryKey) { mutableStateOf<AsyncImagePainter.State.Success?>(null) }
 
     val zoomScope = rememberCoroutineScope()
 
@@ -287,113 +292,132 @@ private fun ReaderImageItem(
         Modifier.fillMaxSize()
     }
 
-    RouteImageScope {
-        SubcomposeAsyncImage(
-            model = routeImageModel(request),
-            imageLoader = imageLoader,
-            contentDescription = null,
-            modifier = imageModifier,
-            contentScale = contentScale
-        ) {
-            val imageState by painter.state.collectAsState()
-            when (val result = imageState) {
-                is AsyncImagePainter.State.Loading -> {
-                    Box(
-                        modifier = placeholderModifier,
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = (pageNumber + 1).toString(),
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            CircularWavyProgressIndicator(color = Color.White)
-                        }
-                    }
-                }
-
-                is AsyncImagePainter.State.Error -> {
-                    val error = result
-                    val message = error.result.throwable.message
-                        ?: error.result.throwable::class.simpleName.orEmpty()
-                    LaunchedEffect(path, retryKey, isActivePage) {
-                        val riskControlled = generateSequence(error.result.throwable) { it.cause }
-                            .any { it is com.rchdliang.copymanga_neo.domain.repository.RiskControlException }
-                        if (isActivePage && !riskControlled && automaticRetries < tools.imageRetries) {
-                            delay((700L * (automaticRetries + 1)).milliseconds)
-                            automaticRetries++
-                            retryKey++
-                        }
-                    }
-                    Box(
-                        modifier = placeholderModifier.clickable { automaticRetries = 0; retryKey++ },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "加载失败:$message",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-
-                is AsyncImagePainter.State.Success -> {
-                    LaunchedEffect(
-                        path,
-                        retryKey,
-                        trackReadiness
-                    ) {
-                        if (trackReadiness) {
-                            androidx.compose.runtime.withFrameNanos { }
-                            onReady()
-                        }
-                    }
-                    val currentPainter = painter
-                    if (enableZoom) {
-                        // 分页模式：单个图片缩放
+    ReaderImageRequestLayout(
+        imageQuality,
+        if (imageQuality != null) zoomState.scale else 1f,
+        imageModifier
+    ) { decodeOptions ->
+        val request = remember(data, retryKey, decodeOptions) {
+            ImageRequest.Builder(context)
+                .data(data)
+                .memoryCacheKeyExtra("retry_hash", retryKey.toString())
+                .diskCachePolicy(if (retryKey > 0) CachePolicy.WRITE_ONLY else CachePolicy.ENABLED)
+                .apply { decodeOptions?.applyTo(this) }
+                .build()
+        }
+        RouteImageScope {
+            SubcomposeAsyncImage(
+                model = routeImageModel(request),
+                imageLoader = imageLoader,
+                contentDescription = null,
+                modifier = imageModifier,
+                contentScale = contentScale,
+                filterQuality = if (imageQuality != null) FilterQuality.High else FilterQuality.Low,
+                onState = { if (imageQuality != null && it is AsyncImagePainter.State.Success) lastSuccess = it },
+            ) {
+                val imageState by painter.state.collectAsState()
+                // 升级解码或窗口变化时保留旧图；失败也不打断已经可以阅读的页面。
+                val displayState = if (imageQuality != null && imageState !is AsyncImagePainter.State.Success)
+                    lastSuccess ?: imageState else imageState
+                when (val result = displayState) {
+                    is AsyncImagePainter.State.Loading -> {
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clipToBounds()
-                                .onSizeChanged(zoomState::updateViewport)
-                                .then(
-                                    Modifier.readerImageZoomable(
-                                        state = zoomState,
-                                        scope = zoomScope,
-                                        isContinuous = isContinuous,
-                                        maxScale = 5f,
-                                        isContentScrolling = isContentScrolling
-                                    )
-                                ),
+                            modifier = placeholderModifier,
                             contentAlignment = Alignment.Center
                         ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = (pageNumber + 1).toString(),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                CircularWavyProgressIndicator(color = Color.White)
+                            }
+                        }
+                    }
+
+                    is AsyncImagePainter.State.Error -> {
+                        val error = result
+                        val message = error.result.throwable.message
+                            ?: error.result.throwable::class.simpleName.orEmpty()
+                        LaunchedEffect(path, retryKey, isActivePage) {
+                            val riskControlled = generateSequence(error.result.throwable) { it.cause }
+                                .any { it is com.rchdliang.copymanga_neo.domain.repository.RiskControlException }
+                            if (isActivePage && !riskControlled && automaticRetries < tools.imageRetries) {
+                                delay((700L * (automaticRetries + 1)).milliseconds)
+                                automaticRetries++
+                                retryKey++
+                            }
+                        }
+                        Box(
+                            modifier = placeholderModifier.clickable { automaticRetries = 0; retryKey++ },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "加载失败:$message",
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
+
+                    is AsyncImagePainter.State.Success -> {
+                        LaunchedEffect(
+                            path,
+                            retryKey,
+                            trackReadiness
+                        ) {
+                            if (trackReadiness) {
+                                androidx.compose.runtime.withFrameNanos { }
+                                onReady()
+                            }
+                        }
+                        val currentPainter = if (imageQuality != null) result.painter else painter
+                        if (enableZoom) {
+                            // 分页模式：单个图片缩放
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clipToBounds()
+                                    .onSizeChanged(zoomState::updateViewport)
+                                    .then(
+                                        Modifier.readerImageZoomable(
+                                            state = zoomState,
+                                            scope = zoomScope,
+                                            isContinuous = isContinuous,
+                                            maxScale = 5f,
+                                            isContentScrolling = isContentScrolling
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = currentPainter,
+                                    contentDescription = null,
+                                    modifier = imageModifier
+                                        .graphicsLayer {
+                                            scaleX = zoomState.scale
+                                            scaleY = zoomState.scale
+                                            translationX = zoomState.offset.x
+                                            translationY = zoomState.offset.y
+                                        },
+                                    contentScale = contentScale
+                                )
+                            }
+                        } else {
+                            // 连续模式：缩放在 LazyColumn 层面，单个图片直接显示
                             Image(
                                 painter = currentPainter,
                                 contentDescription = null,
-                                modifier = imageModifier
-                                    .graphicsLayer {
-                                        scaleX = zoomState.scale
-                                        scaleY = zoomState.scale
-                                        translationX = zoomState.offset.x
-                                        translationY = zoomState.offset.y
-                                    },
+                                modifier = imageModifier,
                                 contentScale = contentScale
                             )
                         }
-                    } else {
-                        // 连续模式：缩放在 LazyColumn 层面，单个图片直接显示
-                        Image(
-                            painter = currentPainter,
-                            contentDescription = null,
-                            modifier = imageModifier,
-                            contentScale = contentScale
-                        )
                     }
-                }
 
-                else -> Unit
+                    else -> Unit
+                }
             }
         }
     }

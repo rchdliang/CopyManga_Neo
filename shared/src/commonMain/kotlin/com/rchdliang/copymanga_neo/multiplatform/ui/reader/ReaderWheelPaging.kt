@@ -25,7 +25,7 @@ internal fun Modifier.readerWheelPaging(
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 if (event.type != PointerEventType.Scroll) continue
                 val wheel = event.changes.firstOrNull {
-                    it.type == PointerType.Mouse && it.scrollDelta.y != 0f
+                    !it.isConsumed && it.type == PointerType.Mouse && it.scrollDelta.y != 0f
                 } ?: continue
                 val now = wheel.uptimeMillis
                 val previous = lastPageAt

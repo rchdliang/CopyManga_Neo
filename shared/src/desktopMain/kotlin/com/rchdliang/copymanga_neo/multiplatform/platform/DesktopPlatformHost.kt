@@ -67,6 +67,9 @@ class DesktopPlatformHost(
     private val zone: ZoneId = ZoneId.systemDefault(),
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
+    override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
+        com.rchdliang.copymanga_neo.multiplatform.ui.reader.windowsReaderImageQuality else null
+
     override val notificationSettingsUnavailableReason: String?
         get() = desktopNotificationSettingsUnavailableReason(
             System.getProperty("os.name"), GraphicsEnvironment.isHeadless())

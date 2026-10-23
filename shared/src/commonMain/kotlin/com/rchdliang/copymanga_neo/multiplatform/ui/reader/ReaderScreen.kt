@@ -835,6 +835,7 @@ fun ReaderSuccessContent(
             },
             onBottomAreaTap = { showControls = !showControls },
             imageLoader = loader,
+            imageQuality = services?.platform?.imageQuality,
             tools = tools,
             onUserInteraction = { viewportCorrection.invalidate(); viewportAnchor.invalidate(); automatic = false; pendingChapter = null; restoring = false },
             onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },

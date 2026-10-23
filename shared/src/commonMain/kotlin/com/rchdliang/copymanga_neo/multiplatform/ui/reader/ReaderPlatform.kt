@@ -8,6 +8,9 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsViewModel
 
 /** Reader OS effects are scoped and restored by each host when the reader leaves composition. */
 interface ReaderPlatform {
+    /** 仅由需要修正图片采样的平台启用，其他平台保持原图片链路。 */
+    val imageQuality: ReaderImageQuality? get() = null
+
     /** Android: hide status bars and apply the per-comic orientation. Desktop: reader window policy. */
     @Composable
     fun ImmersiveEffect(orientation: ScreenOrientationSetting?)
