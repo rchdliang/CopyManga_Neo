@@ -15,6 +15,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import com.rchdliang.copymanga_neo.data.local.portable.PortableAppSettings
+import com.rchdliang.copymanga_neo.data.local.portable.platformDocumentStorage
+import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import com.rchdliang.copymanga_neo.multiplatform.app.*
 import com.rchdliang.copymanga_neo.multiplatform.platform.*
 import kotlinx.coroutines.*
@@ -62,6 +65,13 @@ private fun showLaunchFailure(message: String) {
 }
 
 private fun runPrimary(instance: DesktopInstanceGuard) {
+    // Read the small palette preference before the first window frame, ahead of keyring/graph startup.
+    val startupThemeMode = runBlocking(Dispatchers.IO) {
+        try {
+            PortableAppSettings.readStartupThemeMode(platformDocumentStorage(instance.directory.resolve("settings").toString()))
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { AppThemeMode.SYSTEM }
+    }
     application(exitProcessOnExit = false) {
         val appIcons = remember { DesktopAppIcons.load() }
         val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
@@ -284,7 +294,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                     }
                 }
             }
-            PortableHostTheme(graph?.repositories?.appSettings) {
+            PortableHostTheme(graph?.repositories?.appSettings, initialThemeMode = startupThemeMode) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onPreviewKeyEvent { event ->
                     if (phase.showApplication && event.key == Key.Escape) escapeKeys.observe(when (event.type) {
                         KeyEventType.KeyDown -> DesktopEscapeEvent.DOWN
@@ -311,10 +321,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                     } else if (ready != null) appState.SaveableStateProvider("application") {
                         CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
                             openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
-                    } else Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (error == null) { CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); Text("正在读取本地资料…") }
-                        else { Text(error.orEmpty()); Spacer(Modifier.height(16.dp)); Button(onClick = { attempt++ }) { Text("重试") } }
-                    }
+                    } else StartupSurface(error) { attempt++ }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
                     if (phase == DesktopWindowPhase.CONFIRM_CLOSE) AlertDialog(
                         onDismissRequest = { phase = DesktopWindowPhase.OPEN },

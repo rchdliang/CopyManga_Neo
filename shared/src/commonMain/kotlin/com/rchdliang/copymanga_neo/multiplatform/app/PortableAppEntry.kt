@@ -37,7 +37,7 @@ fun PortableAppEntry(
         error = null
         var uninstalled: PortableAppGraph? = null
         try {
-            // Wasm 的本地存储是同步 API；先让宿主绘制首页骨架，再读取配置。
+            // Wasm 的本地存储是同步 API；先让宿主绘制加载指示器，再读取配置。
             withFrameNanos { }
             withFrameNanos { }
             uninstalled = create(scope)

@@ -22,6 +22,15 @@ internal data class AppPreferenceDocument(
 )
 
 class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRepository {
+    companion object {
+        /** Read only the startup palette; graph creation owns recovery, migration and errors. */
+        suspend fun readStartupThemeMode(storage: DocumentStorage): AppThemeMode {
+            val raw = storage.read("app-settings.json") ?: return AppThemeMode.SYSTEM
+            val payload = DocumentEnvelope.decode(raw, "copymanga.document/app-settings.json", 1, emptyMap()).payload
+            return storageJson.decodeFromJsonElement(AppPreferenceDocument.serializer(), payload).app.themeMode
+        }
+    }
+
     private val document = DocumentStore(storage, "app-settings.json", AppPreferenceDocument.serializer(), AppPreferenceDocument())
     override val settings: Flow<AppSettings> = document.state.map { it.app.copy(comicImageConcurrency = it.app.comicImageConcurrency.coerceIn(1, 10), comicDownloadLimitKiB = it.app.comicDownloadLimitKiB.coerceAtLeast(0)) }
     suspend fun initialize() = document.ensureLoaded()

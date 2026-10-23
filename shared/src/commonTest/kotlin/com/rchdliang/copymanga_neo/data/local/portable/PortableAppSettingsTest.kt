@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.local.portable
 
+import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,6 +13,27 @@ class PortableAppSettingsTest {
         override suspend fun read(key: String) = values[key]
         override suspend fun write(key: String, value: String) { values[key] = value }
         override suspend fun remove(key: String) { values.remove(key) }
+    }
+
+    @Test fun startupThemeReadsSavedAndLegacySettingsWithoutWriting() = runTest {
+        for (mode in AppThemeMode.entries) {
+            val documents = Documents()
+            PortableAppSettings(documents).setThemeMode(mode).getOrThrow()
+            val saved = documents.values.toMap()
+            assertEquals(mode, PortableAppSettings.readStartupThemeMode(documents))
+            assertEquals(saved, documents.values)
+
+            documents.values["app-settings.json"] = """{"app":{"themeMode":"${mode.name}"}}"""
+            val legacy = documents.values.toMap()
+            assertEquals(mode, PortableAppSettings.readStartupThemeMode(documents))
+            assertEquals(legacy, documents.values)
+        }
+    }
+
+    @Test fun startupThemeDefaultsToSystemWithoutCreatingSettings() = runTest {
+        val documents = Documents()
+        assertEquals(AppThemeMode.SYSTEM, PortableAppSettings.readStartupThemeMode(documents))
+        assertEquals(emptyMap(), documents.values)
     }
 
     @Test fun initialLanguageDefaultIsPersistedOnlyOnce() = runTest {

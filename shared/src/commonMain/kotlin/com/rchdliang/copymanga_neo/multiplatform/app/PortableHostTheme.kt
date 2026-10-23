@@ -17,11 +17,16 @@ import kotlinx.coroutines.flow.flowOf
 
 /** Host-owned warnings, startup and close dialogs follow the application's selected palette too. */
 @Composable
-fun PortableHostTheme(repository: AppSettingsRepository?, content: @Composable () -> Unit) {
-    val settings = remember(repository) {
-        (repository?.settings ?: flowOf(AppSettings())).catch { emit(AppSettings()) }
+fun PortableHostTheme(
+    repository: AppSettingsRepository?,
+    initialThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    content: @Composable () -> Unit
+) {
+    val initialSettings = remember(initialThemeMode) { AppSettings(themeMode = initialThemeMode) }
+    val settings = remember(repository, initialSettings) {
+        (repository?.settings ?: flowOf(initialSettings)).catch { emit(initialSettings) }
     }
-    val preferences by settings.collectAsStateWithLifecycle(AppSettings())
+    val preferences by settings.collectAsStateWithLifecycle(initialSettings)
     val dark = when (preferences.themeMode) {
         AppThemeMode.DARK -> true
         AppThemeMode.LIGHT -> false
