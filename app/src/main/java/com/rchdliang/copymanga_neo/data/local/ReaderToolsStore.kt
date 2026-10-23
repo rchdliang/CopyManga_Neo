@@ -30,7 +30,10 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
             autoIntervalSeconds = prefs.getInt("auto_interval", 8),
             imageRetries = prefs.getInt("image_retries", 2),
             imageTimeoutSeconds = prefs.getInt("image_timeout", 15),
-            preloadPages = prefs.getInt("preload_pages", 2)
+            preloadPages = prefs.getInt("preload_pages", 2),
+            pageLayout = prefs.getString("page_layout", "SINGLE") ?: "SINGLE",
+            pageAnimation = prefs.getBoolean("page_animation", true),
+            pairingRestarts = runCatching { ReaderToolsBackupCodec.decodePairing(prefs.getString("pairing_restarts", "{}") ?: "{}") }.getOrDefault(emptyMap())
         ).normalized()
     )
     override val settings = mutableSettings.asStateFlow()
@@ -47,7 +50,10 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
                         .putInt("auto_interval", next.autoIntervalSeconds)
                         .putInt("image_retries", next.imageRetries)
                         .putInt("image_timeout", next.imageTimeoutSeconds)
-                        .putInt("preload_pages", next.preloadPages).commit()
+                        .putInt("preload_pages", next.preloadPages)
+                        .putString("page_layout", next.pageLayout)
+                        .putBoolean("page_animation", next.pageAnimation)
+                        .putString("pairing_restarts", ReaderToolsBackupCodec.encodePairing(next.pairingRestarts)).commit()
                 ) throw IOException("阅读设置保存失败")
                 mutableSettings.value = next
             }
