@@ -8,9 +8,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicExportFormat
 import com.rchdliang.copymanga_neo.domain.model.ComicExportLocation
 import com.rchdliang.copymanga_neo.domain.model.ComicExportOutput
 import com.rchdliang.copymanga_neo.domain.model.ComicExportPlan
-import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
 import com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
-import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -23,20 +21,17 @@ data class ComicExportUiState(
     val visible: Boolean = false, val preparing: Boolean = false,
     val plan: ComicExportPlan? = null, val format: ComicExportFormat = ComicExportFormat.ZIP,
     val error: String? = null, val pickLocation: Boolean = false, val retry: Boolean = false,
-    val previousOutputs: List<ComicExportOutput> = emptyList()
+    val previousOutputs: List<ComicExportOutput> = emptyList(),
+    val started: Boolean = false
 )
 
 class ComicExportViewModel constructor(
     private val repository: ComicExportRepository,
-    private val downloads: DownloadRepository,
     private val savedState: SavedStateHandle
 ) : ViewModel() {
     private val mutableUi = MutableStateFlow(ComicExportUiState())
     val uiState = mutableUi.asStateFlow()
     val progress = repository.state
-    private val mutableAvailable = MutableStateFlow<Set<String>>(emptySet())
-    val availableChapters = mutableAvailable.asStateFlow()
-    private var watching: Job? = null
     private var preparation: Job? = null
     private var destinationPicker: Job? = null
     private val handler = CoroutineExceptionHandler { _, error ->
@@ -70,7 +65,8 @@ class ComicExportViewModel constructor(
         }
     }
 
-    fun prepare(request: ComicExportRequest) {
+    fun preparePlan(plan: ComicExportPlan) {
+        if (plan.chapterCount == 0) return
         if (repository.state.value.running) {
             mutableUi.value = ComicExportUiState(
                 visible = true,
@@ -82,20 +78,15 @@ class ComicExportViewModel constructor(
         mutableUi.value = ComicExportUiState(visible = true, preparing = true)
         preparation = viewModelScope.launch(handler) {
             restoration.join()
-            repository.prepare(request).fold(onSuccess = { plan ->
-                repository.saveDraft(plan).fold(
-                    onSuccess = { draftId ->
-                        savedState["export_draft"] = draftId
-                        savedState["export_retry"] = false
-                        savedState["export_format"] = ComicExportFormat.ZIP.name
-                        mutableUi.value = ComicExportUiState(visible = true, plan = plan)
-                    },
-                    onFailure = { showFailure(it, "导出草稿保存失败") }
-                )
-            }, onFailure = { error ->
-                mutableUi.value =
-                    ComicExportUiState(visible = true, error = error.message ?: "无法准备导出")
-            })
+            repository.saveDraft(plan).fold(
+                onSuccess = { draftId ->
+                    savedState["export_draft"] = draftId
+                    savedState["export_retry"] = false
+                    savedState["export_format"] = ComicExportFormat.ZIP.name
+                    mutableUi.value = ComicExportUiState(visible = true, plan = plan)
+                },
+                onFailure = { showFailure(it, "导出草稿保存失败") }
+            )
         }
     }
 
@@ -168,7 +159,10 @@ class ComicExportViewModel constructor(
                 plan, state.format, uri, savedState["export_directory"] ?: true,
                 state.previousOutputs
             ).fold(
-                onSuccess = { dismiss() },
+                onSuccess = {
+                    dismiss()
+                    mutableUi.update { it.copy(started = true) }
+                },
                 onFailure = { failure ->
                     mutableUi.update {
                         it.copy(
@@ -215,14 +209,6 @@ class ComicExportViewModel constructor(
     }
 
     fun cancel() = repository.cancel()
-    fun watchLocalChapters(comic: String) {
-        watching?.cancel()
-        watching = viewModelScope.launch(handler) {
-            downloads.getAllDownloadedComics().collect {
-                mutableAvailable.value = downloads.getDownloadedChapterUuids(comic)
-            }
-        }
-    }
 
     fun dismissProgress() {
         viewModelScope.launch(handler) {

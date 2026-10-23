@@ -1,33 +1,24 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.export
 
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.model.ComicExportFormat
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 
-/** 所有入口共用格式面板和系统选择器；选择器启动事件先消费，避免旋转后重复打开。 */
+/** 打包方式先于文件格式；保留旧格式值，已有任务仍可恢复。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComicExportDialogs(viewModel: ComicExportViewModel) {
@@ -39,83 +30,79 @@ fun ComicExportDialogs(viewModel: ComicExportViewModel) {
     ActiveRouteLaunchedEffect(viewModel, platform, state.pickLocation) {
         if (state.pickLocation) viewModel.launchDestinationPicker(platform)
     }
-    if (!state.visible) return
-    if (LocalRouteActive.current) ModalBottomSheet(onDismissRequest = viewModel::dismiss) {
+    if (!state.visible || !LocalRouteActive.current) return
+    ModalBottomSheet(
+        onDismissRequest = viewModel::dismiss,
+        sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+        )
+    ) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(max = 620.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            Modifier.testTag("comic-export-options").fillMaxWidth().heightIn(max = 640.dp)
+                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                if (state.retry) "重试未完成的导出" else "导出下载内容",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(if (state.retry) "重试导出" else "导出", style = MaterialTheme.typography.headlineSmall)
+                state.plan?.let { plan ->
+                    Text("${plan.comics.size} 部漫画 · ${plan.chapterCount} 章 · 约 ${platform.formatFileSize(plan.bytes)}",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (state.preparing) {
-                CircularProgressIndicator()
-                Text("正在检查本地章节与图片…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text("准备导出…")
+                }
             }
             state.plan?.let { plan ->
-                Text(
-                    "${plan.comics.size} 部漫画 · ${plan.chapterCount} 章 · ${plan.pageCount} 张图片",
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    "原图约 ${platform.formatFileSize(plan.bytes)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (plan.skipped.isNotEmpty()) {
-                    Text("以下内容未纳入导出：", color = MaterialTheme.colorScheme.error)
-                    plan.skipped.forEach {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                val byChapter = state.format == ComicExportFormat.CHAPTER_ZIP || state.format == ComicExportFormat.CBZ
+                val mode = if (byChapter) ComicExportFormat.CHAPTER_ZIP else state.format
+                Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(ComicExportFormat.ZIP, ComicExportFormat.CHAPTER_ZIP, ComicExportFormat.IMAGES).forEach { option ->
+                        val selected = mode == option
+                        Surface(
+                            color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().selectable(selected, enabled = !state.retry, role = Role.RadioButton,
+                                    onClick = { if (!selected) viewModel.setFormat(option) }).padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                RadioButton(selected, onClick = null, enabled = !state.retry)
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(option.label, style = MaterialTheme.typography.titleSmall)
+                                    Text(when (option) {
+                                        ComicExportFormat.ZIP -> "每部一个 ZIP，章节分文件夹"
+                                        ComicExportFormat.CHAPTER_ZIP -> "每章一个压缩包"
+                                        else -> "按章节保存，不压缩"
+                                    }, style = MaterialTheme.typography.bodySmall,
+                                        color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
                     }
                 }
-                ComicExportFormat.entries.forEach { format ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = state.format == format,
-                                enabled = !state.retry,
-                                role = Role.RadioButton,
-                                onClick = { viewModel.setFormat(format) }),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = state.format == format,
-                            onClick = null,
-                            enabled = !state.retry
-                        )
-                        Text(
-                            format.label,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(start = 12.dp)
-                        )
-                    }
-                }
-                Text(
-                    when (state.format) {
-                        ComicExportFormat.ZIP -> "每部漫画一个 ZIP，保留分组和章节目录。"
-                        ComicExportFormat.CBZ -> "每章一个 CBZ，图片按页序平铺；阅读器需支持原图格式。"
-                        ComicExportFormat.IMAGES -> "按漫画、分组、章节保存原图文件夹。"
-                    }, color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = viewModel::pickLocation,
-                    enabled = !progress.running,
-                    modifier = Modifier.fillMaxWidth()
+                if (byChapter) Row(
+                    Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("选择保存位置", color = MaterialTheme.colorScheme.onPrimary)
+                    Text("格式", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    listOf(ComicExportFormat.CHAPTER_ZIP to "ZIP", ComicExportFormat.CBZ to "CBZ").forEach { (format, label) ->
+                        FilterChip(selected = state.format == format, onClick = { viewModel.setFormat(format) },
+                            label = { Text(label) }, enabled = !state.retry)
+                    }
                 }
+                if (plan.skipped.isNotEmpty()) SkippedExportChapters(plan.skipped)
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                Button(onClick = viewModel::pickLocation,
+                    enabled = !progress.running && !state.pickLocation && !state.preparing,
+                    modifier = Modifier.fillMaxWidth()) { Text("选择保存位置") }
             }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (state.plan == null) state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
 }

@@ -75,7 +75,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.request.ImageRequest
-import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
@@ -85,8 +84,6 @@ import com.rchdliang.copymanga_neo.domain.model.ShareTarget
 import com.rchdliang.copymanga_neo.domain.reading.ReadingPositionPolicy
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.multiplatform.ui.export.ComicExportDialogs
-import com.rchdliang.copymanga_neo.multiplatform.ui.export.ComicExportViewModel
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.CancellationException
@@ -109,16 +106,11 @@ fun ReaderScreen(
     onNavigateBack: () -> Unit,
     viewModel: ReaderViewModel,
     services: ReaderUiServices,
-    exportViewModel: ComicExportViewModel,
     initialPage: Int = -1,
     initialFraction: Double = 0.0
 ) {
     val committedActive by rememberUpdatedState(LocalRouteActive.current)
     val reportingLifecycle = LocalLifecycleOwner.current.lifecycle
-    val exportable by exportViewModel.availableChapters.collectAsStateWithLifecycle()
-    val exportUi by exportViewModel.uiState.collectAsStateWithLifecycle()
-    ActiveRouteLaunchedEffect(comicPathWord) { exportViewModel.watchLocalChapters(comicPathWord) }
-    ComicExportDialogs(exportViewModel)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentChapter = uiState as? ReaderUiState.Success
     val tools by viewModel.toolsSettings.collectAsStateWithLifecycle()
@@ -214,7 +206,7 @@ fun ReaderScreen(
 
             is ReaderUiState.Success -> ReaderSuccessContent(
                 services = services,
-                externalModalVisible = commentChapter != null || exportUi.visible || exportUi.pickLocation,
+                externalModalVisible = commentChapter != null,
                 images = state.content.imageUrls,
                 chapterName = state.content.chapterName.ifEmpty { chapterName },
                 readingDirection = readingDirectionPref,
@@ -258,16 +250,7 @@ fun ReaderScreen(
                 onBack = onNavigateBack, catalog = catalog,
                 onLoadCatalog = viewModel::loadCatalog,
                 onSelectCatalog = viewModel::selectCatalogChapter,
-                shareComicPathWord = comicPathWord,
-                exportableChapters = exportable,
-                onExportChapter = {
-                    exportViewModel.prepare(
-                        ComicExportRequest(
-                            listOf(comicPathWord),
-                            setOf(it)
-                        )
-                    )
-                }
+                shareComicPathWord = comicPathWord
             )
         }
     }
@@ -314,8 +297,6 @@ fun ReaderSuccessContent(
     onLoadCatalog: () -> Unit = {},
     onSelectCatalog: (String) -> Unit = {},
     shareComicPathWord: String? = null,
-    exportableChapters: Set<String> = emptySet(),
-    onExportChapter: (String) -> Unit = {},
     savedPosition: LocalReadingRecord? = null,
     onPosition: (String, Int, Double, Boolean) -> Unit = { _, _, _, _ -> },
     onCompleted: (String) -> Unit = {},
@@ -431,7 +412,6 @@ fun ReaderSuccessContent(
     var showImageMenu by rememberSaveable { mutableStateOf(false) }
     var selectedSource by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTitle by rememberSaveable { mutableStateOf("") }
-    var selectedChapter by rememberSaveable { mutableStateOf("") }
     val routeActive = LocalRouteActive.current
     val currentRouteActive by rememberUpdatedState(routeActive)
     val reportingState by owner.lifecycle.currentStateFlow.collectAsState()
@@ -849,7 +829,6 @@ fun ReaderSuccessContent(
             ::backward,
             onShowMenu = { showControls = !showControls },
             onImageLongPress = { selected ->
-                selectedChapter = selected.chapterUuid
                 automatic = false; selectedSource = selected.source
                 selectedTitle =
                     "${selected.chapterName} - 第${selected.page + 1}页"; showImageMenu = true
@@ -964,10 +943,6 @@ fun ReaderSuccessContent(
         onResetPreferences = onResetPreferences,
         onDismiss = { showSettings = false },
         leadingSettings = {
-            androidx.compose.material3.TextButton(
-                onClick = { showSettings = false; page?.let { onExportChapter(it.chapterUuid) } },
-                enabled = page?.chapterUuid in exportableChapters
-            ) { Text("导出本章", color = MaterialTheme.colorScheme.primary) }
             ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
@@ -988,8 +963,6 @@ fun ReaderSuccessContent(
     if (showImageMenu) ReaderImageActionDialog(
         selectedTitle, selectedSource,
         onRefresh = { showImageMenu = false; onRefresh() }, onDismiss = { showImageMenu = false },
-        onExportChapter = { showImageMenu = false; onExportChapter(selectedChapter) },
-        chapterExportEnabled = selectedChapter in exportableChapters,
         viewModel = services!!.imageActions,
         platform = services.platform
     )

@@ -56,6 +56,8 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.profile.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /** Host-retained owner, not composition lifetime: rotation cannot clear reader/picker state. */
 private class RouteModels(private val savedState: SavedStateHandle) : ViewModel() {
@@ -184,7 +186,7 @@ fun CopyMangaApp(
     val avatar by session.avatar.collectAsStateWithLifecycle()
     val favorites = models.get("tab:FAVORITES") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf) }
     val favoritesState by favorites.uiState.collectAsStateWithLifecycle()
-    val exports = models.get("application", "export") { ComicExportViewModel(repositories.export, repositories.downloads, it) }
+    val exports = models.get("application", "export") { ComicExportViewModel(repositories.export, it) }
     val exportState by repositories.export.state.collectAsStateWithLifecycle()
     val downloads by repositories.downloads.getDownloadProgress().collectAsStateWithLifecycle()
     platforms.notifications?.let { DownloadNotificationPermission(downloads.isNotEmpty() || exportState.running, it) }
@@ -403,8 +405,11 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
     val toast = LocalToastHost.current
     val back = { nav.back(); Unit }
     fun comments(key: String) = models.get(route.id, "comments:$key") { CommentsViewModel(r.comments, r.users, r.manga, r.downloads) }
-    fun export() = models.get(route.id, "export") { ComicExportViewModel(r.export, r.downloads, it) }
+    fun export() = models.get(route.id, "export") { ComicExportViewModel(r.export, it) }
     when (route.destination) {
+        "export-chapters" -> ComicExportSelectionScreen(
+            viewModel = models.get(route.id, defaults = route.arguments) { ComicExportSelectionViewModel(r.export, it) },
+            exportViewModel = export(), onBack = back)
         "detail" -> DetailScreen(route.path,
             models.get(route.id) { DetailViewModel(r.manga, r.users, r.downloads, r.blacklist, r.readingProgress, r.localReading) },
             commentsDialog = { target, title, allowed, dismiss, login -> CommentsDialog(target, title, dismiss, allowed, login, route.path, comments(target.toString())) },
@@ -439,7 +444,7 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
             services = ReaderUiServices(p.reader, p.imageLoader,
                 models.get(route.id) { ReaderImageActionsViewModel(r.images, it) },
                 models.get(route.id) { ReaderCommentModels(r.comments, r.users, r.manga, r.downloads, r.sessions) },
-                modalComments = { comments(ReaderCommentModelKeys.modal) }), exportViewModel = export())
+                modalComments = { comments(ReaderCommentModelKeys.modal) }))
         "tab" -> when (MainTab.valueOf(route.id.substringAfter(':'))) {
             MainTab.HOME -> HomeScreen(
                 models.get(route.id) { HomeViewModel(r.manga, r.discovery, r.risk, r.appSettings, autoStart = false) },
@@ -451,7 +456,9 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
                 onNavigateToNovel = { nav.novel(it) })
             MainTab.FAVORITES -> FavoritesScreen(favorites, nav::comic, profile) { nav.novel(it) }
             MainTab.DOWNLOADS -> DownloadsScreen(onComicClick = nav::comic,
-                viewModel = models.get(route.id) { DownloadsViewModel(r.downloads, r.novels, r.sessions) }, exportViewModel = export(), onNovelClick = { nav.novel(it) })
+                viewModel = models.get(route.id) { DownloadsViewModel(r.downloads, r.novels, r.sessions) }, exportViewModel = export(),
+                onExportChapters = { comics -> nav.open(AppRoute("export-chapters", arguments = mapOf("comics" to Json.encodeToString(comics)))) },
+                onNovelClick = { nav.novel(it) })
             MainTab.PROFILE -> ProfileScreen(
                 models.get(route.id) { ProfileViewModel(r.users, r.blacklist, r.network, r.appSettings, autoStart = false) },
                 ProfileUiServices(p.profile, p.buildInfo,

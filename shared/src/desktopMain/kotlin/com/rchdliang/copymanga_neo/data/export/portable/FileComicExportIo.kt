@@ -87,8 +87,7 @@ class FileComicExportIo(downloadDirectory: String) : ComicExportIo {
                     for (chapter in unit.chapters) {
                         onChapter("${unit.comic.name}／${chapter.name}")
                         for ((index, page) in chapter.pages.withIndex()) {
-                            val prefix = if (format == ComicExportFormat.CBZ) "" else "${exportGroupName(unit.comic, chapter.group)}/${chapterExportName(chapter)}/"
-                            zip.putNextEntry(ZipEntry(prefix + exportPageName(index, page)))
+                            zip.putNextEntry(ZipEntry(exportArchivePageName(unit.comic, chapter, index, page, format)))
                             copy(page, zip, onBytes)
                             zip.closeEntry()
                         }

@@ -2,9 +2,10 @@ package com.rchdliang.copymanga_neo.domain.model
 
 @kotlinx.serialization.Serializable
 enum class ComicExportFormat(val label: String, val extension: String, val mimeType: String) {
-    ZIP("ZIP 压缩包", "zip", "application/zip"),
-    CBZ("CBZ 漫画文件（每章一个）", "cbz", "application/vnd.comicbook+zip"),
-    IMAGES("原图文件夹", "", "vnd.android.document/directory")
+    ZIP("按漫画打包", "zip", "application/zip"),
+    CBZ("按章节打包", "cbz", "application/vnd.comicbook+zip"),
+    IMAGES("原图文件夹", "", "vnd.android.document/directory"),
+    CHAPTER_ZIP("按章节打包", "zip", "application/zip")
 }
 
 @kotlinx.serialization.Serializable

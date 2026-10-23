@@ -101,8 +101,7 @@ internal suspend fun writeComicArchive(
         onChapter("${unit.comic.name}／${chapter.name}")
         for ((index, page) in chapter.pages.withIndex()) {
             val crc = ExportCrc32(); readPage(page) { crc.update(it) }
-            val prefix = if (format == ComicExportFormat.CBZ) "" else "${exportGroupName(unit.comic, chapter.group)}/${chapterExportName(chapter)}/"
-            zip.entry(prefix + exportPageName(index, page), page.size, crc.value) { emit ->
+            zip.entry(exportArchivePageName(unit.comic, chapter, index, page, format), page.size, crc.value) { emit ->
                 readPage(page) { chunk -> emit(chunk); onBytes(chunk.size.toLong()) }
             }
         }

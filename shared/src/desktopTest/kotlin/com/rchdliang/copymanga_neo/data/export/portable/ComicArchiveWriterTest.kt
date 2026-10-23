@@ -124,14 +124,27 @@ class ComicArchiveWriterTest {
     }
 
     @Test
-    fun cbzCreatesOneFlatArchivePerChapter() {
+    fun chapterZipAndCbzCreateOneFlatArchivePerChapter() {
         val plan =
             plan(listOf(page("one.jpg", byteArrayOf(-1, -40, -1, 0))), listOf("正篇", "番外"))
-        val units = exportUnits(plan, ComicExportFormat.CBZ)
-        assertEquals(2, units.size)
-        assertTrue(units.all { it.name.endsWith(".cbz") })
-        val entries = archive(units.first(), ComicExportFormat.CBZ)
-        assertEquals(listOf("00001.jpg", "manifest.json"), entries.keys.toList())
+        for (format in listOf(ComicExportFormat.CHAPTER_ZIP, ComicExportFormat.CBZ)) {
+            val units = exportUnits(plan, format)
+            assertEquals(2, units.size)
+            assertTrue(units.all { it.name.endsWith(".${format.extension}") })
+            val entries = archive(units.first(), format)
+            assertEquals(listOf("00001.jpg", "manifest.json"), entries.keys.toList())
+            // iOS / Web 共用流式写入器，验证其归档目录与 JVM 一致。
+            val bytes = ByteArrayOutputStream()
+            runBlocking {
+                writeComicArchive(units.first(), format, { bytes.write(it) },
+                    { page, consume -> consume(File(page.source).readBytes()) }, {}, {})
+            }
+            val streamed = ZipInputStream(ByteArrayInputStream(bytes.toByteArray())).use { input ->
+                buildMap { while (true) { val entry = input.nextEntry ?: break; put(entry.name, input.readBytes()) } }
+            }
+            assertEquals(entries.keys, streamed.keys)
+            entries.forEach { (name, content) -> assertContentEquals(content, streamed.getValue(name)) }
+        }
     }
 
     @Test

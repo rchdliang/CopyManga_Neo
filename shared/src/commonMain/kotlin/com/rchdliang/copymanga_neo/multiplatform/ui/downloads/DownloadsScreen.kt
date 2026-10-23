@@ -46,7 +46,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rchdliang.copymanga_neo.domain.model.ComicExportRequest
 import com.rchdliang.copymanga_neo.domain.model.DownloadKind
 import com.rchdliang.copymanga_neo.domain.model.DownloadProgressInfo
 import com.rchdliang.copymanga_neo.domain.model.DownloadTaskStatus
@@ -66,6 +65,7 @@ fun DownloadsScreen(
     onComicClick: (String) -> Unit = {},
     viewModel: DownloadsViewModel,
     exportViewModel: ComicExportViewModel,
+    onExportChapters: (List<String>) -> Unit,
     onNovelClick: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,9 +90,9 @@ fun DownloadsScreen(
         onEnterSelectionMode = viewModel::enterSelectionMode,
         onDeleteSelected = viewModel::deleteSelected,
         onExportSelected = {
-            val request = ComicExportRequest(uiState.selectedComicPathWords.toList())
+            val comics = uiState.selectedComicPathWords.toList()
             viewModel.exitSelectionMode()
-            exportViewModel.prepare(request)
+            onExportChapters(comics)
         },
         exportingComics = if (exportState.running) exportState.plan?.comics?.map { it.pathWord }
             ?.toSet().orEmpty() else emptySet()

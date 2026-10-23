@@ -54,15 +54,21 @@ data class ExportUnit(val id: String, val comic: ComicExportComic, val chapters:
 }
 internal fun exportUnits(plan: ComicExportPlan, format: ComicExportFormat): List<ExportUnit> = plan.comics.flatMap { comic ->
     if (format == ComicExportFormat.ZIP) listOf(ExportUnit(comic.pathWord, comic, comic.chapters,
-        exportFileName("${comicExportName(comic)}_已下载${comic.chapters.size}章", "zip")))
+        exportFileName("${comicExportName(comic)}_${comic.chapters.size}章", "zip")))
     else comic.chapters.map { chapter -> ExportUnit("${comic.pathWord}/${chapter.uuid}", comic, listOf(chapter),
-        exportFileName("${comicExportName(comic)}_${chapterExportName(chapter)}", if (format == ComicExportFormat.CBZ) "cbz" else "")) }
+        exportFileName("${comicExportName(comic)}_${chapterExportName(chapter)}", format.extension)) }
 }
 internal fun exportGroupName(comic: ComicExportComic, group: String): String {
     val groups = comic.chapters.map { it.group }.distinct().sorted()
     return "${(groups.indexOf(group) + 1).toString().padStart(3, '0')}_${exportName(group)}"
 }
 internal fun exportPageName(index: Int, page: ComicExportPage) = "${(index + 1).toString().padStart(5, '0')}.${page.extension}"
+internal fun exportArchivePageName(
+    comic: ComicExportComic, chapter: ComicExportChapter, index: Int, page: ComicExportPage, format: ComicExportFormat
+): String {
+    val prefix = if (format == ComicExportFormat.ZIP) "${exportGroupName(comic, chapter.group)}/${chapterExportName(chapter)}/" else ""
+    return prefix + exportPageName(index, page)
+}
 internal fun exportManifest(unit: ExportUnit): String = buildJsonObject {
     put("version", 1); put("comic", unit.comic.name); put("path_word", unit.comic.pathWord); put("author", unit.comic.author)
     put("chapters", JsonArray(unit.chapters.map { chapter -> buildJsonObject {
