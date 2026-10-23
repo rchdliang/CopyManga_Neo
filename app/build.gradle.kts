@@ -127,6 +127,7 @@ room {
 
 dependencies {
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.room.testing)
     val composeBom = platform(libs.androidx.compose.bom)

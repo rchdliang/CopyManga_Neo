@@ -76,6 +76,7 @@ class NetworkSettingsRepositoryImpl @Inject constructor(
     override suspend fun reset(): Result<Unit> =
         result { mutation.withLock { saveConfiguration(NetworkSettings()) } }
 
+    override suspend fun previousSettings(): Result<NetworkSettings> = runCatching { store.previousSettings() }
     override suspend fun rollback(): Result<Unit> =
         result { mutation.withLock { saveConfiguration(store.previousSettings()) } }
 

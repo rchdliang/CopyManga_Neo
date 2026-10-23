@@ -48,9 +48,9 @@ internal object NetworkSettingsCodec {
         require(app.version.matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "App 请求版本格式无效" }
         require(
             app.versionCode.toIntOrNull()
-                ?.let { it > 0 } == true) { "App versionCode 必须为正整数" }
+                ?.let { it > 0 } == true) { "版本号须为大于 0 的整数" }
         listOf(app.pseudoId, app.umString, app.device, app.deviceInfo, app.buildTime).forEach {
-            require(it.length <= 256 && it.all { c -> c.code in 32..126 }) { "App 身份字段仅支持最多 256 位可打印 ASCII 字符" }
+            require(it.length <= 256 && it.all { c -> c.code in 32..126 }) { "此字段最多 256 个字符，仅支持英文字母、数字、空格和半角符号。" }
         }
         return value.copy(
             officialApp = app.copy(apiHost = host(app.apiHost), loginHost = host(app.loginHost)),

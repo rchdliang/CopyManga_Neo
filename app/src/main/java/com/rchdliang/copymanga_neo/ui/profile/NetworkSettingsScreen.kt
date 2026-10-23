@@ -17,7 +17,13 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.remember
+import com.rchdliang.copymanga_neo.ui.components.UnsavedChangesDialog
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -64,12 +70,19 @@ internal fun NetworkSettingsScreen(
     val draft = state.draft
     val enabled = !state.busy
     val toast = LocalToastHost.current
-    DisposableEffect(viewModel) { onDispose { viewModel.cancelWork() } }
+    var routePresent by remember { mutableStateOf(true) }
+    DisposableEffect(viewModel) { routePresent = true; onDispose { routePresent = false; viewModel.cancelWork() } }
     var advanced by rememberSaveable { mutableStateOf(false) }
     var discard by rememberSaveable { mutableStateOf(false) }
+    var choice by rememberSaveable { mutableStateOf<String?>(null) }
+    var rollback by rememberSaveable { mutableStateOf(false) }
+    val mainScroll = rememberScrollState()
+    val advancedScroll = rememberScrollState()
     var reset by rememberSaveable { mutableStateOf(false) }
     val goBack = {
-        if (advanced) advanced = false else if (state.dirty) discard = true else onNavigateBack()
+        if (!state.busy) {
+            if (advanced) advanced = false else if (state.dirty) discard = true else onNavigateBack()
+        }
     }
     BackHandler { goBack() }
     LaunchedEffect(state.message) {
@@ -78,19 +91,19 @@ internal fun NetworkSettingsScreen(
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier
-                .widthIn(max = 840.dp)
+                .widthIn(max = 720.dp)
                 .fillMaxSize()
                 .imePadding()
         ) {
             TopAppBar(
                 title = {
                     Text(
-                        if (advanced) "高级连接配置" else "请求模式与网络",
+                        if (advanced) "高级连接配置" else "网络与连接",
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = goBack) {
+                    IconButton(onClick = goBack, enabled = enabled) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             "返回"
@@ -103,26 +116,31 @@ internal fun NetworkSettingsScreen(
             Column(
                 Modifier
                     .weight(1f)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(if (advanced) advancedScroll else mainScroll)
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (!advanced) NetworkCard("请求模式") {
-                    Column(Modifier.selectableGroup()) {
-                        NetworkChoice(
-                            "网页模式",
-                            draft.requestMode == RequestMode.WEB,
-                            enabled
-                        ) {
-                            viewModel.edit { it.copy(requestMode = RequestMode.WEB) }
-                        }
-                        NetworkChoice(
-                            "App 模式",
-                            draft.requestMode == RequestMode.OFFICIAL_APP,
-                            enabled
-                        ) {
-                            viewModel.edit { it.copy(requestMode = RequestMode.OFFICIAL_APP) }
-                        }
+                if (!advanced) {
+                    Text("连接方式", style = MaterialTheme.typography.titleMedium)
+                    Column(verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap)) {
+                    ProfileListItem(
+                        Icons.Outlined.Wifi, "请求模式",
+                        if (draft.requestMode == RequestMode.WEB) "网页模式" else "App 模式",
+                        index = 0, count = 2, onClick = { choice = "mode" }, enabled = enabled
+                    )
+                    ProfileListItem(
+                        Icons.Outlined.Settings, "代理",
+                        when (draft.proxyMode) { ProxyMode.SYSTEM -> "跟随系统代理"; ProxyMode.MANUAL -> "手动 HTTP 代理"; ProxyMode.DIRECT -> "直连" },
+                        index = 1, count = 2, onClick = { choice = "proxy" }, enabled = enabled
+                    )
                     }
+                    Text("加载偏好", style = MaterialTheme.typography.titleMedium)
+                    ProfileListItem(
+                        Icons.Outlined.Speed, "漫画详情预加载",
+                        "同时预加载 ${draft.themeFetchConcurrency} 部 · 间隔 ${draft.themeFetchIntervalMillis / 1000.0} 秒",
+                        index = 0, count = 1, onClick = { choice = "loading" }, enabled = enabled
+                    )
+                    Text("高级与诊断", style = MaterialTheme.typography.titleMedium)
+                    NetworkHint("配置保存后生效；切换页面会保留未保存的编辑。")
                 }
                 if (advanced) {
                     OutlinedButton(
@@ -130,7 +148,7 @@ internal fun NetworkSettingsScreen(
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("设备信息", color = MaterialTheme.colorScheme.primary)
+                        Text("查看已应用设备信息")
                     }
                     if (draft.requestMode == RequestMode.OFFICIAL_APP) {
                         OfficialAppSettingsCard(
@@ -158,8 +176,8 @@ internal fun NetworkSettingsScreen(
                                 onReset = { viewModel.edit { it.copy(wwwHost = NetworkDefaults.WWW_HOST) } }
                             ) { value -> viewModel.edit { it.copy(wwwHost = value) } }
                             NetworkField(
-                                draft.loginHost.ifBlank { draft.apiHost },
-                                "登录域名",
+                                draft.loginHost,
+                                "登录域名（留空跟随 API）",
                                 enabled,
                                 onReset = { viewModel.edit { it.copy(loginHost = "") } }
                             ) { value -> viewModel.edit { it.copy(loginHost = value) } }
@@ -226,7 +244,7 @@ internal fun NetworkSettingsScreen(
                                 onClick = viewModel::discover,
                                 enabled = enabled && !state.dirty
                             ) {
-                                Text("获取拷贝线路", color = MaterialTheme.colorScheme.primary)
+                                Text("获取拷贝线路")
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -243,14 +261,101 @@ internal fun NetworkSettingsScreen(
                         }
                     }
                 }
-                if (!advanced) NetworkCard("漫画详情预加载") {
+                if (advanced) NetworkCard("连接诊断") {
+                    OutlinedButton(onClick = viewModel::test, enabled = enabled) {
+                        Text("测试当前编辑配置")
+                    }
+                    state.probes.forEach { probe ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                probe.host,
+                                Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(probe.latencyMillis?.let { "$it ms" } ?: "连接失败",
+                                color = if (probe.latencyMillis == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (draft.requestMode == RequestMode.WEB && state.probes.isNotEmpty() && draft.routes.isNotEmpty()) TextButton(
+                        onClick = viewModel::chooseFastest,
+                        enabled = enabled
+                    ) {
+                        Text("选择最快项")
+                    }
+                }
+                if (!advanced) ProfileListItem(
+                    Icons.Outlined.Tune, "高级连接配置",
+                    if (draft.requestMode == RequestMode.WEB) "域名、线路与连接诊断" else "设备配置、服务地址与连接诊断",
+                    index = 0, count = 1, onClick = { advanced = true }, enabled = enabled
+                )
+                if (advanced) OutlinedButton(
+                    onClick = { rollback = true },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("载入上次配置")
+                }
+                if (advanced) TextButton(
+                    onClick = { reset = true },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("载入默认配置")
+                }
+            }
+            if (state.dirty || state.busy || state.error != null) Surface(tonalElevation = 3.dp) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (state.dirty || state.saving) {
+                        Text(if (state.saving) "保存中…" else "有未保存的更改", style = MaterialTheme.typography.labelLarge)
+                        Button(onClick = { viewModel.save() }, enabled = enabled && state.dirty, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (state.saving) "保存中…" else "保存")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    state.diagnosticReport?.let { report ->
+        OfficialAppDiagnosticsDialog(
+            report,
+            state.busy,
+            viewModel::inspectDevice,
+            viewModel::closeDiagnosticReport
+        )
+    }
+    if (discard) UnsavedChangesDialog(
+        busy = state.busy,
+        onContinue = { discard = false },
+        onDiscard = { discard = false; viewModel.discard(); onNavigateBack() },
+        onSave = { discard = false; viewModel.save { if (routePresent) onNavigateBack() } }
+    )
+    if (rollback) AlertDialog(
+        onDismissRequest = { rollback = false }, title = { Text("载入上次配置？") },
+        text = { Text("将替换当前编辑内容，保存后才会生效。") },
+        confirmButton = { TextButton(onClick = { rollback = false; viewModel.rollback() }, enabled = enabled) { Text("载入") } },
+        dismissButton = { TextButton(onClick = { rollback = false }) { Text("取消") } }
+    )
+    if (choice != null) AlertDialog(
+        onDismissRequest = { choice = null },
+        title = { Text(when (choice) { "mode" -> "请求模式"; "proxy" -> "代理"; else -> "漫画详情预加载" }) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (choice == "mode") Column(Modifier.selectableGroup()) {
+                NetworkChoice("网页模式", draft.requestMode == RequestMode.WEB, enabled) { viewModel.edit { it.copy(requestMode = RequestMode.WEB) } }
+                NetworkChoice("App 模式", draft.requestMode == RequestMode.OFFICIAL_APP, enabled) { viewModel.edit { it.copy(requestMode = RequestMode.OFFICIAL_APP) } }
+                NetworkHint("两种模式使用各自的登录状态。修改 App 设备配置后可能需要重新登录。")
+            }
+                if (choice == "loading") Column {
                     ThemeLoadingControls(
                         draft, enabled,
                         onConcurrency = { value -> viewModel.edit { it.copy(themeFetchConcurrency = value) } },
                         onInterval = { value -> viewModel.edit { it.copy(themeFetchIntervalMillis = value) } }
                     )
                 }
-                if (!advanced) NetworkCard("代理") {
+                if (choice == "proxy") Column {
                     Column(Modifier.selectableGroup()) {
                         ProxyMode.entries.forEach { mode ->
                             val label = when (mode) {
@@ -273,98 +378,23 @@ internal fun NetworkSettingsScreen(
                         viewModel.edit { it.copy(proxyAddress = value) }
                     }
                 }
-                if (advanced) NetworkCard("连接诊断") {
-                    OutlinedButton(onClick = viewModel::test, enabled = enabled) {
-                        Text("连接测速", color = MaterialTheme.colorScheme.primary)
-                    }
-                    state.probes.forEach { probe ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                probe.host,
-                                Modifier.weight(1f),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(probe.latencyMillis?.let { "$it ms" } ?: "连接失败",
-                                color = if (probe.latencyMillis == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    if (draft.requestMode == RequestMode.WEB && state.probes.isNotEmpty() && draft.routes.isNotEmpty()) TextButton(
-                        onClick = viewModel::chooseFastest,
-                        enabled = enabled
-                    ) {
-                        Text("选择最快项", color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                if (!advanced) ProfileListItem(
-                    Icons.Outlined.Tune, "高级连接配置",
-                    if (draft.requestMode == RequestMode.WEB) "域名、线路与连接诊断" else "设备配置、服务地址与连接诊断",
-                    index = 0, count = 1, onClick = { advanced = true }, enabled = enabled
-                )
-                if (state.dirty) NetworkHint("未保存")
-                Button(
-                    onClick = viewModel::save,
-                    enabled = enabled && state.dirty,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("保存并应用", color = MaterialTheme.colorScheme.onPrimary)
-                }
-                if (advanced) OutlinedButton(
-                    onClick = viewModel::rollback,
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("恢复上次配置", color = MaterialTheme.colorScheme.primary)
-                }
-                if (advanced) TextButton(
-                    onClick = { reset = true },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("恢复默认", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-    }
-    state.diagnosticReport?.let { report ->
-        OfficialAppDiagnosticsDialog(
-            report,
-            state.busy,
-            viewModel::inspectDevice,
-            viewModel::closeDiagnosticReport
-        )
-    }
-    if (discard) AlertDialog(
-        onDismissRequest = { discard = false },
-        title = { Text("放弃未保存的修改？", color = MaterialTheme.colorScheme.onSurface) },
-        confirmButton = {
-            TextButton(onClick = { discard = false; viewModel.discard(); onNavigateBack() }) {
-                Text("放弃修改", color = MaterialTheme.colorScheme.primary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = { discard = false }) {
-                Text(
-                    "取消",
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        })
+
+        } },
+        confirmButton = { TextButton(onClick = { choice = null }) { Text("完成") } }
+    )
     if (reset) AlertDialog(
         onDismissRequest = { reset = false },
         title = { Text("恢复默认网络设置？", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Text(
-                "地址、代理和线路将恢复默认设置。",
+                "将重置请求模式、代理、预加载和高级连接配置，并替换当前编辑内容。保存后生效；App 设备配置改变后可能需要重新登录。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         confirmButton = {
             TextButton(onClick = {
                 reset = false; viewModel.reset()
-            }) { Text("恢复默认", color = MaterialTheme.colorScheme.error) }
+            }) { Text("载入默认配置") }
         },
         dismissButton = {
             TextButton(onClick = { reset = false }) {
@@ -414,24 +444,22 @@ private fun NetworkField(
         Modifier.fillMaxWidth(),
         enabled = enabled,
         singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-        label = { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        textStyle = MaterialTheme.typography.bodyLarge,
+        label = { Text(label) },
         trailingIcon = if (onReset == null && onRandomize == null) null else {
             {
                 Row {
                     onReset?.let { reset ->
                         IconButton(onClick = reset, enabled = enabled) {
                             Icon(
-                                Icons.Outlined.Clear, "恢复默认$label",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                Icons.Outlined.Restore, "恢复默认$label"
                             )
                         }
                     }
                     onRandomize?.let { randomize ->
                         IconButton(onClick = randomize, enabled = enabled) {
                             Icon(
-                                Icons.Outlined.Refresh, "重新生成$label",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                Icons.Outlined.Refresh, "重新生成$label"
                             )
                         }
                     }
@@ -451,7 +479,7 @@ private fun NetworkChoice(label: String, selected: Boolean, enabled: Boolean, on
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(selected, onClick = null, enabled = enabled)
-        Text(label, Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onSurface)
+        Text(label, Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
     }
 }
 
