@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -19,6 +21,7 @@ import org.junit.Test
 import java.io.IOException
 
 /** 验证仓库实际使用的加载流，包括失败、重试与账号隔离。 */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ReadingProgressLoaderTest {
     private val record = ReadingProgress("c", "章节", "default", 10, false)
 
@@ -71,7 +74,7 @@ class ReadingProgressLoaderTest {
     }
 
     @Test
-    fun failedReadySnapshotEndsReaderAndBackupWait() = runBlocking {
+    fun failedReadySnapshotEndsReaderAndBackupWait() = runTest {
         val state = MutableStateFlow(
             ReadingProgressSnapshot(
                 "guest",
@@ -81,12 +84,14 @@ class ReadingProgressLoaderTest {
             )
         )
         assertEquals(state.value, awaitReadingProgress(state, "guest", 3, 10))
+        assertEquals(0L, testScheduler.currentTime)
     }
 
     @Test
-    fun switchedOwnerOrStalledLoadHasBoundedVisibleTimeout() = runBlocking {
+    fun switchedOwnerOrStalledLoadHasBoundedVisibleTimeout() = runTest {
         val state = MutableStateFlow(ReadingProgressSnapshot("user:b"))
         val result = awaitReadingProgress(state, "guest", 4, 5)
+        assertEquals(5L, testScheduler.currentTime)
         assertTrue(result.isReady); assertNotNull(result.error); assertEquals(
         "user:b",
         state.value.owner
