@@ -10,14 +10,15 @@ import org.jetbrains.skia.*
 
 class NativeReaderSrTest {
     private val resources = javaClass.classLoader
-    private val root = File("build/sr-integration").apply { mkdirs() }
-    private fun bundle(cache: File) = SrBundle("linux-x64", cache, { resources.getResourceAsStream(it) })
+    private val nativePlatform = if (System.getProperty("os.name").startsWith("Windows")) "windows-x64" else "linux-x64"
+    private val root = File("build/sr-integration/中文 路径").apply { mkdirs() }
+    private fun bundle(cache: File) = SrBundle(nativePlatform, cache, { resources.getResourceAsStream(it) })
     private fun bytes(name: String) = resources.getResourceAsStream("sr/$name-source.png")!!.use { it.readBytes() }
     private fun request(source: SrSource, mode: SrExecutionMode = SrExecutionMode.CPU, fallback: Boolean = true) =
         SrRequest(source, ReaderSrModel.model, SrParameters(mode = mode, cpuFallback = fallback))
 
     @Test fun realPackagedCpuProducesFourValidTwoTimesImages() = runBlocking {
-        assumeTrue("Build the Linux native bundle to run real integration", resources.getResource("reader-sr/linux-x64/manifest.properties") != null)
+        assumeTrue("Build the host native bundle to run real integration", resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
         val cache = File(root, "real").apply { deleteRecursively(); mkdirs() }
         val backend = NativeReaderSrBackend(bundle(cache), { bytes(it) }, DesktopSrCodec(), { DesktopSrWorker(it) })
         for (name in listOf("small-text", "screentone", "thin-lines", "color-page")) {
@@ -47,7 +48,7 @@ class NativeReaderSrTest {
     }
 
     @Test fun gpuCrashAutoFallsBackOnceButGpuOnlyAndFallbackOffPreserveOriginal() = runBlocking {
-        assumeTrue(resources.getResource("reader-sr/linux-x64/manifest.properties") != null)
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
         val cache = File(root, "fallback").apply { deleteRecursively(); mkdirs() }
         val modes = mutableListOf<Int>()
         var gpuProbes = 0
@@ -72,7 +73,7 @@ class NativeReaderSrTest {
     }
 
     @Test fun sourceMutationAndOversizedOutputAreRejectedAndJobFilesRemoved() = runBlocking {
-        assumeTrue(resources.getResource("reader-sr/linux-x64/manifest.properties") != null)
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
         val cache = File(root, "invalid").apply { deleteRecursively(); mkdirs() }
         var sourceBytes = bytes("small-text")
         var ran = false
@@ -90,7 +91,7 @@ class NativeReaderSrTest {
     }
 
     @Test fun staleUnlockedJobsAreRemovedButLockedJobsFromAnotherInstanceSurvive() = runBlocking {
-        assumeTrue(resources.getResource("reader-sr/linux-x64/manifest.properties") != null)
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
         val cache = File(root, "locks").apply { deleteRecursively(); mkdirs() }
         val assets = bundle(cache)
         assets.prepare()
@@ -116,8 +117,8 @@ class NativeReaderSrTest {
     }
 
     @Test fun bundledAssetsMustMatchPinnedModelAndRuntimeDigests() {
-        assumeTrue(resources.getResource("reader-sr/linux-x64/manifest.properties") != null)
-        val corrupt = SrBundle("linux-x64", File(root, "corrupt"), { name ->
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
+        val corrupt = SrBundle(nativePlatform, File(root, "corrupt"), { name ->
             if (name.endsWith("scale2.0x_model.bin")) byteArrayOf(1, 2, 3).inputStream()
             else resources.getResourceAsStream(name)
         })
