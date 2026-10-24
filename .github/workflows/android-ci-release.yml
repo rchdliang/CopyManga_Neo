@@ -115,6 +115,11 @@ jobs:
           test -n "$COPYMANGA_TAP_STRING" || { echo "Missing release configuration" >&2; exit 1; }
           ./gradlew assembleRelease "-PenableAbiSplits=$ENABLE_ABI_SPLITS"
 
+      - name: Generate APK checksums
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        working-directory: app/build/outputs/apk/release
+        run: sha256sum *.apk > SHA256SUMS.txt
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v6
         with:
@@ -128,6 +133,14 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          files: app/build/outputs/apk/release/*.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
+          # 0.10.25 先保留为尝鲜版草稿，核验签名和附件后再发布。
+          name: ${{ github.ref_name == 'v0.10.25' && 'v0.10.25 尝鲜版 · 原生 Android' || github.ref_name }}
+          draft: ${{ github.ref_name == 'v0.10.25' }}
+          prerelease: ${{ github.ref_name == 'v0.10.25' }}
+          make_latest: ${{ github.ref_name == 'v0.10.25' && 'false' || 'legacy' }}
+          target_commitish: ${{ github.sha }}
           body_path: release_body.txt
           fail_on_unmatched_files: true

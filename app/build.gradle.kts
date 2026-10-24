@@ -52,8 +52,8 @@ android {
         applicationId = "com.rchdliang.copymanga_neo.Android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 35
-        versionName = "0.10.20"
+        versionCode = 36
+        versionName = "0.10.25"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
