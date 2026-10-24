@@ -490,8 +490,9 @@ fun ReaderSuccessContent(
         val explicit = pendingInitialPage.value
         val layout = Triple(isContinuous, spreadEnabled, dir)
         val windowChanged = restoredPages.isNotEmpty() && restoredPages != pages && restoredLayout == layout
-        // 章节预取可能在横向翻页动画中完成。先等本次手势落定，不能用旧锚点中断翻页。
-        if (explicit == null && (isContinuous || windowChanged) && (list.isScrollInProgress || pager.isScrollInProgress)) {
+        val groupingChanged = restoredSpreads.isNotEmpty() && restoredSpreads != spreads && restoredLayout == layout
+        // 预取或横图解码可能在手势中改变分组。等待落定，避免恢复滚动被手势取消后永久阻塞预取。
+        if (explicit == null && (isContinuous || windowChanged || groupingChanged) && (list.isScrollInProgress || pager.isScrollInProgress)) {
             snapshotFlow { !list.isScrollInProgress && !pager.isScrollInProgress }.first { it }
             val index = if (isContinuous) list.firstVisibleItemIndex else spreads.rawIndex(pager.settledPage, pages.indexOfFirst { it.key == preferredRawKey })
             val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
