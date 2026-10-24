@@ -94,6 +94,8 @@ internal class NativeReaderSrBackend(
 
     override suspend fun upscale(request: SrRequest): SrArtifact = gate.withLock {
         withContext(Dispatchers.IO) {
+            val startedAt = System.nanoTime()
+            var fellBackToCpu = false
             require(request.model == ReaderSrModel.model && request.parameters.tile == 32 &&
                 request.parameters.noise == -1 && !request.parameters.tta)
             checkDimensions(request.source.width, request.source.height)
@@ -145,6 +147,7 @@ internal class NativeReaderSrBackend(
                     gpuIndex = -1; gpuTested = true
                     if (request.parameters.mode != SrExecutionMode.AUTO || !request.parameters.cpuFallback) throw failure
                     output.delete(); cpu(); device = -1
+                    fellBackToCpu = true
                     detail.value = "GPU 失败，已回退 CPU"
                     worker.run(models, device, input, output)
                 }
@@ -154,7 +157,10 @@ internal class NativeReaderSrBackend(
                 require(png.size <= ReaderSrCoordinator.MAX_ENCODED_BYTES)
                 // Decode implementation validates the generated PNG's full contents in platform tests;
                 // encoding here starts from an exactly-sized, fully-read native RGBA result.
-                SrArtifact(png, result.width, result.height)
+                SrArtifact(png, result.width, result.height,
+                    backend = if (device >= 0) SrExecutionMode.GPU else SrExecutionMode.CPU,
+                    cpuFallback = fellBackToCpu || (request.parameters.mode == SrExecutionMode.AUTO && gpuIndex < 0),
+                    elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000)
                     }
                 }
             } finally { directory.deleteRecursively() }

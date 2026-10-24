@@ -90,7 +90,9 @@ class NativeReaderSrTest {
         }
         val backend = NativeReaderSrBackend(bundle(cache), { bytes("small-text") }, DesktopSrCodec(), { stub })
         val source = backend.source(SrPage("single-real-page-7", "small-text"))
-        backend.upscale(request(source, SrExecutionMode.AUTO))
+        val fallback = backend.upscale(request(source, SrExecutionMode.AUTO))
+        assertEquals(SrExecutionMode.CPU, fallback.backend)
+        assertTrue(fallback.cpuFallback)
         assertEquals(listOf(0, -1), modes)
         assertEquals(1, gpuProbes)
         assertFails { backend.upscale(request(source, SrExecutionMode.GPU)) }

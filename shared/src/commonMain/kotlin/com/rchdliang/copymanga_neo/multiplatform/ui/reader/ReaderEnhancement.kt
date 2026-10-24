@@ -1,5 +1,9 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -38,7 +42,9 @@ internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: ()
 @Composable
 internal fun ReaderSharpnessControls(available: Boolean, strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        androidx.compose.material3.Text("锐化", androidx.compose.ui.Modifier.weight(1f))
+        androidx.compose.material3.Icon(Icons.Outlined.Tune, null,
+            modifier = Modifier.padding(end = 12.dp), tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.Text("锐化", androidx.compose.ui.Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
         androidx.compose.material3.Switch(checked = strength > 0f,
             onCheckedChange = { onChange(if (it) restore else 0f) }, enabled = available, modifier = Modifier.testTag("reader-sharpen-switch"))
     }

@@ -48,21 +48,37 @@ class ReaderSrSession(scope: CoroutineScope, private val platform: ReaderSrPlatf
     val settings = MutableStateFlow(SrUserSettings())
     private val selected = MutableStateFlow<SrPage?>(null)
     private val ready = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val originalsReady: StateFlow<Map<String, Int>> = ready.asStateFlow()
     private val coordinator = ReaderSrCoordinator(scope, platform, pixelBufferBudget = platform.budgetBytes, timeoutMillis = 60_000)
-    private val request = MutableStateFlow<SrRequest?>(null)
+    private data class ActiveRequest(val value: SrRequest, val revision: Int, val renderId: Long)
+    private var nextRenderId = 0L
+    private val request = MutableStateFlow<ActiveRequest?>(null)
+    private val rendered = MutableStateFlow<SrPresentationReceipt?>(null)
+    val presentationReceipt: StateFlow<SrPresentationReceipt?> = rendered.asStateFlow()
+    private var renderOwner: Any? = null
+    private val failedPreparation = MutableStateFlow<String?>(null)
+    val preparationFailedPage: StateFlow<String?> = failedPreparation.asStateFlow()
     private val preparation = MutableStateFlow<String?>(null)
     val models = platform.models
     val detail = platform.detail
     private val modelRefresh = scope.launch { models?.refresh() }
     val unavailableReason get() = platform.unavailableReason
-    val display: StateFlow<Pair<String, SrStatus>?> = combine(request, coordinator.states) { current, states ->
-        current?.let { it.source.scope to (states[it.cacheKey] ?: SrStatus.Original) }
+    val frame: StateFlow<SrFrame?> = combine(request, coordinator.states, selected, settings, ready) { current, states, page, options, originals ->
+        current?.takeIf { options.enabled && page?.id == it.value.source.scope && originals[page.id] == it.revision &&
+            it.value.parameters.mode == options.mode && it.value.parameters.cpuFallback == options.cpuFallback }?.let {
+            SrFrame(it.value.source.scope, it.revision, it.renderId, it.value.parameters, states[it.value.cacheKey] ?: SrStatus.Original)
+        }
+    }.combine(models?.state ?: MutableStateFlow<SrModelState>(SrModelState.Ready)) { frame, model ->
+        frame.takeIf { model == SrModelState.Ready }
     }.stateIn(scope, SharingStarted.Eagerly, null)
+    val display: StateFlow<Pair<String, SrStatus>?> = frame.map { it?.let { it.pageId to it.status } }
+        .stateIn(scope, SharingStarted.Eagerly, null)
     val preparationMessage: StateFlow<String?> = preparation.asStateFlow()
     private val worker = scope.launch {
         combine(settings, selected, ready, models?.state ?: MutableStateFlow<SrModelState>(SrModelState.Ready)) { settings, page, ready, model -> Triple(settings.copy(enabled = settings.enabled && model == SrModelState.Ready), page, page?.let { ready[it.id] }) }
             .distinctUntilChanged().collectLatest { (settings, page, revision) ->
                 coordinator.submit(null); request.value = null; preparation.value = null
+                rendered.value = null; renderOwner = null; failedPreparation.value = null
                 if (!settings.enabled || page == null || revision == null) return@collectLatest
                 platform.unavailableReason?.let { preparation.value = it; return@collectLatest }
                 try {
@@ -70,13 +86,34 @@ class ReaderSrSession(scope: CoroutineScope, private val platform: ReaderSrPlatf
                     ensureActive()
                     val next = SrRequest(source, ReaderSrModel.model,
                         SrParameters(mode = settings.mode, cpuFallback = settings.cpuFallback))
-                    request.value = next
+                    request.value = ActiveRequest(next, revision, ++nextRenderId)
                     coordinator.submit(next) // Current only; no speculative whole-chapter or spread queue.
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (error: Exception) { preparation.value = error.message ?: "超分准备失败，继续显示原图" }
+                catch (error: Exception) { failedPreparation.value = page.id; preparation.value = "增强准备失败，继续显示原图" }
             }
     }
-    fun select(page: SrPage?) { selected.value = page }
-    fun originalReady(id: String, revision: Int = 0) { ready.value = (ready.value.toList().filterNot { it.first == id }.takeLast(2) + (id to revision)).toMap() }
-    fun close() { modelRefresh.cancel(); worker.cancel(); coordinator.close(); request.value = null; ready.value = emptyMap() }
+    fun select(page: SrPage?) {
+        if (selected.value != page) { request.value = null; rendered.value = null; renderOwner = null; failedPreparation.value = null }
+        selected.value = page
+    }
+    fun originalReady(id: String, revision: Int = 0) {
+        if (selected.value?.id == id && ready.value[id] != revision) { request.value = null; rendered.value = null; renderOwner = null }
+        ready.value = (ready.value.toList().filterNot { it.first == id }.takeLast(2) + (id to revision)).toMap()
+    }
+    fun isCurrentFrame(candidate: SrFrame): Boolean = request.value?.renderId == candidate.renderId &&
+        selected.value?.id == candidate.pageId && ready.value[candidate.pageId] == candidate.revision &&
+        matchingSrFrame(candidate, candidate.pageId, candidate.revision, settings.value) != null &&
+        (models == null || models.state.value == SrModelState.Ready)
+    /** Called only after the chosen image's draw pass, never merely on inference completion. */
+    fun imageDrawn(owner: Any, candidate: SrFrame, artifact: SrArtifact, image: SrRenderedImage) {
+        val active = request.value ?: return
+        if (active.renderId != candidate.renderId || selected.value?.id != candidate.pageId ||
+            matchingSrFrame(frame.value, candidate.pageId, candidate.revision, settings.value)?.renderId != candidate.renderId ||
+            (frame.value?.status as? SrStatus.Ready)?.artifact !== artifact ||
+            (models != null && models.state.value != SrModelState.Ready)) return
+        renderOwner = owner
+        rendered.value = SrPresentationReceipt(candidate.renderId, artifact, image)
+    }
+    fun imageDetached(owner: Any) { if (renderOwner === owner) { rendered.value = null; renderOwner = null } }
+    fun close() { modelRefresh.cancel(); worker.cancel(); coordinator.close(); request.value = null; rendered.value = null; renderOwner = null; ready.value = emptyMap() }
 }

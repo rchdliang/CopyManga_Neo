@@ -47,7 +47,8 @@ data class SrRequest(val source: SrSource, val model: SrModel, val parameters: S
 private fun String.isSha256() = length == 64 && all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }
 
 /** Owns immutable encoded output; never replaces or deletes the source. No full-chapter bitmap cache. */
-data class SrArtifact(val png: ByteArray, val width: Int, val height: Int)
+data class SrArtifact(val png: ByteArray, val width: Int, val height: Int,
+    val backend: SrExecutionMode? = null, val cpuFallback: Boolean = false, val elapsedMillis: Long? = null)
 
 interface ReaderSrBackend {
     /** Static configuration failure. Adapters additionally validate models and self-test before inference. */

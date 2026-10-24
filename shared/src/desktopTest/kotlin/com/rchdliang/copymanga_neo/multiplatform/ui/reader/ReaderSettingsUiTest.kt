@@ -107,7 +107,7 @@ class ReaderSettingsUiTest {
         runOnIdle { models.state.value=SrModelState.Missing }
         onNodeWithText("阅读设置").assertExists()
         onNodeWithText("画质增强").performClick()
-        onNodeWithText("模型未下载 · 2.65 MiB").performScrollTo().assertExists()
+        onNodeWithText("未下载 · 2.65 MiB").performScrollTo().assertExists()
         save("model-delete-success-desktop")
     }
 
@@ -131,7 +131,7 @@ class ReaderSettingsUiTest {
         save("narrow-settings-desktop")
         onNodeWithText("显示设置").performClick()
         save("display-settings-desktop")
-        onNodeWithText("页面布局").performClick()
+        onNodeWithTag("reader-option-页面布局-双页").performClick()
         save("layout-choice-desktop")
         onNodeWithText("双页").performClick()
         onNodeWithText("显示设置").assertExists()

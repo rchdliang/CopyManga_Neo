@@ -467,6 +467,8 @@ fun ReaderSuccessContent(
     val srSession = rememberReaderSrSession(loader)
     val srLifecycle by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val srSinglePage = readerAllowsSuperResolution(isContinuous, spreads.getOrNull(pager.currentPage)?.indices?.size ?: 0)
+    val srPresentation = readerSrPresentation(srSession, page?.takeIf { it.source != null }?.key, srSinglePage)
+    val srWaitSeconds = readerSrWaitSeconds(srPresentation, srSession.frame.collectAsState().value?.renderId)
     LaunchedEffect(srSession, page?.key, page?.source, routeActive, srLifecycle, srSinglePage) {
         // 双页暂用原图，切换布局时也取消旧任务，避免双叶同时推理及错误显示。
         srSession.select(if (srSinglePage && routeActive && srLifecycle.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
@@ -937,7 +939,7 @@ fun ReaderSuccessContent(
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
                     "${visible.first()}–${visible.last()}/${page.imageCount}"
                 } else "${page.page + 1}/${page.imageCount}",
-            Modifier.align(Alignment.BottomCenter)
+            Modifier.align(Alignment.BottomCenter), aiStatus = srPresentation.shortLabel(srWaitSeconds)
         )
         AnimatedVisibility(
             showControls && page != null,
@@ -951,6 +953,8 @@ fun ReaderSuccessContent(
                     val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
                     readerPageRangeLabel(raw, page?.imageCount ?: 0)
                 } else null,
+                enhancementLabel = srPresentation.shortLabel(srWaitSeconds)?.let { label ->
+                    listOfNotNull(label, srPresentation.backendLabel()).joinToString(" · ") },
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false
@@ -1004,7 +1008,7 @@ fun ReaderSuccessContent(
             val activeKeys = if (isContinuous) setOf(page?.key) else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
             if (sharpness > 0f && activeKeys.any { sharpenStatuses[it] == false }) Text("当前部分图片使用原图（超出锐化表面预算或渲染不可用）", style = MaterialTheme.typography.bodySmall)
             }
-            ReaderQualitySection { ReaderSuperResolutionOptions(srSession, srSinglePage) }
+            ReaderQualitySection { ReaderSuperResolutionOptions(srSession, srSinglePage, srPresentation, page?.page?.plus(1), srWaitSeconds) }
         },
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },

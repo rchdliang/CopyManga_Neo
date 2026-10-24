@@ -357,7 +357,7 @@ internal fun ReaderImageItem(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Image(
-                                    painter = currentPainter,
+                                    painter = currentPainter.painter,
                                     contentDescription = null,
                                     modifier = imageModifier
                                         .graphicsLayer {
@@ -366,7 +366,7 @@ internal fun ReaderImageItem(
                                             translationX = zoomState.offset.x
                                             translationY = zoomState.offset.y
                                         }
-                                        .readerSharpen(sharpness, srPageKey),
+                                        .readerSharpen(sharpness, srPageKey).readerSrDrawn(currentPainter),
                                     contentScale = contentScale,
                 alignment = imageAlignment
                                 )
@@ -374,9 +374,9 @@ internal fun ReaderImageItem(
                         } else {
                             // 连续模式：缩放在 LazyColumn 层面，单个图片直接显示
                             Image(
-                                painter = currentPainter,
+                                painter = currentPainter.painter,
                                 contentDescription = null,
-                                modifier = imageModifier.readerSharpen(sharpness, srPageKey),
+                                modifier = imageModifier.readerSharpen(sharpness, srPageKey).readerSrDrawn(currentPainter),
                                 contentScale = contentScale,
                 alignment = imageAlignment
                             )

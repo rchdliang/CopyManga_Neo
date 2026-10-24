@@ -23,9 +23,11 @@ internal actual fun Modifier.readerSharpen(strength: Float, pageKey: String): Mo
 @Composable
 private fun Modifier.androidReaderSharpen(amount: Float, pageKey: String): Modifier {
     val report = LocalReaderSharpenStatus.current
-    val effect = remember(amount) {
+    // Compile once for this image; changing strength only creates a uniform snapshot effect.
+    val shader = remember { runCatching { RuntimeShader(READER_SHARPEN_SHADER) }.getOrNull() }
+        ?: run { SideEffect { report?.invoke(pageKey, false) }; return this }
+    val effect = remember(shader, amount) {
         try {
-            val shader = RuntimeShader(READER_SHARPEN_SHADER)
             shader.setFloatUniform("strength", amount)
             android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
         } catch (_: IllegalArgumentException) { null }

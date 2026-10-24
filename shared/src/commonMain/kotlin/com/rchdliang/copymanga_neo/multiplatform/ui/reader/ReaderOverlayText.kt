@@ -27,10 +27,13 @@ internal fun ReaderOverlayText(text: String, modifier: Modifier = Modifier,
 }
 
 @Composable
-internal fun ReaderRestingOverlay(chapter: String, pages: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        ReaderOverlayText(chapter, Modifier.weight(1f))
-        ReaderOverlayText(pages)
+internal fun ReaderRestingOverlay(chapter: String, pages: String, modifier: Modifier = Modifier, aiStatus: String? = null) {
+    Column(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        aiStatus?.let { ReaderOverlayText(it, Modifier.align(Alignment.End)) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ReaderOverlayText(chapter, Modifier.weight(1f))
+            ReaderOverlayText(pages)
+        }
     }
 }

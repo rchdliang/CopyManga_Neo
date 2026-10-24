@@ -85,7 +85,7 @@ fun ReaderSettingsDialog(
         title = { Text(section?.title ?: "阅读设置", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             CompositionLocalProvider(LocalReaderSettingsNavigation provides navigate) {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (section != null) section.content() else {
                         ReaderSettingsOverview(qualitySettings != null,
                             display = { navigate(ReaderSettingsPage("显示设置") { displayContent() }) },

@@ -31,6 +31,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.BookmarkAdd
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
@@ -117,7 +121,7 @@ fun ReaderBottomBar(
     onPrevious: () -> Unit, onNext: () -> Unit, onCatalog: () -> Unit,
     onBookmarks: () -> Unit, onComments: () -> Unit, commentsEnabled: Boolean,
     commentCount: Int?,
-    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier, visiblePageLabel: String? = null
+    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier, visiblePageLabel: String? = null, enhancementLabel: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
     Surface(
@@ -131,6 +135,8 @@ fun ReaderBottomBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
+            enhancementLabel?.let { Text(it, style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Row(
                 Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -228,16 +234,16 @@ fun ReaderToolsOptions(
     ReaderSettingSwitch("跨章阅读", settings.continuousChapters) { value -> onChange { it.copy(continuousChapters = value) } }
     ReaderSettingSwitch("音量键翻页", settings.volumeKeys) { value -> onChange { it.copy(volumeKeys = value) } }
     ReaderSettingSwitch("章节评论区", settings.inlineComments) { value -> onChange { it.copy(inlineComments = value) } }
-    ReaderSingleChoice("自动阅读间隔", settings.autoIntervalSeconds, listOf(3, 5, 8, 12, 20), { "$it 秒" }) { value ->
+    ReaderInlineChoice(Icons.Outlined.Timer, "自动阅读间隔", settings.autoIntervalSeconds, listOf(3, 5, 8, 12, 20), { "$it 秒" }, presentation = ReaderChoicePresentation.MENU) { value ->
         onChange { it.copy(autoIntervalSeconds = value) }
     }
 }
 
 @Composable
 fun ReaderLoadingOptions(settings: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit) {
-    ReaderSingleChoice("预加载", settings.preloadPages, listOf(0, 1, 2, 3), { "$it 页" }) { value -> onChange { it.copy(preloadPages = value) } }
-    ReaderSingleChoice("失败重试", settings.imageRetries, listOf(0, 1, 2, 3), { "$it 次" }) { value -> onChange { it.copy(imageRetries = value) } }
-    ReaderSingleChoice("图片超时", settings.imageTimeoutSeconds, listOf(10, 15, 30, 60), { "$it 秒" }) { value -> onChange { it.copy(imageTimeoutSeconds = value) } }
+    ReaderInlineChoice(Icons.Outlined.CloudDownload, "预加载", settings.preloadPages, listOf(0, 1, 2, 3), { if (it == 0) "关闭" else "$it 页" }, presentation = ReaderChoicePresentation.MENU) { value -> onChange { it.copy(preloadPages = value) } }
+    ReaderInlineChoice(Icons.Outlined.Replay, "失败重试", settings.imageRetries, listOf(0, 1, 2, 3), { if (it == 0) "不重试" else "$it 次" }, presentation = ReaderChoicePresentation.MENU) { value -> onChange { it.copy(imageRetries = value) } }
+    ReaderInlineChoice(Icons.Outlined.HourglassEmpty, "图片超时", settings.imageTimeoutSeconds, listOf(10, 15, 30, 60), { "$it 秒" }, presentation = ReaderChoicePresentation.MENU) { value -> onChange { it.copy(imageTimeoutSeconds = value) } }
 }
 
 @Composable

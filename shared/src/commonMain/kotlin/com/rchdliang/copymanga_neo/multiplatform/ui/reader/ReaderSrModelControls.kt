@@ -9,7 +9,7 @@ internal fun modelMiB(bytes: Long): String {
     return "${rounded / 100}.${(rounded % 100).toString().padStart(2, '0')} MiB"
 }
 @Composable
-internal fun ReaderSrModelControls(session: ReaderSrSession, content: @Composable ((SrExecutionMode) -> Unit, () -> Unit) -> Unit) {
+internal fun ReaderSrModelControls(session: ReaderSrSession, content: @Composable ((SrExecutionMode) -> Unit, () -> Unit, @Composable () -> Unit) -> Unit) {
     val store = session.models
     val state = store?.state?.collectAsState()?.value
     val navigate = LocalReaderSettingsNavigation.current
@@ -25,13 +25,13 @@ internal fun ReaderSrModelControls(session: ReaderSrSession, content: @Composabl
             })
         }
     }
-    content(enable) {
+    val scope = rememberCoroutineScope()
+    content(enable, {
         if (store != null) navigate(ReaderSettingsPage("模型管理") { ReaderModelManagement(session, store) })
-    }
-    if (store != null && session.unavailableReason == null) {
-        val scope = rememberCoroutineScope()
-        ReaderModelProgress(store) { scope.launch { store.delete() } }
-    }
+    }, {
+        if (store != null && session.unavailableReason == null && state != SrModelState.Ready && state != SrModelState.Missing)
+            ReaderModelProgress(store) { scope.launch { store.delete() } }
+    })
 }
 @Composable
 internal fun ReaderModelProgress(store: ReaderSrModels, retryDelete: () -> Unit) {

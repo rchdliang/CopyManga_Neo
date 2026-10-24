@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,10 +58,10 @@ private fun ReaderDisplayPreviewContent() {
 @Preview(name = "阅读设置-显示设置-深色", showBackground = true, widthDp = 600, heightDp = 700)
 @Composable private fun ReaderDisplaySettingsDarkPreview() = ReaderPreviewFrame("显示设置", true) { ReaderDisplayPreviewContent() }
 
-@Preview(name = "阅读设置-单选列表", showBackground = true, widthDp = 390, heightDp = 400)
-@Composable private fun ReaderSingleChoicePreview() = ReaderPreviewFrame("页面布局") {
-    ReaderChoiceOptions("DOUBLE", listOf("SINGLE", "DOUBLE", "AUTO"),
-        { when(it) { "DOUBLE" -> "双页"; "AUTO" -> "自动"; else -> "单页" } }, {})
+@Preview(name = "阅读设置-内嵌分段", showBackground = true, widthDp = 390, heightDp = 400)
+@Composable private fun ReaderSegmentedChoicePreview() = ReaderPreviewFrame("页面布局") {
+    ReaderInlineChoice(Icons.Outlined.ViewWeek, "页面布局", "DOUBLE", listOf("SINGLE", "DOUBLE", "AUTO"),
+        { when(it) { "DOUBLE" -> "双页"; "AUTO" -> "自动"; else -> "单页" } }, onSelect = {})
 }
 
 @Preview(name = "阅读设置-翻页设置", showBackground = true, widthDp = 390, heightDp = 700)
