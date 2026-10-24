@@ -1,4 +1,13 @@
-# CopyManga Neo
+<div align="center">
+  <img width="160" height="160" src="app/src/main/ic_launcher-playstore.png" alt="CopyManga Neo 图标">
+  <h1>CopyManga Neo</h1>
+
+![Android 12+](https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white)
+![GitHub Repo stars](https://img.shields.io/github/stars/rchdliang/CopyManga_Neo)
+![GitHub all releases](https://img.shields.io/github/downloads/rchdliang/CopyManga_Neo/total)
+![License](https://img.shields.io/github/license/rchdliang/CopyManga_Neo)
+
+</div>
 
 基于 Kotlin 与 Compose 的拷貝漫畫第三方客户端，提供漫画、轻小说阅读与离线下载。
 
