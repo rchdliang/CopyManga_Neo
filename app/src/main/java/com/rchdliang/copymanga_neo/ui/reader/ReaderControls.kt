@@ -229,58 +229,20 @@ fun ReaderToolsOptions(
     settings: ReaderToolsSettings,
     onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit
 ) {
-    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-    Text(
-        "阅读工具（全局）",
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.titleSmall
-    )
     ReaderSettingSwitch("翻页动画", settings.pageAnimation) { value -> onChange { it.copy(pageAnimation = value) } }
-    ReaderSettingSwitch(
-        "跨章节连续阅读",
-        settings.continuousChapters
-    ) { enabled -> onChange { it.copy(continuousChapters = enabled) } }
-    ReaderSettingSwitch("音量键翻页", settings.volumeKeys) { enabled ->
-        onChange {
-            it.copy(
-                volumeKeys = enabled
-            )
-        }
+    ReaderSettingSwitch("跨章阅读", settings.continuousChapters) { value -> onChange { it.copy(continuousChapters = value) } }
+    ReaderSettingSwitch("音量键翻页", settings.volumeKeys) { value -> onChange { it.copy(volumeKeys = value) } }
+    ReaderSettingSwitch("章节评论区", settings.inlineComments) { value -> onChange { it.copy(inlineComments = value) } }
+    ReaderSingleChoice("自动阅读间隔", settings.autoIntervalSeconds, listOf(3, 5, 8, 12, 20), { "$it 秒" }) { value ->
+        onChange { it.copy(autoIntervalSeconds = value) }
     }
-    Text(
-        "自动阅读间隔：${settings.autoIntervalSeconds} 秒",
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    ReaderChoiceRow(
-        listOf(3, 5, 8, 12, 20),
-        settings.autoIntervalSeconds,
-        "秒"
-    ) { seconds -> onChange { it.copy(autoIntervalSeconds = seconds) } }
-    Text(
-        "图片失败自动重试：${settings.imageRetries} 次",
-        color = MaterialTheme.colorScheme.onSurface
-    )
-    ReaderChoiceRow(listOf(0, 1, 2, 3), settings.imageRetries, "次") { count ->
-        onChange {
-            it.copy(
-                imageRetries = count
-            )
-        }
-    }
-    Text("图片超时：${settings.imageTimeoutSeconds} 秒", color = MaterialTheme.colorScheme.onSurface)
-    ReaderChoiceRow(
-        listOf(10, 15, 30, 60),
-        settings.imageTimeoutSeconds,
-        "秒"
-    ) { seconds -> onChange { it.copy(imageTimeoutSeconds = seconds) } }
-    Text("向前预加载：${settings.preloadPages} 页", color = MaterialTheme.colorScheme.onSurface)
-    ReaderChoiceRow(listOf(0, 1, 2, 3), settings.preloadPages, "页") { count ->
-        onChange {
-            it.copy(
-                preloadPages = count
-            )
-        }
-    }
+}
+
+@Composable
+fun ReaderLoadingOptions(settings: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit) {
+    ReaderSingleChoice("预加载", settings.preloadPages, listOf(0, 1, 2, 3), { "$it 页" }) { value -> onChange { it.copy(preloadPages = value) } }
+    ReaderSingleChoice("失败重试", settings.imageRetries, listOf(0, 1, 2, 3), { "$it 次" }) { value -> onChange { it.copy(imageRetries = value) } }
+    ReaderSingleChoice("图片超时", settings.imageTimeoutSeconds, listOf(10, 15, 30, 60), { "$it 秒" }) { value -> onChange { it.copy(imageTimeoutSeconds = value) } }
 }
 
 @Composable

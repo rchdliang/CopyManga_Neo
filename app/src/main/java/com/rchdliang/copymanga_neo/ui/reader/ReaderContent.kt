@@ -195,13 +195,15 @@ internal fun ReaderImageItem(
     tools: ReaderToolsSettings,
     onReady: () -> Unit = {},
     onDimensions: (Float, Float) -> Unit = { _, _ -> },
-    trackReadiness: Boolean = true
+    trackReadiness: Boolean = true,
+    imageAlignment: Alignment = Alignment.Center
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
             contentDescription = null,
             drawable = R.drawable.preview_reader_page,
             contentScale = contentScale,
+                alignment = imageAlignment,
             modifier = if (isContinuous) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
         )
         return
@@ -241,7 +243,8 @@ internal fun ReaderImageItem(
         imageLoader = imageLoader,
         contentDescription = null,
         modifier = imageModifier,
-        contentScale = contentScale
+        contentScale = contentScale,
+                alignment = imageAlignment
     ) {
         when (painter.state) {
             is AsyncImagePainter.State.Loading -> {
@@ -328,7 +331,8 @@ internal fun ReaderImageItem(
                                     translationX = zoomState.offset.x
                                     translationY = zoomState.offset.y
                                 },
-                            contentScale = contentScale
+                            contentScale = contentScale,
+                alignment = imageAlignment
                         )
                     }
                 } else {
@@ -337,7 +341,8 @@ internal fun ReaderImageItem(
                         painter = currentPainter,
                         contentDescription = null,
                         modifier = imageModifier,
-                        contentScale = contentScale
+                        contentScale = contentScale,
+                alignment = imageAlignment
                     )
                 }
             }

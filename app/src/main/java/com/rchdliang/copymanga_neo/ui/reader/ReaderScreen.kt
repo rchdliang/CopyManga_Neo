@@ -163,14 +163,7 @@ fun ReaderScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        val window = activity?.window ?: return@DisposableEffect onDispose { }
-        val insetsController = WindowCompat.getInsetsController(window, view)
-        insetsController.hide(WindowInsetsCompat.Type.statusBars())
-        insetsController.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        onDispose { insetsController.show(WindowInsetsCompat.Type.statusBars()) }
-    }
+    ReaderImmersiveSystemBars(activity?.window)
 
     LaunchedEffect(comicPathWord, chapterPathWord, groupPathWord) {
         viewModel.openReader(comicPathWord, chapterPathWord, groupPathWord)
@@ -835,33 +828,14 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && page?.source != null) Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.55f))
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                page.chapterName,
-                modifier = Modifier.weight(1f),
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
+        if (!showControls && page?.source != null) ReaderRestingOverlay(
+            page.chapterName,
+            if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
                     "${visible.first()}–${visible.last()}/${page.imageCount}"
                 } else "${page.page + 1}/${page.imageCount}",
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
+            Modifier.align(Alignment.BottomCenter)
+        )
         AnimatedVisibility(
             showControls && page != null,
             enter = fadeIn(),
@@ -896,7 +870,7 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (appending) Text(
+        if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -918,13 +892,10 @@ fun ReaderSuccessContent(
                 page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
 
         },
-        extraSettings = {
-            ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
-                onToolsChange { it.copy(inlineComments = enabled) }
-            }
-            ReaderToolsOptions(tools, onToolsChange)
-            ReaderOperationHelp()
-        })
+        turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
+        loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
+        pairingSettings = { ReaderPairingOption(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0, page?.imageCount ?: 0) },
+        helpSettings = { ReaderOperationHelp() })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,
         onSelect = {

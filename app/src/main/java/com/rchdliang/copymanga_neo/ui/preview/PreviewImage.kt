@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.ui.preview
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -17,13 +18,15 @@ fun PreviewImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Fit,
-    @DrawableRes drawable: Int = R.drawable.preview_comic_cover
+    @DrawableRes drawable: Int = R.drawable.preview_comic_cover,
+    alignment: Alignment = Alignment.Center
 ) {
     Image(
         painter = painterResource(drawable),
         contentDescription = contentDescription,
         modifier = modifier,
-        contentScale = contentScale
+        contentScale = contentScale,
+        alignment = alignment
     )
 }
 
