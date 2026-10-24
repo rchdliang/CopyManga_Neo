@@ -130,7 +130,8 @@ class ReaderPreferencesStore @Inject constructor(
         return ReaderPreferences(
             json["direction"]?.asString ?: "RIGHT_TO_LEFT",
             json["scale"]?.asString ?: "FIT_SCREEN",
-            json["orientation"]?.asString ?: "SYSTEM_DEFAULT"
+            json["orientation"]?.asString ?: "SYSTEM_DEFAULT",
+            json["layout"]?.asString ?: "SINGLE"
         ).normalized()
     }
 
@@ -138,6 +139,7 @@ class ReaderPreferencesStore @Inject constructor(
         addProperty("direction", value.readingDirection)
         addProperty("scale", value.pageScale)
         addProperty("orientation", value.screenOrientation)
+        addProperty("layout", value.pageLayout)
     }.toString()
 
     private suspend fun <T> result(block: suspend () -> T): Result<T> = try {

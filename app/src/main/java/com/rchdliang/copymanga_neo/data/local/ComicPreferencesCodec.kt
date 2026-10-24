@@ -11,6 +11,7 @@ internal object ComicPreferencesCodec {
             addProperty("direction", value.readingDirection)
             addProperty("scale", value.pageScale)
             addProperty("orientation", value.screenOrientation)
+            addProperty("layout", value.pageLayout)
         }.toString()
     }
 
@@ -21,7 +22,7 @@ internal object ComicPreferencesCodec {
             require(value?.isJsonPrimitive == true && value.asJsonPrimitive.isString) { "逐漫画阅读设置字段无效" }
             return value.asString
         }
-        return ReaderPreferences(string("direction"), string("scale"), string("orientation")).also {
+        return ReaderPreferences(string("direction"), string("scale"), string("orientation"), json["layout"]?.let { string("layout") } ?: "SINGLE").also {
             require(it == it.normalized()) { "逐漫画阅读设置无效" }
         }
     }

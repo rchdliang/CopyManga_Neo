@@ -49,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,7 +116,7 @@ fun ReaderBottomBar(
     onPrevious: () -> Unit, onNext: () -> Unit, onCatalog: () -> Unit,
     onBookmarks: () -> Unit, onComments: () -> Unit, commentsEnabled: Boolean,
     commentCount: Int?,
-    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier
+    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier, visiblePageLabel: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
     val sliderState = remember(totalPages) {
@@ -142,10 +143,10 @@ fun ReaderBottomBar(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    (sliderValue.roundToInt() + 1).coerceAtMost(totalPages).toString(),
+                    visiblePageLabel ?: (sliderValue.roundToInt() + 1).coerceAtMost(totalPages).toString(),
                     modifier = Modifier.widthIn(min = 28.dp),
                     color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr)
                 )
                 Slider(
                     state = sliderState, enabled = totalPages > 1,
@@ -158,7 +159,7 @@ fun ReaderBottomBar(
                         onSliderValueChange(page.toFloat())
                     }, onValueChangeFinished = onSliderValueChangeFinished
                 )
-                Text(
+                if (visiblePageLabel == null) Text(
                     totalPages.toString(),
                     modifier = Modifier.widthIn(min = 28.dp),
                     color = MaterialTheme.colorScheme.onSurface,
@@ -230,10 +231,11 @@ fun ReaderToolsOptions(
 ) {
     HorizontalDivider(Modifier.padding(vertical = 8.dp))
     Text(
-        "阅读体验（全局）",
+        "阅读工具（全局）",
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.titleSmall
     )
+    ReaderSettingSwitch("翻页动画", settings.pageAnimation) { value -> onChange { it.copy(pageAnimation = value) } }
     ReaderSettingSwitch(
         "跨章节连续阅读",
         settings.continuousChapters
@@ -282,7 +284,7 @@ fun ReaderToolsOptions(
 }
 
 @Composable
-internal fun ReaderSettingSwitch(label: String, checked: Boolean, change: (Boolean) -> Unit) {
+internal fun ReaderSettingSwitch(label: String, checked: Boolean, enabled: Boolean = true, change: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             label,
@@ -290,7 +292,7 @@ internal fun ReaderSettingSwitch(label: String, checked: Boolean, change: (Boole
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.bodyMedium
         )
-        Switch(checked = checked, onCheckedChange = change)
+        Switch(checked = checked, onCheckedChange = change, enabled = enabled, modifier = Modifier.testTag("reader-setting-$label"))
     }
 }
 
@@ -398,3 +400,6 @@ fun ReaderBookmarksDialog(
             }
         })
 }
+
+internal fun readerPageRangeLabel(rawPages: List<Int>, total: Int): String? = if (rawPages.isEmpty()) null else
+    "${rawPages.minOrNull()}" + (if (rawPages.size > 1) "–${rawPages.maxOrNull()}" else "") + " / $total"

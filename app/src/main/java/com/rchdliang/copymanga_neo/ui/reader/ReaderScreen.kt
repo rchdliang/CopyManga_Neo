@@ -255,7 +255,8 @@ fun ReaderScreen(
                 pendingInitialChapter = pendingInitialChapter,
                 activeChapterUuid = state.chapterUuid,
                 sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
-                tools = tools, onToolsChange = viewModel::updateTools,
+                tools = tools.copy(pageLayout = preferences?.pageLayout ?: "SINGLE"), onToolsChange = viewModel::updateTools,
+                onPageLayoutChange = viewModel::setPageLayout,
                 commentsAllowed = commentsAllowed, closedChapters = closedChapters,
                 commentRefreshVersion = commentRefreshVersion,
                 commentModels = commentModels,
@@ -304,6 +305,7 @@ fun ReaderSuccessContent(
     onRefresh: () -> Unit,
     onReadingDirectionChange: (String) -> Unit,
     onPageScaleChange: (String) -> Unit,
+    onPageLayoutChange: (String) -> Unit = {},
     onScreenOrientationChange: (String) -> Unit,
     pendingInitialPage: MutableState<Int?>,
     modifier: Modifier = Modifier,
@@ -868,6 +870,10 @@ fun ReaderSuccessContent(
         ) {
             ReaderBottomBar(
                 page?.imageCount ?: 0, sliderPreview,
+                visiblePageLabel = if (dragging) "跳至第 ${sliderPreview.roundToInt() + 1} 页" else if (!isContinuous) {
+                    val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
+                    readerPageRangeLabel(raw, page?.imageCount ?: 0)
+                } else null,
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false
@@ -909,12 +915,16 @@ fun ReaderSuccessContent(
         onDismiss = { showSettings = false },
         leadingSettings = {
             ReaderSpreadOptions(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0,
-                page?.imageCount ?: 0, spreadEnabled, isContinuous)
+                page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
+
+        },
+        extraSettings = {
             ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
-        },
-        extraSettings = { ReaderToolsOptions(tools, onToolsChange) })
+            ReaderToolsOptions(tools, onToolsChange)
+            ReaderOperationHelp()
+        })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,
         onSelect = {
