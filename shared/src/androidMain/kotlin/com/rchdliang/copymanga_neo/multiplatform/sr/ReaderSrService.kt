@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.multiplatform.sr
 import android.app.Service
 import android.content.Intent
 import android.os.*
+import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -20,13 +21,24 @@ class ReaderSrService : Service() {
             runCatching { reply.send(Message.obtain(null, STARTED, Process.myPid(), 0)) }
             executor.execute {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                val operation = if (data.getBoolean("probe")) {
+                    if (data.getBoolean("gpu")) "probe_gpu" else "probe_cpu"
+                } else if (data.getInt("device") >= 0) "enhance_gpu" else "enhance_cpu"
+                val started = SystemClock.elapsedRealtime()
+                Log.i("ReaderSrService", "SR start operation=$operation pid=${Process.myPid()}")
                 val result = try {
                     check(ApplicationProcess.name().endsWith(":reader_sr")) { "Native SR must run outside the main process" }
-                    val models = checkedPath(data.getString("models")!!)
+                    val models = checkedReaderSrModelDirectory(filesDir, data.getString("models")!!)
                     if (data.getBoolean("probe")) NativeSr.probe(models, data.getBoolean("gpu"))
                     else NativeSr.run(models, data.getInt("device"), checkedPath(data.getString("input")!!), checkedPath(data.getString("output")!!))
-                } catch (_: Exception) { FAILURE }
-                catch (_: UnsatisfiedLinkError) { FAILURE }
+                } catch (error: Exception) {
+                    Log.w("ReaderSrService", "SR failure operation=$operation type=${error.javaClass.simpleName}")
+                    FAILURE
+                } catch (_: UnsatisfiedLinkError) {
+                    Log.w("ReaderSrService", "SR failure operation=$operation type=NativeLoadFailure")
+                    FAILURE
+                }
+                Log.i("ReaderSrService", "SR result operation=$operation code=$result elapsedMs=${SystemClock.elapsedRealtime() - started} pid=${Process.myPid()}")
                 runCatching { reply.send(Message.obtain(null, RESULT, result, 0)) }
             }
             true

@@ -25,7 +25,7 @@ internal actual fun rememberReaderSrPlatform(loader: ImageLoader): ReaderSrPlatf
         NativeReaderSrBackend(SrBundle(platform, context.cacheDir, { name ->
             try { context.assets.open(name) } catch (_: IOException) { null }
         }, File(context.applicationInfo.nativeLibraryDir, "libcopymanga_sr.so"),
-            modelDirectory = File(context.filesDir, "reader-sr-models/cunet-20250915")), readSource = { source ->
+            modelDirectory = readerSrModelDirectory(context.filesDir)), readSource = { source ->
             if (source.startsWith("http://") || source.startsWith("https://")) {
                 readCoilReaderImageCache(loader.diskCache, source, NativeReaderSrBackend.MAX_INPUT_BYTES)
                     ?: error("原图缓存尚不可用，继续显示原图")
