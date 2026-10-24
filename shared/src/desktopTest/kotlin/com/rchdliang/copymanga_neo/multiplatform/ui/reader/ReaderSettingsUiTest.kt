@@ -29,29 +29,32 @@ class ReaderSettingsUiTest {
         override suspend fun download() { startDownload() }
         override suspend fun delete() { deletes++;state.value=SrModelState.Deleting }
     }
-    private class Platform(override val models: ReaderSrModels): ReaderSrPlatform {
+    private class Platform(override val models: ReaderSrModels, override val unavailableReason:String?=null): ReaderSrPlatform {
         override val budgetBytes=192L*1024*1024
         override val workingBytes=96L*1024*1024
         override val detail=MutableStateFlow("等待当前页加载")
-        override val unavailableReason:String?=null
         override suspend fun source(page:SrPage):SrSource=error("No page selected")
         override suspend fun upscale(request:SrRequest):SrArtifact=error("No page selected")
     }
-    @Composable private fun Settings(models:Models=remember { Models() },dark:Boolean=false,onDismiss:()->Unit={}) {
+    @Composable private fun Settings(models:Models=remember { Models() },dark:Boolean=false,onDismiss:()->Unit={},unavailable:String?=null) {
         var tools by remember { mutableStateOf(ReaderToolsSettings()) }
         var layout by remember { mutableStateOf("AUTO") }
         val scope=rememberCoroutineScope()
-        val session=remember(scope,models) { ReaderSrSession(scope,Platform(models)) }
+        val session=remember(scope,models,unavailable) { ReaderSrSession(scope,Platform(models,unavailable)) }
         DisposableEffect(session) { onDispose { session.close() } }
         MaterialTheme(colorScheme=if(dark) darkColorScheme() else lightColorScheme()) {
             ReaderSettingsDialog(ReadingDirection.RIGHT_TO_LEFT,PageScale.FIT_SCREEN,ScreenOrientationSetting.SYSTEM_DEFAULT,
                 {},{},{},onDismiss,onResetPreferences={layout="SINGLE"},
                 leadingSettings={ ReaderSpreadOptions(tools,{tools=it(tools)},"chapter",2,20,true,false,layout,{layout=it}) },
                 qualitySettings={
-                    ReaderSharpnessOptions(tools.sharpness,tools.sharpnessRestore,{tools=tools.copy(sharpness=0f)}) { tools=tools.copy(sharpness=it) }
-                    ReaderSuperResolutionOptions(session)
+                    ReaderQualitySection { ReaderSharpnessOptions(tools.sharpness,tools.sharpnessRestore,{tools=tools.copy(sharpness=0f)}) { tools=tools.copy(sharpness=it) }
+                    }
+                    ReaderQualitySection { ReaderSuperResolutionOptions(session) }
                 },
-                extraSettings={ReaderToolsOptions(tools,{tools=it(tools)});ReaderOperationHelp()})
+                turnSettings={ReaderToolsOptions(tools,{tools=it(tools)})},
+                loadingSettings={ReaderLoadingOptions(tools,{tools=it(tools)})},
+                pairingSettings={ReaderPairingOption(tools,{tools=it(tools)},"chapter",2,20)},
+                helpSettings={ReaderOperationHelp()})
         }
     }
     @Test fun backReturnsFromChildAndCancelsUnconfirmedDownloadBeforeClosingHome() = runSkikoComposeUiTest(size=Size(520f,900f)) {
@@ -59,14 +62,17 @@ class ReaderSettingsUiTest {
         var open by mutableStateOf(true)
         var dismisses=0
         setContent { if(open) Settings(models,onDismiss={dismisses++;open=false}) }
-        onNodeWithText("本章配页 · 默认配页").performScrollTo().performClick()
+        onNodeWithText("本章配页").performScrollTo().performClick()
         onNodeWithText("返回").performClick()
         onNodeWithText("阅读设置").assertExists();assertEquals(0,dismisses)
+        onNodeWithText("画质增强").performClick()
         onNodeWithTag("reader-setting-超分辨率").performScrollTo().performClick()
         onNodeWithText("下载超分模型？").assertExists()
         onNodeWithText("返回").performClick()
-        onNodeWithText("阅读设置").assertExists()
+        onNodeWithText("画质增强").assertExists()
         assertEquals(0,models.starts);assertEquals(0,dismisses)
+        onNodeWithText("返回").performClick()
+        onNodeWithText("阅读设置").assertExists()
         save("subpage-back-home-desktop")
         onNodeWithText("完成").performClick()
         onNodeWithText("阅读设置").assertDoesNotExist();assertEquals(1,dismisses)
@@ -75,6 +81,7 @@ class ReaderSettingsUiTest {
     @Test fun deleteBusyFailureRetryAndSuccessUseTypedDeleteAction() = runSkikoComposeUiTest(size=Size(520f,900f)) {
         val models=Models().apply { state.value=SrModelState.Ready }
         setContent { Settings(models) }
+        onNodeWithText("画质增强").performClick()
         onNodeWithText("模型管理").performScrollTo().performClick()
         onNodeWithText("删除模型").performClick()
         onNodeWithText("删除").performClick()
@@ -92,10 +99,14 @@ class ReaderSettingsUiTest {
         assertEquals(2,models.deletes);assertEquals(0,models.starts)
         // 返回只离开子页；后台结果在首页继续可见。
         onNodeWithText("返回").performClick()
-        onNodeWithText("阅读设置").assertExists()
-        onNodeWithText("正在删除…").performScrollTo().assertExists()
+        onNodeWithText("模型管理").assertExists()
+        onNodeWithText("正在删除…").assertExists()
+        onNodeWithText("返回").performClick()
+        onNodeWithText("画质增强").assertExists()
+        onNodeWithText("返回").performClick()
         runOnIdle { models.state.value=SrModelState.Missing }
         onNodeWithText("阅读设置").assertExists()
+        onNodeWithText("画质增强").performClick()
         onNodeWithText("模型未下载 · 2.65 MiB").performScrollTo().assertExists()
         save("model-delete-success-desktop")
     }
@@ -103,21 +114,33 @@ class ReaderSettingsUiTest {
     @Test fun successfulDeleteReturnsOnlyAfterMissingState() = runSkikoComposeUiTest(size=Size(520f,900f)) {
         val models=Models().apply { state.value=SrModelState.Ready }
         setContent { Settings(models) }
+        onNodeWithText("画质增强").performClick()
         onNodeWithText("模型管理").performScrollTo().performClick()
         onNodeWithText("删除模型").performClick()
         onNodeWithText("删除").performClick()
         onNodeWithText("删除模型？").assertExists()
         runOnIdle { models.state.value=SrModelState.Missing }
-        onNodeWithText("阅读设置").assertExists()
+        onNodeWithText("模型管理").assertExists()
         assertEquals(1,models.deletes);assertEquals(0,models.starts)
     }
     @Test fun narrowSettingsAndPairingInvalidInputUseOneDialog() = runSkikoComposeUiTest(size=Size(390f,760f)) {
         setContent { Settings() }
         onNodeWithText("阅读设置").assertExists()
-        onNodeWithText("自动").assertExists()
+        onNodeWithText("自动").assertDoesNotExist()
         onNodeWithText("仅修改本漫画。").assertDoesNotExist()
         save("narrow-settings-desktop")
-        onNodeWithText("本章配页 · 默认配页").performScrollTo().performClick()
+        onNodeWithText("显示设置").performClick()
+        save("display-settings-desktop")
+        onNodeWithText("页面布局").performClick()
+        save("layout-choice-desktop")
+        onNodeWithText("双页").performClick()
+        onNodeWithText("显示设置").assertExists()
+        onNodeWithText("双页").assertExists()
+        onNodeWithText("返回").performClick()
+        onNodeWithText("操作说明").performClick()
+        onNodeWithText("触控").assertExists()
+        onNodeWithText("返回").performClick()
+        onNodeWithText("本章配页").performScrollTo().performClick()
         onNodeWithText("起始页").performTextReplacement("0")
         onNodeWithText("请输入 1–19 的页码").assertExists()
         onNodeWithText("应用配页").assertIsNotEnabled()
@@ -127,6 +150,7 @@ class ReaderSettingsUiTest {
         val models=Models()
         setContent { Settings(models) }
         val toggle=hasTestTag("reader-setting-超分辨率")
+        onNodeWithText("画质增强").performClick()
         onNode(toggle).performScrollTo().performClick()
         assertEquals(0,models.starts)
         save("model-download-confirm-desktop")
@@ -150,12 +174,24 @@ class ReaderSettingsUiTest {
         val models=Models()
         models.state.value=SrModelState.Failed("网络暂不可用，可重试")
         setContent { Settings(models,true) }
+        save("dark-settings-overview-desktop")
+        onNodeWithText("画质增强").performClick()
         onNodeWithTag("reader-sharpen-switch").performScrollTo().performClick()
         onNodeWithText("恢复默认").performScrollTo()
         save("sharpen-slider-dark-desktop")
         onNodeWithText("模型下载失败").performScrollTo()
         save("model-download-failed-desktop")
     }
+    @Test fun unsupportedRuntimeDoesNotOfferProcessingModesOrStartDownload() = runSkikoComposeUiTest(size=Size(520f,900f)) {
+        val models=Models()
+        setContent { Settings(models,unavailable="当前平台未提供超分运行时") }
+        onNodeWithText("画质增强").performClick()
+        onNodeWithTag("reader-setting-超分辨率").assertIsNotEnabled()
+        onNodeWithText("当前平台未提供超分运行时").assertExists()
+        onNodeWithText("处理方式").assertDoesNotExist()
+        assertEquals(0,models.starts)
+    }
+
     @Test fun rtlPageCounterUsesAscendingRawPageRange() = runSkikoComposeUiTest(size=Size(960f,600f)) {
         setContent {
             androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl) {

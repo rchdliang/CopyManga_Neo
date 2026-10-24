@@ -79,7 +79,7 @@ internal fun ReaderSpreadContent(
                         scaleX = state.scale; scaleY = state.scale
                         translationX = state.offset.x; translationY = state.offset.y
                     }) {
-                        spread.visualIndices(rtl).forEach { rawIndex ->
+                        spread.visualIndices(rtl).forEachIndexed { visualIndex, rawIndex ->
                             val leaf = pages[rawIndex]
                             key(leaf.key) {
                                 Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -87,6 +87,7 @@ internal fun ReaderSpreadContent(
                                         if (spread.indices.size == 2) ContentScale.Fit else contentScale,
                                         false, index == pager.currentPage, false,
                                         zoomState = state, imageLoader = imageLoader, tools = tools,
+                                        imageAlignment = readerSpreadImageAlignment(spread.indices.size, visualIndex),
                                         onReady = { onReady(leaf.key) },
                                         onDimensions = { width, height -> onDimensions(leaf.key, width, height) },
                                         imageQuality = imageQuality,

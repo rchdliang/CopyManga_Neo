@@ -217,12 +217,14 @@ internal fun ReaderImageItem(
     trackReadiness: Boolean = true,
     srSession: ReaderSrSession? = null,
     srPageKey: String = path,
+    imageAlignment: Alignment = Alignment.Center,
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
             contentDescription = null,
             drawable = Res.drawable.preview_reader_page,
             contentScale = contentScale,
+                alignment = imageAlignment,
             modifier = if (isContinuous) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
         )
         return
@@ -271,6 +273,7 @@ internal fun ReaderImageItem(
                 contentDescription = null,
                 modifier = imageModifier,
                 contentScale = contentScale,
+                alignment = imageAlignment,
                 filterQuality = if (imageQuality != null) FilterQuality.High else FilterQuality.Low,
                 onState = { if (imageQuality != null && it is AsyncImagePainter.State.Success) lastSuccess = it },
             ) {
@@ -364,7 +367,8 @@ internal fun ReaderImageItem(
                                             translationY = zoomState.offset.y
                                         }
                                         .readerSharpen(sharpness, srPageKey),
-                                    contentScale = contentScale
+                                    contentScale = contentScale,
+                alignment = imageAlignment
                                 )
                             }
                         } else {
@@ -373,7 +377,8 @@ internal fun ReaderImageItem(
                                 painter = currentPainter,
                                 contentDescription = null,
                                 modifier = imageModifier.readerSharpen(sharpness, srPageKey),
-                                contentScale = contentScale
+                                contentScale = contentScale,
+                alignment = imageAlignment
                             )
                         }
                     }

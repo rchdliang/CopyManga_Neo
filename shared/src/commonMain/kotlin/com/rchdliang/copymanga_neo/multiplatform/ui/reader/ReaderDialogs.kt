@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,112 +58,52 @@ fun ReaderSettingsDialog(
     onDismiss: () -> Unit,
     onResetPreferences: () -> Unit = {},
     leadingSettings: @Composable () -> Unit = {},
-    extraSettings: @Composable () -> Unit = {},
-    qualitySettings: @Composable () -> Unit = {}
+    turnSettings: @Composable () -> Unit = {},
+    loadingSettings: @Composable () -> Unit = {},
+    pairingSettings: @Composable () -> Unit = {},
+    helpSettings: @Composable () -> Unit = {},
+    qualitySettings: (@Composable () -> Unit)? = null
 ) {
-    var section by remember { mutableStateOf<ReaderSettingsPage?>(null) }
-    val back = { readerSettingsBack(section != null, { section = null }, onDismiss) }
+    var pages by remember { mutableStateOf<List<ReaderSettingsPage>>(emptyList()) }
+    val section = pages.lastOrNull()
+    val navigate: (ReaderSettingsPage?) -> Unit = { page ->
+        pages = if (page == null) pages.dropLast(1) else pages + page
+    }
+    val back = { readerSettingsBack(pages.isNotEmpty(), { navigate(null) }, onDismiss) }
+    // 子页始终消费最新状态，避免点击入口时捕获旧的设置快照。
+    val displayContent by rememberUpdatedState<@Composable () -> Unit> {
+        ReaderDisplaySettings(readingDirection, pageScale, screenOrientation,
+            onReadingDirectionChange, onPageScaleChange, onScreenOrientationChange, onResetPreferences, leadingSettings)
+    }
+    val turns by rememberUpdatedState(turnSettings)
+    val loading by rememberUpdatedState(loadingSettings)
+    val quality by rememberUpdatedState(qualitySettings)
     if (LocalRouteActive.current) AlertDialog(
         onDismissRequest = back,
-        title = {
-            Text(
-                section?.title ?: "阅读设置",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        },
+        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(0.94f),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = { Text(section?.title ?: "阅读设置", color = MaterialTheme.colorScheme.onSurface) },
         text = {
-            CompositionLocalProvider(LocalReaderSettingsNavigation provides { section = it }) {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (section != null) section!!.content() else {
-                leadingSettings()
-                Text(
-                    "显示方式",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(Modifier.height(12.dp))
-                PreferenceSection("屏幕方向") {
-                    ScreenOrientationSetting.entries.forEach { option ->
-                        FilterChip(
-                            onClick = { onScreenOrientationChange(option) },
-                            label = {
-                                Text(
-                                    option.label,
-                                    color = if (screenOrientation == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            selected = screenOrientation == option
-                        )
+            CompositionLocalProvider(LocalReaderSettingsNavigation provides navigate) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    if (section != null) section.content() else {
+                        ReaderSettingsOverview(qualitySettings != null,
+                            display = { navigate(ReaderSettingsPage("显示设置") { displayContent() }) },
+                            turns = { navigate(ReaderSettingsPage("翻页设置") { turns() }) },
+                            quality = { navigate(ReaderSettingsPage("画质增强") { quality?.invoke() }) },
+                            loading = { navigate(ReaderSettingsPage("图片加载") { loading() }) },
+                            pairing = pairingSettings, help = helpSettings)
                     }
                 }
-                PreferenceSection("阅读方向") {
-                    ReadingDirection.entries.forEach { option ->
-                        FilterChip(
-                            onClick = { onReadingDirectionChange(option) },
-                            label = {
-                                Text(
-                                    option.label,
-                                    color = if (readingDirection == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            selected = readingDirection == option
-                        )
-                    }
-                }
-                PreferenceSection("页面缩放") {
-                    PageScale.entries.forEach { option ->
-                        FilterChip(
-                            onClick = { onPageScaleChange(option) },
-                            label = {
-                                Text(
-                                    option.label,
-                                    color = if (pageScale == option) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            selected = pageScale == option,
-                        )
-                    }
-                }
-                TextButton(onClick = onResetPreferences) { Text("重置显示设置") }
-                qualitySettings()
-                extraSettings()
-                }
-            }
             }
         },
         confirmButton = {
             TextButton(onClick = back) {
-                Text(
-                    if (section == null) "完成" else "返回",
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Text(if (section == null) "完成" else "返回", color = MaterialTheme.colorScheme.primary)
             }
-        },
-
+        }
     )
 }
-
-@Composable
-private fun PreferenceSection(title: String, content: @Composable () -> Unit) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary
-    )
-    Spacer(modifier = Modifier.height(4.dp))
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        content()
-    }
-    Spacer(modifier = Modifier.height(12.dp))
-}
-
 
 @Composable
 fun ReaderImageActionDialog(

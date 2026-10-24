@@ -43,7 +43,7 @@ internal object ProfileListDefaults {
 internal fun ProfileListItem(
     icon: ImageVector,
     label: String,
-    supportingText: String,
+    supportingText: String?,
     index: Int,
     count: Int,
     onClick: () -> Unit,
@@ -71,7 +71,7 @@ internal fun ProfileListItem(
         ),
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = ProfileListDefaults.MinHeight),
+            .heightIn(min = if (supportingText == null) 56.dp else ProfileListDefaults.MinHeight),
         leadingContent = {
             Surface(
                 shape = CircleShape,
@@ -85,12 +85,8 @@ internal fun ProfileListItem(
                 }
             }
         },
-        supportingContent = {
-            Text(
-                supportingText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = LocalContentColor.current
-            )
+        supportingContent = supportingText?.let { supporting ->
+            { Text(supporting, style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current) }
         },
         trailingContent = trailingContent ?: {
             Icon(

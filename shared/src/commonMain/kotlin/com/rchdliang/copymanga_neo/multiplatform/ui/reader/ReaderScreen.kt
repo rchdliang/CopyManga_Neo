@@ -931,33 +931,14 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && page?.source != null) Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.55f))
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                page.chapterName,
-                modifier = Modifier.weight(1f),
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
+        if (!showControls && page?.source != null) ReaderRestingOverlay(
+            page.chapterName,
+            if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
                     "${visible.first()}–${visible.last()}/${page.imageCount}"
                 } else "${page.page + 1}/${page.imageCount}",
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall
-            )
-        }
+            Modifier.align(Alignment.BottomCenter)
+        )
         AnimatedVisibility(
             showControls && page != null,
             enter = fadeIn(),
@@ -992,7 +973,7 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (appending) Text(
+        if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -1015,22 +996,20 @@ fun ReaderSuccessContent(
 
         },
         qualitySettings = {
-            Text("画质增强", style = MaterialTheme.typography.titleSmall)
+            ReaderQualitySection {
             ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
                 onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
                 onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
             }
             val activeKeys = if (isContinuous) setOf(page?.key) else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
             if (sharpness > 0f && activeKeys.any { sharpenStatuses[it] == false }) Text("当前部分图片使用原图（超出锐化表面预算或渲染不可用）", style = MaterialTheme.typography.bodySmall)
-            ReaderSuperResolutionOptions(srSession, srSinglePage)
-        },
-        extraSettings = {
-            ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
-                onToolsChange { it.copy(inlineComments = enabled) }
             }
-            ReaderToolsOptions(tools, onToolsChange)
-            ReaderOperationHelp()
-        })
+            ReaderQualitySection { ReaderSuperResolutionOptions(srSession, srSinglePage) }
+        },
+        turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
+        loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
+        pairingSettings = { ReaderPairingOption(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0, page?.imageCount ?: 0) },
+        helpSettings = { ReaderOperationHelp() })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,
         onSelect = {

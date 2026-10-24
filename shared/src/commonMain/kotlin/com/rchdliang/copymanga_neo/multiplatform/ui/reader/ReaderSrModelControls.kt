@@ -18,13 +18,10 @@ internal fun ReaderSrModelControls(session: ReaderSrSession, content: @Composabl
             if (store == null || state == SrModelState.Ready || state is SrModelState.Downloading || state == SrModelState.Preparing)
                 session.settings.value = session.settings.value.copy(enabled = true, mode = mode)
             else navigate(ReaderSettingsPage("下载超分模型？") {
-                Text("需下载 ${modelMiB(store.downloadBytes)}，下载完成后启用。", style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = {
+                ReaderModelDownloadConfirmation(store.downloadBytes, onConfirm = {
                     session.settings.value = session.settings.value.copy(enabled = true, mode = mode)
-                    store.startDownload()
-                    navigate(null)
-                }) { Text("下载并启用") }
-                TextButton(onClick = { navigate(null) }) { Text("暂不") }
+                    store.startDownload(); navigate(null)
+                }, onCancel = { navigate(null) })
             })
         }
     }
@@ -37,7 +34,7 @@ internal fun ReaderSrModelControls(session: ReaderSrSession, content: @Composabl
     }
 }
 @Composable
-private fun ReaderModelProgress(store: ReaderSrModels, retryDelete: () -> Unit) {
+internal fun ReaderModelProgress(store: ReaderSrModels, retryDelete: () -> Unit) {
     val state by store.state.collectAsState()
     when (val value = state) {
         SrModelState.Ready -> Text("模型已就绪", style = MaterialTheme.typography.bodySmall)
@@ -62,7 +59,7 @@ private fun ReaderModelProgress(store: ReaderSrModels, retryDelete: () -> Unit) 
     }
 }
 @Composable
-private fun ReaderModelManagement(session: ReaderSrSession, store: ReaderSrModels) {
+internal fun ReaderModelManagement(session: ReaderSrSession, store: ReaderSrModels) {
     val state by store.state.collectAsState()
     val navigate = LocalReaderSettingsNavigation.current
     val scope = rememberCoroutineScope()
@@ -77,7 +74,7 @@ private fun ReaderModelManagement(session: ReaderSrSession, store: ReaderSrModel
 }
 
 @Composable
-private fun ReaderModelDeleteConfirmation(session: ReaderSrSession, store: ReaderSrModels) {
+internal fun ReaderModelDeleteConfirmation(session: ReaderSrSession, store: ReaderSrModels) {
     val state by store.state.collectAsState()
     val navigate = LocalReaderSettingsNavigation.current
     val scope = rememberCoroutineScope()
@@ -101,5 +98,12 @@ private fun ReaderModelDeleteConfirmation(session: ReaderSrSession, store: Reade
             ReaderModelProgress(store, remove)
         !requested -> TextButton(onClick = remove) { Text("删除") }
     }
-    if (!requested) TextButton(onClick = { navigate(null) }) { Text("保留") }
+    if (!requested && state != SrModelState.Deleting) TextButton(onClick = { navigate(null) }) { Text("保留") }
+}
+
+@Composable
+internal fun ReaderModelDownloadConfirmation(bytes: Long, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    Text("需下载 ${modelMiB(bytes)}，下载完成后启用。", style = MaterialTheme.typography.bodyMedium)
+    TextButton(onClick = onConfirm) { Text("下载并启用") }
+    TextButton(onClick = onCancel) { Text("暂不") }
 }

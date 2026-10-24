@@ -346,22 +346,13 @@ class AndroidPlatformHost(context: Context, private val savedState: SavedStateHa
     @Composable
     override fun ImmersiveEffect(orientation: ScreenOrientationSetting?) {
         val current = activity
+        ReaderImmersiveSystemBars(current?.window)
         DisposableEffect(current) {
-            val window = current?.window
-            val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
             if (readerPreviousOrientation == null) {
                 readerPreviousOrientation = current?.requestedOrientation
                 savedState["reader_original_orientation"] = readerPreviousOrientation
             }
-            val previousBehavior = controller?.systemBarsBehavior
-            val statusVisible = window?.decorView?.let(ViewCompat::getRootWindowInsets)
-                ?.isVisible(WindowInsetsCompat.Type.statusBars()) ?: true
-            controller?.hide(WindowInsetsCompat.Type.statusBars())
-            controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             onDispose {
-                if (statusVisible) controller?.show(WindowInsetsCompat.Type.statusBars())
-                else controller?.hide(WindowInsetsCompat.Type.statusBars())
-                previousBehavior?.let { controller.systemBarsBehavior = it }
                 if (current?.isChangingConfigurations == false) {
                     readerPreviousOrientation?.let { current.requestedOrientation = it }
                     readerPreviousOrientation = null

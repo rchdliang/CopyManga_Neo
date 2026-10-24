@@ -4,6 +4,7 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.RouteImageScope
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.routeImageModel
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -21,13 +22,15 @@ fun PreviewImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Fit,
-    drawable: DrawableResource = Res.drawable.preview_comic_cover
+    drawable: DrawableResource = Res.drawable.preview_comic_cover,
+    alignment: Alignment = Alignment.Center
 ) {
     Image(
         painter = painterResource(drawable),
         contentDescription = contentDescription,
         modifier = modifier,
-        contentScale = contentScale
+        contentScale = contentScale,
+        alignment = alignment
     )
 }
 

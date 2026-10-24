@@ -32,7 +32,11 @@ internal const val READER_SHARPNESS_RESTORE = 0.20f
 
 @Composable
 internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
-    val available = readerSharpnessAvailable()
+    ReaderSharpnessControls(readerSharpnessAvailable(), strength, restore, onReset, onChange)
+}
+
+@Composable
+internal fun ReaderSharpnessControls(available: Boolean, strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         androidx.compose.material3.Text("锐化", androidx.compose.ui.Modifier.weight(1f))
         androidx.compose.material3.Switch(checked = strength > 0f,
@@ -43,6 +47,5 @@ internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: ()
         androidx.compose.material3.Text("强度 ${(strength / READER_SHARPNESS_MAX * 100).toInt()}%")
         androidx.compose.material3.Slider(value = strength, onValueChange = { onChange(normalizedReaderSharpness(it)) }, valueRange = 0f..READER_SHARPNESS_MAX, steps = 34)
         androidx.compose.material3.TextButton(onClick = onReset) { androidx.compose.material3.Text("恢复默认") }
-        androidx.compose.material3.Text("设置自动保存；超大图像表面可能保留原图", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
     }
 }
