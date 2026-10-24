@@ -61,8 +61,9 @@ fun ReaderSettingsDialog(
     qualitySettings: @Composable () -> Unit = {}
 ) {
     var section by remember { mutableStateOf<ReaderSettingsPage?>(null) }
+    val back = { readerSettingsBack(section != null, { section = null }, onDismiss) }
     if (LocalRouteActive.current) AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = back,
         title = {
             Text(
                 section?.title ?: "阅读设置",
@@ -131,7 +132,7 @@ fun ReaderSettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (section == null) onDismiss() else section = null }) {
+            TextButton(onClick = back) {
                 Text(
                     if (section == null) "完成" else "返回",
                     color = MaterialTheme.colorScheme.primary

@@ -149,4 +149,32 @@ class NativeReaderSrTest {
         assertFailsWith<IllegalStateException> { missing.prepare() }
 
     }
+
+    @Test fun modelDeletionWaitsForNativeWorkerBeforeRemovingFiles() = runBlocking {
+        assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
+        val cache = File(root, "delete-during-use").apply { deleteRecursively(); mkdirs() }
+        val assets = bundle(cache)
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val worker = object : SrWorker {
+            override suspend fun probe(models: File, gpu: Boolean) = -1
+            override suspend fun run(models: File, gpu: Int, input: File, output: File) {
+                started.complete(Unit); finish.await()
+                assertTrue(File(models, "scale2.0x_model.bin").isFile)
+                writeRaster(output, SrRaster(384, 256, ByteArray(384*256*4)))
+            }
+        }
+        val backend = NativeReaderSrBackend(assets, { bytes("small-text") }, DesktopSrCodec(), { worker })
+        val inference = async { backend.upscale(request(backend.source(SrPage("page", "source")))) }
+        started.await()
+        val deletion = launch { backend.models.delete() }
+        withTimeout(3000) { while (backend.models.state.value != SrModelState.Deleting) delay(10) }
+        assets.models.requireReady()
+        finish.complete(Unit)
+        assertEquals(384, inference.await().width)
+        deletion.join()
+        assertEquals(SrModelState.Missing, backend.models.state.value)
+        assertFailsWith<IllegalStateException> { assets.models.requireReady() }
+        Unit
+    }
 }

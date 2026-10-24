@@ -54,7 +54,7 @@ internal fun ReaderSuperResolutionOptions(session: ReaderSrSession, singlePage: 
     val modelState = session.models?.state?.collectAsState()?.value ?: SrModelState.Ready
     var advanced by remember { mutableStateOf(false) }
     ReaderSrModelControls(session) { enable, manage ->
-        ReaderSettingSwitch("超分辨率", settings.enabled, enabled = session.unavailableReason == null) { selected ->
+        ReaderSettingSwitch("超分辨率", settings.enabled, enabled = session.unavailableReason == null && modelState != SrModelState.Deleting) { selected ->
             if (selected) enable(settings.mode) else session.settings.value = settings.copy(enabled = false)
         }
         Text("本次阅读 · 放大至 2 倍，图片在本机处理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

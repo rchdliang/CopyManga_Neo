@@ -8,13 +8,16 @@ data class SrPage(val id: String, val source: String)
 data class SrUserSettings(val enabled: Boolean = false,
     val mode: SrExecutionMode = SrExecutionMode.AUTO, val cpuFallback: Boolean = true)
 
+enum class SrModelOperation { DOWNLOAD, DELETE }
+
 sealed interface SrModelState {
     data object Missing : SrModelState
     data object Cancelled : SrModelState
     data object Preparing : SrModelState
     data object Ready : SrModelState
+    data object Deleting : SrModelState
     data class Downloading(val bytes: Long, val total: Long) : SrModelState
-    data class Failed(val message: String) : SrModelState
+    data class Failed(val message: String, val operation: SrModelOperation = SrModelOperation.DOWNLOAD) : SrModelState
 }
 interface ReaderSrModels {
     val state: StateFlow<SrModelState>

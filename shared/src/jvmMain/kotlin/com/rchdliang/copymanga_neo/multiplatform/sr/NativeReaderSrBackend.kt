@@ -74,7 +74,7 @@ internal class NativeReaderSrBackend(
     override val budgetBytes: Long = 192L*1024*1024,
 ) : ReaderSrPlatform {
     override val models: ReaderSrModels = object : ReaderSrModels by bundle.models {
-        override suspend fun delete() = gate.withLock { bundle.models.delete() }
+        override suspend fun delete() = bundle.models.deleteWhenIdle { remove -> gate.withLock { remove() } }
     }
     override val unavailableReason get() = bundle.unavailable ?: if (budgetBytes <= workingBytes) "当前可用内存不足，保留原图" else null
     override val workingBytes = 96L*1024*1024

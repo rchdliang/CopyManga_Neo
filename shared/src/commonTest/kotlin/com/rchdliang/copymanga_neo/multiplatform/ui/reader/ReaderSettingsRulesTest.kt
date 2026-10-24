@@ -2,6 +2,18 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 import kotlin.test.Test
 import kotlin.test.*
 class ReaderSettingsRulesTest {
+    @Test fun backLeavesChildFirstAndHomeCanStillClose() {
+        for (page in listOf("本章配页", "阅读操作", "下载超分模型？", "模型管理")) {
+            var child: String? = page
+            var dismisses = 0
+            val back = { readerSettingsBack(child != null, { child = null }, { dismisses++ }) }
+            back()
+            assertNull(child)
+            assertEquals(0, dismisses)
+            back()
+            assertEquals(1, dismisses)
+        }
+    }
     @Test fun rtlCounterUsesOriginalAscendingRangeAndPairingRejectsBadBoundaries() {
         assertEquals("2–3 / 24", readerPageRangeLabel(listOf(3,2),24))
         assertEquals("1 / 24", readerPageRangeLabel(listOf(1),24))

@@ -24,6 +24,7 @@ internal val SR_MODEL_FILES = listOf(
 internal class SrModelStore(
     private val directory: File,
     private val specs: List<SrModelFile> = SR_MODEL_FILES,
+    private val remove: (File) -> Boolean = { it.deleteRecursively() },
     private val fetch: suspend (SrModelFile, File, (Long) -> Unit) -> Unit = ::fetchOfficialModel,
 ) : ReaderSrModels {
     private class Entry {
@@ -31,6 +32,8 @@ internal class SrModelStore(
         val state = MutableStateFlow<SrModelState>(SrModelState.Missing)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         var job: Job? = null
+        var deletion: Deferred<Unit>? = null
+        var downloaders = 0
     }
     private val entry = entries.getOrPut(directory.canonicalPath) { Entry() }
     override val state = entry.state
@@ -44,11 +47,13 @@ internal class SrModelStore(
         return directory
     }
     override fun startDownload() { synchronized(entry) {
-        if (entry.job?.isActive != true) entry.job = entry.scope.launch { download() }
+        if (entry.deletion?.isActive != true && entry.job?.isActive != true) entry.job = entry.scope.launch { download() }
     } }
     override fun cancelDownload() { synchronized(entry) { entry.job?.cancel() } }
     override suspend fun refresh() = withContext(Dispatchers.IO) {
-        entry.mutex.withLock { state.value = if (valid(directory)) SrModelState.Ready else SrModelState.Missing }
+        entry.mutex.withLock { synchronized(entry) {
+            if (entry.deletion?.isActive != true) state.value = if (valid(directory)) SrModelState.Ready else SrModelState.Missing
+        } }
     }
     private suspend fun <T> locked(block: suspend () -> T): T = withContext(Dispatchers.IO) {
         entry.mutex.withLock {
@@ -66,12 +71,19 @@ internal class SrModelStore(
             }
         }
     }
-    private suspend fun operation(block: suspend () -> Unit) {
+    private suspend fun operation(kind: SrModelOperation, block: suspend () -> Unit) {
         try { locked(block) }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { state.value = SrModelState.Failed("模型存储操作失败，原图保持可读；请检查可用空间后重试") }
+        catch (_: Exception) { state.value = SrModelState.Failed("模型存储操作失败，原图保持可读；请检查可用空间后重试", kind) }
     }
-    override suspend fun download() = operation {
+    override suspend fun download() {
+        synchronized(entry) {
+            if (entry.deletion?.isActive == true) return
+            entry.downloaders++
+        }
+        try { downloadModel() } finally { synchronized(entry) { entry.downloaders-- } }
+    }
+    private suspend fun downloadModel() = operation(SrModelOperation.DOWNLOAD) {
         if (valid(directory)) { state.value = SrModelState.Ready; return@operation }
         val staging = Files.createTempDirectory(directory.parentFile.toPath(), "model-pending-").toFile()
         try {
@@ -98,9 +110,31 @@ internal class SrModelStore(
             state.value = SrModelState.Failed("下载或校验失败，原图保持可读；可重新下载")
         } finally { staging.deleteRecursively() }
     }
-    override suspend fun delete() = operation {
-        if (directory.exists()) check(directory.deleteRecursively()) { "模型删除失败" }
-        state.value = SrModelState.Missing
+    override suspend fun delete() = deleteWhenIdle { it() }
+
+    /** 已确认删除由进程托管；返回只离开界面，不中断等待推理门或删除。 */
+    suspend fun deleteWhenIdle(whenIdle: suspend (suspend () -> Unit) -> Unit) {
+        val deletion = synchronized(entry) {
+            entry.deletion?.takeIf { it.isActive } ?: run {
+                // 下载使用同一模型目录；下载/校验期间只提供取消下载，不排队删除。
+                if (entry.downloaders > 0 || entry.job?.isActive == true) return
+                state.value = SrModelState.Deleting
+                entry.scope.async(start = CoroutineStart.LAZY) {
+                    try {
+                        whenIdle {
+                            operation(SrModelOperation.DELETE) {
+                                if (directory.exists()) check(remove(directory)) { "模型删除失败" }
+                                state.value = SrModelState.Missing
+                            }
+                        }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) {
+                        state.value = SrModelState.Failed("无法删除模型，请检查文件是否被占用后重试", SrModelOperation.DELETE)
+                    }
+                }.also { entry.deletion = it; it.start() }
+            }
+        }
+        deletion.await()
     }
     companion object { private val entries = ConcurrentHashMap<String, Entry>() }
 }

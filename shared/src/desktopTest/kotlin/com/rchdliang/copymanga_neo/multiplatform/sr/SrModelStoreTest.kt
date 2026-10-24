@@ -2,11 +2,64 @@ package com.rchdliang.copymanga_neo.multiplatform.sr
 
 import com.rchdliang.copymanga_neo.domain.reading.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.*
 
 class SrModelStoreTest {
+    @Test fun deletionWaitsForUseIsDeduplicatedAndOutlivesReturningCaller() = runBlocking { fixture { dir, specs ->
+        var removes = 0
+        var requests = 0
+        val model = SrModelStore(dir, specs, remove = { removes++; it.deleteRecursively() }) { spec, file, _ ->
+            requests++; file.writeText(spec.name)
+        }
+        model.download()
+        val inUse = Mutex(locked = true)
+        val caller = launch { model.deleteWhenIdle { remove -> inUse.withLock { remove() } } }
+        withTimeout(3000) { while (model.state.value != SrModelState.Deleting) delay(10) }
+        val duplicate = launch { model.delete() }
+        caller.cancelAndJoin() // 如返回设置页，取消的只是等待者。
+        model.refresh(); model.startDownload(); model.cancelDownload()
+        assertEquals(SrModelState.Deleting, model.state.value)
+        assertTrue(dir.isDirectory); assertEquals(0, removes); assertEquals(2, requests)
+        inUse.unlock()
+        duplicate.join()
+        assertEquals(SrModelState.Missing, model.state.value)
+        assertFalse(dir.exists()); assertEquals(1, removes); assertEquals(2, requests)
+    } }
+
+    @Test fun deletionFailureIsTypedAndRetryOnlyDeletes() = runBlocking { fixture { dir, specs ->
+        var allowDelete = false
+        var requests = 0
+        var removes = 0
+        val model = SrModelStore(dir, specs, remove = {
+            removes++; if (allowDelete) it.deleteRecursively() else false
+        }) { spec, file, _ -> requests++; file.writeText(spec.name) }
+        model.download(); model.delete()
+        assertEquals(SrModelOperation.DELETE, assertIs<SrModelState.Failed>(model.state.value).operation)
+        assertTrue(dir.isDirectory); assertEquals(2, requests)
+        allowDelete = true
+        model.delete()
+        assertEquals(SrModelState.Missing, model.state.value)
+        assertEquals(2, removes); assertEquals(2, requests)
+    } }
+
+    @Test fun deletionDoesNotInterruptOrQueueBehindActiveDownload() = runBlocking { fixture { dir, specs ->
+        val started = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+        var removes = 0
+        val model = SrModelStore(dir, specs, remove = { removes++; it.deleteRecursively() }) { spec, file, _ ->
+            started.complete(Unit); resume.await(); file.writeText(spec.name)
+        }
+        val download = launch { model.download() }
+        started.await(); model.delete()
+        assertIs<SrModelState.Downloading>(model.state.value)
+        assertEquals(0, removes)
+        resume.complete(Unit); download.join()
+        assertEquals(SrModelState.Ready, model.state.value); assertTrue(dir.isDirectory)
+    } }
     private suspend fun fixture(block: suspend (File, List<SrModelFile>) -> Unit) {
         val dir = Files.createTempDirectory("sr-model-test-").toFile()
         val specs = listOf("one", "two").map { SrModelFile(it, it.toByteArray().size.toLong(), it.toByteArray().sha256()) }
