@@ -46,33 +46,39 @@ internal fun readerSrPainter(session: ReaderSrSession?, pageId: String, revision
 }
 
 @Composable
-internal fun ReaderSuperResolutionOptions(session: ReaderSrSession) {
+internal fun ReaderSuperResolutionOptions(session: ReaderSrSession, singlePage: Boolean = true) {
     val settings by session.settings.collectAsState()
     val display by session.display.collectAsState()
     val preparation by session.preparationMessage.collectAsState()
     val detail by session.detail.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("超分辨率 2×", style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterChip(!settings.enabled, { session.settings.value = settings.copy(enabled = false) }, { Text("关闭") })
-            for ((mode, label) in listOf(SrExecutionMode.AUTO to "自动", SrExecutionMode.CPU to "CPU", SrExecutionMode.GPU to "GPU")) {
-                FilterChip(settings.enabled && settings.mode == mode,
-                    { session.settings.value = settings.copy(enabled = true, mode = mode) }, { Text(label) },
-                    enabled = session.unavailableReason == null)
-            }
+    val modelState = session.models?.state?.collectAsState()?.value ?: SrModelState.Ready
+    var advanced by remember { mutableStateOf(false) }
+    ReaderSrModelControls(session) { enable, manage ->
+        ReaderSettingSwitch("超分辨率", settings.enabled, enabled = session.unavailableReason == null) { selected ->
+            if (selected) enable(settings.mode) else session.settings.value = settings.copy(enabled = false)
         }
-        if (settings.enabled && settings.mode == SrExecutionMode.AUTO) {
-            ReaderSettingSwitch("GPU 不可用时尝试 CPU", settings.cpuFallback) {
+        Text("本次阅读 · 放大至 2 倍，图片在本机处理", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        session.unavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        val processing = when (display?.second) {
+            SrStatus.Processing -> "正在增强当前页…"
+            is SrStatus.Ready -> "当前页已增强"
+            SrStatus.Failed -> "增强失败，继续显示原图"
+            is SrStatus.Unavailable -> (display?.second as SrStatus.Unavailable).reason
+            else -> preparation ?: "等待当前页加载"
+        }
+        if (settings.enabled && modelState == SrModelState.Ready) Text(if (singlePage) processing else "当前双页使用原图", style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "收起处理方式" else "处理方式") }
+        if (advanced) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((mode, label) in listOf(SrExecutionMode.AUTO to "自动", SrExecutionMode.CPU to "CPU", SrExecutionMode.GPU to "GPU")) {
+                    FilterChip(settings.mode == mode, { session.settings.value = settings.copy(mode = mode) }, { Text(label) }, enabled = session.unavailableReason == null)
+                }
+            }
+            if (settings.mode == SrExecutionMode.AUTO) ReaderSettingSwitch("GPU 不可用时使用 CPU", settings.cpuFallback) {
                 session.settings.value = settings.copy(cpuFallback = it)
             }
+            Text(detail, style = MaterialTheme.typography.bodySmall)
         }
-        val status = when (val state = display?.second) {
-            is SrStatus.Unavailable -> state.reason
-            SrStatus.Processing -> "正在后台处理，先显示原图"
-            SrStatus.Failed -> "处理失败，继续显示原图"
-            is SrStatus.Ready -> "当前页已增强 · $detail"
-            else -> preparation ?: session.unavailableReason ?: if (settings.enabled) detail else "默认关闭；仅处理当前单页，不上传图片"
-        }
-        Text(status, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = manage, enabled = session.models != null) { Text("模型管理") }
     }
 }

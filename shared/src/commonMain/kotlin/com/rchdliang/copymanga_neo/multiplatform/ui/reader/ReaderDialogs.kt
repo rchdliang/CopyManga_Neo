@@ -30,6 +30,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,22 +57,26 @@ fun ReaderSettingsDialog(
     onDismiss: () -> Unit,
     onResetPreferences: () -> Unit = {},
     leadingSettings: @Composable () -> Unit = {},
-    extraSettings: @Composable () -> Unit = {}
+    extraSettings: @Composable () -> Unit = {},
+    qualitySettings: @Composable () -> Unit = {}
 ) {
+    var section by remember { mutableStateOf<ReaderSettingsPage?>(null) }
     if (LocalRouteActive.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                "本漫画的阅读设置",
+                section?.title ?: "阅读设置",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
         },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            CompositionLocalProvider(LocalReaderSettingsNavigation provides { section = it }) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (section != null) section!!.content() else {
                 leadingSettings()
                 Text(
-                    "仅修改本漫画。",
+                    "显示方式",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -116,25 +123,22 @@ fun ReaderSettingsDialog(
                         )
                     }
                 }
+                TextButton(onClick = onResetPreferences) { Text("重置显示设置") }
+                qualitySettings()
                 extraSettings()
+                }
+            }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = { if (section == null) onDismiss() else section = null }) {
                 Text(
-                    "确定",
+                    if (section == null) "完成" else "返回",
                     color = MaterialTheme.colorScheme.primary
                 )
             }
         },
-        dismissButton = {
-            TextButton(onClick = onResetPreferences) {
-                Text(
-                    "恢复默认值",
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
+
     )
 }
 

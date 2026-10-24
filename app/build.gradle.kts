@@ -59,24 +59,24 @@ abstract class PrepareReaderSrAssets @javax.inject.Inject constructor(
         check(bundle.resolve("jniLibs/arm64-v8a/libcopymanga_sr.so").isFile) { "Build the Android arm64 native bundle first" }
         files.sync {
             from(bundle.resolve("resources")) {
-                include("reader-sr/models/**", "reader-sr/NOTICE.txt", "reader-sr/android-*/**")
+                include("reader-sr/NOTICE.txt", "reader-sr/android-*/**")
             }
             into(outputDirectory)
         }
     }
 }
-val readerSrAssets = providers.gradleProperty("readerSrBundle").orNull?.let { bundle ->
+val readerSrBundleDirectory = rootProject.extra["readerSrBundleDirectory"] as File
+val readerSrAssets = run {
     tasks.register<PrepareReaderSrAssets>("prepareReaderSrAssets") {
-        bundleDirectory.set(file(bundle))
+        dependsOn(rootProject.tasks.named("prepareReaderSrAndroid"))
+        bundleDirectory.set(readerSrBundleDirectory)
         outputDirectory.set(layout.buildDirectory.dir("generated/readerSrAssets"))
     }
 }
 
 android {
     // Explicit source-built bundle. No runtime download and no implicit native build in Gradle.
-    providers.gradleProperty("readerSrBundle").orNull?.let { bundle ->
-        sourceSets.getByName("main").jniLibs.srcDir("$bundle/jniLibs")
-    }
+    sourceSets.getByName("main").jniLibs.srcDir(readerSrBundleDirectory.resolve("jniLibs"))
     packaging.jniLibs.useLegacyPackaging = true
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
@@ -144,7 +144,7 @@ android {
 }
 
 androidComponents.onVariants { variant ->
-    readerSrAssets?.let { task -> variant.sources.assets?.addGeneratedSourceDirectory(task) { it.outputDirectory } }
+    variant.sources.assets?.addGeneratedSourceDirectory(readerSrAssets) { it.outputDirectory }
 }
 
 androidComponents {
@@ -204,4 +204,8 @@ dependencies {
     // Compose 预览工具
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+}
+
+tasks.matching { it.name.matches(Regex("merge.*JniLibFolders")) }.configureEach {
+    dependsOn(rootProject.tasks.named("prepareReaderSrAndroid"))
 }

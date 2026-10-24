@@ -1,59 +1,86 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 
+internal fun readerLayoutStatus(mode: String, active: Boolean, continuous: Boolean): String = when {
+    continuous -> "连续阅读使用单页"
+    mode == "SINGLE" -> "当前使用单页"
+    mode == "AUTO" && active -> "当前使用双页 · 随窗口调整"
+    mode == "AUTO" -> "当前使用单页 · 窗口较宽时显示双页"
+    active -> "当前使用双页"
+    else -> "当前使用单页 · 横向宽屏可显示双页"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderSpreadOptions(
     tools: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
-    chapter: String?, page: Int, count: Int, spreadActive: Boolean, continuous: Boolean
+    chapter: String?, page: Int, count: Int, spreadActive: Boolean, continuous: Boolean,
+    pageLayout: String, onPageLayoutChange: (String) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Text("页面布局（全局）", style = MaterialTheme.typography.titleSmall)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val navigate = LocalReaderSettingsNavigation.current
+    Text("页面布局", style = MaterialTheme.typography.titleSmall)
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("SINGLE" to "单页", "DOUBLE" to "双页", "AUTO" to "自动").forEach { (mode, label) ->
-            FilterChip(selected = tools.pageLayout == mode,
-                onClick = { onChange { it.copy(pageLayout = mode) } }, label = { Text(label) })
+            FilterChip(selected = pageLayout == mode, onClick = { onPageLayoutChange(mode) }, label = { Text(label) }, modifier = Modifier.weight(1f))
         }
     }
-    Text(if (continuous) "纵向连续阅读使用单页；横向阅读应用此选择。"
-        else if (spreadActive) "当前：双页 · 封面与完整横图单独显示"
-        else "当前：单页" + if (tools.pageLayout != "SINGLE") " · 窄屏或竖屏暂时收起双页" else "",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    ReaderSettingSwitch("翻页动画（全局）", tools.pageAnimation) { value -> onChange { it.copy(pageAnimation = value) } }
-    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起配页与操作说明" else "调整本章配页 · 操作说明") }
-    if (expanded) {
-        var input by remember(chapter, page) { mutableStateOf((page + 1).toString()) }
-        val target = input.toIntOrNull()?.minus(1)
-        OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
-            label = { Text("从原图第几页开始配对") }, modifier = Modifier.fillMaxWidth())
-        TextButton(enabled = chapter != null && target != null && target in 0 until (count - 1), onClick = {
-            val key = chapter ?: return@TextButton
-            val start = target ?: return@TextButton
-            onChange { it.copy(pairingRestarts = it.pairingRestarts + (key to (it.pairingRestarts[key].orEmpty() + start).distinct().sorted())) }
-        }) { Text("从此页重新配对") }
-        Text("作用于本章此页起的后续页面；可再次添加位置修正广告或缺页。完整横图仍独占一屏。",
-            style = MaterialTheme.typography.bodySmall)
-        tools.pairingRestarts[chapter].orEmpty().forEach { start ->
+    Text(readerLayoutStatus(pageLayout, spreadActive, continuous), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val boundaries = tools.pairingRestarts[chapter].orEmpty()
+    TextButton(enabled = !chapter.isNullOrBlank(), onClick = {
+        navigate(ReaderSettingsPage("本章配页") { ReaderPairingEditor(tools, onChange, chapter, page, count) { navigate(null) } })
+    }) { Text("本章配页 · " + if (boundaries.isEmpty()) "默认配页" else "已调整 ${boundaries.size} 处") }
+    Text("默认封面单独显示，横图保持完整", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+}
+
+internal fun validPairingInput(input: String, count: Int): Int? = input.toIntOrNull()?.minus(1)?.takeIf { it in 0 until (count - 1) }
+
+@Composable
+private fun ReaderPairingEditor(tools: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
+    chapter: String?, page: Int, count: Int, done: () -> Unit) {
+    if (chapter.isNullOrBlank() || count < 2) { Text("本章没有可调整的配页"); return }
+    var input by remember(chapter, page) { mutableStateOf((page + 1).toString()) }
+    val target = validPairingInput(input, count)
+    val boundaries = tools.pairingRestarts[chapter].orEmpty()
+    val duplicate = target in boundaries
+    Text("从指定页重新两两配对，横图保持完整。", style = MaterialTheme.typography.bodySmall)
+    OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
+        label = { Text("起始页") }, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = target == null,
+        supportingText = { if (target == null) Text("请输入 1–${count - 1} 的页码") else if (duplicate) Text("此处已调整") })
+    TextButton(enabled = target != null && !duplicate, onClick = {
+        val start = target ?: return@TextButton
+        onChange { it.copy(pairingRestarts = it.pairingRestarts + (chapter to (it.pairingRestarts[chapter].orEmpty() + start).distinct().sorted())) }
+        done()
+    }) { Text("应用配页") }
+    boundaries.forEach { start ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("从第 ${start + 1} 页起")
             TextButton(onClick = { onChange { current ->
                 val remaining = current.pairingRestarts[chapter].orEmpty() - start
-                current.copy(pairingRestarts = if (remaining.isEmpty()) current.pairingRestarts - chapter.orEmpty()
-                    else current.pairingRestarts + (chapter.orEmpty() to remaining))
-            } }) { Text("第 ${start + 1} 页起 · 移除此调整") }
+                current.copy(pairingRestarts = if (remaining.isEmpty()) current.pairingRestarts - chapter else current.pairingRestarts + (chapter to remaining))
+            }; done() }) { Text("移除") }
         }
-        TextButton(enabled = tools.pairingRestarts[chapter].orEmpty().isNotEmpty(), onClick = {
-            onChange { it.copy(pairingRestarts = it.pairingRestarts - chapter.orEmpty()) }
-        }) { Text("恢复本章默认配页") }
-        Text("""双击放大／复原，双指缩放，放大后拖动平移。复原后滑动或点击左右 15% 区域翻页。
-←／→ 跟随阅读方向；PageUp／PageDown 上／下一组；空格下一组，Shift＋空格上一组。
-＋／－ 缩放，0 复原；放大时方向键与滚轮平移，Ctrl＋滚轮以指针为中心缩放。输入框中不响应阅读快捷键。""",
-            style = MaterialTheme.typography.bodySmall)
     }
-    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+    TextButton(enabled = boundaries.isNotEmpty(), onClick = { onChange { it.copy(pairingRestarts = it.pairingRestarts - chapter) }; done() }) { Text("恢复默认配页") }
+}
+
+@Composable
+internal fun ReaderOperationHelp() {
+    val navigate = LocalReaderSettingsNavigation.current
+    TextButton(onClick = { navigate(ReaderSettingsPage("阅读操作") {
+        Text("触控", style = MaterialTheme.typography.titleSmall)
+        Text("轻点两侧或滑动翻页；双击缩放，放大后拖动。双指可缩放，复原后点击左右 15% 区域翻页。")
+        Text("键盘与鼠标", style = MaterialTheme.typography.titleSmall)
+        Text("方向键随阅读方向翻页；PageUp / PageDown 上一组、下一组；空格下一组，Shift＋空格上一组。")
+        Text("＋／－缩放，0 复原。放大后方向键、滚轮平移；Ctrl＋滚轮以指针为中心缩放。输入框中不响应阅读快捷键。")
+    }) }) { Text("阅读操作") }
 }

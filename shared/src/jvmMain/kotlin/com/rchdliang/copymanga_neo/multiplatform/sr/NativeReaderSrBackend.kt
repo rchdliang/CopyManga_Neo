@@ -26,7 +26,9 @@ internal class SrBundle(
     private val cache: File,
     private val asset: (String) -> InputStream?,
     private val installedRuntime: File? = null,
+    modelDirectory: File = File(cache, "reader-sr-models/cunet-20250915"),
 ) {
+    val models = SrModelStore(modelDirectory)
     private val manifest = asset("reader-sr/$platform/manifest.properties")?.use {
         Properties().apply { load(ByteArrayInputStream(it.readLimited(8192))) }
     }
@@ -43,17 +45,14 @@ internal class SrBundle(
             m.getProperty("modelSha256") == ReaderSrModel.weights && m.getProperty("paramSha256") == ReaderSrModel.graph)
         require(asset("reader-sr/NOTICE.txt")?.use { it.readLimited(256*1024).isNotEmpty() } == true) { "缺少模型许可清单" }
         root.mkdirs()
-        val models = File(root, "models").apply { mkdirs() }
-        for ((name, hash) in listOf("scale2.0x_model.bin" to ReaderSrModel.weights, "scale2.0x_model.param" to ReaderSrModel.graph)) {
-            install("reader-sr/models/$name", File(models, name), hash, 4*1024*1024)
-        }
+        val modelFiles = models.requireReady()
         val hash = m.getProperty("runtimeSha256").also { require(it?.matches(Regex("[0-9a-f]{64}")) == true) }
         val runtime = installedRuntime ?: File(root, if (platform.startsWith("windows")) "copymanga-sr.exe" else "copymanga-sr")
         if (installedRuntime == null) {
             install("reader-sr/$platform/${runtime.name}", runtime, hash, 64*1024*1024)
             check(runtime.setExecutable(true, true) || runtime.canExecute()) { "超分运行时无法执行" }
         } else require(runtime.isFile && runtime.sha256() == hash) { "超分运行时校验失败" }
-        return models to runtime
+        return modelFiles to runtime
     }
     private fun install(resource: String, output: File, hash: String, limit: Int) {
         if (output.isFile && output.length() <= limit && output.sha256() == hash) return
@@ -74,6 +73,9 @@ internal class NativeReaderSrBackend(
     private val workerFactory: (File) -> SrWorker,
     override val budgetBytes: Long = 192L*1024*1024,
 ) : ReaderSrPlatform {
+    override val models: ReaderSrModels = object : ReaderSrModels by bundle.models {
+        override suspend fun delete() = gate.withLock { bundle.models.delete() }
+    }
     override val unavailableReason get() = bundle.unavailable ?: if (budgetBytes <= workingBytes) "当前可用内存不足，保留原图" else null
     override val workingBytes = 96L*1024*1024
     override val detail = MutableStateFlow("等待当前页原图加载；GPU 使用前将自检")

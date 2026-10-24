@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import org.jetbrains.skia.ImageFilter
@@ -21,17 +22,18 @@ internal fun createReaderSharpenFilter(amount: Float): ImageFilter =
     }
 
 @Composable
-internal actual fun Modifier.readerSharpen(strength: Float): Modifier {
+internal actual fun Modifier.readerSharpen(strength: Float, pageKey: String): Modifier {
     val amount = normalizedReaderSharpness(strength)
+    val report = LocalReaderSharpenStatus.current
     if (amount == 0f) return this
     val filter = remember(amount) {
         try { createReaderSharpenFilter(amount) }
         catch (_: IllegalArgumentException) { null }
         catch (_: IllegalStateException) { null }
-    } ?: return this
+    } ?: run { SideEffect { report?.invoke(pageKey, false) }; return this }
     DisposableEffect(filter) { onDispose { filter.close() } }
     val effect = remember(filter) { filter.asComposeRenderEffect() }
-    return graphicsLayer {
+    return this.then(Modifier.onSizeChanged { report?.invoke(pageKey, readerSharpenSurfaceAllowed(it.width, it.height)) }).graphicsLayer {
         renderEffect = if (readerSharpenSurfaceAllowed(size.width.toInt(), size.height.toInt())) effect else null
     }
 }
@@ -62,3 +64,6 @@ half4 main(float2 p) {
     return half4(clamp(c.rgb + half3(delta), half3(0), half3(c.a)), c.a);
 }
 """
+
+@Composable
+internal actual fun readerSharpnessAvailable(): Boolean = true

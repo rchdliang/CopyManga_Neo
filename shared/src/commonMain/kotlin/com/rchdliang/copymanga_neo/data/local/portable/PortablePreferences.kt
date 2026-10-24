@@ -106,7 +106,7 @@ class PortableReaderPreferences(storage: DocumentStorage) : ReaderPreferencesRep
         })
     }
     override suspend fun resetGlobal() = document.update { it.copy(global = ReaderPreferences()) }
-    override suspend fun resetComic(comicPathWord: String) = document.update { it.copy(comics = it.comics - comicPathWord) }
+    override suspend fun resetComic(comicPathWord: String) = document.update { it.copy(comics = it.comics + (comicPathWord to it.global.copy(pageLayout = "SINGLE"))) }
 }
 
 class PortableNovelPreferences(storage: DocumentStorage) : NovelReaderPreferencesRepository {

@@ -8,7 +8,26 @@ data class SrPage(val id: String, val source: String)
 data class SrUserSettings(val enabled: Boolean = false,
     val mode: SrExecutionMode = SrExecutionMode.AUTO, val cpuFallback: Boolean = true)
 
+sealed interface SrModelState {
+    data object Missing : SrModelState
+    data object Cancelled : SrModelState
+    data object Preparing : SrModelState
+    data object Ready : SrModelState
+    data class Downloading(val bytes: Long, val total: Long) : SrModelState
+    data class Failed(val message: String) : SrModelState
+}
+interface ReaderSrModels {
+    val state: StateFlow<SrModelState>
+    val downloadBytes: Long
+    suspend fun refresh()
+    fun startDownload()
+    fun cancelDownload()
+    suspend fun download()
+    suspend fun delete()
+}
+
 interface ReaderSrPlatform : ReaderSrBackend {
+    val models: ReaderSrModels? get() = null
     val budgetBytes: Long
     val detail: StateFlow<String>
     suspend fun source(page: SrPage): SrSource
@@ -29,14 +48,16 @@ class ReaderSrSession(scope: CoroutineScope, private val platform: ReaderSrPlatf
     private val coordinator = ReaderSrCoordinator(scope, platform, pixelBufferBudget = platform.budgetBytes, timeoutMillis = 60_000)
     private val request = MutableStateFlow<SrRequest?>(null)
     private val preparation = MutableStateFlow<String?>(null)
+    val models = platform.models
     val detail = platform.detail
+    private val modelRefresh = scope.launch { models?.refresh() }
     val unavailableReason get() = platform.unavailableReason
     val display: StateFlow<Pair<String, SrStatus>?> = combine(request, coordinator.states) { current, states ->
         current?.let { it.source.scope to (states[it.cacheKey] ?: SrStatus.Original) }
     }.stateIn(scope, SharingStarted.Eagerly, null)
     val preparationMessage: StateFlow<String?> = preparation.asStateFlow()
     private val worker = scope.launch {
-        combine(settings, selected, ready) { settings, page, ready -> Triple(settings, page, page?.let { ready[it.id] }) }
+        combine(settings, selected, ready, models?.state ?: MutableStateFlow<SrModelState>(SrModelState.Ready)) { settings, page, ready, model -> Triple(settings.copy(enabled = settings.enabled && model == SrModelState.Ready), page, page?.let { ready[it.id] }) }
             .distinctUntilChanged().collectLatest { (settings, page, revision) ->
                 coordinator.submit(null); request.value = null; preparation.value = null
                 if (!settings.enabled || page == null || revision == null) return@collectLatest
@@ -54,5 +75,5 @@ class ReaderSrSession(scope: CoroutineScope, private val platform: ReaderSrPlatf
     }
     fun select(page: SrPage?) { selected.value = page }
     fun originalReady(id: String, revision: Int = 0) { ready.value = (ready.value.toList().filterNot { it.first == id }.takeLast(2) + (id to revision)).toMap() }
-    fun close() { worker.cancel(); coordinator.close(); request.value = null; ready.value = emptyMap() }
+    fun close() { modelRefresh.cancel(); worker.cancel(); coordinator.close(); request.value = null; ready.value = emptyMap() }
 }

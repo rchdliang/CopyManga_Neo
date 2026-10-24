@@ -229,7 +229,8 @@ fun ReaderScreen(
                 pendingInitialChapter = pendingInitialChapter,
                 activeChapterUuid = state.chapterUuid,
                 sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
-                tools = tools, onToolsChange = viewModel::updateTools,
+                tools = tools.copy(pageLayout = preferences?.pageLayout ?: "SINGLE"), onToolsChange = viewModel::updateTools,
+                onPageLayoutChange = viewModel::setPageLayout,
                 commentsAllowed = commentsAllowed, closedChapters = closedChapters,
                 commentRefreshVersion = commentRefreshVersion,
                 onCloseComments = viewModel::closeChapterComments,
@@ -274,6 +275,7 @@ fun ReaderSuccessContent(
     onRefresh: () -> Unit,
     onReadingDirectionChange: (String) -> Unit,
     onPageScaleChange: (String) -> Unit,
+    onPageLayoutChange: (String) -> Unit = {},
     onScreenOrientationChange: (String) -> Unit,
     pendingInitialPage: MutableState<Int?>,
     modifier: Modifier = Modifier,
@@ -459,6 +461,9 @@ fun ReaderSuccessContent(
         if (preview) SingletonImageLoader.get(context) else services!!.imageLoader(tools.imageTimeoutSeconds)
     }
     val pressedVolumeKeys = remember { mutableSetOf<Key>() }
+    val sharpenStatuses = remember { mutableStateMapOf<String, Boolean>() }
+    androidx.compose.runtime.SideEffect { sharpenStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { sharpenStatuses.remove(it) } }
+    val sharpness = tools.sharpness
     val srSession = rememberReaderSrSession(loader)
     val srLifecycle by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val srSinglePage = readerAllowsSuperResolution(isContinuous, spreads.getOrNull(pager.currentPage)?.indices?.size ?: 0)
@@ -863,6 +868,7 @@ fun ReaderSuccessContent(
             }
             .focusable()
     ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides sharpness, LocalReaderSharpenStatus provides { key, applied -> sharpenStatuses[key] = applied }) {
         ReaderContent(
             pages = pages, spreads = spreads,
             onDimensions = { key, width, height ->
@@ -904,6 +910,7 @@ fun ReaderSuccessContent(
                     commentsViewModel = services.inlineComments(comment.chapterUuid)
                 )
             })
+        }
         AnimatedVisibility(
             showControls,
             enter = fadeIn(),
@@ -959,6 +966,10 @@ fun ReaderSuccessContent(
         ) {
             ReaderBottomBar(
                 page?.imageCount ?: 0, sliderPreview,
+                visiblePageLabel = if (dragging) "跳至第 ${sliderPreview.roundToInt() + 1} 页" else if (!isContinuous) {
+                    val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
+                    readerPageRangeLabel(raw, page?.imageCount ?: 0)
+                } else null,
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false
@@ -1000,15 +1011,25 @@ fun ReaderSuccessContent(
         onDismiss = { showSettings = false },
         leadingSettings = {
             ReaderSpreadOptions(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0,
-                page?.imageCount ?: 0, spreadEnabled, isContinuous)
+                page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
+
+        },
+        qualitySettings = {
+            Text("画质增强", style = MaterialTheme.typography.titleSmall)
+            ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
+                onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
+                onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
+            }
+            val activeKeys = if (isContinuous) setOf(page?.key) else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
+            if (sharpness > 0f && activeKeys.any { sharpenStatuses[it] == false }) Text("当前部分图片使用原图（超出锐化表面预算或渲染不可用）", style = MaterialTheme.typography.bodySmall)
+            ReaderSuperResolutionOptions(srSession, srSinglePage)
+        },
+        extraSettings = {
             ReaderSettingSwitch("显示章节评论区（全局）", tools.inlineComments) { enabled ->
                 onToolsChange { it.copy(inlineComments = enabled) }
             }
-        },
-        extraSettings = {
             ReaderToolsOptions(tools, onToolsChange)
-            ReaderSuperResolutionOptions(srSession)
-            if (!srSinglePage) Text("双页暂用原图；单页可使用超分。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ReaderOperationHelp()
         })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,

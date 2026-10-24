@@ -12,13 +12,17 @@ data class ReaderToolsSettings(
     val preloadPages: Int = 2,
     val pageLayout: String = "SINGLE",
     val pageAnimation: Boolean = true,
-    val pairingRestarts: Map<String, List<Int>> = emptyMap()
+    val pairingRestarts: Map<String, List<Int>> = emptyMap(),
+    val sharpness: Float = 0f,
+    val sharpnessRestore: Float = 0.20f
 ) {
     fun normalized() = copy(
         autoIntervalSeconds = autoIntervalSeconds.coerceIn(2, 30),
         imageRetries = imageRetries.coerceIn(0, 3),
         imageTimeoutSeconds = imageTimeoutSeconds.coerceIn(5, 60),
         preloadPages = preloadPages.coerceIn(0, 3),
+        sharpnessRestore = if (sharpnessRestore.isFinite()) sharpnessRestore.coerceIn(0.01f, 0.35f) else 0.20f,
+        sharpness = if (sharpness.isFinite()) sharpness.coerceIn(0f, 0.35f) else 0f,
         pageLayout = pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: "SINGLE",
         pairingRestarts = pairingRestarts.mapValues { (_, pages) -> pages.filter { it >= 0 }.distinct().sorted() }.filterValues { it.isNotEmpty() }
     )

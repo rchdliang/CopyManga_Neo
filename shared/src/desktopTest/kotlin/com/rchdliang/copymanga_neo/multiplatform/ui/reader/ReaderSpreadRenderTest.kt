@@ -137,7 +137,7 @@ class ReaderSpreadRenderTest {
             MaterialTheme {
                 Surface {
                     Column(Modifier.padding(24.dp)) {
-                        ReaderSpreadOptions(ReaderToolsSettings(pageLayout = "AUTO"), {}, "c", 2, 20, true, false)
+                        ReaderSpreadOptions(ReaderToolsSettings(pageLayout = "AUTO"), {}, "c", 2, 20, true, false, "AUTO", {})
                     }
                 }
             }

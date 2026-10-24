@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
@@ -12,15 +13,16 @@ import androidx.compose.ui.platform.LocalView
 internal actual fun platformReaderSharpnessDefault(): Float = 0f
 
 @Composable
-internal actual fun Modifier.readerSharpen(strength: Float): Modifier {
+internal actual fun Modifier.readerSharpen(strength: Float, pageKey: String): Modifier {
     val amount = normalizedReaderSharpness(strength)
     if (amount == 0f || Build.VERSION.SDK_INT < 33 || !LocalView.current.isHardwareAccelerated) return this
-    return androidReaderSharpen(amount)
+    return androidReaderSharpen(amount, pageKey)
 }
 
 @RequiresApi(33)
 @Composable
-private fun Modifier.androidReaderSharpen(amount: Float): Modifier {
+private fun Modifier.androidReaderSharpen(amount: Float, pageKey: String): Modifier {
+    val report = LocalReaderSharpenStatus.current
     val effect = remember(amount) {
         try {
             val shader = RuntimeShader(READER_SHARPEN_SHADER)
@@ -28,8 +30,8 @@ private fun Modifier.androidReaderSharpen(amount: Float): Modifier {
             android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
         } catch (_: IllegalArgumentException) { null }
           catch (_: IllegalStateException) { null }
-    } ?: return this
-    return graphicsLayer {
+    } ?: run { SideEffect { report?.invoke(pageKey, false) }; return this }
+    return this.then(Modifier.onSizeChanged { report?.invoke(pageKey, readerSharpenSurfaceAllowed(it.width, it.height)) }).graphicsLayer {
         renderEffect = if (readerSharpenSurfaceAllowed(size.width.toInt(), size.height.toInt())) effect else null
     }
 }
@@ -60,3 +62,6 @@ half4 main(float2 p) {
     return half4(clamp(c.rgb + half3(delta), half3(0), half3(c.a)), c.a);
 }
 """
+
+@Composable
+internal actual fun readerSharpnessAvailable(): Boolean = android.os.Build.VERSION.SDK_INT >= 33 && androidx.compose.ui.platform.LocalView.current.isHardwareAccelerated

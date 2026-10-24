@@ -12,7 +12,13 @@ class NativeReaderSrTest {
     private val resources = javaClass.classLoader
     private val nativePlatform = if (System.getProperty("os.name").startsWith("Windows")) "windows-x64" else "linux-x64"
     private val root = File("build/sr-integration/中文 路径").apply { mkdirs() }
-    private fun bundle(cache: File) = SrBundle(nativePlatform, cache, { resources.getResourceAsStream(it) })
+    private fun bundle(cache: File): SrBundle {
+        val bundle = SrBundle(nativePlatform, cache, { resources.getResourceAsStream(it) })
+        // Explicit network integration, separate from inference: production never downloads without consent.
+        runBlocking { bundle.models.download() }
+        check(bundle.models.state.value == SrModelState.Ready)
+        return bundle
+    }
     private fun bytes(name: String) = resources.getResourceAsStream("sr/$name-source.png")!!.use { it.readBytes() }
     private fun request(source: SrSource, mode: SrExecutionMode = SrExecutionMode.CPU, fallback: Boolean = true) =
         SrRequest(source, ReaderSrModel.model, SrParameters(mode = mode, cpuFallback = fallback))
@@ -136,12 +142,11 @@ class NativeReaderSrTest {
         Unit
     }
 
-    @Test fun bundledAssetsMustMatchPinnedModelAndRuntimeDigests() {
+    @Test fun packageWithoutModelRequiresExplicitDownload() {
         assumeTrue(resources.getResource("reader-sr/$nativePlatform/manifest.properties") != null)
-        val corrupt = SrBundle(nativePlatform, File(root, "corrupt"), { name ->
-            if (name.endsWith("scale2.0x_model.bin")) byteArrayOf(1, 2, 3).inputStream()
-            else resources.getResourceAsStream(name)
-        })
-        assertFailsWith<IllegalArgumentException> { corrupt.prepare() }
+        assertNull(resources.getResource("reader-sr/models/scale2.0x_model.bin"))
+        val missing = SrBundle(nativePlatform, File(root, "missing-model"), { resources.getResourceAsStream(it) })
+        assertFailsWith<IllegalStateException> { missing.prepare() }
+
     }
 }

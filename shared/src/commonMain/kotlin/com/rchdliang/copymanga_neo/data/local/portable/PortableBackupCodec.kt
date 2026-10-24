@@ -62,10 +62,10 @@ object PortableBackupCodec {
     }
     fun tools(value: ReaderToolsSettings): JsonObject = buildJsonObject {
         put("inlineComments", value.inlineComments); put("continuousChapters", value.continuousChapters); put("volumeKeys", value.volumeKeys)
-        put("autoInterval", value.autoIntervalSeconds); put("imageRetries", value.imageRetries); put("imageTimeout", value.imageTimeoutSeconds); put("preload", value.preloadPages)
+        put("autoInterval", value.autoIntervalSeconds); put("imageRetries", value.imageRetries); put("imageTimeout", value.imageTimeoutSeconds); put("preload", value.preloadPages); put("sharpness", value.sharpness); put("sharpnessRestore", value.sharpnessRestore)
     }
     fun tools(value: JsonObject): ReaderToolsSettings = ReaderToolsSettings(value.boolean("inlineComments"), value.boolean("continuousChapters"), value.boolean("volumeKeys"),
-        value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).also { require(it == it.normalized()) }
+        value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).copy(sharpness = value["sharpness"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) { "备份锐化强度无效" } } ?: 0f, sharpnessRestore = value["sharpnessRestore"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) } ?: 0.20f).also { require(it == it.normalized()) }
     fun encode(value: SettingsBackup): String = buildJsonObject {
         put("format", "copymanga-neo-settings"); put("version", 2)
         put("settings", buildJsonObject {

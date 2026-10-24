@@ -628,6 +628,8 @@ class ReaderViewModel constructor(
         updatePreferences { it.copy(readingDirection = value) }
     }
 
+    fun setPageLayout(value: String) { updatePreferences { it.copy(pageLayout = value) } }
+
     fun setPageScale(value: String) {
         updatePreferences { it.copy(pageScale = value) }
     }

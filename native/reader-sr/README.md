@@ -1,3 +1,5 @@
+> 当前普通打包、按需模型与锐化入口以 [SR-BUILDING](../../docs/SR-BUILDING.md) 为准；以下保留原阶段记录。
+
 # CopyManga Neo：waifu2x 原生阅读器接入
 
 本阶段基于 CMP `098cb6b65005370edda90e86807712bfd85fc321`、前一原型 `07b7db8ff16558d14ba48712e91e5508923789a9`，独立分支 `prototype/cmp-native-sr`。既有解码、缩放、原图缓存与下载策略保留。真实 Linux CPU 推理已通过应用适配器；Android arm64 和 Windows x64 已构建，运行验证范围见 [验证记录](VALIDATION.md)。没有执行 GitHub Actions、推送、PR、合并或发布。

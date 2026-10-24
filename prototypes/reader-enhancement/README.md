@@ -1,3 +1,5 @@
+> 当前普通打包、按需模型与锐化入口以 [SR-BUILDING](../../docs/SR-BUILDING.md) 为准；以下保留原阶段记录。
+
 # CMP 阅读器增强独立原型
 
 **阶段更新：**真实 waifu2x 已接入 Android/桌面平台适配，Linux CPU 已出图；默认关闭。当前架构、构建和验证边界见 [native 接入说明](../../native/reader-sr/README.md)。以下保留 `07b7db8` 第一阶段评估记录，其中“尚未接入/后端不可用/CPU崩溃未解决”是历史状态，已由新阶段结果替代。

@@ -3,8 +3,11 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 
 /** Experimental, session-only. Zero adds no layer and leaves the existing image path untouched. */
+internal val LocalReaderSharpenStatus = staticCompositionLocalOf<((String, Boolean) -> Unit)?> { null }
+
 val LocalReaderSharpness = staticCompositionLocalOf { platformReaderSharpnessDefault() }
 
 internal fun normalizedReaderSharpness(value: Float): Float =
@@ -16,6 +19,30 @@ internal fun readerSharpenSurfaceAllowed(width: Int, height: Int): Boolean =
 
 internal expect fun platformReaderSharpnessDefault(): Float
 
+@Composable
+internal expect fun readerSharpnessAvailable(): Boolean
+
 /** Platform implementations operate on the rendered image only; never on comments or controls. */
 @Composable
-internal expect fun Modifier.readerSharpen(strength: Float): Modifier
+internal expect fun Modifier.readerSharpen(strength: Float, pageKey: String = ""): Modifier
+
+internal const val READER_SHARPNESS_MAX = 0.35f
+internal const val READER_SHARPNESS_DEFAULT = 0f
+internal const val READER_SHARPNESS_RESTORE = 0.20f
+
+@Composable
+internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
+    val available = readerSharpnessAvailable()
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        androidx.compose.material3.Text("锐化", androidx.compose.ui.Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = strength > 0f,
+            onCheckedChange = { onChange(if (it) restore else 0f) }, enabled = available, modifier = Modifier.testTag("reader-sharpen-switch"))
+    }
+    if (!available) androidx.compose.material3.Text("当前系统或渲染环境不支持锐化，显示原图")
+    else if (strength > 0f) {
+        androidx.compose.material3.Text("强度 ${(strength / READER_SHARPNESS_MAX * 100).toInt()}%")
+        androidx.compose.material3.Slider(value = strength, onValueChange = { onChange(normalizedReaderSharpness(it)) }, valueRange = 0f..READER_SHARPNESS_MAX, steps = 34)
+        androidx.compose.material3.TextButton(onClick = onReset) { androidx.compose.material3.Text("恢复默认") }
+        androidx.compose.material3.Text("设置自动保存；超大图像表面可能保留原图", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
+    }
+}

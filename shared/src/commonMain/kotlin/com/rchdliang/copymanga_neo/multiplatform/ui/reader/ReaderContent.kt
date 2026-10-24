@@ -363,7 +363,7 @@ internal fun ReaderImageItem(
                                             translationX = zoomState.offset.x
                                             translationY = zoomState.offset.y
                                         }
-                                        .readerSharpen(sharpness),
+                                        .readerSharpen(sharpness, srPageKey),
                                     contentScale = contentScale
                                 )
                             }
@@ -372,7 +372,7 @@ internal fun ReaderImageItem(
                             Image(
                                 painter = currentPainter,
                                 contentDescription = null,
-                                modifier = imageModifier.readerSharpen(sharpness),
+                                modifier = imageModifier.readerSharpen(sharpness, srPageKey),
                                 contentScale = contentScale
                             )
                         }
