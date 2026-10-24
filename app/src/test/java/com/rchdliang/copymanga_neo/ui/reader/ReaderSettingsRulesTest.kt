@@ -10,4 +10,16 @@ class ReaderSettingsRulesTest {
         assertEquals("连续阅读使用单页",readerLayoutStatus("DOUBLE",true,true))
         assertEquals("当前使用单页 · 窗口较宽时显示双页",readerLayoutStatus("AUTO",false,false))
     }
+    @Test fun backLeavesChildFirstAndHomeCanStillClose() {
+        for (page in listOf("本章配页", "阅读操作")) {
+            var child: String? = page
+            var dismisses = 0
+            val back = { readerSettingsBack(child != null, { child = null }, { dismisses++ }) }
+            back()
+            assertNull(child)
+            assertEquals(0, dismisses)
+            back()
+            assertEquals(1, dismisses)
+        }
+    }
 }
