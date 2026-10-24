@@ -1,6 +1,6 @@
 # 首发后的本地数据契约
 
-Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不再增加 migrationtest 后缀，显示名称为 `CopyManga_Neo`。原 Android 分支使用 `com.rchdliang.copymanga_neo.Android`，两个实现独立安装和存储；首发后保持这些安装标识稳定。
+Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不再增加 migrationtest 后缀，显示名称为 `CopyManga Neo`。原 Android 分支使用 `com.rchdliang.copymanga_neo.Android`，两个实现独立安装和存储；首发后保持这些安装标识稳定。
 
 普通文档由 DocumentStore 管理。公开后的磁盘格式为：
 
@@ -20,11 +20,11 @@ Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不�
 - 未发布的裸 payload 只做版本 0 → 1 的信封封装；不承诺维护历史开发格式。
 - 文档加载必须发生在消费者开始写入之前。跨文档操作需要恢复日志，不能把多个原子写当作一个事务。
 
-保留 DocumentMigrationTest 中的高版本、缺迁移、中断与原件保护检查，后续每个公开格式保存脱敏样本。敏感信息仍由系统 Keychain/Keystore/DPAPI/Secret Service 管理，不经过普通文档。
+保留 DocumentMigrationTest 中的高版本、缺迁移、中断与原件保护检查，后续每个公开格式保存脱敏样本。凭据与普通文档分开存放；平台实现及内存回退见下方说明。
 
 ## 用户数据备份与恢复
 
-轻量设置备份保持原有可互通格式。用户数据备份采用 `copymanga-neo-user-data` / version 1 / storage `portable-v1`，CMP Android、iOS、桌面共用。原 Android 分支的 `android-v1` 只能由原分支恢复。
+轻量设置备份使用 `copymanga-neo-settings` / version 2，可交换两分支共有字段，但不等于完整数据备份。当前 `PortableBackupCodec` 未导出/恢复逐漫画 `pageLayout`，也未保留翻页动画与配页边界；导入时这些值采用其默认值。需要保留这些设置时使用本分支的完整用户数据备份。用户数据备份采用 `copymanga-neo-user-data` / version 1 / storage `portable-v1`，CMP Android、iOS、桌面共用。原 Android 分支的 `android-v1` 只能由原分支恢复。
 
 白名单：应用设置、逐漫画阅读偏好、小说偏好、逐小说插图模糊、小说标注、本地历史/位置/书签、待同步进度、阅读工具和屏蔽标签。排除网络身份、登录凭据、下载内容/队列、导出任务及日志。个人数据包含账号标识和标注正文，应由用户妥善保管。
 
@@ -40,3 +40,32 @@ Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不�
 进程中断后的 applying 可以幂等重放。UserDataRestoreTest 检查中断、回滚、取消和提交标志；UserDataBackupTest 检查小说标注/偏好往返与凭据/下载排除。
 
 完整恢复不重新绑定设备凭据或文件选择器权限。iOS 重签名、更换签名账号、覆盖安装及系统恢复仍需真实设备验收。
+
+## 阅读设置与重置范围
+
+- `comic-reader-settings.json` 保存全局显示默认值与按漫画键保存的 `ReaderPreferences`。页面布局 `pageLayout` 默认 `SINGLE`；方向、缩放和屏幕方向与布局一起保存为漫画快照。修改 A 漫画不改 B 漫画；本轮不迁移旧全局布局，也没有冻结 seed 或自动清空数据。
+- “重置显示设置”写入当前全局方向/缩放/屏幕方向的快照，并明确将当前漫画布局设为 `SINGLE`；不删除条目，不清其他漫画、章节配页或全局工具。
+- `reader-tools.json` 保存全局翻页动画、音量键翻页、连续跨章、评论、自动阅读间隔及图片加载偏好。`pairingRestarts` 在其中按章节键保存排序去重后的原图索引边界；“恢复默认配页”只清当前章。遗留工具 `pageLayout` 字段不是当前布局 UI 的读写来源。
+- 锐化强度与重新开启时的恢复值也在 `reader-tools.json` 全局保存，默认关闭。AI 增强开关、处理方式、CPU 回退选择则属于当前阅读会话，重新进入阅读器使用默认关闭状态。
+- 原图锚点用于历史与书签，双页视觉位置不替代原图索引。当前 AI 页面身份、处理/渲染状态及实际显示回执仅在内存中存在，不写入历史或备份。
+
+对应源码：[`PortablePreferences.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortablePreferences.kt)、[`PortableReaderTools.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableReaderTools.kt)、[`PortableBackupCodec.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableBackupCodec.kt)、[`PortableUserDataBackup.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableUserDataBackup.kt)。完整用户数据备份包含上述漫画偏好和阅读工具文档；轻量导入的逐漫画回滚仅还原仍等于该次导入值的记录，保护导入后的用户编辑。
+
+## AI 模型、运行库与临时结果
+
+- 正常支持的 Android arm64 / Windows x64 安装包包含经校验的运行库与许可，模型不随包分发。用户确认后，从固定官方提交下载模型的两个文件，合计 2,783,649 字节；长度与 SHA-256 全部匹配后，暂存目录原子替换为完整版本目录。
+- Android 模型位于 `filesDir/reader-sr-models/cunet-20250915`，不会因清理普通图片缓存自动消失。桌面模型位于 `~/.cache/copymanga-neo/reader-sr-models/cunet-20250915`，可离线复用，但系统/用户清理此缓存目录后需要重新下载。
+- 下载按规范化目录去重，取消清理暂存文件；已确认下载由进程作用域托管，关闭设置页不自动取消。删除等待当前推理释放锁后执行，返回设置页不取消已确认删除；下载中只提供取消，不并发删除。
+- 运行库提取及推理临时文件使用版本化 `reader-sr-v1/<平台>/<运行库摘要>` 目录。原始输入/输出临时文件在任务结束时清理，不覆盖原图。增强结果缓存仅在阅读会话内存中，最多 3 项、合计 16 MiB，关闭会话时清除。
+- 模型、运行库提取缓存和增强结果不属于用户数据备份白名单。备份恢复不代表模型已安装，也不携带正在进行的下载/推理任务。
+
+对应源码：[`SrModelStore.kt`](shared/src/jvmMain/kotlin/com/rchdliang/copymanga_neo/multiplatform/sr/SrModelStore.kt)、[`NativeReaderSrBackend.kt`](shared/src/jvmMain/kotlin/com/rchdliang/copymanga_neo/multiplatform/sr/NativeReaderSrBackend.kt)、[`ReaderSrSession.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/domain/reading/ReaderSrSession.kt)、[`ReaderSuperResolution.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/domain/reading/ReaderSuperResolution.kt)。
+
+## 平台存储边界
+
+- Android：普通文档在 `filesDir/shared-data/settings`，下载等内容在 `filesDir/shared-data/content`，图片缓存另在 `cacheDir/shared-images`。凭据使用 Android Keystore 与 AES-GCM，密文在 `noBackupFilesDir/shared-credentials.bin`。
+- Windows：普通数据由桌面宿主的数据目录管理；凭据通过当前用户 DPAPI 加密后存盘。Linux 使用 Secret Service/libsecret，不以普通明文文件替代；安全存储工具不可用时，桌面宿主只保留本次会话的内存凭据并提示用户。
+- iOS：普通数据在 Application Support 下的 `CopyMangaNeo` 目录，凭据使用 Keychain。这里只说明实现，不代表已完成实机验证。
+- Web/Wasm：设置使用 local storage，二进制内容使用 IndexedDB；容量、清理与持久性受浏览器策略影响。凭据只在内存中保留到页面关闭，不承诺持久登录。
+
+对应入口：`shared/src/{androidMain,desktopMain,iosMain,wasmJsMain}/kotlin/com/rchdliang/copymanga_neo/multiplatform/app/` 下的平台 Graph，以及各平台的安全凭据适配器。维护计划调整不改变包名、文档身份或备份格式，也不触发自动清空、跨分支迁移或恢复。

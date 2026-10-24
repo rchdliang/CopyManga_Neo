@@ -18,7 +18,7 @@
 | 锐化 | Android 13 及以上、桌面 | 暂无 |
 | AI 增强（实验） | Android arm64、Windows x64 | 暂无 |
 
-两个 Android 应用使用不同包名，可以并存；应用数据分别保存，备份格式不能直接互导。iOS、Web/Wasm 及桌面平台的构建条件和系统能力差异见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)与[架构说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/ARCHITECTURE.md)。
+两个 Android 应用使用不同包名，可以并存；应用数据分别保存，完整用户数据备份不能直接互导；轻量设置备份的覆盖范围见各分支 [PERSISTENCE.md](PERSISTENCE.md)。iOS、Web/Wasm 及桌面平台的构建条件和系统能力差异见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)与[架构说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/ARCHITECTURE.md)。
 
 ### 各平台测试进度
 
@@ -48,6 +48,7 @@ Web/Wasm 的具体边界：
 - **图片与章节导出**：单张图片保存、分享，以及 ZIP/CBZ 章节导出。
 - **轻小说阅读**：分卷目录、滚动与分页阅读、单栏与双栏排版；字体、间距与主题设置；书签、文本标注、正文搜索、插图浏览和离线缓存。
 - **评论**：查看作品与章节评论。
+- **繁简转换**：使用 OpenCC 的 tw2s 词典将显示文字由繁体转换为简体，支持词典按需下载与更新。
 - **外观与数据管理**：浅色、深色和跟随系统主题，Android 动态配色；设置与阅读数据备份、导入和恢复。
 
 ### 画质增强（CMP）
@@ -60,7 +61,7 @@ AI 增强默认关闭，处理耗时和画质收益取决于设备与图片。�
 
 ## 界面截图
 
-以下为 CMP Android 平板实机界面，点击图片可查看大图。书架展示测试账号的空状态；截图仅裁切系统状态栏或设置弹窗区域并适度缩小，不改变页面内容。漫画封面及作品信息来自内容平台，版权归相关权利方所有。
+以下为 CMP Android 平板实机界面，点击图片可查看大图。截图仅裁切系统状态栏或设置弹窗区域并适度缩小，不改变页面内容。漫画、小说片段、封面及作品信息来自内容平台，版权归相关权利方所有；阅读画面仅用于展示客户端界面。
 
 <details open>
 <summary>浏览与发现：首页、搜索、探索、专题、详情</summary>
@@ -86,10 +87,23 @@ AI 增强默认关闭，处理耗时和画质收益取决于设备与图片。�
 <summary>书架与我的</summary>
 
 <table>
-  <tr><th>书架（测试账号空状态）</th><th>我的</th></tr>
+  <tr><th>书架</th><th>我的</th></tr>
   <tr>
-    <td><a href="screenshots/cmp/android-tablet-bookshelf.png"><img src="screenshots/cmp/android-tablet-bookshelf.png" width="480" alt="CMP Android 平板书架空状态"></a></td>
+    <td><a href="screenshots/cmp/android-tablet-bookshelf.png"><img src="screenshots/cmp/android-tablet-bookshelf.png" width="480" alt="CMP Android 平板书架与三部收藏漫画"></a></td>
     <td><a href="screenshots/cmp/android-tablet-profile.png"><img src="screenshots/cmp/android-tablet-profile.png" width="480" alt="CMP Android 平板我的页面"></a></td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary>漫画与轻小说阅读</summary>
+
+<table>
+  <tr><th>漫画双页阅读（展开工具栏）</th><th>轻小说阅读（展开快捷操作栏）</th></tr>
+  <tr>
+    <td><a href="screenshots/cmp/android-tablet-comic-reader.png"><img src="screenshots/cmp/android-tablet-comic-reader.png" width="480" alt="CMP Android 平板漫画双页阅读，顶部和底部工具栏已展开"></a></td>
+    <td><a href="screenshots/cmp/android-tablet-novel-reader.png"><img src="screenshots/cmp/android-tablet-novel-reader.png" width="480" alt="CMP Android 平板轻小说阅读，顶部和底部快捷操作栏已展开"></a></td>
   </tr>
 </table>
 
@@ -113,7 +127,7 @@ AI 增强默认关闭，处理耗时和画质收益取决于设备与图片。�
 
 从 [Releases](https://github.com/rchdliang/CopyManga_Neo/releases) 选择对应分支、平台和架构的安装包。Android 使用 APK；Windows 安装包及其他平台产物以对应版本实际提供的文件为准。
 
-目前已发布的 `v0.10.20` 为独立 Android 版本；本文包含 CMP 当前源码中的新增功能，不代表该旧版安装包已具备这些功能。开发构建与正式发布请以分支、提交号和发布说明区分。
+`v0.10.25` 定位为**尝鲜版 · 原生 Android**，仅提供旧原生 Android 安装包，不包含 CMP 版本。尝鲜版不会通过当前应用的稳定版更新检查推送，请从 Releases 页面手动选择；CMP 功能与平台产物以对应发布说明为准。
 
 Android 覆盖更新需要包名与签名一致。CMP 与独立 Android 不能相互覆盖更新；更新前可在应用内备份数据。
 
@@ -158,3 +172,6 @@ Release 构建需要本地 `keystore.properties` 和对应签名密钥库。SDK 
 本项目为 AI 辅助开发的个人学习和测试项目，与拷貝漫畫官方无关，不接受赞助。漫画及轻小说内容来自拷貝漫畫，版权归原作者及相关权利方所有。
 
 项目代码采用 [GNU General Public License v3.0](LICENSE)。第三方库、原生运行时和模型保留各自许可证。致谢 [fumiama/copymanga](https://github.com/fumiama/copymanga) 及项目使用的开源组件。
+
+- [OpenCC](https://github.com/BYVoid/OpenCC)：繁简转换使用其 tw2s 词典数据，转换逻辑由本项目实现。词典与上游项目采用 [Apache License 2.0](https://github.com/BYVoid/OpenCC/blob/master/LICENSE)，相关许可随应用保留。
+- [Kixyu Book](https://github.com/kkyu9527/kixyubook)（kkyu9527）：轻小说阅读器的分页、目录快速滚动及文本选择菜单部分代码改编自该项目，采用 [MIT License](https://github.com/kkyu9527/kixyubook/blob/main/LICENSE)。原版权与许可声明保留在源码及随包许可证中。
