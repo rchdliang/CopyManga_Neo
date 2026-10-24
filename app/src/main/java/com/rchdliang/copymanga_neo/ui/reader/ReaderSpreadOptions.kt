@@ -3,6 +3,9 @@ package com.rchdliang.copymanga_neo.ui.reader
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ViewWeek
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -25,8 +28,8 @@ internal fun ReaderSpreadOptions(
     chapter: String?, page: Int, count: Int, spreadActive: Boolean, continuous: Boolean,
     pageLayout: String, onPageLayoutChange: (String) -> Unit
 ) {
-    ReaderSingleChoice("页面布局", pageLayout, listOf("SINGLE", "DOUBLE", "AUTO"),
-        { when(it) { "DOUBLE" -> "双页"; "AUTO" -> "自动"; else -> "单页" } }, onPageLayoutChange)
+    ReaderInlineChoice(Icons.Outlined.ViewWeek, "页面布局", pageLayout, listOf("SINGLE", "DOUBLE", "AUTO"),
+        { when(it) { "DOUBLE" -> "双页"; "AUTO" -> "自动"; else -> "单页" } }, onSelect = onPageLayoutChange)
 }
 
 @Composable
@@ -34,7 +37,7 @@ internal fun ReaderPairingOption(tools: ReaderToolsSettings, onChange: ((ReaderT
     chapter: String?, page: Int, count: Int) {
     val navigate = LocalReaderSettingsNavigation.current
     val currentTools by rememberUpdatedState(tools)
-    ReaderSettingsLink("本章配页", index = 0, count = 2, enabled = !chapter.isNullOrBlank()) {
+    ReaderSettingsLink(Icons.Outlined.ViewWeek, "本章配页", index = 0, count = 2, enabled = !chapter.isNullOrBlank()) {
         navigate(ReaderSettingsPage("本章配页") { ReaderPairingEditor(currentTools, onChange, chapter, page, count) { navigate(null) } })
     }
 }
@@ -74,7 +77,7 @@ internal fun ReaderPairingEditor(tools: ReaderToolsSettings, onChange: ((ReaderT
 @Composable
 internal fun ReaderOperationHelp() {
     val navigate = LocalReaderSettingsNavigation.current
-    ReaderSettingsLink("操作说明", index = 1, count = 2, onClick = { navigate(ReaderSettingsPage("操作说明") {
+    ReaderSettingsLink(Icons.Outlined.HelpOutline, "操作说明", index = 1, count = 2, onClick = { navigate(ReaderSettingsPage("操作说明") {
         Text("触控", style = MaterialTheme.typography.titleSmall)
         Text("轻点两侧或滑动翻页；双击缩放，放大后拖动。双指可缩放，复原后点击左右 15% 区域翻页。")
         Text("键盘与鼠标", style = MaterialTheme.typography.titleSmall)
