@@ -33,7 +33,7 @@ internal fun ReaderSpreadContent(
 ) {
     val scope = rememberCoroutineScope()
     val zooms = remember { mutableMapOf<String, ReaderZoomState>() }
-    fun groupKey(group: ReaderSpread) = group.indices.joinToString("|") { pages[it].key }
+    fun groupKey(group: ReaderSpread) = group.key(pages)
     val current = spreads.getOrNull(pager.currentPage) ?: return
     val activeKey = groupKey(current)
     val zoom = zooms.getOrPut(activeKey) { ReaderZoomState() }
