@@ -333,6 +333,112 @@ class PortableAppGraphTest {
         } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
     }
 
+
+    @Test fun failedAdjacentDoesNotRetryWhenOtherEdgeIsTrimmed() = runTest {
+        val root = Files.createTempDirectory("reader-failed-edge-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val r = graph.repositories
+        val requests = mutableListOf<String>()
+        var fail = true
+        val manga = object : MangaRepository by r.manga {
+            override suspend fun getChapterContent(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterContent> {
+                requests += chapterUuid
+                if (chapterUuid == "4" && fail) return Result.failure(IllegalStateException("offline"))
+                val n = chapterUuid.toInt()
+                return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
+            }
+        }
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        suspend fun contains(id: String) { model.uiState.first { it is ReaderUiState.Success && it.chapters.any { c -> c.uuid == id } } }
+        try {
+            r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
+            model.loadChapter("book", "1"); contains("1")
+            model.appendNextChapter(); contains("2")
+            model.appendNextChapter(); contains("3")
+            model.appendNextChapter()
+            model.toastMessage.first { it != null }
+            model.activateChapter("3"); model.retainWindow("3")
+            repeat(20) { model.appendNextChapter(); runCurrent() }
+            assertEquals(1, requests.count { it == "4" })
+            assertEquals(listOf("2", "3"), assertIs<ReaderUiState.Success>(model.uiState.value).chapters.map { it.uuid })
+            fail = false
+            model.appendNextChapter(retry = true); contains("4")
+            assertEquals(2, requests.count { it == "4" })
+        } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun throttledAdjacentPausesBothAutomaticEdgesAndKeepsCurrentChapterRetryable() = runTest {
+        val root = Files.createTempDirectory("reader-throttled-edge-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val r = graph.repositories
+        val requests = mutableListOf<String>()
+        var throttled = true
+        val manga = object : MangaRepository by r.manga {
+            override suspend fun getChapterContent(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterContent> {
+                requests += chapterUuid
+                if (chapterUuid == "3" && throttled) return Result.failure(
+                    com.rchdliang.copymanga_neo.domain.repository.RiskControlException("Request was throttled"))
+                val n = chapterUuid.toInt()
+                return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
+            }
+        }
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        try {
+            r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
+            model.loadChapter("book", "2")
+            model.uiState.first { it is ReaderUiState.Success }
+            model.appendNextChapter()
+            model.toastMessage.first { it?.contains("210") == true }
+            repeat(20) { model.appendNextChapter(); model.prependPreviousChapter(); model.retainWindow("2"); runCurrent() }
+            assertEquals(listOf("2", "3"), requests)
+            val current = assertIs<ReaderUiState.Success>(model.uiState.value)
+            assertEquals("2", current.chapterUuid)
+            assertEquals("3", current.content.nextUuid)
+            assertEquals("1", current.content.prevUuid)
+            assertTrue(model.toastMessage.value!!.contains("暂停自动加载"))
+            // 模拟冷却后由用户手动重试；不修改真实网络风控设置。
+            throttled = false
+            model.appendNextChapter(retry = true)
+            model.uiState.first { it is ReaderUiState.Success && it.chapters.any { c -> c.uuid == "3" } }
+            assertEquals(2, requests.count { it == "3" })
+        } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun bothAdjacentRequestsDeduplicateAndLateResponsesCannotChangeExplicitJump() = runTest {
+        val root = Files.createTempDirectory("reader-bidirectional-race-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val r = graph.repositories
+        val requests = mutableListOf<String>()
+        val release = CompletableDeferred<Unit>()
+        val bothStarted = CompletableDeferred<Unit>()
+        val manga = object : MangaRepository by r.manga {
+            override suspend fun getChapterContent(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterContent> {
+                requests += chapterUuid
+                if (chapterUuid in setOf("1", "3")) {
+                    if (requests.containsAll(listOf("1", "3"))) bothStarted.complete(Unit)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                }
+                val n = chapterUuid.toInt()
+                return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
+            }
+        }
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        try {
+            r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
+            model.loadChapter("book", "2"); model.uiState.first { it is ReaderUiState.Success }
+            repeat(20) { model.appendNextChapter(); model.prependPreviousChapter() }
+            bothStarted.await()
+            assertEquals(1, requests.count { it == "1" }); assertEquals(1, requests.count { it == "3" })
+            model.loadChapter("book", "7")
+            model.uiState.first { it is ReaderUiState.Success && it.chapterUuid == "7" }
+            release.complete(Unit); advanceUntilIdle()
+            assertEquals(listOf("7"), assertIs<ReaderUiState.Success>(model.uiState.value).chapters.map { it.uuid })
+        } finally { release.complete(Unit); model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
+
     private fun services(root: Path) = PortableAppServices(
         documents = platformDocumentStorage(root.resolve("settings").toString()),
         cache = platformCacheStorage(root.resolve("cache").toString()),

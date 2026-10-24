@@ -14,6 +14,7 @@ import com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReaderPreferencesRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineStart
@@ -119,6 +120,7 @@ class ReaderViewModel constructor(
     private val navigationJobs = mutableMapOf<String, Job>()
     private var policyJob: Job? = null
     private var attemptedNext: String? = null
+    private var automaticAdjacentPaused = false
     private var sessionRevision = 0L
     private val mutableCatalog = MutableStateFlow(ReaderCatalogUiState())
     val catalog = mutableCatalog.asStateFlow()
@@ -261,6 +263,7 @@ class ReaderViewModel constructor(
         }
         mutableAppending.value = false
         attemptedNext = null
+        automaticAdjacentPaused = false
         val revision = sessionRevision
 
         loadJob?.cancel()
@@ -423,6 +426,7 @@ class ReaderViewModel constructor(
 
     /** 两侧最多各一个请求；迟到结果只允许追加到请求时的边界。 */
     private fun loadAdjacent(previous: Boolean, retry: Boolean) {
+        if (automaticAdjacentPaused && !retry) return
         if (!tools.settings.value.continuousChapters || chain.size >= ReaderWindowPolicy.MAX_RESIDENT_CHAPTERS) return
         if ((if (previous) prependJob else appendJob)?.isActive == true) return
         val boundary = (if (previous) chain.firstOrNull() else chain.lastOrNull()) ?: return
@@ -445,6 +449,7 @@ class ReaderViewModel constructor(
                     onSuccess = { content ->
                         val edge = if (previous) chain.firstOrNull() else chain.lastOrNull()
                         if (content.imageUrls.isEmpty() || edge?.uuid != boundary.uuid || chain.any { it.uuid == next }) return@fold
+                        if (retry) automaticAdjacentPaused = false
                         if (chain.size >= ReaderWindowPolicy.MAX_RESIDENT_CHAPTERS) {
                             if (previous) attemptedPrevious = null else attemptedNext = null
                             return@fold
@@ -456,13 +461,13 @@ class ReaderViewModel constructor(
                         _uiState.value = ReaderUiState.Success(active.content, active.uuid, chain)
                         if (downloaded?.comicPathWord == comic) refreshDownloadedNavigation(comic, next, group, revision)
                     },
-                    onFailure = { _toastMessage.value = if (previous) "上一章未加载，可用上一章按钮重试" else "下一章未加载，可在章末重试" }
+                    onFailure = { adjacentFailed(previous, it) }
                 )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 UiLog.w("ReaderViewModel", "相邻章节加载失败", error)
-                if (revision == sessionRevision) _toastMessage.value = "相邻章节加载失败，请重试"
+                if (revision == sessionRevision) adjacentFailed(previous, error)
             } finally {
                 val job = coroutineContext[Job]
                 if (previous && prependJob === job) { prependJob = null; prependBoundary = null }
@@ -473,11 +478,23 @@ class ReaderViewModel constructor(
         request.start()
     }
 
+    private fun adjacentFailed(previous: Boolean, error: Throwable) {
+        if (error is CancellationException) throw error
+        if (error is RiskControlException) {
+            automaticAdjacentPaused = true
+            _toastMessage.value = "请求过于频繁（210），已暂停自动加载，稍后手动重试"
+        } else {
+            _toastMessage.value = if (previous) "上一章加载失败，可用上一章按钮重试" else "下一章加载失败，可在章末重试"
+        }
+    }
+
     /** 界面停稳并保存锚点后才能裁剪，不能在拖动中改变页面下标。 */
     fun retainWindow(uuid: String) {
         if (uuid != currentChapterUuid) return
         val retained = ReaderWindowPolicy.around(chain, uuid) { it.uuid }
         if (retained == chain) return
+        val oldHead = chain.firstOrNull()?.uuid
+        val oldTail = chain.lastOrNull()?.uuid
         val keys = retained.map { it.uuid }.toSet()
         chain = retained
         navigationJobs.keys.filter { it !in keys }.forEach { navigationJobs.remove(it)?.cancel() }
@@ -487,7 +504,9 @@ class ReaderViewModel constructor(
         if (prependBoundary != null && prependBoundary !in keys) {
             prependJob?.cancel(); prependJob = null; prependBoundary = null
         }
-        attemptedNext = null; attemptedPrevious = null
+        // 裁剪另一端不代表本端失败已经恢复，不得重新自动请求同一失败目标。
+        if (oldTail != retained.lastOrNull()?.uuid) attemptedNext = null
+        if (oldHead != retained.firstOrNull()?.uuid) attemptedPrevious = null
         mutableClosedChapters.value = mutableClosedChapters.value.intersect(keys)
         val active = retained.firstOrNull { it.uuid == uuid } ?: return
         _uiState.value = ReaderUiState.Success(active.content, active.uuid, retained)

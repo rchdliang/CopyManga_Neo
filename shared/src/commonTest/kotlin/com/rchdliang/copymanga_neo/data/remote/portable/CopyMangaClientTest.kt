@@ -204,6 +204,21 @@ class CopyMangaClientTest {
         assertEquals(1,calls);assertEquals("slow down",client.risk.notice.value?.reason)
         client.risk.resumeByUser();assertFailsWith<RiskControlException>{client.raw(ApiRequest("/api/v3/comics"))};assertEquals(2,calls);client.close()
     }
+    @Test fun throttledChapterAndCommentsStayStoppedUntilCooldownExpires()=runTest {
+        var now=0L;var calls=0
+        val gate=PortableRiskControlGate(nowMillis={now})
+        val client=CopyMangaClient(HttpClient(MockEngine { calls++;respond("""{"code":210,"message":"Request was throttled"}""") }),state(token="fixture-token"),gate)
+        try {
+            repeat(20) { index ->
+                assertFailsWith<RiskControlException> { client.raw(ApiRequest(if(index%2==0) "/api/v3/comic/book/chapter2/chapter" else "/api/v3/roasts")) }
+            }
+            assertEquals(1,calls)
+            now=3_599_999;assertFalse(gate.resumeIfExpired())
+            assertFailsWith<RiskControlException> { client.raw(ApiRequest("/api/v3/roasts")) };assertEquals(1,calls)
+            now=3_600_000;assertTrue(gate.resumeIfExpired())
+            assertFailsWith<RiskControlException> { client.raw(ApiRequest("/api/v3/roasts")) };assertEquals(2,calls)
+        } finally { client.close() }
+    }
     @Test fun validation210DoesNotCloseRiskGate()=runTest {
         val engine=MockEngine{respond("""{"code":210,"message":"评论长度为3-200"}""")}
         val client=CopyMangaClient(HttpClient(engine),state(token="test"))

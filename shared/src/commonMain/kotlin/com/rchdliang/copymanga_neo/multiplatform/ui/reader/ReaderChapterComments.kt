@@ -10,6 +10,7 @@ import com.rchdliang.copymanga_neo.domain.model.CommentPage
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentFeed
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsPanel
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsViewModel
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 
 data class ReaderChapterCommentsUiState(
     val page: CommentPage? = null, val loading: Boolean = false,
-    val closed: Boolean = false, val error: String? = null
+    val closed: Boolean = false, val error: String? = null, val rateLimited: Boolean = false
 )
 
 /** 底栏与章末评论共用状态，首次显示任一入口时加载；禁评响应移除章末评论页。 */
@@ -46,8 +47,15 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
     }
 
     fun load(uuid: String, more: Boolean = false, refresh: Boolean = false) {
-        if (job?.isActive == true || state.value.closed || (!more && !refresh && chapter == uuid && state.value.page != null)) return
-        chapter = uuid
+        if (chapter != uuid) {
+            job?.cancel()
+            job = null
+            chapter = uuid
+            state.value = ReaderChapterCommentsUiState()
+        }
+        // 展开工具栏、重组及返回评论页都不是重试；失败仅由明确刷新操作恢复。
+        if (job?.isActive == true || state.value.closed || (!refresh && state.value.error != null) ||
+            (!more && !refresh && state.value.page != null)) return
         val old = state.value.page
         val offset = if (more) old?.nextOffset ?: return else 0
         state.value = state.value.copy(loading = true, error = null)
@@ -71,7 +79,12 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
                     ensureActive()
                     state.value = state.value.copy(
                         loading = false, closed = error is CommentClosedException,
-                        error = if (error is CommentClosedException) null else "评论暂时不可用，点击重试"
+                        rateLimited = error is RiskControlException,
+                        error = when (error) {
+                            is CommentClosedException -> null
+                            is RiskControlException -> "请求过于频繁（210），已暂停自动加载，请稍后重试"
+                            else -> "评论暂时不可用，点击重试"
+                        }
                     )
                 }
             )

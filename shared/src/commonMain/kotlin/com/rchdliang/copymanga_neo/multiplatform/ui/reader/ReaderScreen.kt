@@ -421,6 +421,9 @@ fun ReaderSuccessContent(
         services?.comments?.retain(chapters.map { it.uuid }.toSet())
     }
     var restoring by remember { mutableStateOf(false) }
+    var restoredPages by remember { mutableStateOf<List<ReaderPageEntry>>(emptyList()) }
+    var restoredSpreads by remember { mutableStateOf<List<ReaderSpread>>(emptyList()) }
+    var restoredLayout by remember { mutableStateOf<Triple<Boolean, Boolean, ReadingDirection>?>(null) }
     val viewportAnchor = remember { ReaderViewportAnchor() }
     val viewportCorrection = remember { ReaderViewportCorrectionOwner() }
     val currentContinuousMode by rememberUpdatedState(isContinuous)
@@ -488,14 +491,26 @@ fun ReaderSuccessContent(
         val requestedChapter = pendingInitialChapter?.value
         if (requestedChapter != null && requestedChapter != activeChapterUuid) return@LaunchedEffect
         val explicit = pendingInitialPage.value
-        if (explicit == null && isContinuous && list.isScrollInProgress) {
+        val layout = Triple(isContinuous, spreadEnabled, dir)
+        val windowChanged = restoredPages.isNotEmpty() && restoredPages != pages && restoredLayout == layout
+        // 章节预取可能在横向翻页动画中完成。先等本次手势落定，不能用旧锚点中断翻页。
+        if (explicit == null && (isContinuous || windowChanged) && (list.isScrollInProgress || pager.isScrollInProgress)) {
             snapshotFlow { !list.isScrollInProgress && !pager.isScrollInProgress }.first { it }
             val index = if (isContinuous) list.firstVisibleItemIndex else spreads.rawIndex(pager.settledPage, pages.indexOfFirst { it.key == preferredRawKey })
             val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-            val key = if (isContinuous) item?.key else pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == index }?.key
+            val key = if (isContinuous) item?.key else pages.getOrNull(index)?.key
             ReaderWindowPolicy.pageAt(pages, index, key)?.let {
                 anchor = it.key; anchorChapter = it.chapterUuid; anchorPage = it.page
                 anchorFraction = if (isContinuous) ReadingPositionPolicy.fraction(list.firstVisibleItemScrollOffset, item?.size ?: 0) else 0.0
+            }
+        }
+        if (explicit == null && !isContinuous && windowChanged) {
+            // 动画可能在协程重启前已经结束，此时旧收集器尚未来得及保存新锚点。
+            // 以真正布局出来的组 key 为准；配页/布局改变导致 key 消失时仍使用原图锚点。
+            val laidOutKey = pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pager.settledPage }?.key
+            spreads.rawIndexForKey(pages, laidOutKey, pages.indexOfFirst { it.key == preferredRawKey })?.let { index ->
+                val current = pages[index]
+                anchor = current.key; anchorChapter = current.chapterUuid; anchorPage = current.page; anchorFraction = 0.0
             }
         }
         val target = if (explicit != null)
@@ -538,6 +553,7 @@ fun ReaderSuccessContent(
             ReadingPositionPolicy.fraction(list.firstVisibleItemScrollOffset, size)
         } else 0.0
         restoring = false
+        restoredPages = pages; restoredSpreads = spreads; restoredLayout = layout
         pendingInitialChapter?.value = null
         pendingInitialFraction?.value = null
         pendingInitialPage.value = null
@@ -752,7 +768,11 @@ fun ReaderSuccessContent(
             pendingChapter = null; jump(target)
         }
     }
+    // 只对完成布局与锚点恢复的停稳页面预取；中间下标不能触发章节加载。
+    val boundaryReady = !restoring && restoredPages == pages && restoredSpreads == spreads &&
+        !pager.isScrollInProgress && !list.isScrollInProgress
     ActiveRouteLaunchedEffect(
+        boundaryReady,
         page?.key,
         chapters.lastOrNull()?.uuid,
         chapters.lastOrNull()?.content?.nextUuid,
@@ -761,13 +781,13 @@ fun ReaderSuccessContent(
         tools.preloadPages
     ) {
         val current = page ?: return@ActiveRouteLaunchedEffect
-        if (tools.continuousChapters && current.chapterUuid == chapters.lastOrNull()?.uuid &&
+        if (boundaryReady && tools.continuousChapters && current.chapterUuid == chapters.lastOrNull()?.uuid &&
             current.page >= current.imageCount - maxOf(tools.preloadPages, 1)
         ) onAppendNext(false)
     }
-    ActiveRouteLaunchedEffect(page?.key, chapters.firstOrNull()?.uuid, chapters.firstOrNull()?.content?.prevUuid, chapters.size, tools.continuousChapters, tools.preloadPages) {
+    ActiveRouteLaunchedEffect(boundaryReady, page?.key, chapters.firstOrNull()?.uuid, chapters.firstOrNull()?.content?.prevUuid, chapters.size, tools.continuousChapters, tools.preloadPages) {
         val current = page ?: return@ActiveRouteLaunchedEffect
-        if (tools.continuousChapters && current.chapterUuid == chapters.firstOrNull()?.uuid &&
+        if (boundaryReady && tools.continuousChapters && current.chapterUuid == chapters.firstOrNull()?.uuid &&
             current.source != null && current.page <= maxOf(tools.preloadPages, 1)) onPrependPrevious(false)
     }
     val preloadAfter = if (isContinuous) visibleIndex else spreads.getOrNull(pager.currentPage)?.indices?.lastOrNull() ?: visibleIndex

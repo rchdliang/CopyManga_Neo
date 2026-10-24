@@ -4,7 +4,12 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 internal data class ReaderSpread(val indices: List<Int>) {
     fun visualIndices(rtl: Boolean) = if (rtl) indices.reversed() else indices
     fun anchor(preferred: Int): Int = preferred.takeIf { it in indices } ?: indices.first()
+    fun key(pages: List<ReaderPageEntry>) = indices.joinToString("|") { pages[it].key }
 }
+
+/** 用已布局页面的稳定 key 解读窗口变更，不能把旧 pager 下标套到新章节列表。 */
+internal fun List<ReaderSpread>.rawIndexForKey(pages: List<ReaderPageEntry>, key: Any?, preferred: Int): Int? =
+    firstOrNull { it.key(pages) == key }?.anchor(preferred)
 
 internal fun readerUsesSpreads(mode: String, widthDp: Float, heightDp: Float): Boolean =
     mode != "SINGLE" && widthDp >= (if (mode == "AUTO") 840f else 600f) && widthDp > heightDp
