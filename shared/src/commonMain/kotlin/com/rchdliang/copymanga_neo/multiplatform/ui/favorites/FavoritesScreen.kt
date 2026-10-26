@@ -80,6 +80,7 @@ fun FavoritesScreen(
     onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {}
 ) {
+    ActiveRouteLaunchedEffect(viewModel) { viewModel.start() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmRemoval by remember(uiState.selectedIds) { mutableStateOf(false) }
     if (confirmRemoval && LocalRouteActive.current) ConfirmRemovalDialog(

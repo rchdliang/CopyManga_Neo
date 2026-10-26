@@ -654,6 +654,8 @@ class NovelViewModel(
             )
         }
         job = viewModelScope.launch(errors) {
+            val savedPreferences = readerSettings.settings.first()
+            if (!readerPreferencesEdited) mutableReaderPreferences.value = savedPreferences
             val ready = progress.awaitReady(owner)
             ready.error?.let { message -> mutable.update { it.copy(notice = message) } }
             repository.readVolume(mode, owner, path, id).fold(

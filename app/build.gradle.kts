@@ -49,6 +49,11 @@ val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
     .map(String::toBooleanStrict)
     .getOrElse(false)
 
+// 仅手动诊断构建启用；普通 Debug / Release 不编入计时与日志实现。
+val enableStartupProbes = providers.gradleProperty("enableStartupProbes")
+    .map(String::toBooleanStrict)
+    .getOrElse(false)
+
 abstract class PrepareReaderSrAssets @javax.inject.Inject constructor(
     private val files: org.gradle.api.file.FileSystemOperations,
 ) : DefaultTask() {
@@ -75,6 +80,9 @@ val readerSrAssets = run {
 }
 
 android {
+    sourceSets.getByName("main").kotlin.srcDir(
+        if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
+    )
     // Explicit source-built bundle. No runtime download and no implicit native build in Gradle.
     sourceSets.getByName("main").jniLibs.srcDir(readerSrBundleDirectory.resolve("jniLibs"))
     packaging.jniLibs.useLegacyPackaging = true

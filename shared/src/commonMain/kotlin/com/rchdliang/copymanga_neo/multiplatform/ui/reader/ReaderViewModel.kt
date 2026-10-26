@@ -271,6 +271,14 @@ class ReaderViewModel constructor(
             if (!preserveOnFailure) _uiState.value = ReaderUiState.Loading
 
             try {
+                tools.awaitReady().fold(
+                    onSuccess = {},
+                    onFailure = {
+                        if (it is CancellationException) throw it
+                        loadFailed("无法读取阅读工具设置：${it.message}", preserveOnFailure)
+                        return@launch
+                    }
+                )
                 val progressOwner = readingProgress.awaitOwner()
                 val loadedProgress = readingProgress.awaitReady(progressOwner)
                 loadedProgress.error?.let { _toastMessage.value = it }

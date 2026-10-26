@@ -81,6 +81,7 @@ class PortableSettingsBackup constructor(
     }
 
     private suspend fun snapshot(): SettingsBackup {
+        tools.awaitReady().fold({}, { throw it })
         localReading.flush().fold({}, { throw it })
         localReading.error.value?.let { error(it) }
         return SettingsBackup(

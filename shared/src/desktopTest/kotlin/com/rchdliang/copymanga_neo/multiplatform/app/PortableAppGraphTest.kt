@@ -34,6 +34,129 @@ import kotlin.test.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PortableAppGraphTest {
+    @Test fun activeHomeCanRequestOffMainBeforeUiCollectionButInactiveHomeWaitsForStart() = runTest {
+        val root = Files.createTempDirectory("copymanga-home-start-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val calls = AtomicInteger()
+        val requested = kotlinx.coroutines.channels.Channel<Long>(2)
+        val uiThread = Thread.currentThread().threadId()
+        val manga = object : MangaRepository by graph.repositories.manga {
+            override suspend fun getHomeComics(): Result<HomeComicsData> {
+                calls.incrementAndGet(); requested.send(Thread.currentThread().threadId())
+                return Result.failure(IllegalStateException("offline"))
+            }
+        }
+        val inactive = com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel(
+            manga, graph.repositories.discovery, graph.repositories.risk, graph.repositories.appSettings, autoStart = false)
+        var active: com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel? = null
+        try {
+            runCurrent(); assertEquals(0, calls.get())
+            inactive.start(); inactive.start(); runCurrent()
+            assertNotEquals(uiThread, requested.receive())
+            assertEquals(1, calls.get())
+            active = com.rchdliang.copymanga_neo.multiplatform.ui.home.HomeViewModel(
+                manga, graph.repositories.discovery, graph.repositories.risk, graph.repositories.appSettings, autoStart = true)
+            runCurrent()
+            assertNotEquals(uiThread, requested.receive())
+            assertEquals(2, calls.get())
+        } finally {
+            inactive.viewModelScope.cancel(); active?.viewModelScope?.cancel(); requested.close()
+            graph.shutdown(); Dispatchers.resetMain(); root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun sessionKeepsCachedIdentityButDefersNetworkAndStartsOnlyOnceOffMain() = runTest {
+        val root = Files.createTempDirectory("copymanga-session-start-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val calls = AtomicInteger()
+        val requested = CompletableDeferred<Long>()
+        val uiThread = Thread.currentThread().threadId()
+        val users = object : com.rchdliang.copymanga_neo.domain.repository.UserRepository by graph.repositories.users {
+            override fun isLoggedInSync() = true
+            override fun getAvatar() = kotlinx.coroutines.flow.flowOf("cached-avatar")
+            override suspend fun getMemberInfo(): Result<MemberInfo> {
+                calls.incrementAndGet()
+                requested.complete(Thread.currentThread().threadId())
+                return Result.failure(IllegalStateException("offline"))
+            }
+        }
+        val model = MainSessionModel(users)
+        try {
+            runCurrent()
+            assertTrue(model.isLoggedIn.value)
+            assertEquals("cached-avatar", model.avatar.value)
+            assertEquals(0, calls.get())
+            model.start(); model.start(); runCurrent()
+            assertNotEquals(uiThread, requested.await())
+            assertEquals(1, calls.get())
+        } finally {
+            model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun expiryBeforeDeferredSessionStartCannotLaunchDuplicateAutoLogins() = runTest {
+        val root = Files.createTempDirectory("copymanga-session-expiry-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val loggedIn = MutableStateFlow(true)
+        val calls = AtomicInteger()
+        val requested = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val users = object : com.rchdliang.copymanga_neo.domain.repository.UserRepository by graph.repositories.users {
+            override fun isLoggedInSync() = loggedIn.value
+            override fun getAutoLoginSync() = true
+            override fun getSavedUsernameSync() = "test-user"
+            override fun getSavedPasswordSync() = "test-password"
+            override suspend fun login(username: String, rawPassword: String, expectedGeneration: Long?): Result<LoginInfo> {
+                calls.incrementAndGet(); requested.complete(Unit); release.await()
+                return Result.failure(IllegalStateException("offline"))
+            }
+        }
+        val model = MainSessionModel(users)
+        try {
+            loggedIn.value = false
+            model.start(); runCurrent(); requested.await()
+            assertEquals(1, calls.get())
+        } finally {
+            release.complete(Unit); model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun deferredFavoritesPreserveCachedLoginAndDoNotFetchBeforeStart() = runTest {
+        val root = Files.createTempDirectory("copymanga-favorites-start-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val calls = AtomicInteger()
+        val requested = CompletableDeferred<Unit>()
+        val users = object : com.rchdliang.copymanga_neo.domain.repository.UserRepository by graph.repositories.users {
+            override fun isLoggedInSync() = true
+        }
+        val manga = object : MangaRepository by graph.repositories.manga {
+            override suspend fun getFavoriteComics(): Result<List<FavoriteItem>> {
+                calls.incrementAndGet(); requested.complete(Unit)
+                return Result.success(emptyList())
+            }
+        }
+        val model = com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesViewModel(
+            manga, users, graph.repositories.readingProgress, graph.repositories.novelShelf, autoStart = false)
+        try {
+            runCurrent()
+            assertTrue(model.uiState.value.isLoggedIn)
+            assertTrue(model.uiState.value.isLoading)
+            assertEquals(0, calls.get())
+            model.start(); model.start(); runCurrent(); requested.await()
+            model.uiState.first { !it.isLoading }
+            assertEquals(1, calls.get())
+        } finally {
+            model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
+            root.toFile().deleteRecursively()
+        }
+    }
+
     private fun deleteNovelPreviewTemp(root: Path) {
         val target = root.toAbsolutePath().normalize()
         val temporary = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize()
@@ -628,6 +751,98 @@ class PortableAppGraphTest {
                 assertEquals(2, cacheScans.get())
             } finally { gate.complete(Unit); graph.shutdown() }
         } finally { gate.complete(Unit); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun deferredPreferencesDoNotBlockHomeAndFirstConsumersWaitForSavedValues() = runTest {
+        val root = Files.createTempDirectory("copymanga-deferred-preferences-")
+        val gate = CompletableDeferred<Unit>()
+        val keys = listOf("comic-reader-settings.json", "reader-tools.json", "novel-reader-settings.json", "novel-annotations.json", "network-log-settings.json")
+        val entered = keys.associateWith { CompletableDeferred<Unit>() }
+        val loads = keys.associateWith { AtomicInteger() }
+        try {
+            val original = services(root)
+            com.rchdliang.copymanga_neo.data.local.portable.PortableReaderPreferences(original.documents)
+                .updateGlobal { it.copy(pageLayout = "DOUBLE") }.getOrThrow()
+            com.rchdliang.copymanga_neo.data.local.portable.PortableReaderTools(original.documents)
+                .updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
+            com.rchdliang.copymanga_neo.data.local.portable.PortableNovelPreferences(original.documents)
+                .update(NovelReaderPreferences(fontSize = 24f)).getOrThrow()
+            val annotation = NovelAnnotation("id", "owner", "WEB", "book", "volume", "卷",
+                "文本", NovelTextRange(0, 0, 0, 2), createdAt = 1)
+            com.rchdliang.copymanga_neo.data.local.portable.PortableNovelAnnotations(original.documents)
+                .save(annotation).getOrThrow()
+            val delayed = object : DocumentStorage by original.documents {
+                override suspend fun read(key: String): String? {
+                    entered[key]?.let { signal ->
+                        loads.getValue(key).incrementAndGet()
+                        signal.complete(Unit)
+                        gate.await()
+                    }
+                    return original.documents.read(key)
+                }
+            }
+            val graph = PortableAppGraph.create(original.copy(documents = delayed), backgroundScope)
+            try {
+                assertTrue(entered.values.none { it.isCompleted })
+                // 不经过首页预热也必须恢复已保存值，不能先发默认值；并发预热不能重复读取。
+                val comic = async { graph.repositories.readerPreferences.globalPreferences.first() }
+                val tools = async { graph.repositories.readerTools.awaitReady() }
+                val novel = async { graph.repositories.novelPreferences.settings.first() }
+                val notes = async { graph.repositories.annotations.annotations.first() }
+                keys.take(4).forEach { entered.getValue(it).await() }
+                assertFalse(comic.isCompleted); assertFalse(tools.isCompleted)
+                assertFalse(novel.isCompleted); assertFalse(notes.isCompleted)
+                graph.repositories.startBackground()
+                gate.complete(Unit)
+                assertEquals("DOUBLE", comic.await().pageLayout)
+                assertTrue(tools.await().isSuccess)
+                assertTrue(graph.repositories.readerTools.settings.value.continuousChapters)
+                assertEquals(24f, novel.await().fontSize)
+                assertEquals(listOf(annotation), notes.await())
+                entered.getValue("network-log-settings.json").await()
+                keys.take(4).forEach { assertEquals(1, loads.getValue(it).get(), it) }
+            } finally { gate.complete(Unit); graph.shutdown() }
+        } finally { gate.complete(Unit); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun savedThemeIsPublishedBeforeOtherCoreStorageFinishes() = runTest {
+        val root = Files.createTempDirectory("copymanga-startup-theme-")
+        val gate = CompletableDeferred<Unit>()
+        try {
+            val original = services(root)
+            com.rchdliang.copymanga_neo.data.local.portable.PortableAppSettings(original.documents)
+                .setThemeMode(AppThemeMode.DARK).getOrThrow()
+            val theme = CompletableDeferred<AppSettings>()
+            val delayed = object : DocumentStorage by original.documents {
+                override suspend fun read(key: String): String? {
+                    if (key == "reading-library.json") gate.await()
+                    return original.documents.read(key)
+                }
+            }
+            val creating = async {
+                PortableAppGraph.create(original.copy(documents = delayed, onAppSettingsReady = { theme.complete(it) }), backgroundScope)
+            }
+            try {
+                assertEquals(AppThemeMode.DARK, theme.await().themeMode)
+                assertFalse(creating.isCompleted)
+            } finally { gate.complete(Unit); creating.await().shutdown() }
+        } finally { gate.complete(Unit); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun corruptDeferredAnnotationsWarnWithoutBlockingHomeOrOverwritingData() = runTest {
+        val root = Files.createTempDirectory("copymanga-deferred-corrupt-")
+        try {
+            val original = services(root)
+            original.documents.write("novel-annotations.json", "{broken")
+            val graph = PortableAppGraph.create(original, backgroundScope)
+            try {
+                graph.repositories.startBackground()
+                graph.warnings.first { it.any { warning -> warning.contains("小说标注") } }
+                assertFailsWith<Exception> { graph.repositories.annotations.annotations.first() }
+                assertEquals("{broken", original.documents.read("novel-annotations.json"))
+                assertTrue(graph.repositories.appSettings.setThemeMode(AppThemeMode.DARK).isSuccess)
+            } finally { graph.shutdown() }
+        } finally { root.toFile().deleteRecursively() }
     }
 
 }

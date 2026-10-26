@@ -30,6 +30,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.rchdliang.copymanga_neo.multiplatform.app.StartupTrace
+import com.rchdliang.copymanga_neo.multiplatform.app.measure
 import kotlin.math.max
 
 enum class HomeShelf { RECOMMENDED, NEWEST, FINISHED, RANKS }
@@ -75,7 +79,8 @@ class HomeViewModel constructor(
     private val discoveryRepository: ComicDiscoveryRepository,
     private val riskControl: RiskControlRepository,
     private val appSettings: AppSettingsRepository,
-    autoStart: Boolean = true
+    autoStart: Boolean = true,
+    private val startupTrace: StartupTrace = StartupTrace.None
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState(isLoading = true))
@@ -197,7 +202,11 @@ class HomeViewModel constructor(
                     topicPaging = HomeShelfPaging()
                 )
             }
-            mangaRepository.getHomeComics().fold(
+            // 首次 HTTP 管线初始化、响应解析均不占用 UI 线程。
+            withContext(Dispatchers.Default) {
+                startupTrace.mark("home_requests_start")
+                startupTrace.measure("home_comics_response") { mangaRepository.getHomeComics() }
+            }.also { startupTrace.mark("home_comics_result_main") }.fold(
                 onSuccess = { homeComicsData ->
                     _uiState.update {
                         val defaultRank = it.rankAudience == "male" && it.rankPeriod == "day"

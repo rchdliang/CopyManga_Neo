@@ -41,7 +41,8 @@ data class AppRepositories(
     val comicMetadata: ComicMetadataRepository,
     val novelIllustrations: NovelIllustrationExportRepository,
     val chineseDictionary: ChineseDictionaryRepository,
-    val appInfo: AppInfoRepository
+    val appInfo: AppInfoRepository,
+    val startupTrace: StartupTrace = StartupTrace.None
 )
 
 data class AppPlatforms(

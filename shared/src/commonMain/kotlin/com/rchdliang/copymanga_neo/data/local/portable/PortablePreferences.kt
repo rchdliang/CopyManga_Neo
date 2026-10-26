@@ -79,8 +79,8 @@ internal data class ComicPreferenceDocument(
 )
 class PortableReaderPreferences(storage: DocumentStorage) : ReaderPreferencesRepository {
     private val document = DocumentStore(storage, "comic-reader-settings.json", ComicPreferenceDocument.serializer(), ComicPreferenceDocument())
-    override val globalPreferences: Flow<ReaderPreferences> = document.state.map { it.global }
-    override fun comicPreferences(comicPathWord: String) = document.state.map { it.comics[comicPathWord] ?: it.global }
+    override val globalPreferences: Flow<ReaderPreferences> = document.loadedState().map { it.global }
+    override fun comicPreferences(comicPathWord: String) = document.loadedState().map { it.comics[comicPathWord] ?: it.global }
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun initializeComic(comicPathWord: String): Result<ReaderPreferences> = document.update {
         if (comicPathWord in it.comics) it else it.copy(comics = it.comics + (comicPathWord to it.global))
@@ -121,13 +121,13 @@ class PortableNovelPreferences(storage: DocumentStorage) : NovelReaderPreference
         it + (path to enabled)
     }
     private val document = DocumentStore(storage, "novel-reader-settings.json", NovelReaderPreferences.serializer(), NovelReaderPreferences())
-    override val settings = document.state
+    override val settings = document.loadedState()
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun update(value: NovelReaderPreferences) = document.update { value.normalized() }
 }
 class PortableNovelAnnotations(storage: DocumentStorage) : NovelAnnotationRepository {
     private val document = DocumentStore(storage, "novel-annotations.json", ListSerializer(NovelAnnotation.serializer()), emptyList())
-    override val annotations = document.state
+    override val annotations = document.loadedState()
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun save(annotation: NovelAnnotation) = document.update { current ->
         require(annotation.range.valid && annotation.id.isNotBlank() && annotation.owner.isNotBlank() &&

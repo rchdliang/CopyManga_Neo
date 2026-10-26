@@ -9,6 +9,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.compositionLocalOf
 import com.rchdliang.copymanga_neo.domain.text.TraditionalChineseConverter
 import com.rchdliang.copymanga_neo.domain.repository.ChineseDictionaryRepository
+import com.rchdliang.copymanga_neo.multiplatform.app.LocalStartupTrace
+import com.rchdliang.copymanga_neo.multiplatform.app.measure
 
 private val LocalMetadataConverter = compositionLocalOf<TraditionalChineseConverter?> { null }
 
@@ -27,9 +29,10 @@ fun MetadataTextHost(
     content: @Composable () -> Unit
 ) {
     val converter by dictionary.converter.collectAsState()
+    val trace = LocalStartupTrace.current
     LaunchedEffect(enabled, dictionary) {
         if (enabled) {
-            dictionary.install().onFailure { error ->
+            trace.measure("dictionary_install") { dictionary.install() }.onFailure { error ->
                 UiLog.w("MetadataText", "本地繁转简词典不可用", error)
             }
         }

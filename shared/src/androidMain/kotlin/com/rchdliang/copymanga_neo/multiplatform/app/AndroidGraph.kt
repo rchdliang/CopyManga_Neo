@@ -17,8 +17,11 @@ import okio.Path.Companion.toPath
 /** Android 与其他平台使用同一个数据图；仅在这里提供系统能力。 */
 suspend fun createAndroidAppGraph(
     context: Context, scope: CoroutineScope, downloadRuntime: DownloadRuntime,
-    beforeExport: suspend () -> Unit, tapString: String, debug: Boolean
+    beforeExport: suspend () -> Unit, tapString: String, debug: Boolean,
+    startupTrace: StartupTrace = StartupTrace.None,
+    onAppSettingsReady: (com.rchdliang.copymanga_neo.domain.model.AppSettings) -> Unit = {}
 ): PortableAppGraph {
+    startupTrace.mark("graph_start")
     val app = context.applicationContext
     val root = app.filesDir.resolve("shared-data")
     val disk =
@@ -45,7 +48,7 @@ suspend fun createAndroidAppGraph(
         comicExportIo = AndroidComicExportIo(app, root.resolve("content/downloads")),
         readerImageIo = AndroidReaderImageIo(app, disk),
         imageContext = app, imageDiskCache = disk, tapString = tapString, debugBuild = debug,
-        beforeExport = beforeExport,
+        beforeExport = beforeExport, startupTrace = startupTrace, onAppSettingsReady = onAppSettingsReady,
         webApiUserAgent = (System.getProperty("http.agent")?.takeIf { it.isNotBlank() }
             ?: "Dalvik/2.1.0 (Linux; U; Android)") + " com.copymanga.app"
     ), scope)

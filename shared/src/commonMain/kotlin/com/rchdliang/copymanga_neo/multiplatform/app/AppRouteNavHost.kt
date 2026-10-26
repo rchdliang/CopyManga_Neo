@@ -34,6 +34,9 @@ internal fun AppRouteNavHost(
     onDiagnostics: (RouteHostDiagnostics) -> Unit = {},
     content: @Composable AnimatedContentScope.(AppRoute) -> Unit
 ) {
+    val trace = LocalStartupTrace.current
+    trace.mark("nav_host_enter")
+    val finish = trace.begin("nav_host_compose")
     val controller = rememberNavController()
     val current by controller.currentBackStackEntryAsState()
     val stack by controller.currentBackStack.collectAsState()
@@ -49,7 +52,10 @@ internal fun AppRouteNavHost(
         NavHostBackBridge(backDispatcher) { controller.currentBackStackEntry?.id }
     }
     DisposableEffect(bridge) { onDispose { bridge.dispose() } }
-    LaunchedEffect(controller, navigation) { navigation.attach(controller) }
+    LaunchedEffect(controller, navigation) {
+        trace.measureSync("navigation_attach") { navigation.attach(controller) }
+        trace.mark("navigation_ready")
+    }
     SideEffect { onControllerReady(controller) }
 
     val retainedIds = (stack + visible).mapNotNull(navigation::routeId).toSet() + composed.values
@@ -93,10 +99,13 @@ internal fun AppRouteNavHost(
             predictivePopExitTransition = { fadeOut(tween(0)) }
         ) {
             composable<MainRouteKey> { entry ->
+                trace.mark("main_route_enter")
                 if (navigation.ready) {
+                    val finishMain = trace.begin("main_route_compose")
                     RouteLifecycleScope(active = entry.id == current?.id) {
                         content(AppRoute("main", id = "main"))
                     }
+                    finishMain?.invoke()
                 }
             }
             composable<ContentRouteKey> { entry ->
@@ -111,4 +120,5 @@ internal fun AppRouteNavHost(
             }
         }
     }
+    finish?.invoke()
 }

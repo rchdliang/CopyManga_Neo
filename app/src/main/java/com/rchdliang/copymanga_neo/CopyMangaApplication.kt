@@ -11,6 +11,7 @@ class CopyMangaApplication : Application() {
         super.onCreate()
         // The disposable SR worker must not initialize databases, downloads or UI services.
         if (getProcessName().endsWith(":reader_sr")) return
+        com.rchdliang.copymanga_neo.multiplatform.AndroidStartupTrace.mark("application_created")
         container = AndroidAppContainer(this)
     }
 }

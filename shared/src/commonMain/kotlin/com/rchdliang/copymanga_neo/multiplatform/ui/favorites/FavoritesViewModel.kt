@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class FavoritesKind(val label: String) { COMIC("漫画"), NOVEL("轻小说") }
 
@@ -51,10 +53,12 @@ class FavoritesViewModel constructor(
     private val mangaRepository: MangaRepository,
     private val userRepository: UserRepository,
     private val readingProgress: ReadingProgressRepository,
-    private val novelShelf: NovelShelfRepository
+    private val novelShelf: NovelShelfRepository,
+    autoStart: Boolean = true
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(FavoritesUiState())
+    private val _uiState = MutableStateFlow(FavoritesUiState(
+        isLoggedIn = userRepository.isLoggedInSync(), isLoading = userRepository.isLoggedInSync()))
     val uiState: StateFlow<FavoritesUiState> =
         combine(_uiState, readingProgress.progress) { state, progress ->
             if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) state else state.copy(
@@ -67,7 +71,7 @@ class FavoritesViewModel constructor(
                     )
                 }
             )
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, FavoritesUiState())
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, _uiState.value)
     private var loadJob: Job? = null
     private var deleteJob: Job? = null
     private var novelLoadJob: Job? = null
@@ -103,7 +107,13 @@ class FavoritesViewModel constructor(
         _uiState.update { it.copy(toastMessage = null) }
     }
 
-    init {
+    private var started = false
+    init { if (autoStart) start() }
+
+    /** 首页先绘制再同步角标；直接进入书架时也可以立即调用，重复调用不重复订阅。 */
+    fun start() {
+        if (started) return
+        started = true
         viewModelScope.launch(exceptionHandler) {
             userRepository.isAuthCacheReady().first { it }
             userRepository.sessionChanges().collect {
@@ -115,7 +125,7 @@ class FavoritesViewModel constructor(
                 novelOffset = 0
                 novelsLoaded = false
                 _uiState.value = FavoritesUiState(
-                    isLoggedIn = loggedIn, selectedKind = _uiState.value.selectedKind
+                    isLoggedIn = loggedIn, isLoading = loggedIn, selectedKind = _uiState.value.selectedKind
                 )
                 if (loggedIn) {
                     refreshFavorites(showError = false)
@@ -216,7 +226,7 @@ class FavoritesViewModel constructor(
             val requestVersion = readingProgress.requestVersion()
             readingProgress.retryPending()
             _uiState.update { it.copy(isLoading = true, error = null) }
-            val result = mangaRepository.getFavoriteComics()
+            val result = withContext(Dispatchers.Default) { mangaRepository.getFavoriteComics() }
             currentCoroutineContext().ensureActive()
             result.fold(
                 onSuccess = { favorites ->

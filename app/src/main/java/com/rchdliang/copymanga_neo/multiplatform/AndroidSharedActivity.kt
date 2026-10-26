@@ -25,6 +25,9 @@ import com.rchdliang.copymanga_neo.domain.model.AppSettings
 import kotlinx.coroutines.flow.catch
 import com.rchdliang.copymanga_neo.multiplatform.app.AppPlatforms
 import com.rchdliang.copymanga_neo.multiplatform.app.CopyMangaApp
+import com.rchdliang.copymanga_neo.multiplatform.app.startupDraw
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalUiPlatform
+import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackEvent
 import com.rchdliang.copymanga_neo.multiplatform.ui.novel.AndroidNovelReaderPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.profile.AppBuildInfo
@@ -41,6 +44,7 @@ class AndroidSharedActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AndroidStartupTrace.mark("activity_created")
         host = ViewModelProvider.create(this, viewModelFactory {
             initializer { AndroidPlatformHost(applicationContext, createSavedStateHandle()) }
         })[AndroidPlatformHost::class]
@@ -52,6 +56,16 @@ class AndroidSharedActivity : ComponentActivity() {
             else intent.takeIf { it.action == ComicExportService.RETRY }
                 ?.getStringExtra(ComicExportService.TASK_ID)
         enableEdgeToEdge()
+        // 只等恢复后的主题设置；不把整个数据图挡在系统启动画面后，也不先绘制错误配色。
+        val decor = window.decorView
+        decor.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                val ready = sharedContainer.startupSettings.value != null ||
+                    sharedContainer.startup.value?.isFailure == true
+                if (ready) decor.viewTreeObserver.removeOnPreDrawListener(this)
+                return ready
+            }
+        })
         val backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackStarted(backEvent: BackEventCompat) {
                 host.backDispatcher.startGesture(backEvent.toUiEvent())
@@ -81,19 +95,36 @@ class AndroidSharedActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, backCallback)
         setContent {
             val startup by sharedContainer.startup.collectAsStateWithLifecycle()
+            val startupSettings by sharedContainer.startupSettings.collectAsStateWithLifecycle()
             val graph = startup?.getOrNull()
             if (graph == null) {
-                MaterialTheme {
-                    Surface(Modifier.fillMaxSize()) {
-                        com.rchdliang.copymanga_neo.multiplatform.app.StartupSurface(
-                            if (startup?.isFailure == true) "启动失败，请重试；仍失败时检查存储空间" else null,
-                            onRetry = { sharedContainer.start() }
-                        )
+                val preferences = startupSettings ?: if (startup?.isFailure == true) AppSettings() else return@setContent
+                val dark = when (preferences.themeMode) {
+                    AppThemeMode.DARK -> true
+                    AppThemeMode.LIGHT -> false
+                    AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+                }
+                SideEffect {
+                    val style = if (dark) SystemBarStyle.dark(Color.Transparent.toArgb())
+                    else SystemBarStyle.light(Color.Transparent.toArgb(), Color.Transparent.toArgb())
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
+                CompositionLocalProvider(LocalUiPlatform provides host) {
+                    CopyManga_NeoTheme(darkTheme = dark) {
+                        val colors = MaterialTheme.colorScheme
+                        SideEffect { AndroidStartupTrace.palette("loading", colors.primary.value, colors.surface.value) }
+                        Surface(Modifier.fillMaxSize().startupDraw(AndroidStartupTrace, "loading_draw")) {
+                            com.rchdliang.copymanga_neo.multiplatform.app.StartupSurface(
+                                if (startup?.isFailure == true) "启动失败，请重试；仍失败时检查存储空间" else null,
+                                onRetry = { sharedContainer.start() }
+                            )
+                        }
                     }
                 }
                 return@setContent
             }
             LaunchedEffect(graph) {
+                AndroidStartupTrace.mark("activity_graph_observed")
                 graph.repositories.risk.resetForAppLaunch(isFreshActivity = savedInstanceState == null)
             }
             val startupWarnings by graph.warnings.collectAsStateWithLifecycle()

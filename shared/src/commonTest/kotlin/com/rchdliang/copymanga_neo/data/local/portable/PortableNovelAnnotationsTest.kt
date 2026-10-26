@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.local.portable
 
 import com.rchdliang.copymanga_neo.domain.model.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.first
 import kotlin.test.*
 
 class PortableNovelAnnotationsTest {
@@ -19,23 +20,23 @@ class PortableNovelAnnotationsTest {
         repository.initialize().getOrThrow()
         repository.save(original).getOrThrow()
         repository.save(original.copy(id = "new", note = "更新", createdAt = 100)).getOrThrow()
-        assertEquals("id", repository.annotations.value.single().id)
-        assertEquals(10, repository.annotations.value.single().createdAt)
+        assertEquals("id", repository.annotations.first().single().id)
+        assertEquals(10, repository.annotations.first().single().createdAt)
         for (other in listOf(original.copy(owner = "other"), original.copy(mode = "APP"),
             original.copy(path = "other"), original.copy(volume = "other"))) repository.save(other).getOrThrow()
-        assertEquals(5, repository.annotations.value.size)
+        assertEquals(5, repository.annotations.first().size)
         repository.remove(original).getOrThrow()
-        assertEquals(4, repository.annotations.value.size)
+        assertEquals(4, repository.annotations.first().size)
         val restored = PortableNovelAnnotations(files)
         restored.initialize().getOrThrow()
-        assertEquals(repository.annotations.value, restored.annotations.value)
+        assertEquals(repository.annotations.first(), restored.annotations.first())
     }
     @Test fun corruptDataAndInvalidRangesCannotEraseSavedNotes() = runTest {
         val files = Documents()
         val repository = PortableNovelAnnotations(files)
         repository.save(original).getOrThrow()
         assertTrue(repository.save(original.copy(range = NovelTextRange(1, 2, 1, 2))).isFailure)
-        assertEquals(listOf(original), repository.annotations.value)
+        assertEquals(listOf(original), repository.annotations.first())
         files.rows["novel-annotations.json"] = "{broken"
         val restored = PortableNovelAnnotations(files)
         assertTrue(restored.initialize().isFailure)

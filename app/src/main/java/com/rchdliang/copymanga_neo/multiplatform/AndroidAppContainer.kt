@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.multiplatform
 
 import android.content.Context
 import com.rchdliang.copymanga_neo.BuildConfig
+import com.rchdliang.copymanga_neo.domain.model.AppSettings
 import com.rchdliang.copymanga_neo.data.download.DownloadService
 import com.rchdliang.copymanga_neo.data.export.ComicExportService
 import com.rchdliang.copymanga_neo.data.download.portable.DownloadRuntime
@@ -16,6 +17,8 @@ class AndroidAppContainer(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutable = MutableStateFlow<Result<PortableAppGraph>?>(null)
     val startup = mutable.asStateFlow()
+    private val mutableStartupSettings = MutableStateFlow<AppSettings?>(null)
+    val startupSettings = mutableStartupSettings.asStateFlow()
     val current: PortableAppGraph? get() = mutable.value?.getOrNull()
     val downloads = ForegroundServiceGate(start = { DownloadService.start(app) })
     val exports = ForegroundServiceGate(start = { ComicExportService.start(app) })
@@ -43,9 +46,12 @@ class AndroidAppContainer(context: Context) {
                     },
                     beforeExport = { exports.awaitReady() },
                     tapString = BuildConfig.OFFICIAL_APP_TAP_STRING,
-                    debug = BuildConfig.DEBUG
+                    debug = BuildConfig.DEBUG,
+                    startupTrace = AndroidStartupTrace,
+                    onAppSettingsReady = { mutableStartupSettings.value = it }
                 )
                 mutable.value = Result.success(graph)
+                AndroidStartupTrace.mark("graph_published")
                 scope.launch {
                     try {
                         graph.repositories.network.refreshIfNeeded()
@@ -57,13 +63,17 @@ class AndroidAppContainer(context: Context) {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
+                AndroidStartupTrace.mark("startup_failed")
                 mutable.value = Result.failure(error)
             }
         }
     }
 
     suspend fun awaitGraph(): PortableAppGraph =
-        startup.filterNotNull().first().fold({ it }, { throw it })
+        startup.filterNotNull().first().fold({ it }, { throw it }).also {
+            // 系统服务可以没有 Activity；服务主动索取数据图时也要启动日志等后台消费者。
+            it.repositories.startBackground()
+        }
 }
 
 val Context.sharedContainer: AndroidAppContainer

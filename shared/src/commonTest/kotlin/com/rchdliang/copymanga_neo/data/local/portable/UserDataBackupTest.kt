@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.data.local.portable
 
 import com.rchdliang.copymanga_neo.domain.model.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
@@ -46,10 +47,10 @@ class UserDataBackupTest {
         restore.recover()
         val loaded = PortableNovelAnnotations(target)
         assertTrue(loaded.initialize().isSuccess)
-        assertEquals(note, loaded.annotations.value.single())
+        assertEquals(note, loaded.annotations.first().single())
         val prefs = PortableNovelPreferences(target)
         assertTrue(prefs.initialize().isSuccess)
-        assertEquals(24f, prefs.settings.value.fontSize)
+        assertEquals(24f, prefs.settings.first().fontSize)
         assertEquals("keep identity", target.values["network-settings.json"])
         assertEquals("keep downloads", target.values["download-records"])
     }

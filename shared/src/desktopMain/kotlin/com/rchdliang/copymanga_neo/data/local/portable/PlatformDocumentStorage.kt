@@ -37,4 +37,22 @@ private class FileDocumentStorage(private val root: Path) : DocumentStorage {
         Unit
     }
     override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) { Files.deleteIfExists(path(key)); Unit }
+    override suspend fun append(key: String, value: String): Unit = withContext(Dispatchers.IO) {
+        Files.createDirectories(root)
+        Files.write(path(key), value.toByteArray(Charsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+        Unit
+    }
+    override suspend fun size(key: String): Long = withContext(Dispatchers.IO) {
+        val file = path(key)
+        if (Files.exists(file)) Files.size(file) else 0L
+    }
+    override suspend fun readPrefix(key: String, maxChars: Int): String? = withContext(Dispatchers.IO) {
+        require(maxChars in 1..4096)
+        val file = path(key)
+        if (!Files.exists(file)) null else Files.newBufferedReader(file, Charsets.UTF_8).use {
+            val chars = CharArray(maxChars)
+            val count = it.read(chars)
+            if (count < 0) "" else chars.concatToString(0, count)
+        }
+    }
 }

@@ -44,7 +44,9 @@ data class PortableAppServices(
     val debugBuild: Boolean = false,
     val beforeExport: suspend () -> Unit = {},
     val webApiUserAgent: String = CopyMangaNetworkConfig.WEB_API_USER_AGENT,
-    val webOnly: Boolean = false
+    val webOnly: Boolean = false,
+    val startupTrace: StartupTrace = StartupTrace.None,
+    val onAppSettingsReady: (AppSettings) -> Unit = {}
 )
 
 /** Thread-safe closeable resource pool, also available on Native and Wasm without JVM collections. */
@@ -88,6 +90,7 @@ class PortableAppGraph private constructor(
     companion object {
         /** The caller owns its UI scope; this graph owns and cancels its child work on close. */
         suspend fun create(services: PortableAppServices, parentScope: CoroutineScope): PortableAppGraph {
+            val probe = services.startupTrace
             val started = kotlin.time.TimeSource.Monotonic.markNow()
             fun trace(phase: String) {
                 if (services.debugBuild) com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog.d(
@@ -109,9 +112,12 @@ class PortableAppGraph private constructor(
                 fun warn(message: String) { warnings.update { (it + message).distinct() } }
                 // 必须先恢复个人数据，再创建任何持久化状态和后台消费者。
                 val userData = PortableUserDataBackup(documents)
-                withContext(Dispatchers.Default) { userData.recover()?.let(::warn) }
+                probe.measure("data_recovery") { withContext(Dispatchers.Default) { userData.recover()?.let(::warn) } }
                 services.imageDiskCache?.let { cleanup += { it.shutdown() } }
                 val appSettings = PortableAppSettings(documents)
+                // 只读一次应用设置，并尽早交给宿主；加载页不必等所有仓库就绪才能使用正确主题。
+                probe.measure("app_settings") { appSettings.initialize().getOrThrow() }
+                services.onAppSettingsReady(appSettings.settings.first())
                 val readerPreferences = PortableReaderPreferences(documents)
                 val readerTools = PortableReaderTools(documents)
                 val localReading = PortableLocalReading(documents, appScope, initializeImmediately = false)
@@ -120,21 +126,15 @@ class PortableAppGraph private constructor(
                 val blacklist = PortableThemeBlacklist(documents)
                 val logs = PortableNetworkLog(documents, appScope)
                 val reads: List<suspend () -> Unit> = listOf(
-                    { appSettings.initialize().getOrThrow() },
-                    { readerPreferences.initialize().getOrThrow() },
-                    { readerTools.initialize().getOrThrow() },
-                    { novelPreferences.initialize().getOrThrow() },
-                    { annotations.initialize().getOrThrow() },
-                    { blacklist.initialize().getOrThrow() },
-                    { logs.initialize().getOrThrow() },
-                    { localReading.awaitReady().onFailure { warn("本地阅读数据无法读取，原文件已保留，请在本地书库重试：${it.message.orEmpty()}") } }
+                    { probe.measure("blacklist") { blacklist.initialize().getOrThrow() } },
+                    { probe.measure("reading_library") { localReading.awaitReady().onFailure { warn("本地阅读数据无法读取，原文件已保留，请在本地书库重试：${it.message.orEmpty()}") } } }
                 )
                 coroutineScope {
                     val slots = kotlinx.coroutines.sync.Semaphore(4)
                     reads.map { read -> async(Dispatchers.Default) { slots.acquire(); try { read() } finally { slots.release() } } }.awaitAll()
                 }
                 val identity = withContext(Dispatchers.Default) {
-                    PersistedOfficialIdentity.create(documents, services.deviceName, services.deviceModel, services.tapString)
+                    probe.measure("device_identity") { PersistedOfficialIdentity.create(documents, services.deviceName, services.deviceModel, services.tapString) }
                 }
                 val state = PortableNetworkState(webOnly = services.webOnly); val risk = PortableRiskControlGate()
                 val cleanClients = AppResourcePool<Triple<Long, NetworkSettings, Int>, HttpClient> { it.close() }
@@ -152,7 +152,10 @@ class PortableAppGraph private constructor(
                     persistImportedConfiguration = { settings, generation -> network.persistImportedConfiguration(settings, generation) })
                 network = PortableNetworkSettings(documents, state, identity, KtorNetworkDiagnostics({ engine(it) }, risk) { identity.tapString.isNotEmpty() }, risk,
                     clearAppSession = { users.clearModeSecureSession(RequestMode.OFFICIAL_APP, it) })
-                withContext(Dispatchers.Default) { network.initialize().getOrThrow(); users.restoreSecureSessions() }
+                withContext(Dispatchers.Default) {
+                    probe.measure("network_settings") { network.initialize().getOrThrow() }
+                    probe.measure("secure_sessions") { users.restoreSecureSessions() }
+                }
                 val session = PortableReadingSession(state)
                 val downloadServices = services.downloadServices(appScope, appSettings, { engine() },
                     { "https://${state.snapshot.settings.apiHost}/" }, { state.snapshot.settings })
@@ -173,7 +176,7 @@ class PortableAppGraph private constructor(
                 }
                 val themes = PersistentThemeCatalogs(documents)
                 withContext(Dispatchers.Default) {
-                    themes.initialize().onFailure { warn("题材缓存无法读取，将暂用内存资料：${it.message}") }
+                    probe.measure("theme_catalogs") { themes.initialize().onFailure { warn("题材缓存无法读取，将暂用内存资料：${it.message}") } }
                 }
                 val metadata = PortableComicMetadataRepository(client, PortableComicCardCache(documents), themes, appScope)
                 val manga = PortableMangaRepository(client, themeCache = themes, downloadClient = { boundClient() }, metadata = metadata)
@@ -195,7 +198,25 @@ class PortableAppGraph private constructor(
                 val export = PortableComicExportRepository(downloads, services.comicExportIo, documents, access, appScope, services.beforeExport)
                 // 首帧之后预热；通知/下载命令可以直接 await，不依赖界面或帧时钟。
                 val background = appScope.launch(start = CoroutineStart.LAZY) {
+                    probe.mark("background_start")
                     supervisorScope {
+                        // 非首屏数据在主页绘制后预热。首次使用仍会自行 ensureLoaded，不能依赖这次预热。
+                        val slots = kotlinx.coroutines.sync.Semaphore(2)
+                        val optionalReads: List<Triple<String, String, suspend () -> Result<Unit>>> = listOf(
+                            Triple("reader_preferences", "漫画阅读设置", { readerPreferences.initialize() }),
+                            Triple("reader_tools", "阅读工具设置", { readerTools.initialize() }),
+                            Triple("novel_preferences", "小说阅读设置", { novelPreferences.initialize() }),
+                            Triple("annotations", "小说标注", { annotations.initialize() }),
+                            Triple("network_log", "网络诊断日志", { logs.initialize() })
+                        )
+                        optionalReads.forEach { (phase, label, read) -> launch {
+                            slots.acquire()
+                            try {
+                                probe.measure(phase) { read() }.onFailure {
+                                    warn("${label}无法读取，原数据已保留，请在对应功能重试")
+                                }
+                            } finally { slots.release() }
+                        } }
                         launch {
                             try { manager.awaitRestoration() }
                             catch (cancel: CancellationException) { throw cancel }
@@ -203,6 +224,7 @@ class PortableAppGraph private constructor(
                         }
                         launch { export.awaitRestoration().onFailure { warn(it.message ?: "导出任务无法读取，原数据已保留") } }
                     }
+                    probe.mark("background_ready")
                 }
                 // 系统通知可在首帧前提交下载命令，首次参数不能依赖异步 collect 的调度顺序。
                 val initialDownloadSettings = appSettings.settings.first()
@@ -265,13 +287,14 @@ class PortableAppGraph private constructor(
                     novelPreferences, annotations, blacklist, network, risk, storage,
                     PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools, userData), logs, imageActions, export, debugStore,
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
-                    novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client),
+                    novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client), startupTrace = probe,
                     appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {
                         override suspend fun latestRelease() = try { Result.success(GitHubMetadata(client).latestApp()) }
                         catch (cancel: CancellationException) { throw cancel }
                         catch (error: Exception) { Result.failure(error) }
                     })
                 trace("core_ready")
+                probe.mark("core_ready")
                 completed = true
                 return PortableAppGraph(repositories, manager, ::imageLoader, warnings, ::closeAll, { drainGraphLifetime(lifetime, ::closeAll) })
             } finally { if (!completed) drainGraphLifetime(lifetime, ::closeAll) }

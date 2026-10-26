@@ -1,6 +1,9 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.home
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
+import com.rchdliang.copymanga_neo.multiplatform.app.LocalStartupTrace
+import com.rchdliang.copymanga_neo.multiplatform.app.startupDraw
+import com.rchdliang.copymanga_neo.multiplatform.app.startupLayout
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -91,7 +94,12 @@ fun HomeScreen(
     onNavigateToTopic: (String, String) -> Unit = { _, _ -> },
     onNavigateToNovel: (String?) -> Unit = {},
 ) {
-    ActiveRouteLaunchedEffect(viewModel, novelViewModel) { viewModel.start(); novelViewModel.start() }
+    val startupTrace = LocalStartupTrace.current
+    val finishComposition = startupTrace.begin("home_screen_compose")
+    ActiveRouteLaunchedEffect(viewModel, novelViewModel) {
+        startupTrace.mark("home_route_effect")
+        viewModel.start(); novelViewModel.start()
+    }
     val novels by novelViewModel.state.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val toastHost = LocalToastHost.current
@@ -113,6 +121,8 @@ fun HomeScreen(
 
     HomeContent(
         uiState = uiState,
+        modifier = Modifier.startupDraw(startupTrace, "home_first_draw").startupDraw(startupTrace, if (uiState.isLoading) "home_loading_draw"
+            else if (uiState.error != null || uiState.riskControl != null) "home_error_draw" else "home_content_draw"),
         onComicClick = onComicClick,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToExplore = onNavigateToExplore,
@@ -129,6 +139,7 @@ fun HomeScreen(
         onRetryAfterRisk = viewModel::retryAfterRiskControl,
         onNavigateToDownloads = onNavigateToDownloads
     )
+    finishComposition?.invoke()
 }
 
 /** 与页面状态分离，运行时和 Preview 共用同一个风控弹窗。 */
@@ -187,6 +198,8 @@ fun HomeContent(
     onNovelClick: (String) -> Unit = {},
     onMoreNovels: () -> Unit = {}
 ) {
+    val trace = LocalStartupTrace.current
+    val finishContent = trace.begin("home_content_compose")
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(
         (uiState.recComicList + uiState.hotComics + uiState.newComics + uiState.finishComics + uiState.rankComics).map { it.pathWord })
     val pullToRefreshState = rememberPullToRefreshState()
@@ -211,7 +224,7 @@ fun HomeContent(
     // 网络结果与过滤流分开发布；过滤未就绪时保留固定分区，避免晚到内容插到当前锚点上方。
     val awaitingComics = uiState.error == null && (uiState.isLoading || !uiState.filterReady)
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().startupLayout(trace, "home")) {
         SearchEntryBar(
             onClick = onNavigateToSearch,
             modifier = Modifier
@@ -304,7 +317,7 @@ fun HomeContent(
                     LazyColumn(
                         state = pageScroll,
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxSize().startupLayout(trace, "home_list")
                             .mouseDragScroll(pageScroll, Orientation.Vertical)
                             .padding(horizontal = 16.dp),
                         contentPadding = PaddingValues(bottom = 16.dp),
@@ -478,6 +491,7 @@ fun HomeContent(
             }
         }
     }
+    finishContent?.invoke()
 }
 
 @Composable
@@ -485,11 +499,13 @@ private fun SearchEntryBar(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val trace = LocalStartupTrace.current
+    val finishSearch = trace.begin("search_entry_compose")
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        modifier = modifier.height(48.dp)
+        modifier = modifier.height(48.dp).startupLayout(trace, "search_entry")
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -508,6 +524,7 @@ private fun SearchEntryBar(
             )
         }
     }
+    finishSearch?.invoke()
 }
 
 /** 漫画、小说和专题共用分区表面与内容留白。 */
@@ -791,6 +808,11 @@ private fun ComicGrid(
     placeholderCount: Int = 0,
     state: LazyListState = rememberLazyListState()
 ) {
+    // 首次加载只有一屏静态占位，不建立嵌套懒列表；真实内容仍保留原 LazyRow 和滚动状态。
+    if (comics.isEmpty() && placeholderCount > 0) {
+        HomePlaceholderRow(placeholderCount, cardWidth, modifier = modifier)
+        return
+    }
     LazyRow(
         contentPadding = PaddingValues(0.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -817,6 +839,13 @@ private fun ComicGrid(
         items(placeholderCount, key = { "placeholder-$it" }) {
             HomeBookPlaceholder(cardWidth)
         }
+    }
+}
+
+@Composable
+private fun HomePlaceholderRow(count: Int, cardWidth: Dp, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(count) { HomeBookPlaceholder(cardWidth) }
     }
 }
 
@@ -1101,7 +1130,8 @@ private fun HomeNovelSection(
             state.books.isNotEmpty() || state.loading -> BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val count = homeBookColumns(maxWidth)
                 val width = (maxWidth - 8.dp * (count - 1)) / count
-                LazyRow(
+                if (state.books.isEmpty()) HomePlaceholderRow(count, width)
+                else LazyRow(
                     state = listState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.mouseDragScroll(listState, Orientation.Horizontal)
@@ -1110,9 +1140,6 @@ private fun HomeNovelSection(
                         NovelTransitionCard(
                             book = book, source = "home",
                             modifier = Modifier.width(width), onClick = { onOpen(book.path) })
-                    }
-                    if (state.books.isEmpty()) items(count, key = { "placeholder-$it" }) {
-                        HomeBookPlaceholder(width)
                     }
                 }
             }

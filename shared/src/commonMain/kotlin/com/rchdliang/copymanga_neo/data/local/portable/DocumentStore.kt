@@ -3,6 +3,11 @@ package com.rchdliang.copymanga_neo.data.local.portable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.KSerializer
@@ -13,6 +18,11 @@ interface DocumentStorage {
     suspend fun read(key: String): String?
     suspend fun write(key: String, value: String)
     suspend fun remove(key: String)
+    /** 日志专用追加；文件后端直接 APPEND。键值后端仅替换当前有界分段，不重写全部历史。 */
+    suspend fun append(key: String, value: String) = write(key, read(key).orEmpty() + value)
+    suspend fun size(key: String): Long = read(key)?.encodeToByteArray()?.size?.toLong() ?: 0L
+    /** 只用于保留旧日志开关；不读取、解析或迁移旧日志正文。 */
+    suspend fun readPrefix(key: String, maxChars: Int): String? = read(key)?.take(maxChars)
 }
 
 expect fun platformDocumentStorage(directory: String): DocumentStorage
@@ -50,6 +60,12 @@ class DocumentStore<T>(
     suspend fun ensureLoaded(): Result<Unit> = mutex.withLock {
         if (loaded) Result.success(Unit) else loadLocked()
     }
+
+    /** 首次订阅先恢复磁盘值，避免后置初始化时把默认值误当成用户设置；解析不占用 UI 线程。 */
+    fun loadedState(): Flow<T> = flow {
+        ensureLoaded().fold({}, { throw it })
+        emitAll(state)
+    }.flowOn(Dispatchers.Default)
 
     private suspend fun loadLocked(): Result<Unit> = attempt {
         val original = storage.read(key)

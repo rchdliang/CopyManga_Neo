@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.rchdliang.copymanga_neo.multiplatform.app.StartupTrace
+import com.rchdliang.copymanga_neo.multiplatform.app.measure
 
 data class HomeNovelUiState(
     val books: List<NovelBook> = emptyList(),
@@ -28,7 +32,8 @@ data class HomeNovelUiState(
 class HomeNovelViewModel constructor(
     private val repository: NovelRepository,
     private val auth: ReadingSessionRepository,
-    autoStart: Boolean = true
+    autoStart: Boolean = true,
+    private val startupTrace: StartupTrace = StartupTrace.None
 ) : ViewModel() {
     private val refresh = MutableStateFlow(0)
     private val mutable = MutableStateFlow(HomeNovelUiState())
@@ -59,8 +64,12 @@ class HomeNovelViewModel constructor(
                 loadedSession = session
                 val owner = session?.owner ?: return@collectLatest
                 try {
-                    val result =
-                        repository.discover(session.mode, owner, 0, "-datetime_updated", "", "")
+                    val result = withContext(Dispatchers.Default) {
+                        startupTrace.mark("home_novel_requests_start")
+                        startupTrace.measure("home_novel_response") {
+                            repository.discover(session.mode, owner, 0, "-datetime_updated", "", "")
+                        }
+                    }
                     currentCoroutineContext().ensureActive()
                     if (auth.getReadingSessionSync() == session) {
                         result.fold(

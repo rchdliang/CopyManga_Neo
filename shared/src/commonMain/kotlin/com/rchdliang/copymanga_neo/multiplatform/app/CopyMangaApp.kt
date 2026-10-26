@@ -24,6 +24,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +57,11 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.profile.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -105,13 +111,21 @@ private class RouteModels(private val savedState: SavedStateHandle) : ViewModel(
 }
 
 /** Original startup, session-expiry and avatar behavior, retained with the application's model store. */
-private class MainSessionModel(private val users: UserRepository) : ViewModel() {
+internal class MainSessionModel(private val users: UserRepository, private val startupTrace: StartupTrace = StartupTrace.None) : ViewModel() {
     private val loggedIn = MutableStateFlow(users.isLoggedInSync())
     val isLoggedIn = loggedIn.asStateFlow()
     val avatar = users.getAvatar().stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private var triedAutoLoginAfterExpiry = false
-    init {
-        viewModelScope.launch {
+    private var started = false
+    private var autoLoginJob: Job? = null
+    private val errors = CoroutineExceptionHandler { _, error -> UiLog.e("MainSession", "会话刷新失败", error) }
+
+    /** 缓存身份立即可用；网络刷新在首帧后启动，且不在 UI 线程构建/解析请求。 */
+    fun start() {
+        if (started) return
+        started = true
+        startupTrace.mark("session_refresh_start")
+        viewModelScope.launch(errors) {
             users.isAuthCacheReady().first { it }
             users.sessionChanges().collectLatest {
                 val current = users.isLoggedInSync()
@@ -119,23 +133,33 @@ private class MainSessionModel(private val users: UserRepository) : ViewModel() 
                 loggedIn.value = current
                 if (!current && previous && users.getAutoLoginSync() && !triedAutoLoginAfterExpiry) {
                     triedAutoLoginAfterExpiry = true
-                    viewModelScope.launch { autoLogin() }
+                    requestAutoLogin()
                 } else if (current) {
-                    users.getMemberInfo()
+                    withContext(Dispatchers.Default) {
+                        startupTrace.mark("member_request_worker")
+                        startupTrace.measure("member_refresh") { users.getMemberInfo() }
+                    }
                     triedAutoLoginAfterExpiry = false
                 }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             users.isAuthCacheReady().first { it }
-            if (!users.isLoggedInSync() && users.getAutoLoginSync()) autoLogin()
+            if (!users.isLoggedInSync() && users.getAutoLoginSync()) requestAutoLogin()
         }
     }
-    private suspend fun autoLogin() {
+
+    /** 延后启动期间发生会话失效时，初始登录和失效补登只能启动同一个请求。 */
+    private fun requestAutoLogin() {
+        if (autoLoginJob?.isActive == true) return
+        autoLoginJob = viewModelScope.launch(errors, start = CoroutineStart.LAZY) { autoLogin() }
+        autoLoginJob?.start()
+    }
+    private suspend fun autoLogin() = withContext(Dispatchers.Default) {
         val generation = users.sessionVersionSync()
-        val username = users.getSavedUsernameSync() ?: return
-        val password = users.getSavedPasswordSync() ?: return
-        if (!users.getAutoLoginSync() || users.sessionVersionSync() != generation) return
+        val username = users.getSavedUsernameSync() ?: return@withContext
+        val password = users.getSavedPasswordSync() ?: return@withContext
+        if (!users.getAutoLoginSync() || users.sessionVersionSync() != generation) return@withContext
         users.login(username, password, expectedGeneration = generation).onSuccess { users.getMemberInfo() }
     }
 }
@@ -151,12 +175,15 @@ fun CopyMangaApp(
     retryExportId: String? = null,
     onExportRetryConsumed: () -> Unit = {}
 ) {
-    LaunchedEffect(repositories) {
-        repositories.appSettings.initializeChineseDefault(androidx.compose.ui.text.intl.Locale.current.toLanguageTag())
-            .onFailure { UiLog.w("Main", "系统语言默认设置初始化失败", it) }
-        withFrameNanos { }
-        withFrameNanos { }
-        repositories.startBackground()
+    val startupTrace = repositories.startupTrace
+    startupTrace.mark("app_enter")
+    var shellDrawn by remember(repositories) { mutableStateOf(false) }
+    LaunchedEffect(repositories, shellDrawn) {
+        if (shellDrawn) {
+            repositories.startBackground()
+            repositories.appSettings.initializeChineseDefault(androidx.compose.ui.text.intl.Locale.current.toLanguageTag())
+                .onFailure { UiLog.w("Main", "系统语言默认设置初始化失败", it) }
+        }
     }
     val owner = requireNotNull(viewModelStoreOwner) {
         "Provide a window/activity ViewModelStoreOwner and clear it only when that host finishes."
@@ -179,14 +206,18 @@ fun CopyMangaApp(
     }
     val settings by settingsFlow.collectAsStateWithLifecycle(null)
     val preferences = settings ?: return
+    startupTrace.mark("app_settings_observed")
+    val finishComposition = startupTrace.begin("app_shell_compose")
     val dark = when (preferences.themeMode) { AppThemeMode.DARK -> true; AppThemeMode.LIGHT -> false; AppThemeMode.SYSTEM -> isSystemInDarkTheme() }
-    val share = models.get("application") { ShareViewModel(repositories.shares) }
-    val session = models.get("application") { MainSessionModel(repositories.users) }
+    val share = models.get("application") { startupTrace.measureSync("share_model") { ShareViewModel(repositories.shares) } }
+    val session = models.get("application") { startupTrace.measureSync("session_model") { MainSessionModel(repositories.users, startupTrace) } }
+    LaunchedEffect(session, shellDrawn) { if (shellDrawn) session.start() }
     val loggedIn by session.isLoggedIn.collectAsStateWithLifecycle()
     val avatar by session.avatar.collectAsStateWithLifecycle()
-    val favorites = models.get("tab:FAVORITES") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf) }
+    val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, autoStart = false) } }
+    LaunchedEffect(favorites, shellDrawn) { if (shellDrawn) favorites.start() }
     val favoritesState by favorites.uiState.collectAsStateWithLifecycle()
-    val exports = models.get("application", "export") { ComicExportViewModel(repositories.export, it) }
+    val exports = models.get("application", "export") { handle -> startupTrace.measureSync("export_model") { ComicExportViewModel(repositories.export, handle) } }
     val exportState by repositories.export.state.collectAsStateWithLifecycle()
     val downloads by repositories.downloads.getDownloadProgress().collectAsStateWithLifecycle()
     platforms.notifications?.let { DownloadNotificationPermission(downloads.isNotEmpty() || exportState.running, it) }
@@ -197,12 +228,14 @@ fun CopyMangaApp(
         retryExportId?.let { exports.retry(it); onExportRetryConsumed() }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repositories.risk.resumeIfExpired() }
-    val appImageLoader = remember(platforms.imageLoader) { platforms.imageLoader(10) }
+    val appImageLoader = remember(platforms.imageLoader) { startupTrace.measureSync("image_loader") { platforms.imageLoader(10) } }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, LocalUiPlatform provides platforms.ui, LocalShareViewModel provides share,
-        LocalAppImageLoader provides appImageLoader,
+        LocalAppImageLoader provides appImageLoader, LocalStartupTrace provides repositories.startupTrace,
         LocalNovelReaderPlatform provides platforms.novel, LocalComicExportPlatform provides platforms.export) {
         MetadataTextHost(preferences.simplifyChinese, repositories.chineseDictionary) {
             CopyManga_NeoTheme(darkTheme = dark) {
+                val colors = MaterialTheme.colorScheme
+                SideEffect { repositories.startupTrace.palette("shell", colors.primary.value, colors.surface.value) }
                 AppToastHost {
                     val toast = LocalToastHost.current
                     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -211,10 +244,11 @@ fun CopyMangaApp(
                             repositories.export.messages.collect { toast.showToast(it) }
                         }
                     }
-                    val presentation = models.get("application") { ComicPresentationViewModel(repositories.comicMetadata, repositories.blacklist) }
-                    val novelPreview = models.get("application") { NovelPreviewViewModel(repositories.novels, repositories.sessions, repositories.network) }
+                    val presentation = models.get("application") { startupTrace.measureSync("presentation_model") { ComicPresentationViewModel(repositories.comicMetadata, repositories.blacklist) } }
+                    val novelPreview = models.get("application") { startupTrace.measureSync("novel_preview_model") { NovelPreviewViewModel(repositories.novels, repositories.sessions, repositories.network) } }
                     ComicPresentationHost(presentation, novelPreview) {
-                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                    BoxWithConstraints(Modifier.fillMaxSize().startupLayout(startupTrace, "root").startupDraw(startupTrace, "shell_draw")) {
+                        val finishRoot = startupTrace.begin("root_subcompose")
                         val wide = maxWidth >= 840.dp
                         Box(Modifier.fillMaxSize().background(if (wide) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)) {
                             val transitionState = rememberComicSharedTransitionState()
@@ -244,19 +278,20 @@ fun CopyMangaApp(
                                                     ) { tab ->
                                                         RouteLifecycleScope(active = tab == navigation.tab) {
                                                             stateHolder.SaveableStateProvider("tab:${tab.name}") {
-                                                                RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites)
+                                                                RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites) { if (!shellDrawn) shellDrawn = true }
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
                                         } else stateHolder.SaveableStateProvider(route.id) {
-                                            RouteContent(route, navigation, repositories, platforms, models, favorites)
+                                            RouteContent(route, navigation, repositories, platforms, models, favorites) { if (!shellDrawn) shellDrawn = true }
                                         }
                                     }
                                 }
                             }
                         }
+                        finishRoot?.invoke()
                     }
                     }
                     ComicExportDialogs(exports)
@@ -270,6 +305,7 @@ fun CopyMangaApp(
             }
         }
     }
+    finishComposition?.invoke()
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -278,7 +314,10 @@ internal fun MainNavigationShell(
     current: MainTab, onSelect: (MainTab) -> Unit,
     loggedIn: Boolean, avatar: String?, updates: Int, content: @Composable () -> Unit
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val trace = LocalStartupTrace.current
+    val finish = trace.begin("navigation_shell_compose")
+    BoxWithConstraints(Modifier.fillMaxSize().startupLayout(trace, "navigation_shell")) {
+        val finishSubcompose = trace.begin("navigation_shell_subcompose")
         val expanded = maxWidth >= 840.dp
         if (expanded) {
             val rail = rememberWideNavigationRailState(initialValue = WideNavigationRailValue.Collapsed)
@@ -377,7 +416,9 @@ internal fun MainNavigationShell(
                 }
             }
         }
+        finishSubcompose?.invoke()
     }
+    finish?.invoke()
 }
 
 @Composable
@@ -400,7 +441,16 @@ private fun TabIcon(tab: MainTab, selected: Boolean, updates: Int) {
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories, p: AppPlatforms, models: RouteModels, favorites: FavoritesViewModel) {
+private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories, p: AppPlatforms, models: RouteModels, favorites: FavoritesViewModel, onDrawn: () -> Unit) {
+    // 导航容器空帧不算主页就绪；目的页面真正绘制后才启动非首屏预热。
+    Box(Modifier.fillMaxSize().drawWithContent { drawContent(); onDrawn() }) {
+        RouteDestination(route, nav, r, p, models, favorites)
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppRepositories, p: AppPlatforms, models: RouteModels, favorites: FavoritesViewModel) {
     val profile = { nav.select(MainTab.PROFILE) }
     val toast = LocalToastHost.current
     val back = { nav.back(); Unit }
@@ -447,8 +497,8 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
                 modalComments = { comments(ReaderCommentModelKeys.modal) }))
         "tab" -> when (MainTab.valueOf(route.id.substringAfter(':'))) {
             MainTab.HOME -> HomeScreen(
-                models.get(route.id) { HomeViewModel(r.manga, r.discovery, r.risk, r.appSettings, autoStart = false) },
-                models.get(route.id) { HomeNovelViewModel(r.novels, r.sessions, autoStart = false) }, nav::comic,
+                models.get(route.id) { r.startupTrace.measureSync("home_model") { HomeViewModel(r.manga, r.discovery, r.risk, r.appSettings, autoStart = false, startupTrace = r.startupTrace) } },
+                models.get(route.id) { r.startupTrace.measureSync("home_novel_model") { HomeNovelViewModel(r.novels, r.sessions, autoStart = false, startupTrace = r.startupTrace) } }, nav::comic,
                 onNavigateToSearch = { nav.open(AppRoute("search")) },
                 onNavigateToExplore = nav::explore,
                 onNavigateToDownloads = { nav.select(MainTab.DOWNLOADS) },
