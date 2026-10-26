@@ -33,6 +33,8 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
             preloadPages = prefs.getInt("preload_pages", 2),
             pageLayout = prefs.getString("page_layout", "SINGLE") ?: "SINGLE",
             pageAnimation = prefs.getBoolean("page_animation", true),
+            sharpness = prefs.getFloat("sharpness", 0f),
+            sharpnessRestore = prefs.getFloat("sharpness_restore", 0.20f),
             pairingRestarts = runCatching { ReaderToolsBackupCodec.decodePairing(prefs.getString("pairing_restarts", "{}") ?: "{}") }.getOrDefault(emptyMap())
         ).normalized()
     )
@@ -53,6 +55,8 @@ class ReaderToolsStore @Inject constructor(@ApplicationContext context: Context)
                         .putInt("preload_pages", next.preloadPages)
                         .putString("page_layout", next.pageLayout)
                         .putBoolean("page_animation", next.pageAnimation)
+                        .putFloat("sharpness", next.sharpness)
+                        .putFloat("sharpness_restore", next.sharpnessRestore)
                         .putString("pairing_restarts", ReaderToolsBackupCodec.encodePairing(next.pairingRestarts)).commit()
                 ) throw IOException("阅读设置保存失败")
                 mutableSettings.value = next

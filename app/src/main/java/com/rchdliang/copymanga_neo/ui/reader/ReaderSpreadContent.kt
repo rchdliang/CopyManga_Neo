@@ -84,6 +84,7 @@ internal fun ReaderSpreadContent(
                                         false, index == pager.currentPage, false,
                                         zoomState = state, imageLoader = imageLoader, tools = tools,
                                         imageAlignment = readerSpreadImageAlignment(spread.indices.size, visualIndex),
+                                        enhancementPageKey = leaf.key,
                                         onReady = { onReady(leaf.key) },
                                         onDimensions = { width, height -> onDimensions(leaf.key, width, height) },
 

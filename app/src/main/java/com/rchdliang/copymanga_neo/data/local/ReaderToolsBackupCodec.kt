@@ -16,6 +16,8 @@ internal object ReaderToolsBackupCodec {
         addProperty("preload", settings.preloadPages)
         addProperty("pageLayout", settings.pageLayout)
         addProperty("pageAnimation", settings.pageAnimation)
+        addProperty("sharpness", settings.sharpness)
+        addProperty("sharpnessRestore", settings.sharpnessRestore)
         add("pairingRestarts", JsonParser.parseString(encodePairing(settings.pairingRestarts)))
     }.toString()
 
@@ -39,6 +41,12 @@ internal object ReaderToolsBackupCodec {
             require(value?.isJsonPrimitive == true && value.asJsonPrimitive.isNumber) { "阅读工具设置无效：$key" }
             return value.asString.toIntOrNull() ?: error("阅读工具设置必须为整数：$key")
         }
+        fun decimal(key: String, default: Float): Float {
+            if (!json.has(key)) return default
+            val value = json[key]
+            require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber) { "阅读工具设置无效：$key" }
+            return value.asFloat.also { require(it.isFinite()) { "阅读工具设置无效：$key" } }
+        }
         return ReaderToolsSettings(
             boolean("inlineComments"),
             boolean("continuousChapters"),
@@ -49,6 +57,8 @@ internal object ReaderToolsBackupCodec {
             integer("preload"),
             pageLayout = json["pageLayout"]?.asString ?: "SINGLE",
             pageAnimation = if (json.has("pageAnimation")) boolean("pageAnimation") else true,
+            sharpness = decimal("sharpness", 0f),
+            sharpnessRestore = decimal("sharpnessRestore", 0.20f),
             pairingRestarts = json["pairingRestarts"]?.let { decodePairing(it.toString()) } ?: emptyMap()
         ).also { require(it == it.normalized()) { "阅读工具设置无效" } }
     }

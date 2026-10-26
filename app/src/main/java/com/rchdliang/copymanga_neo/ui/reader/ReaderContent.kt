@@ -168,7 +168,8 @@ internal fun ReaderContent(
                             imageLoader = imageLoader,
                             tools = tools,
                             onReady = { onImageReady(page.key) },
-                            trackReadiness = page.key in trackedPageKeys
+                            trackReadiness = page.key in trackedPageKeys,
+                            enhancementPageKey = page.key
                         )
                     }
                 }
@@ -196,7 +197,8 @@ internal fun ReaderImageItem(
     onReady: () -> Unit = {},
     onDimensions: (Float, Float) -> Unit = { _, _ -> },
     trackReadiness: Boolean = true,
-    imageAlignment: Alignment = Alignment.Center
+    imageAlignment: Alignment = Alignment.Center,
+    enhancementPageKey: String = path
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
@@ -303,6 +305,7 @@ internal fun ReaderImageItem(
                 val intrinsic = painter.intrinsicSize
                 LaunchedEffect(path, intrinsic) { onDimensions(intrinsic.width, intrinsic.height) }
                 val currentPainter = painter
+                val sharpness = if (isActivePage) LocalReaderSharpness.current else 0f
                 if (enableZoom) {
                     // 分页模式：单个图片缩放
                     Box(
@@ -330,7 +333,7 @@ internal fun ReaderImageItem(
                                     scaleY = zoomState.scale
                                     translationX = zoomState.offset.x
                                     translationY = zoomState.offset.y
-                                },
+                                }.readerSharpen(sharpness, enhancementPageKey),
                             contentScale = contentScale,
                 alignment = imageAlignment
                         )
@@ -340,7 +343,7 @@ internal fun ReaderImageItem(
                     Image(
                         painter = currentPainter,
                         contentDescription = null,
-                        modifier = imageModifier,
+                        modifier = imageModifier.readerSharpen(sharpness, enhancementPageKey),
                         contentScale = contentScale,
                 alignment = imageAlignment
                     )

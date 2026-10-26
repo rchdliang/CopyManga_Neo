@@ -473,6 +473,14 @@ fun ReaderSuccessContent(
         }
     }
     val currentAppending by rememberUpdatedState(appending)
+    val sharpenStatuses = remember { mutableStateMapOf<String, Boolean>() }
+    androidx.compose.runtime.SideEffect { sharpenStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { sharpenStatuses.remove(it) } }
+    val sharpness = tools.sharpness
+    var comparingSharpness by remember(page?.key, sharpness, tools.pageLayout) { mutableStateOf(false) }
+    var beforeSharpness by remember(comparingSharpness) { mutableStateOf(false) }
+    val activeSharpenKeys = if (isContinuous) setOfNotNull(page?.key)
+        else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
+    val sharpnessApplied = activeSharpenKeys.isNotEmpty() && activeSharpenKeys.all { sharpenStatuses[it] == true }
     val loader = remember(context, tools.imageTimeoutSeconds, preview) {
         if (preview) context.imageLoader else EntryPointAccessors.fromApplication(
             context.applicationContext, ReaderImageLoaderEntryPoint::class.java
@@ -616,8 +624,10 @@ fun ReaderSuccessContent(
     }
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) automatic =
-                false
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                automatic = false
+                comparingSharpness = false
+            }
         }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
@@ -761,7 +771,8 @@ fun ReaderSuccessContent(
         }
     }
 
-    BackHandler(enabled = showControls && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+    BackHandler(enabled = (showControls || comparingSharpness) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+        comparingSharpness = false
         showControls = false
     }
     val nested = remember { object : NestedScrollConnection {} }
@@ -789,6 +800,8 @@ fun ReaderSuccessContent(
             }
             .focusable()
     ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides if (comparingSharpness && beforeSharpness) 0f else sharpness,
+            LocalReaderSharpenStatus provides { key, applied -> sharpenStatuses[key] = applied }) {
         ReaderContent(
             pages = pages, spreads = spreads,
             onDimensions = { key, width, height ->
@@ -829,8 +842,9 @@ fun ReaderSuccessContent(
                     commentsViewModel = commentModels.inline(comment.chapterUuid)
                 )
             })
+        }
         AnimatedVisibility(
-            showControls,
+            showControls && !comparingSharpness,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -849,7 +863,7 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && page?.source != null) ReaderRestingOverlay(
+        if (!showControls && !comparingSharpness && page?.source != null) ReaderRestingOverlay(
             page.chapterName,
             if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
@@ -858,7 +872,7 @@ fun ReaderSuccessContent(
             Modifier.align(Alignment.BottomCenter)
         )
         AnimatedVisibility(
-            showControls && page != null,
+            showControls && !comparingSharpness && page != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -891,6 +905,12 @@ fun ReaderSuccessContent(
                     }
                 })
         }
+        if (comparingSharpness) ReaderSharpnessComparison(
+            before = beforeSharpness,
+            onToggle = { beforeSharpness = !beforeSharpness },
+            onClose = { comparingSharpness = false; showControls = false },
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)
+        )
         if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
@@ -912,6 +932,29 @@ fun ReaderSuccessContent(
             ReaderSpreadOptions(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0,
                 page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
 
+        },
+        qualitySettings = {
+            ReaderQualitySection {
+                ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
+                    onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
+                    onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
+                }
+                if (sharpness > 0f && readerSharpnessAvailable()) {
+                    Text(when {
+                        activeSharpenKeys.any { sharpenStatuses[it] == false } -> "当前部分图片未应用锐化（图片过大或渲染不可用）"
+                        sharpnessApplied -> "当前图片已启用锐化"
+                        else -> "等待当前图片加载"
+                    }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.material3.TextButton(enabled = sharpnessApplied, onClick = {
+                        automatic = false
+                        showSettings = false
+                        showControls = false
+                        comparingSharpness = true
+                    }) {
+                        Text("对比锐化前后", color = if (sharpnessApplied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+                    }
+                }
+            }
         },
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
