@@ -9,6 +9,9 @@ class ReaderSharpnessPersistenceTest {
         val settings=ReaderToolsSettings(sharpness=0.2f)
         assertEquals(settings,json.decodeFromString<ReaderToolsSettings>(json.encodeToString(settings)))
         assertEquals(0f,ReaderToolsSettings(sharpness=Float.NaN).normalized().sharpness)
-        assertEquals(0.35f,ReaderToolsSettings(sharpness=10f).normalized().sharpness)
+        assertEquals(1f,ReaderToolsSettings(sharpness=10f).normalized().sharpness)
+        val strong = ReaderToolsSettings(sharpness=0.8f, sharpnessRestore=0.8f).normalized()
+        assertEquals(strong,json.decodeFromString<ReaderToolsSettings>(json.encodeToString(strong)).normalized())
+        assertEquals(0.8f,strong.sharpness)
     }
 }

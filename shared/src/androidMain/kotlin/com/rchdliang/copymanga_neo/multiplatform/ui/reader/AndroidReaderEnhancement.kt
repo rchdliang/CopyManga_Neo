@@ -33,7 +33,15 @@ private fun Modifier.androidReaderSharpen(amount: Float, pageKey: String): Modif
         } catch (_: IllegalArgumentException) { null }
           catch (_: IllegalStateException) { null }
     } ?: run { SideEffect { report?.invoke(pageKey, false) }; return this }
-    return this.then(Modifier.onSizeChanged { report?.invoke(pageKey, readerSharpenSurfaceAllowed(it.width, it.height)) }).graphicsLayer {
+    var surfaceSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val measured = surfaceSize != androidx.compose.ui.unit.IntSize.Zero
+    val surfaceAllowed = readerSharpenSurfaceAllowed(surfaceSize.width, surfaceSize.height)
+    SideEffect {
+        if (measured) {
+            report?.invoke(pageKey, surfaceAllowed)
+        }
+    }
+    return this.then(Modifier.onSizeChanged { surfaceSize = it }).graphicsLayer {
         renderEffect = if (readerSharpenSurfaceAllowed(size.width.toInt(), size.height.toInt())) effect else null
     }
 }
@@ -56,11 +64,12 @@ half4 main(float2 p) {
     float lo = min(y, min(min(yn, ys), min(yw, ye)));
     float hi = max(y, max(max(yn, ys), max(yw, ye)));
     float detail = y - (yn + ys + yw + ye) * 0.25;
-    float gain = (1.0 - smoothstep(0.10, 0.40, hi - lo))
-        * smoothstep(0.002, 0.012, abs(detail));
-    float delta = clamp(strength * gain * detail, -0.03, 0.03);
+    // 抑制平坦区域的微小噪声，但不再关闭黑白文字的高反差边缘。
+    float gain = smoothstep(0.004, 0.02, hi - lo);
+    float limit = 0.12 * strength;
+    float delta = clamp(3.0 * strength * gain * detail, -limit, limit);
+    // 限制在原邻域亮度内，避免在黑线两侧制造额外的白边或黑边。
     delta = clamp(y + delta, lo, hi) - y;
-    // Luma-only correction; strong edges and noise receive less gain.
     return half4(clamp(c.rgb + half3(delta), half3(0), half3(c.a)), c.a);
 }
 """

@@ -19,7 +19,8 @@ Android arm64、Windows x64 的普通 Gradle / IDE 打包必须包含本平台�
 - ReaderSrModels：state、downloadBytes、refresh、download、delete；状态为 Missing / Downloading(bytes,total) / Preparing / Ready / Cancelled / Failed(message)。
 - ReaderSrSession.models 公开平台模型控制；模型未就绪时不会向推理协调器提交请求。
 - ReaderSrModelControls：基础确认、下载进度、取消、删除重下接线；供 UI 任务串行统一审查，不作为最终视觉设计。
-- ReaderSharpnessOptions：开关 / 强度滑杆 / 恢复默认；ReaderToolsSettings.sharpness 默认0，强度0…0.35，关闭后恢复上次非零强度（初次0.20）。设置持久化并纳入备份。
+- ReaderSharpnessOptions：开关 / 强度滑杆 / 恢复默认；ReaderToolsSettings.sharpness 默认0，强度0…1，关闭后恢复上次非零强度（初次0.20）。既有数值原样保留，设置持久化并纳入备份。画质页显示当前页是否启用，提供“对比锐化前后”；对比只临时切换锐化，不修改保存的强度或 AI 设置，退出对比、换页、改变布局后恢复。
+- 锐化保留亮度邻域限幅以防白边，不再因黑白反差大而关闭边缘处理。单个离屏表面上限为 8,388,608 像素、边长 4096，支持 2032×3048 平板及 3840×2160 单页；这不是长图分块方案，超过预算仍回退并提示。
 - 设置入口：漫画阅读器 → 显示控制栏 → 设置 → 向下滚动至轻度锐化 / 超分辨率。Android 锐化要求API33+及硬件加速；桌面用Skia；不支持环境明确禁用。
 
 原解码/缩放策略、原图字节/缓存/导出、原始页历史书签、RTL及双页行为保持；超分双叶仍显示原图，单页单任务推理。独立旧 Android 未增加超分，也未为它复制一套渲染与设置系统。

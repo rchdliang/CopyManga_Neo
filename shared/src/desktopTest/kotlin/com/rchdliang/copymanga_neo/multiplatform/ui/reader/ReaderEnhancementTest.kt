@@ -47,9 +47,12 @@ class ReaderEnhancementTest {
         assertEquals(0f, normalizedReaderSharpness(Float.NaN))
         assertEquals(0f, normalizedReaderSharpness(Float.POSITIVE_INFINITY))
         assertEquals(0f, normalizedReaderSharpness(-1f))
-        assertEquals(.35f, normalizedReaderSharpness(1f))
+        assertEquals(1f, normalizedReaderSharpness(2f))
         assertTrue(readerSharpenSurfaceAllowed(2048, 2048))
-        assertFalse(readerSharpenSurfaceAllowed(2048, 2049))
+        assertTrue(readerSharpenSurfaceAllowed(2032, 3048))
+        assertTrue(readerSharpenSurfaceAllowed(3048, 2032))
+        assertTrue(readerSharpenSurfaceAllowed(3840, 2160))
+        assertFalse(readerSharpenSurfaceAllowed(4096, 2160))
         assertFalse(readerSharpenSurfaceAllowed(512, 10000))
         assertFalse(readerSharpenSurfaceAllowed(Int.MAX_VALUE, Int.MAX_VALUE))
     }
@@ -64,10 +67,10 @@ class ReaderEnhancementTest {
 
     @Test fun constantAndStrongEdgesAreUnchangedAndDoNotCreateHalo() {
         val bytes = fixture { x, _ -> gray(if (x < 16) 0 else 255) }
-        render(bytes, .35f) { output ->
+        render(bytes, 1f) { output ->
             for (y in 0 until 32) for (x in 0 until 32) assertEquals(gray(if (x < 16) 0 else 255), output.getColor(x, y))
         }
-        render(fixture { _, _ -> gray(130) }, .35f) { output ->
+        render(fixture { _, _ -> gray(130) }, 1f) { output ->
             for (y in 0 until 32) for (x in 0 until 32) assertEquals(gray(130), output.getColor(x, y))
         }
     }
@@ -80,7 +83,7 @@ class ReaderEnhancementTest {
             for (y in 1 until 31) for (x in 1 until 31) {
                 val actual = output.getColor(x, y) and 255
                 if (actual != value(x)) changed++
-                assertTrue(abs(actual - value(x)) <= 8)
+                assertTrue(abs(actual - value(x)) <= 11)
                 assertTrue(actual in minOf(value(x - 1), value(x), value(x + 1))..maxOf(value(x - 1), value(x), value(x + 1)))
             }
         }
@@ -95,6 +98,26 @@ class ReaderEnhancementTest {
         }
     }
 
+    @Test fun antialiasedBlackTextEdgesSharpenWithoutOvershootAndRespondToStrength() {
+        // 模拟黑字边缘的灰阶过渡；旧算法会因邻域反差超过 0.4 而完全跳过。
+        val levels = listOf(0, 0, 32, 96, 192, 240, 255, 255)
+        val bytes = fixture { x, _ -> gray(levels[x % levels.size]) }
+        var gentleChange = 0
+        var strongChange = 0
+        for (strength in listOf(.2f, 1f)) render(bytes, strength) { output ->
+            for (x in 1 until 31) {
+                val original = levels[x % levels.size]
+                val value = output.getColor(x, 16) and 255
+                val neighbors = listOf(levels[(x - 1) % levels.size], original, levels[(x + 1) % levels.size])
+                assertTrue(value in neighbors.min()..neighbors.max(), "No new extrema at x=$x")
+                if (strength == 1f) strongChange += abs(value - original) else gentleChange += abs(value - original)
+            }
+            if (strength == 1f) assertTrue((output.getColor(2, 16) and 255) <= 12, "Gray text edge must visibly darken")
+        }
+        assertTrue(gentleChange > 0)
+        assertTrue(strongChange > gentleChange)
+    }
+
     @Test fun platformKernelsStayInParity() {
         val android = File("src/androidMain/kotlin/com/rchdliang/copymanga_neo/multiplatform/ui/reader/AndroidReaderEnhancement.kt").readText()
         val shader = android.substringAfter("internal const val READER_SHARPEN_SHADER = \"\"\"").substringBefore("\"\"\"")
@@ -106,22 +129,28 @@ class ReaderEnhancementTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
         var amount by mutableFloatStateOf(0f)
+        var pageKey by mutableStateOf("first")
+        val reported = mutableMapOf<String, Boolean>()
         val bytes = fixture { x, _ -> gray(listOf(100, 100, 105, 135, 145, 148, 150, 150)[x % 8]) }
         Image.makeFromEncoded(bytes).use { source ->
             val bitmap = source.toComposeImageBitmap()
             val scene = ImageComposeScene(32, 32, coroutineContext = coroutineContext) {
-                ComposeImage(bitmap, null, Modifier.fillMaxSize().readerSharpen(amount))
+                CompositionLocalProvider(LocalReaderSharpenStatus provides { key, applied -> reported[key] = applied }) {
+                    ComposeImage(bitmap, null, Modifier.fillMaxSize().readerSharpen(amount, pageKey))
+                }
             }
             try {
                 val renders = mutableListOf<ByteArray>()
                 var time = 0L
                 for (strength in listOf(0f, .20f, .35f, 0f)) {
                     amount = strength
+                    pageKey = "page-$strength"
                     repeat(3) { runCurrent(); time += 16_000_000; scene.render(time).close(); runCurrent() }
                     time += 16_000_000
                     scene.render(time).use { rendered ->
                         rendered.encodeToData()!!.use { renders += it.bytes }
                     }
+                    if (strength > 0f) assertEquals(true, reported[pageKey], "Measured surface must publish its status, including same-size page changes")
                 }
                 assertContentEquals(renders.first(), renders.last())
                 assertFalse(renders[0].contentEquals(renders[2]))
