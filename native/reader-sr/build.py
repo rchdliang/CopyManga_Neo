@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Explicit offline-capable build. Fetches official pinned sources only when --source is absent.
-Never invoked implicitly by Gradle; no device deployment, CI or uploads.
+"""Build the native runtime for prepare_bundle.py or explicit offline-capable use.
+Fetches pinned official sources when --source is absent; requires installed tools.
 """
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,6 +25,13 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def apply_cpu_patch(source, patch, *, cached=False, env=None):
+    # The repository patch may itself be checked out as CRLF on Windows.
+    data = patch.read_bytes().replace(b'\r\n', b'\n')
+    args = ['git', 'apply'] + (['--cached'] if cached else []) + ['-']
+    subprocess.run(args, input=data, cwd=source, env=env, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--platform', required=True, choices=['linux-x64', 'windows-x64', 'windows-arm64', 'android-arm64', 'android-x64'])
@@ -36,10 +44,11 @@ def main():
     root = Path(__file__).resolve().parent
     source = args.source.resolve() if args.source else root/'build/upstream'
     if not args.source and not source.exists():
-        command(['git', 'clone', '--depth', '1', '--branch', '20250915', 'https://github.com/nihui/waifu2x-ncnn-vulkan.git', source])
-        command(['git', 'submodule', 'update', '--init', '--depth', '1', 'src/ncnn'], source)
-        command(['git', 'submodule', 'update', '--init', '--depth', '1', 'glslang'], source/'src/ncnn')
-        command(['git', 'apply', root/'waifu2x-cpu.patch'], source)
+        # Preserve pinned source/model bytes on Windows even with global autocrlf=true.
+        command(['git', 'clone', '--config', 'core.autocrlf=false', '--depth', '1', '--branch', '20250915', 'https://github.com/nihui/waifu2x-ncnn-vulkan.git', source])
+        command(['git', '-c', 'core.autocrlf=false', 'submodule', 'update', '--init', '--depth', '1', 'src/ncnn'], source)
+        command(['git', '-c', 'core.autocrlf=false', 'submodule', 'update', '--init', '--depth', '1', 'glslang'], source/'src/ncnn')
+        apply_cpu_patch(source, root/'waifu2x-cpu.patch')
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source, text=True).strip()
     assert head in [BASE, FIXED], 'unexpected upstream source revision'
     assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=source/'src/ncnn', text=True).strip() == NCNN
@@ -47,16 +56,19 @@ def main():
     command(['git', 'diff', '--exit-code', 'HEAD', '--', '.', ':(exclude)glslang'], source/'src/ncnn')
     command(['git', 'diff', '--exit-code', 'HEAD'], source/'src/ncnn/glslang')
     # Verify the exact patched code against the base + committed patch, even when using a local checkout.
-    import tempfile, os
+    import tempfile
     with tempfile.TemporaryDirectory() as td:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(td)/'index'))
         subprocess.run(['git', 'read-tree', BASE], cwd=source, env=env, check=True)
-        subprocess.run(['git', 'apply', '--cached', str(root/'waifu2x-cpu.patch')], cwd=source, env=env, check=True)
+        apply_cpu_patch(source, root/'waifu2x-cpu.patch', cached=True, env=env)
         for name in ['src/main.cpp', 'src/waifu2x.cpp', 'src/deps_ncnn.cmake']:
             expected = subprocess.check_output(['git', 'show', ':'+name], cwd=source, env=env)
             assert (source/name).read_bytes() == expected, 'unreviewed upstream modification: '+name
     output = root/'build'/args.platform
     configure = [args.cmake, '-S', root, '-B', output, '-DCMAKE_BUILD_TYPE=Release', '-DWAIFU2X_SOURCE='+str(source)]
+    if os.name == 'nt' and args.toolchain:
+        # Windows defaults to Visual Studio, which cannot use this MinGW toolchain.
+        configure += ['-G', 'Ninja']
     if args.platform.startswith('android-'):
         assert args.ndk and (args.ndk/'build/cmake/android.toolchain.cmake').exists(), '--ndk is required'
         configure += ['-DCMAKE_TOOLCHAIN_FILE='+str(args.ndk/'build/cmake/android.toolchain.cmake'),
@@ -91,7 +103,7 @@ def main():
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(binary, destination)
     # Strip only the built artifact, never a system executable. CMake knows the target toolchain.
-    cache = (output/'CMakeCache.txt').read_text()
+    cache = (output/'CMakeCache.txt').read_text(encoding='utf-8')
     strip = next((line.split('=',1)[1] for line in cache.splitlines() if line.startswith('CMAKE_STRIP:FILEPATH=')), None)
     if strip: command([strip, '--strip-unneeded', destination])
     model_dir = bundle/'resources/reader-sr/models'; model_dir.mkdir(parents=True, exist_ok=True)
@@ -102,14 +114,14 @@ def main():
     manifest = {'protocol':'1', 'platform':args.platform, 'runtime':'waifu2x-20250915-ncnn-c4193aad-cmp-sr1',
                 'runtimeSha256':digest(destination), 'modelSha256':PINS['scale2.0x_model.bin'],
                 'paramSha256':PINS['scale2.0x_model.param'], 'tile':'32', 'noise':'-1', 'scale':'2'}
-    (resource/'manifest.properties').write_text(''.join(k+'='+v+'\n' for k,v in manifest.items()))
+    (resource/'manifest.properties').write_text(''.join(k+'='+v+'\n' for k,v in manifest.items()), encoding='utf-8')
     notices = ['CopyManga Neo reader SR: pinned cunet 2x, local inference only.\n',
-        'waifu2x-ncnn-vulkan (includes the model files in its repository):\n'+(source/'LICENSE').read_text(),
-        '\nncnn:\n'+(source/'src/ncnn/LICENSE.txt').read_text()]
+        'waifu2x-ncnn-vulkan (includes the model files in its repository):\n'+(source/'LICENSE').read_text(encoding='utf-8'),
+        '\nncnn:\n'+(source/'src/ncnn/LICENSE.txt').read_text(encoding='utf-8')]
     glslang = source/'src/ncnn/glslang'
     for name in ['LICENSE.txt', 'LICENSE', 'LICENSES/Apache-2.0.txt']:
-        if (glslang/name).exists(): notices.append('\nglslang '+name+':\n'+(glslang/name).read_text())
-    (bundle/'resources/reader-sr/NOTICE.txt').write_text('\n'.join(notices))
+        if (glslang/name).exists(): notices.append('\nglslang '+name+':\n'+(glslang/name).read_text(encoding='utf-8'))
+    (bundle/'resources/reader-sr/NOTICE.txt').write_text('\n'.join(notices), encoding='utf-8')
     # Include the notices shipped with statically linked platform C++ runtimes.
     if args.platform.startswith('android'):
         for name in ['NOTICE', 'NOTICE.toolchain']:
@@ -120,7 +132,7 @@ def main():
         triple = 'aarch64-w64-mingw32' if args.platform.endswith('arm64') else 'x86_64-w64-mingw32'
         for license in (llvm/triple/'share/mingw32').glob('COPYING*'):
             shutil.copyfile(license, resource/license.name)
-    (output/'bundle-build.json').write_text(json.dumps(dict(manifest, bytes=destination.stat().st_size, source=head), indent=2)+'\n')
+    (output/'bundle-build.json').write_text(json.dumps(dict(manifest, bytes=destination.stat().st_size, source=head), indent=2)+'\n', encoding='utf-8')
     print('Bundle prepared:', bundle)
 
 
