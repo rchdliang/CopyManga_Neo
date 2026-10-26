@@ -11,10 +11,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** Native operations required by the original UI. Hosts provide real platform adapters. */
 interface UiPlatform {
     val backDispatcher: UiBackDispatcher
+    /** Completion feedback for platform operations handled without a system share surface. */
+    val toastMessages: Flow<String> get() = emptyFlow()
     suspend fun shareText(title: String, text: String): Result<Unit>
     fun formatDate(epochMilliseconds: Long): String
 

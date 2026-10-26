@@ -1,7 +1,5 @@
 package com.rchdliang.copymanga_neo.multiplatform.platform
 
-import com.rchdliang.copymanga_neo.domain.model.UserActionCancelled
-
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -22,13 +20,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 import java.awt.Component
-import java.awt.Desktop
 import java.awt.GraphicsEnvironment
 import java.awt.Image
 import java.awt.Toolkit
@@ -38,7 +37,6 @@ import java.awt.datatransfer.Transferable
 import java.awt.datatransfer.UnsupportedFlavorException
 import java.io.StringReader
 import java.net.URI
-import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -56,8 +54,8 @@ import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.parser.ParserDelegator
 
 /**
- * Native Windows/Linux UI IO. Share opens a chooser: copying is performed only when explicitly
- * selected, never silently reported as a system share. Failures remain failures in Result.
+ * Native Windows/Linux UI IO. Sharing copies directly and reports completion through app Toasts.
+ * Failures remain failures in Result.
  * Desktop clipboards cannot universally disable history/previews of sensitive text.
  */
 class DesktopPlatformHost(
@@ -74,6 +72,8 @@ class DesktopPlatformHost(
         get() = desktopNotificationSettingsUnavailableReason(
             System.getProperty("os.name"), GraphicsEnvironment.isHeadless())
     override val backDispatcher = UiBackDispatcher()
+    private val pendingToasts = Channel<String>(Channel.BUFFERED)
+    override val toastMessages = pendingToasts.receiveAsFlow()
     private val mutableWarnings = MutableStateFlow<List<String>>(emptyList())
     /** Hosts should surface these capability warnings once, rather than promising unavailable OS effects. */
     val capabilityWarnings: StateFlow<List<String>> = mutableWarnings
@@ -152,18 +152,9 @@ class DesktopPlatformHost(
     override suspend fun shareText(title: String, text: String): Result<Unit> = result {
         withContext(Dispatchers.Swing) {
             requireGui()
-            val mail = Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.MAIL)
-            val options = if (mail) arrayOf("复制到剪贴板", "用邮件分享", "取消") else arrayOf("复制到剪贴板", "取消")
-            performDesktopTextShare(
-                mailAvailable = mail,
-                choose = { JOptionPane.showOptionDialog(owner, text, title, JOptionPane.DEFAULT_OPTION,
-                    JOptionPane.PLAIN_MESSAGE, null, options, options[0]) },
-                copy = { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null) },
-                mail = {
-                    fun encode(value: String) = URLEncoder.encode(value, Charsets.UTF_8).replace("+", "%20")
-                    Desktop.getDesktop().mail(URI("mailto:?subject=${encode(title)}&body=${encode(text)}"))
-                },
-            )
+            currentCoroutineContext().ensureActive()
+            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+            pendingToasts.trySend("链接已复制到剪贴板")
         }
     }
 
@@ -199,14 +190,11 @@ class DesktopPlatformHost(
         try {
             withContext(Dispatchers.Swing) {
                 requireGui()
-                val message = "复制图片后，可粘贴到支持图片的应用。" +
-                    if (picture.firstFrameOnly) "动画图片只复制第一帧；保存原图可保留动画。" else ""
-                val selected = JOptionPane.showOptionDialog(owner, message, "分享图片",
-                    JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, arrayOf("复制图片", "取消"), "复制图片")
-                if (selected != 0) throw UserActionCancelled()
                 currentCoroutineContext().ensureActive()
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(ImageTransferable(picture.image), null)
                 published = true // Clipboard owns the raster from here; do not flush it on return.
+                pendingToasts.trySend(if (picture.firstFrameOnly)
+                    "图片首帧已复制到剪贴板；保存原图可保留动画" else "图片已复制到剪贴板")
             }
         } finally { if (!published) picture.image.flush() }
     }

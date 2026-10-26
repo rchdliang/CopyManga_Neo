@@ -238,6 +238,9 @@ fun CopyMangaApp(
                 SideEffect { repositories.startupTrace.palette("shell", colors.primary.value, colors.surface.value) }
                 AppToastHost {
                     val toast = LocalToastHost.current
+                    LaunchedEffect(platforms.ui) {
+                        platforms.ui.toastMessages.collect { toast.showToast(it) }
+                    }
                     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
                     LaunchedEffect(repositories.export, lifecycle) {
                         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
