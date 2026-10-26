@@ -156,7 +156,7 @@ Android 覆盖更新需要包名与签名一致。CMP 与独立 Android 不能�
 
 macOS/Linux 使用 `./gradlew`。CMP Android arm64 与 Windows x64 的普通构建会校验并打包 AI 运行时，模型不随包分发；全新环境需要准备原生构建工具链，或使用经校验的运行库缓存。
 
-平台打包、签名、版本配置与网络配置见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)，AI 运行库与模型来源见 [增强构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/SR-BUILDING.md)。请勿提交本地签名材料、账号凭据或私有配置。
+平台打包、签名、版本配置与网络配置见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)，同尺寸 GPU 修复原型的模型来源与限制见 [画质修复说明](docs/READER-RESTORATION.md)。请勿提交本地签名材料、账号凭据或私有配置。
 
 ### 原生 Android 分支
 

@@ -31,7 +31,6 @@ internal fun ReaderSpreadContent(
     onZoomAvailable: (ReaderZoomState) -> Unit,
     commentContent: @Composable (ReaderPageEntry) -> Unit,
     imageQuality: ReaderImageQuality? = null,
-    srSession: com.rchdliang.copymanga_neo.domain.reading.ReaderSrSession? = null,
 ) {
     val scope = rememberCoroutineScope()
     val zooms = remember { mutableMapOf<String, ReaderZoomState>() }
@@ -91,9 +90,7 @@ internal fun ReaderSpreadContent(
                                         onReady = { onReady(leaf.key) },
                                         onDimensions = { width, height -> onDimensions(leaf.key, width, height) },
                                         imageQuality = imageQuality,
-                                        // 双叶保持原图；单叶沿用当前真实页的单任务超分。
-                                        srSession = srSession.takeIf { readerAllowsSuperResolution(false, spread.indices.size) },
-                                        srPageKey = leaf.key,
+                                        enhancementPageKey = leaf.key,
                                     )
                                 }
                             }

@@ -7,7 +7,7 @@
 - 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
 - Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
 - 桌面安装包使用对应操作系统及架构的 JDK；Windows EXE 安装向导需要 Inno Setup 6.5+，Linux DEB/RPM 需要系统打包工具。Windows 编译器可放入 PATH，也可通过环境变量 `ISCC` 指定 `ISCC.exe` 完整路径；标准的 Inno Setup 6 安装目录会自动检测。
-- Windows x64 的首次构建还需要 Python、Git、CMake、Ninja 和 llvm-mingw UCRT 来编译随包超分运行时。手动 CI 通过 [工具链准备脚本](../.github/scripts/prepare-windows-sr-toolchain.ps1) 下载固定版本、核对 SHA256 后设置 `LLVM_MINGW_ROOT`；本地可在 PowerShell 中运行 `. ./.github/scripts/prepare-windows-sr-toolchain.ps1 -Destination <工具目录>`。Gradle 本身不安装工具链，缓存命中仍会验证运行时摘要和许可，缺失时不会生成不完整安装包。
+- 已移除旧超分原生运行库的工具链与 bundle 打包依赖。新的同尺寸画质修复资源随 CMP Android assets 分发；桌面修复后端尚未接入，当前限制见 [画质修复说明](READER-RESTORATION.md)。Windows Native Image 自身的工具链要求仍按下文执行。
 - iOS 构建需要 macOS 和 Xcode；直接安装需要签名。未签名设备 IPA 可交给 SideStore / AltStore 使用用户自己的账号重签名。
 - 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
 - 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。

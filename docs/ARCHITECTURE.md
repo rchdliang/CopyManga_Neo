@@ -99,6 +99,6 @@ Android 使用 SAF 和前台导出服务，临时图片分享通过 FileProvider
 
 ## 阅读器增强实验边界
 
-`LocalReaderSharpness` 提供默认关闭的会话级轻度锐化，仅作用于已加载的当前漫画页。Android API33+ 使用平台 AGSL，桌面使用 Skia；不支持的平台及超出效果表面预算的长图保持原图。现有解码、缩放、原图缓存与导出不变。
+`LocalReaderSharpness` 提供默认关闭、持久化强度的显示锐化，仅作用于已加载的当前漫画页。Android API33+ 使用 AGSL，桌面使用 Skia；不支持的平台及超出表面预算的大图保持原图。强度为 0–100%、5% 一格，可临时对比锐化前后。
 
-`ReaderSrSession` 以真实单页ID连接默认关闭的 waifu2x 2× 增强；原图成功后才提交当前页，复用原图缓存。`ReaderSrCoordinator` 取消并等待旧任务，保留独立有界编码缓存。Android使用非导出专用服务进程，桌面使用子进程，按实际能力自检GPU并允许可控CPU回退；未配置bundle或Web/iOS保持原图。原生构建、模型校验、内存准入及未测边界见 [native 接入说明](../native/reader-sr/README.md)，先前锐化评估见 [阅读器增强原型](../prototypes/reader-enhancement/README.md)。
+`ReaderRestoreEngine` 是默认关闭的同尺寸画质修复原型：CMP Android 复用已加载位图，通过专用线程上的 GLES 3 四阶段 Anime4K Restore S / Soft S 处理，结果保存在会话内存中。无临时图片文件、模型下载或专用服务进程；桌面/iOS/Wasm 明确回退原图。源码实现、资源预算和未验证边界见 [画质修复说明](READER-RESTORATION.md)。

@@ -46,20 +46,18 @@ Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不�
 - `comic-reader-settings.json` 保存全局显示默认值与按漫画键保存的 `ReaderPreferences`。页面布局 `pageLayout` 默认 `SINGLE`；方向、缩放和屏幕方向与布局一起保存为漫画快照。修改 A 漫画不改 B 漫画；本轮不迁移旧全局布局，也没有冻结 seed 或自动清空数据。
 - “重置显示设置”写入当前全局方向/缩放/屏幕方向的快照，并明确将当前漫画布局设为 `SINGLE`；不删除条目，不清其他漫画、章节配页或全局工具。
 - `reader-tools.json` 保存全局翻页动画、音量键翻页、连续跨章、评论、自动阅读间隔及图片加载偏好。`pairingRestarts` 在其中按章节键保存排序去重后的原图索引边界；“恢复默认配页”只清当前章。遗留工具 `pageLayout` 字段不是当前布局 UI 的读写来源。
-- 锐化强度与重新开启时的恢复值也在 `reader-tools.json` 全局保存，默认关闭。AI 增强开关、处理方式、CPU 回退选择则属于当前阅读会话，重新进入阅读器使用默认关闭状态。
-- 原图锚点用于历史与书签，双页视觉位置不替代原图索引。当前 AI 页面身份、处理/渲染状态及实际显示回执仅在内存中存在，不写入历史或备份。
+- 锐化强度与重新开启时的恢复值也在 `reader-tools.json` 全局保存，默认关闭。同尺寸修复模式属于当前阅读界面的可恢复状态，默认关闭，不写入持久偏好。
+- 原图锚点用于历史与书签，双页视觉位置不替代原图索引。当前修复页面身份和处理状态仅在内存中存在，不写入历史或备份。
 
 对应源码：[`PortablePreferences.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortablePreferences.kt)、[`PortableReaderTools.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableReaderTools.kt)、[`PortableBackupCodec.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableBackupCodec.kt)、[`PortableUserDataBackup.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/data/local/portable/PortableUserDataBackup.kt)。完整用户数据备份包含上述漫画偏好和阅读工具文档；轻量导入的逐漫画回滚仅还原仍等于该次导入值的记录，保护导入后的用户编辑。
 
-## AI 模型、运行库与临时结果
+## 画质修复资源与结果
 
-- 正常支持的 Android arm64 / Windows x64 安装包包含经校验的运行库与许可，模型不随包分发。用户确认后，从固定官方提交下载模型的两个文件，合计 2,783,649 字节；长度与 SHA-256 全部匹配后，暂存目录原子替换为完整版本目录。
-- Android 模型位于 `filesDir/reader-sr-models/cunet-20250915`，不会因清理普通图片缓存自动消失。桌面模型位于 `~/.cache/copymanga-neo/reader-sr-models/cunet-20250915`，可离线复用，但系统/用户清理此缓存目录后需要重新下载。
-- 下载按规范化目录去重，取消清理暂存文件；已确认下载由进程作用域托管，关闭设置页不自动取消。删除等待当前推理释放锁后执行，返回设置页不取消已确认删除；下载中只提供取消，不并发删除。
-- 运行库提取及推理临时文件使用版本化 `reader-sr-v1/<平台>/<运行库摘要>` 目录。原始输入/输出临时文件在任务结束时清理，不覆盖原图。增强结果缓存仅在阅读会话内存中，最多 3 项、合计 16 MiB，关闭会话时清除。
-- 模型、运行库提取缓存和增强结果不属于用户数据备份白名单。备份恢复不代表模型已安装，也不携带正在进行的下载/推理任务。
-
-对应源码：[`SrModelStore.kt`](shared/src/jvmMain/kotlin/com/rchdliang/copymanga_neo/multiplatform/sr/SrModelStore.kt)、[`NativeReaderSrBackend.kt`](shared/src/jvmMain/kotlin/com/rchdliang/copymanga_neo/multiplatform/sr/NativeReaderSrBackend.kt)、[`ReaderSrSession.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/domain/reading/ReaderSrSession.kt)、[`ReaderSuperResolution.kt`](shared/src/commonMain/kotlin/com/rchdliang/copymanga_neo/domain/reading/ReaderSuperResolution.kt)。
+- Anime4K Restore S / Soft S 的 GLSL 和权重随 CMP Android 资源包分发，无运行时模型下载、原生运行库提取或推理临时文件。
+- 输出按源位图身份、generationId、页面与模型缓存在阅读会话内存中，最多两份输出、总输出位图最多 16 MiB；源位图、GPU 纹理和活跃绘制引用另计。
+- 后台/非活动路由清空缓存及 GPU 资源，会话关闭释放专用线程；修复结果不在备份白名单中。
+- 老版本已经存放的超分缓存不由此次源码修改自动删除，且不再参与运行与打包。原图缓存、下载与用户数据不受影响。
+- 实现范围和未验证限制见 [画质修复说明](docs/READER-RESTORATION.md)。
 
 ## 平台存储边界
 

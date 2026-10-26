@@ -17,7 +17,6 @@ plugins {
     id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
 }
 
-apply(from = "gradle/reader-sr.gradle.kts")
 
 // 同一文件也由 iOS xcconfig 直接包含；所有发布版本只在此文件中维护。
 val releaseProperties = providers.fileContents(layout.projectDirectory.file("version.properties"))

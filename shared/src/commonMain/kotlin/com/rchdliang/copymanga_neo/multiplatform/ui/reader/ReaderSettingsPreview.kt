@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.domain.reading.*
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /** 预览只调用纯 UI / 假服务；不读取漫画、账号、磁盘模型或启动网络与推理。 */
 @Composable
@@ -89,68 +88,9 @@ private fun ReaderDisplayPreviewContent() {
     }
 }
 
-private class PreviewReaderModels(initial: SrModelState) : ReaderSrModels {
-    override val state=MutableStateFlow(initial)
-    override val downloadBytes=2783649L
-    override fun startDownload() {}
-    override fun cancelDownload() {}
-    override suspend fun refresh() {}
-    override suspend fun download() {}
-    override suspend fun delete() {}
-}
-
-@Composable
-private fun previewSrSession(state: SrModelState): ReaderSrSession {
-    val previewModels=remember(state) { PreviewReaderModels(state) }
-    val scope=rememberCoroutineScope()
-    val session=remember(previewModels,scope) { ReaderSrSession(scope, object : ReaderSrPlatform {
-        override val models=previewModels
-        override val unavailableReason: String?=null
-        override val budgetBytes=192L*1024*1024
-        override val workingBytes=96L*1024*1024
-        override val detail=MutableStateFlow("CPU · 预览状态")
-        override suspend fun source(page: SrPage): SrSource=error("Preview must never request source images")
-        override suspend fun upscale(request: SrRequest): SrArtifact=error("Preview must never run inference")
-    }) }
-    DisposableEffect(session) { onDispose { session.close() } }
-    return session
-}
 
 @Preview(name = "阅读设置-画质增强", showBackground = true, widthDp = 600, heightDp = 850)
 @Composable private fun ReaderQualitySettingsPreview() = ReaderPreviewFrame("画质增强") {
     ReaderQualitySection { ReaderSharpnessControls(true, READER_SHARPNESS_RESTORE, READER_SHARPNESS_RESTORE, {}, {}) }
-    ReaderQualitySection { ReaderSuperResolutionOptions(previewSrSession(SrModelState.Missing)) }
-}
-
-@Preview(name = "超分模型-首次确认", showBackground = true, widthDp = 390, heightDp = 320)
-@Composable private fun ReaderModelConsentPreview() = ReaderPreviewFrame("下载超分模型？") {
-    ReaderModelDownloadConfirmation(2783649L, {}, {})
-}
-
-@Preview(name = "超分模型-下载进度", showBackground = true, widthDp = 390, heightDp = 360)
-@Composable private fun ReaderModelProgressPreview() = ReaderPreviewFrame("模型管理") {
-    ReaderQualitySection { ReaderModelProgress(remember { PreviewReaderModels(SrModelState.Downloading(1200000L,2783649L)) }, {}) }
-}
-
-@Preview(name = "超分模型-下载失败", showBackground = true, widthDp = 390, heightDp = 360)
-@Composable private fun ReaderModelDownloadFailurePreview() = ReaderPreviewFrame("模型管理", true) {
-    ReaderQualitySection { ReaderModelProgress(remember { PreviewReaderModels(SrModelState.Failed("网络暂不可用，请重试")) }, {}) }
-}
-
-@Preview(name = "超分模型-已就绪", showBackground = true, widthDp = 390, heightDp = 420)
-@Composable private fun ReaderModelReadyPreview() = ReaderPreviewFrame("模型管理") {
-    val session=previewSrSession(SrModelState.Ready)
-    ReaderModelManagement(session,session.models!!)
-}
-
-@Preview(name = "超分模型-删除中", showBackground = true, widthDp = 390, heightDp = 360)
-@Composable private fun ReaderModelDeletingPreview() = ReaderPreviewFrame("删除模型？") {
-    val session=previewSrSession(SrModelState.Deleting)
-    ReaderModelDeleteConfirmation(session,session.models!!)
-}
-
-@Preview(name = "超分模型-删除失败", showBackground = true, widthDp = 390, heightDp = 380)
-@Composable private fun ReaderModelDeleteFailurePreview() = ReaderPreviewFrame("删除模型？", true) {
-    val session=previewSrSession(SrModelState.Failed("文件暂时被占用，请重试",SrModelOperation.DELETE))
-    ReaderModelDeleteConfirmation(session,session.models!!)
+    ReaderQualitySection { ReaderRestoreControls(ReaderRestoreMode.OFF, null, null, {}, {}) }
 }

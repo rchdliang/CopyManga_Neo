@@ -121,11 +121,6 @@ jobs:
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 compiler missing from runner' }
           "ISCC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Prepare verified Windows SR toolchain
-        shell: pwsh
-        run: ./.github/scripts/prepare-windows-sr-toolchain.ps1 -Destination "$env:RUNNER_TEMP/reader-sr-toolchain"
-      - name: Check native bundle preparation
-        run: python -B -m unittest discover -s native/reader-sr/tests -v
       - name: Test desktop and build Windows Native Image installer
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}

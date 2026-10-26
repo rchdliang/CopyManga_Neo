@@ -2,8 +2,4 @@
     <!-- 共享 Android 网络适配所需权限；与宿主 Manifest 合并。 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <application>
-        <service android:name="com.rchdliang.copymanga_neo.multiplatform.sr.ReaderSrService"
-            android:process=":reader_sr" android:exported="false" android:stopWithTask="true" />
-    </application>
 </manifest>

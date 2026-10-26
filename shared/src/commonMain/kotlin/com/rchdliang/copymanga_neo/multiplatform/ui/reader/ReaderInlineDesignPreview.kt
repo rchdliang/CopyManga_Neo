@@ -23,11 +23,9 @@ internal fun ReaderInlineDesignContent(quality: Boolean, dark: Boolean = false) 
                 if (quality) {
                     var strength by remember { mutableStateOf(READER_SHARPNESS_RESTORE) }
                     ReaderQualitySection { ReaderSharpnessControls(true, strength, READER_SHARPNESS_RESTORE, { strength = 0f }, { strength = it }) }
-                    var settings by remember { mutableStateOf(SrUserSettings()) }
+                    var mode by remember { mutableStateOf(ReaderRestoreMode.OFF) }
                     ReaderQualitySection {
-                        ReaderSrSettingsBody(settings, null, false, { settings = settings.copy(enabled = it) }, { settings = it },
-                            currentPage = { if (settings.enabled) Text("AI 未应用 · 等待原图", style = MaterialTheme.typography.bodySmall) },
-                            model = { ReaderSettingsLink(Icons.Outlined.Storage, "模型管理", "未下载 · 2.65 MiB", onClick = {}) })
+                        ReaderRestoreControls(mode, null, null, { mode = it }, {})
                     }
                 } else {
                     var layout by remember { mutableStateOf("双页") }
@@ -60,9 +58,8 @@ internal fun ReaderInlineDesignContent(quality: Boolean, dark: Boolean = false) 
     CopyManga_NeoTheme(darkTheme = true) {
         Surface(color = androidx.compose.ui.graphics.Color(0xFF575454)) {
             Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                for (phase in listOf(SrPresentationPhase.WAITING_ORIGINAL, SrPresentationPhase.PROCESSING,
-                    SrPresentationPhase.DECODING, SrPresentationPhase.ENHANCED, SrPresentationPhase.FAILED, SrPresentationPhase.SPREAD_ORIGINAL)) {
-                    ReaderRestingOverlay("示例章节", "7 / 24", aiStatus = SrPresentation("fixture",phase).shortLabel(12))
+                for (label in listOf("等待修复", "画质修复中", "画质修复已应用", "修复未应用")) {
+                    ReaderRestingOverlay("示例章节", "7 / 24", aiStatus = label)
                 }
             }
         }

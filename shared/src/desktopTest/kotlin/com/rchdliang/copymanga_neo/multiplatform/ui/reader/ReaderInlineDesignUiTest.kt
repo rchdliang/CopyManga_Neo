@@ -35,7 +35,7 @@ class ReaderInlineDesignUiTest {
     }
     @Test fun qualityNarrow() = runSkikoComposeUiTest(size = Size(390f, 800f)) {
         setContent { ReaderInlineDesignContent(true) }
-        onNodeWithTag("reader-option-处理方式-GPU").performScrollTo().performClick().assertIsSelected()
+        onNodeWithTag("reader-restore-RESTORE").performScrollTo().performClick().assertIsSelected()
         onNodeWithText("画质增强").assertExists(); capture("quality-narrow")
     }
     @Test fun qualityWideDark() = runSkikoComposeUiTest(size = Size(560f, 800f)) {
@@ -54,7 +54,7 @@ class ReaderInlineDesignUiTest {
     }
     @Test fun actualDisplayStatusUsesOutlinedOverlayWithoutScrim() = runSkikoComposeUiTest(size=Size(390f,420f)) {
         setContent { ReaderAiDisplayStates() }
-        onNodeWithText("AI 已应用").assertExists()
+        onNodeWithText("画质修复已应用").assertExists()
         capture("actual-display-states")
     }
     private fun ComposeUiTest.capture(name: String) {

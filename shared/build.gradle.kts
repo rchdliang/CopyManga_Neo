@@ -152,16 +152,6 @@ kotlin {
             implementation(libs.okhttp)
             implementation("androidx.core:core-ktx:1.19.1")
         }
-        getByName("desktopMain").resources.srcDir((rootProject.extra["readerSrBundleDirectory"] as File).resolve("resources"))
-        val srDesktopTarget = portableDesktopTarget ?: when {
-            System.getProperty("os.name").startsWith("Windows") -> "windows-" + if (System.getProperty("os.arch") == "aarch64") "arm64" else "x64"
-            System.getProperty("os.name").startsWith("Linux") && System.getProperty("os.arch") in listOf("amd64", "x86_64") -> "linux-x64"
-            else -> "unsupported"
-        }
-        getByName("desktopMain").resources.exclude("reader-sr/android-*/**", "reader-sr/models/**")
-        listOf("linux-x64", "windows-x64", "windows-arm64").filter { it != srDesktopTarget }.forEach {
-            getByName("desktopMain").resources.exclude("reader-sr/$it/**")
-        }
         getByName("desktopMain").dependencies {
             implementation(when (portableDesktopTarget) {
                 null -> compose.desktop.currentOs
@@ -210,11 +200,4 @@ if (portableDesktopTarget != null) {
             }
         }
     }
-}
-
-// Only Windows x64 is provided by this distribution; other desktop hosts keep explicit runtime fallback.
-val srPackagingTarget = providers.gradleProperty("copymanga.desktopTarget").orNull
-    ?: if (System.getProperty("os.name").startsWith("Windows") && System.getProperty("os.arch") in listOf("amd64", "x86_64")) "windows-x64" else "unsupported"
-tasks.matching { it.name == "desktopProcessResources" }.configureEach {
-    if (srPackagingTarget == "windows-x64") dependsOn(rootProject.tasks.named("prepareReaderSrWindows"))
 }

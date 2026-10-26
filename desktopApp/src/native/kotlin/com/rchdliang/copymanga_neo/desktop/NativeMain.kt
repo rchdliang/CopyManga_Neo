@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ComposeFoundationFlags
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
@@ -27,6 +29,7 @@ import dev.nucleusframework.application.*
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
@@ -314,9 +317,20 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                     content = MaterialTheme.colorScheme.onSurface,
                     controlButtonIconColor = MaterialTheme.colorScheme.onSurface,
                 ))) {
-                    Text("CopyManga Neo", Modifier.align(Alignment.Start).padding(start = 12.dp),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Image(
+                            painter = rememberTitleBarIcon(),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text("CopyManga Neo",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleSmall)
+                    }
                 }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onPreviewKeyEvent { event ->
                     if (phase.showApplication && event.key == Key.Escape) escapeKeys.observe(when (event.type) {
@@ -383,6 +397,25 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                     )
                 }
             }
+        }
+    }
+}
+
+private val titleBarIconSizes = listOf(16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 80, 96, 128, 256, 512)
+
+/** 按当前窗口的物理像素选图，避免将大图标骤缩后产生细线锯齿。 */
+@Composable
+private fun rememberTitleBarIcon(): BitmapPainter {
+    val pixels = with(LocalDensity.current) { 20.dp.roundToPx() }
+    val resourceSize = titleBarIconSizes.firstOrNull { it >= pixels } ?: titleBarIconSizes.last()
+    return remember(resourceSize) {
+        val resource = if (resourceSize == 512) "/copymanga-neo.png"
+            else "/icons/copymanga-neo-$resourceSize.png"
+        checkNotNull(DesktopAppIcons::class.java.getResourceAsStream(resource)).use {
+            BitmapPainter(
+                image = org.jetbrains.skia.Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap(),
+                filterQuality = FilterQuality.High,
+            )
         }
     }
 }

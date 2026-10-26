@@ -472,17 +472,32 @@ fun ReaderSuccessContent(
     val activeSharpenKeys = if (isContinuous) setOfNotNull(page?.key)
         else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
     val sharpnessApplied = activeSharpenKeys.isNotEmpty() && activeSharpenKeys.all { sharpenStatuses[it] == true }
-    val srSession = rememberReaderSrSession(loader)
-    val srLifecycle by androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
-    val srSinglePage = readerAllowsSuperResolution(isContinuous, spreads.getOrNull(pager.currentPage)?.indices?.size ?: 0)
-    val srPresentation = readerSrPresentation(srSession, page?.takeIf { it.source != null }?.key, srSinglePage)
-    val srWaitSeconds = readerSrWaitSeconds(srPresentation, srSession.frame.collectAsState().value?.renderId)
-    LaunchedEffect(srSession, page?.key, page?.source, routeActive, srLifecycle, srSinglePage) {
-        // 双页暂用原图，切换布局时也取消旧任务，避免双叶同时推理及错误显示。
-        srSession.select(if (srSinglePage && routeActive && srLifecycle.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED))
-            page?.source?.let { com.rchdliang.copymanga_neo.domain.reading.SrPage(page.key, it) } else null)
+    val restoreEngine = rememberReaderRestoreEngine()
+    var restoreModeName by rememberSaveable { mutableStateOf(ReaderRestoreMode.OFF.name) }
+    val restoreMode = ReaderRestoreMode.entries.firstOrNull { it.name == restoreModeName } ?: ReaderRestoreMode.OFF
+    var qualityComparison by remember(page?.key, routeActive, tools.pageLayout) { mutableStateOf<ReaderQualityChoice?>(null) }
+    val restoreLifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+    val restoreActive = routeActive && restoreLifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    val effectiveRestoreMode = if (restoreActive) qualityComparison?.restore ?: restoreMode else ReaderRestoreMode.OFF
+    val restoreStatuses = remember(effectiveRestoreMode) { mutableStateMapOf<String, ReaderRestoreStatus>() }
+    androidx.compose.runtime.SideEffect { restoreStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { restoreStatuses.remove(it) } }
+    val activeRestoreStatuses = activeSharpenKeys.mapNotNull { restoreStatuses[it] }
+    val restoreLabel = if (effectiveRestoreMode == ReaderRestoreMode.OFF) null else when {
+        activeRestoreStatuses.any { it.stage == ReaderRestoreStage.PROCESSING } -> "画质修复中"
+        activeRestoreStatuses.any { it.stage == ReaderRestoreStage.UNAVAILABLE } -> "修复未应用"
+        activeRestoreStatuses.size == activeSharpenKeys.size && activeRestoreStatuses.isNotEmpty() &&
+            activeRestoreStatuses.all { it.stage == ReaderRestoreStage.READY } -> "画质修复已应用"
+        else -> "等待修复"
     }
-
+    val displayedSharpness = when {
+        qualityComparison == ReaderQualityChoice.SHARPEN -> sharpness.takeIf { it > 0f } ?: READER_SHARPNESS_RESTORE
+        qualityComparison != null || effectiveRestoreMode != ReaderRestoreMode.OFF -> 0f
+        comparingSharpness && beforeSharpness -> 0f
+        else -> sharpness
+    }
+    LaunchedEffect(restoreEngine, restoreActive) {
+        if (!restoreActive) restoreEngine.clear()
+    }
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
     LaunchedEffect(
@@ -847,8 +862,9 @@ fun ReaderSuccessContent(
         }
     }
 
-    BackHandler(enabled = (showControls || comparingSharpness) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+    BackHandler(enabled = (showControls || comparingSharpness || qualityComparison != null) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
         comparingSharpness = false
+        qualityComparison = null
         showControls = false
     }
     val nested = remember { object : NestedScrollConnection {} }
@@ -897,7 +913,10 @@ fun ReaderSuccessContent(
             }
             .focusable()
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides if (comparingSharpness && beforeSharpness) 0f else sharpness,
+        androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides displayedSharpness,
+            LocalReaderRestoreEngine provides restoreEngine,
+            LocalReaderRestoreMode provides effectiveRestoreMode,
+            LocalReaderRestoreStatus provides { key, status -> restoreStatuses[key] = status },
             LocalReaderSharpenStatus provides { key, applied -> sharpenStatuses[key] = applied }) {
         ReaderContent(
             pages = pages, spreads = spreads,
@@ -923,7 +942,6 @@ fun ReaderSuccessContent(
             onBottomAreaTap = { showControls = !showControls },
             imageLoader = loader,
             imageQuality = services?.platform?.imageQuality,
-            srSession = srSession,
             tools = tools,
             onUserInteraction = { focus.requestFocus(); viewportCorrection.invalidate(); viewportAnchor.invalidate(); automatic = false; pendingChapter = null; restoring = false },
             onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },
@@ -942,7 +960,7 @@ fun ReaderSuccessContent(
             })
         }
         AnimatedVisibility(
-            showControls && !comparingSharpness,
+            showControls && !comparingSharpness && qualityComparison == null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -961,16 +979,16 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && !comparingSharpness && page?.source != null) ReaderRestingOverlay(
+        if (!showControls && !comparingSharpness && qualityComparison == null && page?.source != null) ReaderRestingOverlay(
             page.chapterName,
             if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
                     "${visible.first()}–${visible.last()}/${page.imageCount}"
                 } else "${page.page + 1}/${page.imageCount}",
-            Modifier.align(Alignment.BottomCenter), aiStatus = srPresentation.shortLabel(srWaitSeconds)
+            Modifier.align(Alignment.BottomCenter), aiStatus = restoreLabel
         )
         AnimatedVisibility(
-            showControls && !comparingSharpness && page != null,
+            showControls && !comparingSharpness && qualityComparison == null && page != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -981,8 +999,7 @@ fun ReaderSuccessContent(
                     val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
                     readerPageRangeLabel(raw, page?.imageCount ?: 0)
                 } else null,
-                enhancementLabel = srPresentation.shortLabel(srWaitSeconds)?.let { label ->
-                    listOfNotNull(label, srPresentation.backendLabel()).joinToString(" · ") },
+                enhancementLabel = restoreLabel,
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false
@@ -1005,12 +1022,18 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (comparingSharpness) ReaderSharpnessComparison(
+        if (comparingSharpness && qualityComparison == null) ReaderSharpnessComparison(
             before = beforeSharpness,
             onToggle = { beforeSharpness = !beforeSharpness },
             onClose = { comparingSharpness = false; showControls = false },
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)
         )
+        qualityComparison?.let { choice ->
+            ReaderQualityComparison(choice, restoreEngine.unavailableReason == null,
+                onChoice = { qualityComparison = it },
+                onClose = { qualityComparison = null; showControls = false },
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
+        }
         if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
@@ -1039,7 +1062,7 @@ fun ReaderSuccessContent(
                 onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
                 onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
             }
-            if (sharpness > 0f && readerSharpnessAvailable()) {
+            if (sharpness > 0f && readerSharpnessAvailable() && restoreMode == ReaderRestoreMode.OFF) {
                 Text(when {
                     activeSharpenKeys.any { sharpenStatuses[it] == false } -> "当前部分图片未应用锐化（图片过大或渲染不可用）"
                     sharpnessApplied -> "当前图片已启用锐化"
@@ -1055,7 +1078,18 @@ fun ReaderSuccessContent(
                 }
             }
             }
-            ReaderQualitySection { ReaderSuperResolutionOptions(srSession, srSinglePage, srPresentation, page?.page?.plus(1), srWaitSeconds) }
+            ReaderQualitySection {
+                ReaderRestoreControls(restoreMode, restoreEngine.unavailableReason,
+                    activeRestoreStatuses.map { it.text }.distinct().joinToString("\n").takeIf { it.isNotEmpty() },
+                    onMode = { restoreModeName = it.name; comparingSharpness = false; qualityComparison = null },
+                    onCompare = {
+                        automatic = false
+                        showSettings = false
+                        showControls = false
+                        comparingSharpness = false
+                        qualityComparison = ReaderQualityChoice.ORIGINAL
+                    }, compareAvailable = page?.source != null)
+            }
         },
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },

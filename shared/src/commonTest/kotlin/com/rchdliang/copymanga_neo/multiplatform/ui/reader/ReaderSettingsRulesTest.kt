@@ -3,7 +3,7 @@ import kotlin.test.Test
 import kotlin.test.*
 class ReaderSettingsRulesTest {
     @Test fun backLeavesChildFirstAndHomeCanStillClose() {
-        for (page in listOf("本章配页", "阅读操作", "下载超分模型？", "模型管理")) {
+        for (page in listOf("本章配页", "阅读操作", "画质增强", "显示设置")) {
             var child: String? = page
             var dismisses = 0
             val back = { readerSettingsBack(child != null, { child = null }, { dismisses++ }) }

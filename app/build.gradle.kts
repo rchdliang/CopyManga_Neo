@@ -54,38 +54,11 @@ val enableStartupProbes = providers.gradleProperty("enableStartupProbes")
     .map(String::toBooleanStrict)
     .getOrElse(false)
 
-abstract class PrepareReaderSrAssets @javax.inject.Inject constructor(
-    private val files: org.gradle.api.file.FileSystemOperations,
-) : DefaultTask() {
-    @get:InputDirectory abstract val bundleDirectory: org.gradle.api.file.DirectoryProperty
-    @get:OutputDirectory abstract val outputDirectory: org.gradle.api.file.DirectoryProperty
-    @TaskAction fun prepare() {
-        val bundle = bundleDirectory.get().asFile
-        check(bundle.resolve("jniLibs/arm64-v8a/libcopymanga_sr.so").isFile) { "Build the Android arm64 native bundle first" }
-        files.sync {
-            from(bundle.resolve("resources")) {
-                include("reader-sr/NOTICE.txt", "reader-sr/android-*/**")
-            }
-            into(outputDirectory)
-        }
-    }
-}
-val readerSrBundleDirectory = rootProject.extra["readerSrBundleDirectory"] as File
-val readerSrAssets = run {
-    tasks.register<PrepareReaderSrAssets>("prepareReaderSrAssets") {
-        dependsOn(rootProject.tasks.named("prepareReaderSrAndroid"))
-        bundleDirectory.set(readerSrBundleDirectory)
-        outputDirectory.set(layout.buildDirectory.dir("generated/readerSrAssets"))
-    }
-}
 
 android {
     sourceSets.getByName("main").kotlin.srcDir(
         if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
     )
-    // Explicit source-built bundle. No runtime download and no implicit native build in Gradle.
-    sourceSets.getByName("main").jniLibs.srcDir(readerSrBundleDirectory.resolve("jniLibs"))
-    packaging.jniLibs.useLegacyPackaging = true
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
@@ -151,9 +124,6 @@ android {
     compileSdkMinor = 0
 }
 
-androidComponents.onVariants { variant ->
-    variant.sources.assets?.addGeneratedSourceDirectory(readerSrAssets) { it.outputDirectory }
-}
 
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
@@ -212,8 +182,4 @@ dependencies {
     // Compose 预览工具
     debugImplementation(libs.androidx.compose.ui.tooling)
 
-}
-
-tasks.matching { it.name.matches(Regex("merge.*JniLibFolders")) }.configureEach {
-    dependsOn(rootProject.tasks.named("prepareReaderSrAndroid"))
 }
