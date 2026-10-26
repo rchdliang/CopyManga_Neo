@@ -15,6 +15,9 @@
 #ifndef OutputDirectory
   #error OutputDirectory is required.
 #endif
+#ifndef AppRuntime
+  #define AppRuntime "jvm"
+#endif
 
 [Setup]
 ; 固定标识保证后续 Inno Setup 版本覆盖安装到同一目录。
@@ -62,9 +65,33 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#AppImage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+#if AppRuntime == "native"
+[InstallDelete]
+; 仅清理确认属于旧 jpackage 版本的程序文件；用户资料位于独立目录。
+Type: filesandordirs; Name: "{app}\runtime"; Check: HasLegacyJvmImage
+Type: filesandordirs; Name: "{app}\app"; Check: HasLegacyJvmImage
+
+[Code]
+function HasLegacyJvmImage: Boolean;
+begin
+  Result := FileExists(ExpandConstant('{app}\app\CopyMangaNeo.cfg'));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    if not SaveStringToFile(ExpandConstant('{app}\.nucleus-executable-type'),
+      'exe' + #13#10 + '{#AppVersion}' + #13#10, False) then
+      RaiseException('Cannot write native application metadata.');
+end;
+
+[UninstallDelete]
+Type: files; Name: "{app}\.nucleus-executable-type"
+#endif
+
 [Icons]
-Name: "{userprograms}\CopyManga Neo"; Filename: "{app}\CopyMangaNeo.exe"; WorkingDir: "{app}"
-Name: "{userdesktop}\CopyManga Neo"; Filename: "{app}\CopyMangaNeo.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userprograms}\CopyManga Neo"; Filename: "{app}\CopyMangaNeo.exe"; WorkingDir: "{app}"; AppUserModelID: "com.rchdliang.copymanga_neo.desktop"
+Name: "{userdesktop}\CopyManga Neo"; Filename: "{app}\CopyMangaNeo.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "com.rchdliang.copymanga_neo.desktop"
 
 [Run]
 Filename: "{app}\CopyMangaNeo.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent

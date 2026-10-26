@@ -14,7 +14,13 @@ internal fun copyWindowsSensitiveText(owner: Component?, text: String) {
     check(SwingUtilities.isEventDispatchThread()) { "Windows 剪贴板操作需要应用事件线程" }
     val window = owner as? Window ?: owner?.let(SwingUtilities::getWindowAncestor)
     check(window != null && window.isDisplayable) { "应用窗口尚未就绪，未复制敏感内容" }
-    try { WindowsSensitiveClipboard(JnaWindowsClipboard(window)).copy(text) }
+    copyWindowsSensitiveText(Pointer.nativeValue(Native.getWindowPointer(window)), text)
+}
+
+/** Tao 宿主在自己的 UI 线程提供真实 HWND，保护失败时绝不回退普通复制。 */
+internal fun copyWindowsSensitiveText(windowHandle: Long, text: String) {
+    check(windowHandle != 0L) { "应用窗口尚未就绪，未复制敏感内容" }
+    try { WindowsSensitiveClipboard(JnaWindowsClipboard(windowHandle)).copy(text) }
     catch (error: LinkageError) { throw IllegalStateException("Windows 剪贴板保护组件不可用，未使用普通剪贴板回退", error) }
 }
 
@@ -38,10 +44,9 @@ internal interface ClipboardKernel32 : StdCallLibrary {
     fun GetLastError(): Int
 }
 
-private class JnaWindowsClipboard(window: Window) : WindowsClipboardApi {
+private class JnaWindowsClipboard(override val owner: Long) : WindowsClipboardApi {
     private val user = Native.load("user32", ClipboardUser32::class.java)
     private val kernel = Native.load("kernel32", ClipboardKernel32::class.java)
-    override val owner = Pointer.nativeValue(Native.getWindowPointer(window))
     private val allocations = mutableMapOf<Long, Int>()
 
     override fun registerFormat(name: String) = user.RegisterClipboardFormatW(WString(name))

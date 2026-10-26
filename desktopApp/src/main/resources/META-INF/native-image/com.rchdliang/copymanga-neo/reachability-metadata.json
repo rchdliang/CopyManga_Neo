@@ -1,0 +1,85 @@
+{
+  "reflection": [
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardUser32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardKernel32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.SettingsShell32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.SettingsOle32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.data.export.portable.ExportFileKernel32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardUser32"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardKernel32"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.SettingsShell32"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.SettingsOle32"
+        ]
+      }
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.data.export.portable.ExportFileKernel32"
+        ]
+      }
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardSizeT",
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.FileDialogOle32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.FileDialogOle32"
+        ]
+      }
+    },
+    {
+      "type": "com.rchdliang.copymanga_neo.multiplatform.platform.FileDialogUser32",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": {
+        "proxy": [
+          "com.rchdliang.copymanga_neo.multiplatform.platform.FileDialogUser32"
+        ]
+      }
+    }
+  ]
+}

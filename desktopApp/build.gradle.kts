@@ -1,183 +1,81 @@
-import java.util.jar.JarFile
-import java.security.MessageDigest
-import org.jetbrains.compose.desktop.tasks.AbstractJarsFlattenTask
-import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
+import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
     kotlin("jvm")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.nucleus)
 }
-// Explicit portable-JAR target; native packaging still requires a matching host.
-val portableDesktopTarget = providers.gradleProperty("copymanga.desktopTarget").orNull
 
-
-
-kotlin { jvmToolchain(21) }
+kotlin {
+    jvmToolchain(21)
+    sourceSets.main {
+        kotlin.srcDir("src/native/kotlin")
+        kotlin.exclude("**/Main.kt")
+    }
+}
 dependencies {
     implementation(project(":shared"))
-    implementation(when (portableDesktopTarget) {
-                null -> compose.desktop.currentOs
-                "windows-x64" -> compose.desktop.windows_x64
-                "windows-arm64" -> compose.desktop.windows_arm64
-                else -> error("copymanga.desktopTarget must be windows-x64 or windows-arm64")
-            })
+    implementation(compose.desktop.windows_x64)
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
     implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+    implementation(libs.nucleus.application)
+    implementation(libs.nucleus.window.tao)
+    implementation(libs.nucleus.taskbar.tao)
+    implementation(libs.nucleus.tray)
+    implementation(libs.nucleus.notifications)
 }
-compose.desktop {
-    application {
-        mainClass = "com.rchdliang.copymanga_neo.desktop.MainKt"
-        nativeDistributions {
-            // Dependency analysis finds these runtime modules; charset providers are loaded
-            // dynamically and preserve the full-JDK decoder catalog in packaged apps.
-            modules("java.instrument", "java.management", "jdk.unsupported", "jdk.charsets")
-            targetFormats(TargetFormat.Deb, TargetFormat.Rpm)
-            packageName = "CopyMangaNeo"
-            packageVersion = rootProject.extra["copyMangaVersionName"] as String
-            description = "CopyManga Neo multiplatform client"
-            vendor = "rchdliang"
-            windows {
-                packageVersion = rootProject.extra["copyMangaWindowsVersion"] as String
-                iconFile.set(project.file("icons/copymanga-neo.ico"))
-            }
-            linux { iconFile.set(project.file("src/main/resources/copymanga-neo.png")) }
+tasks.processResources { from("icons/copymanga-neo.ico") }
+
+nucleus.application {
+    mainClass = "com.rchdliang.copymanga_neo.desktop.NativeMainKt"
+    graalvm {
+        isEnabled = true
+        imageName = "CopyMangaNeo"
+        toolchain { version = libs.versions.graalvm.get() }
+        march = NativeImageMarch.COMPATIBILITY
+        allCharsets = true
+        buildArgs.addAll("-J-Xmx" + providers.gradleProperty("nativeBuildHeap").getOrElse("8g"), "--parallelism=2")
+    }
+    nativeDistributions {
+        packageName = "CopyMangaNeo"
+        packageVersion = rootProject.extra["copyMangaVersionName"] as String
+        description = "CopyManga Neo multiplatform client"
+        vendor = "rchdliang"
+        targetFormats(TargetFormat.Portable)
+        windows {
+            packageVersion = rootProject.extra["copyMangaWindowsVersion"] as String
+            iconFile.set(project.file("icons/copymanga-neo.ico"))
         }
     }
 }
 
-// Windows 安装向导由 Inno Setup 生成，Compose 只负责包含运行时的应用目录。
-val installerVersion = rootProject.extra["copyMangaVersionName"] as String
-val installerArchitecture = when (System.getProperty("os.arch").lowercase()) {
-    "amd64", "x86_64" -> "x64"
-    "aarch64", "arm64" -> "arm64"
-    else -> "unsupported"
+// 常用入口统一到 Native Image；JVM 对照版本必须显式选择 desktopRuntime=jvm。
+tasks.matching { it.name in setOf("run", "runDistributable", "createDistributable",
+    "runRelease", "runReleaseDistributable", "createReleaseDistributable",
+    "packageDistributionForCurrentOS", "packageReleaseDistributionForCurrentOS") }.configureEach {
+    val nativeTask = if (name.startsWith("create") || name.startsWith("package")) "createGraalvmNativeDistributable"
+        else "runGraalvmNativeDistributable"
+    enabled = false // 保留依赖入口，禁用插件注册的 JVM 执行动作。
+    setActions(emptyList())
+    setDependsOn(listOf(nativeTask))
+    description = "Default Windows Native Image entry point: $nativeTask"
 }
-val installerHostIsWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+tasks.matching { it.name in setOf("createRuntimeImage", "createReleaseRuntimeImage") }.configureEach {
+    enabled = false
+}
+tasks.named("assemble") { dependsOn("createGraalvmNativeDistributable") }
 tasks.register<Exec>("packageInnoSetup") {
-    val supportedHost = installerHostIsWindows && installerArchitecture != "unsupported"
     group = "distribution"
-    description = "Build the Windows installer with Inno Setup 6.5+"
-    dependsOn("createDistributable")
+    description = "Build the Windows x64 Native Image installer"
+    dependsOn("createGraalvmNativeDistributable")
     workingDir(rootProject.projectDir)
-    commandLine(
-        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+    commandLine("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
         rootProject.file(".github/scripts/build-windows-installer.ps1").absolutePath,
-        "-AppImage", layout.buildDirectory.dir("compose/binaries/main/app/CopyMangaNeo").get().asFile.absolutePath,
-        "-AppVersion", installerVersion,
-        "-Architecture", installerArchitecture,
-        "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath,
-    )
-    doFirst {
-        check(supportedHost) {
-            "Inno Setup packaging requires a matching Windows x64 or ARM64 JDK"
-        }
-    }
-}
-
-/** Fail closed rather than silently dropping providers/classes in Compose's first-wins flattening. */
-abstract class VerifyPortableJarInputs : DefaultTask() {
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val jars: ConfigurableFileCollection
-
-    @get:OutputFile
-    abstract val inputReport: RegularFileProperty
-
-    @TaskAction
-    fun verify() {
-        val seen = mutableMapOf<String, Pair<String, String>>()
-        val digest = MessageDigest.getInstance("SHA-256")
-        val resolvedJars = jars.files.filter { it.isFile && it.extension == "jar" }.sortedBy { it.absolutePath }
-        resolvedJars.forEach { file ->
-            JarFile(file).use { jar ->
-                val multiRelease = jar.manifest?.mainAttributes?.getValue("Multi-Release")?.equals("true", true) == true
-                jar.entries().asSequence().filterNot { it.isDirectory }.forEach { entry ->
-                    val name = entry.name
-                    val upper = name.uppercase()
-                    check(!(upper.startsWith("META-INF/") &&
-                        (upper.endsWith(".SF") || upper.endsWith(".RSA") || upper.endsWith(".DSA") || upper.endsWith(".EC") || upper.substringAfter("META-INF/").startsWith("SIG-")))) {
-                        "Signed dependency cannot be flattened safely: ${file.name}:$name"
-                    }
-                    check(!name.startsWith("META-INF/versions/") || multiRelease) {
-                        "Inactive versioned resource would become active in portable JAR: ${file.name}:$name"
-                    }
-                    // Module descriptors belong to individual libraries, not the combined classpath JAR.
-                    if (!name.endsWith("module-info.class") &&
-                        (name.endsWith(".class") || name.startsWith("META-INF/services/"))) {
-                        val hash = jar.getInputStream(entry).use { input ->
-                            digest.reset()
-                            val buffer = ByteArray(8192)
-                            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
-                            digest.digest().joinToString("") { "%02x".format(it) }
-                        }
-                        val previous = seen.putIfAbsent(name, file.name to hash)
-                        check(previous == null || previous.second == hash) {
-                            "Conflicting portable JAR entry $name: ${previous?.first} and ${file.name}; use intact dependency JARs instead"
-                        }
-                    }
-                }
-            }
-        }
-        inputReport.get().asFile.apply {
-            parentFile.mkdirs()
-            writeText(resolvedJars.joinToString(separator = "\n", postfix = "\n") { it.absolutePath })
-        }
-    }
-}
-
-// Register outside task configuration: Gradle forbids nested task-container mutation.
-// Compose 1.12.1 defines these two independent flatten variants.
-val preflights = listOf("flattenJars", "flattenReleaseJars").associateWith { flattenName ->
-    val runtimeInputs = objects.fileCollection()
-    val verifier = tasks.register<VerifyPortableJarInputs>("verify${flattenName.replaceFirstChar { it.uppercase() }}Inputs") {
-        jars.from(runtimeInputs)
-        inputReport.set(layout.buildDirectory.file("reports/portable-jar/${portableDesktopTarget ?: "host"}-$flattenName-inputs.txt"))
-    }
-    runtimeInputs to verifier
-}
-tasks.withType<AbstractJarsFlattenTask>().configureEach {
-    val (runtimeInputs, verifier) = preflights.getValue(name)
-    runtimeInputs.from(inputFiles)
-    dependsOn(verifier)
-}
-// Gradle 9: Compose creates the JVM base task, not the legacy bundling.Jar subclass.
-tasks.withType<org.gradle.jvm.tasks.Jar>().matching { it.name.contains("UberJar") }.configureEach {
-    portableDesktopTarget?.let { target ->
-        // Compose's later task action sets archiveAppendix back to the build host.
-        // An explicit lazy filename keeps its package/version/build-type properties,
-        // but takes the platform segment from the selected native dependency target.
-        archiveFileName.set(
-            archiveBaseName.zip(archiveVersion.orElse("")) { base, version ->
-                listOf(base, target, version).filter { it.isNotEmpty() }.joinToString("-")
-            }.zip(archiveClassifier.orElse("")) { stem, classifier ->
-                if (classifier.isEmpty()) stem else "$stem-$classifier"
-            }.zip(archiveExtension) { stem, extension -> "$stem.$extension" }
-        )
-    }
-    // Versioned classes/resources exist in the resolved dependencies (including JBR API).
-    manifest.attributes["Multi-Release"] = "true"
-    exclude("module-info.class", "META-INF/versions/**/module-info.class")
-}
-
-if (portableDesktopTarget != null) {
-    val selectedTarget = portableDesktopTarget
-    val hostOs = System.getProperty("os.name").lowercase()
-    val hostArch = when (System.getProperty("os.arch").lowercase()) {
-        "amd64", "x86_64" -> "x64"
-        "aarch64", "arm64" -> "arm64"
-        else -> "unsupported"
-    }
-    val matchesHost = hostOs.startsWith("windows") && selectedTarget == "windows-$hostArch"
-    tasks.configureEach {
-        if (!matchesHost && (this is JavaExec || this is Test || this is AbstractJPackageTask ||
-                name == "createDistributable" || name == "createReleaseDistributable" ||
-                name == "runDistributable" || name == "runReleaseDistributable")) {
-            doFirst {
-                error("$selectedTarget runtime cannot run or create host-native images/installers here; use packageUberJarForCurrentOS for a portable JAR")
-            }
-        }
-    }
+        "-AppImage", layout.buildDirectory.dir("compose/binaries/main/graalvm-app/CopyMangaNeo").get().asFile.absolutePath,
+        "-AppVersion", rootProject.extra["copyMangaVersionName"] as String,
+        "-Architecture", "x64", "-Runtime", "native",
+        "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath)
 }

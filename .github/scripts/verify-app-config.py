@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import re
 import sys
+import subprocess
 import zipfile
 
 
@@ -26,6 +27,12 @@ def verify(platform, target, expected):
             with zipfile.ZipFile(path) as archive:
                 info = plistlib.loads(archive.read("Payload/CopyMangaNeo.app/Info.plist"))
                 found = info.get("CopyMangaTapString") == expected
+        elif platform == "desktop-native":
+            executable = path / "CopyMangaNeo.exe" if path.is_dir() else path
+            result = subprocess.run([str(executable.resolve()), "--verify-build-config"],
+                                    env={**os.environ, "COPYMANGA_TAP_STRING": expected},
+                                    capture_output=True, timeout=30, check=False)
+            found = result.returncode == 0 and b"Packaged build configuration verified" in result.stdout
         elif platform == "desktop":
             jars = [path] if path.suffix == ".jar" else path.rglob("*.jar")
             entry = "com/rchdliang/copymanga_neo/multiplatform/app/OfficialAppBuildConfig.class"
@@ -42,12 +49,12 @@ def verify(platform, target, expected):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=("android", "desktop", "ios"))
+    parser.add_argument("platform", choices=("android", "desktop", "desktop-native", "ios"))
     parser.add_argument("target")
     args = parser.parse_args()
     try:
         verify(args.platform, args.target, os.environ.get("COPYMANGA_TAP_STRING", "").strip())
-    except (ValueError, OSError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException):
+    except (ValueError, OSError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException, subprocess.TimeoutExpired):
         print("Build configuration verification failed: missing, invalid or mismatched artifact/configuration", file=sys.stderr)
         return 1
     print("Packaged build configuration verified")

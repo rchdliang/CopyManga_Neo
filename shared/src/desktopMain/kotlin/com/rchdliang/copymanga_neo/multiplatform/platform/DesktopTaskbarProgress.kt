@@ -73,9 +73,9 @@ class DesktopTaskbarProgress(
     override fun close() { lifetime.cancel() }
 }
 
-internal data class DesktopTaskbarPresentation(val state: Taskbar.State, val percent: Int = 0)
+data class DesktopTaskbarPresentation(val state: Taskbar.State, val percent: Int = 0)
 
-internal fun desktopTaskbarPresentation(downloads: List<DownloadProgressInfo>, export: ComicExportState): DesktopTaskbarPresentation {
+fun desktopTaskbarPresentation(downloads: List<DownloadProgressInfo>, export: ComicExportState): DesktopTaskbarPresentation {
     val pending = downloads.filter { it.status != DownloadTaskStatus.IDLE && it.status != DownloadTaskStatus.COMPLETED }
     val active = pending.filter { it.status in taskbarActiveStatuses }
     if (pending.isEmpty() && !export.running) return DesktopTaskbarPresentation(Taskbar.State.OFF)

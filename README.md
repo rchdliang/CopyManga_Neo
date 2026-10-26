@@ -134,7 +134,7 @@ AI 增强默认关闭，处理耗时和画质收益取决于设备与图片。�
 
 ## 安装
 
-从 [Releases](https://github.com/rchdliang/CopyManga_Neo/releases) 选择对应分支、平台和架构的安装包。Android 使用 APK；Windows 安装包及其他平台产物以对应版本实际提供的文件为准。
+从 [Releases](https://github.com/rchdliang/CopyManga_Neo/releases) 选择对应分支、平台和架构的安装包。Android 使用 APK；Windows 安装包及其他平台产物以对应版本实际提供的文件为准。Windows x64 的默认构建现使用 Nucleus Tao + GraalVM Native Image，交付的原生程序无需安装 Java；工具链与 IDE 运行方式见 [构建说明](docs/BUILDING.md#桌面)。
 
 `v0.10.25` 定位为**尝鲜版 · 原生 Android**，仅提供旧原生 Android 安装包，不包含 CMP 版本。尝鲜版不会通过当前应用的稳定版更新检查推送，请从 Releases 页面手动选择；CMP 功能与平台产物以对应发布说明为准。
 

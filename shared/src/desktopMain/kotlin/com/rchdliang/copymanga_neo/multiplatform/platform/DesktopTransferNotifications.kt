@@ -135,10 +135,10 @@ class DesktopTransferNotifications(
 private val activeStatuses = setOf(DownloadTaskStatus.WAITING, DownloadTaskStatus.REQUESTING_PAGE, DownloadTaskStatus.DOWNLOADING)
 private val resumableStatuses = setOf(DownloadTaskStatus.PAUSED, DownloadTaskStatus.PAUSED_BY_RISK, DownloadTaskStatus.ERROR)
 
-internal data class DesktopTransferNotice(val title: String, val message: String, val error: Boolean = false)
+data class DesktopTransferNotice(val title: String, val message: String, val error: Boolean = false)
 
 /** Pure event projection keeps progress updates from repeating completion/error balloons. */
-internal class DesktopTransferNotificationTracker {
+class DesktopTransferNotificationTracker {
     private val announced = linkedSetOf<String>()
     fun events(downloads: List<DownloadProgressInfo>, export: ComicExportState): List<DesktopTransferNotice> = buildList {
         fun once(key: String, notice: DesktopTransferNotice) {
@@ -171,7 +171,7 @@ internal class DesktopTransferNotificationTracker {
     }
 }
 
-internal fun desktopTransferPresentation(downloads: List<DownloadProgressInfo>, export: ComicExportState): String {
+fun desktopTransferPresentation(downloads: List<DownloadProgressInfo>, export: ComicExportState): String {
     val active = downloads.firstOrNull { it.status in activeStatuses }
     val downloadText = active?.let { "${it.name} ${(it.overallProgress.coerceIn(0f, 1f) * 100).toInt()}% · ${it.statusText}" }
         ?: downloads.firstOrNull { it.status !in setOf(DownloadTaskStatus.IDLE, DownloadTaskStatus.COMPLETED) }?.let { "${it.name} · ${it.statusText}" }

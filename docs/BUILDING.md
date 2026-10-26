@@ -63,7 +63,9 @@ CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满�
 
 ## 桌面
 
-Windows 下在 IntelliJ IDEA / Android Studio 打开项目并完成 Gradle 同步后，在顶部运行配置下拉框选择 **Windows Desktop**，点击 ▶ Run 即可启动桌面窗口，无需选择 Android 设备。共享配置位于 `.run/Windows Desktop.run.xml`，执行 `:desktopApp:run -PenableAndroid=false`，由项目工具链使用 JDK 21。若配置尚未出现，重新打开项目以加载共享运行配置。
+Windows x64 默认使用 Nucleus Tao 窗口与 GraalVM Native Image。在 IntelliJ IDEA / Android Studio 同步项目后，选择 **Windows Desktop**，点击 ▶ Run；共享配置执行 `:desktopApp:runGraalvmNativeDistributable`，首次需要原生编译，后续复用未变化的产物。命令行的 `:desktopApp:run`、`:desktopApp:createDistributable` 和 `:desktopApp:assemble` 也默认走原生构建。
+
+Gradle / Kotlin 编译仍需要 JDK 21；Native Image 使用版本目录固定的 GraalVM Community，由 Nucleus 自动下载，也可用 `GRAALVM_HOME` 指向匹配工具链。Windows 还需要 Visual Studio C++ Build Tools 与 Windows SDK。建议为原生编译预留 8 GiB 堆（`-PnativeBuildHeap=8g`），并限制 Gradle 堆和构建并发。运行交付的 EXE 无需安装 Java，但必须保留同目录的 DLL、bin 和 lib 文件。
 
 ```sh
 ./gradlew :shared:desktopTest :desktopApp:compileKotlin -PenableAndroid=false
@@ -72,29 +74,33 @@ Windows 下在 IntelliJ IDEA / Android Studio 打开项目并完成 Gradle 同�
 
 `-PenableAndroid=false` 排除 Android 应用模块，适用于桌面、浏览器及独立 iOS 构建。Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`，输出位于 `desktopApp/build/compose/binaries`。
 
-Windows 安装包在对应架构的 Windows / JDK 21 上构建：
+Windows x64 原生安装包在 Windows x64 上构建：
 
 ```powershell
-.\gradlew.bat :desktopApp:packageInnoSetup -PenableAndroid=false --no-daemon
+.\gradlew.bat :desktopApp:packageInnoSetup -PenableAndroid=false --no-daemon --no-configuration-cache --max-workers=1 '-Pkotlin.compiler.execution.strategy=in-process' '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
 ```
 
-任务先生成包含运行时的 Compose 应用镜像，再编译 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss)。输出为 `desktopApp/build/installer/CopyMangaNeo-<完整版本>-windows-<架构>-setup.exe` 和 SHA-256 文件；x64 / ARM64 由构建 JDK 架构确定。CI 的 Windows 任务生成 x64 安装包，不再生成旧的 MSI / jpackage EXE。
+任务先生成 `desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo` 原生应用目录，再编译 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss)。输出为 `desktopApp/build/installer/CopyMangaNeo-<完整版本>-windows-x64-setup.exe` 和 SHA-256 文件。CI 的 Windows 任务使用相同原生路径，并运行产物核对协议配置。原生版沿用 `%LOCALAPPDATA%\CopyMangaNeo`、DPAPI 凭据和实例锁；测试独立资料时传入 `-Dcopymanga.dataDir=<目录>`。
+
+Linux 和 Windows ARM64 仍使用原有 JVM 构建，尚未迁移或验收 Native Image。Windows x64 如需对照或诊断，显式添加 `-PdesktopRuntime=jvm` 使用 `desktopApp/build-jvm.gradle.kts`；此时产物仍在 `compose/binaries/main/app`。切换运行时后重新同步 IDE，避免混用运行配置。
 
 安装向导提供简体中文／英文，允许选择目录，默认安装到当前用户的 `%LOCALAPPDATA%\Programs\CopyMangaNeo`，创建开始菜单入口；桌面快捷方式可选，完成页默认勾选「运行 CopyManga Neo」，静默安装不启动应用。安装程序使用 `desktopApp/icons/copymanga-neo.ico`，快捷方式与卸载入口使用应用 EXE 图标。简体中文资源固定来自 [Inno Setup is-6_7_1](https://github.com/jrsoftware/issrc/blob/is-6_7_1/Files/Languages/Unofficial/ChineseSimplified.isl)，保留译者声明。
+
+原生 Windows 通知使用与开始菜单快捷方式一致的 AUMID；安装器写入 Nucleus 的安装类型标记。直接运行构建目录用于开发验证时，系统通知可能需要先完成一次安装，托盘入口和任务栏进度不依赖通知弹出。升级到原生版时，仅在检测到旧 jpackage 配置后清理安装目录中的旧 `app` / `runtime`，不处理独立的用户资料目录。
 
 首次从旧 MSI / jpackage EXE 切换时，先备份个人数据，并从 Windows 设置卸载旧程序，再安装新包；两种安装器的卸载记录不同，不能视为自动迁移。后续 Inno Setup 版本使用固定 AppId，直接覆盖安装。卸载脚本只移除安装文件，不主动删除应用数据。安装向导、快捷方式、完成页启动、卸载与跨版本覆盖安装仍需在 Windows 实机验收，编译成功不能替代这些检查。
 
 仅制作需要外部 JDK 的便携 JAR 时，可以选择 Windows 原生库：
 
 ```sh
-./gradlew :desktopApp:packageUberJarForCurrentOS -Pcopymanga.desktopTarget=windows-x64 -PenableAndroid=false
+./gradlew :desktopApp:packageUberJarForCurrentOS -PdesktopRuntime=jvm -Pcopymanga.desktopTarget=windows-x64 -PenableAndroid=false
 ```
 
 ARM64 改用 `windows-arm64`。输出位于 `desktopApp/build/compose/jars`，文件名包含配置版本；使用匹配架构的 JDK 21 运行 `java -jar`。跨平台选择仅用于打包，不能在 Linux 执行 Windows 原生代码或生成 Windows 安装程序。
 
 打包前置任务会检查重复类、服务描述符、签名块和多版本 JAR 语义；不要绕过检查来强行合并依赖。诊断文件位于 `desktopApp/build/reports/portable-jar`。
 
-桌面默认关闭开发专用行为。需要调试界面时，把 `-Dcopymanga.debug=true` 传给应用 JVM，而不是仅传给 Gradle。数据目录可通过应用 JVM 的 `-Dcopymanga.dataDir=...` 指定；不要让多个进程同时使用同一目录。
+桌面默认关闭开发专用行为。需要调试界面时，把 `-Dcopymanga.debug=true` 传给应用进程，而不是仅传给 Gradle。Native Image EXE 和 JVM 都接受 `-Dcopymanga.dataDir=...`；不要让多个运行时同时写入同一目录。图片转换与普通剪贴板仍使用兼容的 AWT/ImageIO 适配层；Tao 窗口、敏感剪贴板、文件对话框、托盘、通知和任务栏使用原生接口。Native Image 所需的项目 JNA 代理登记位于 `desktopApp/src/main/resources/META-INF/native-image`。
 
 ## iOS
 

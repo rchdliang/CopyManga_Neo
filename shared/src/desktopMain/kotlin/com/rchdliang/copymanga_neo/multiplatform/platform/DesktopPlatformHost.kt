@@ -63,6 +63,9 @@ class DesktopPlatformHost(
     private val windowPolicy: DesktopWindowPolicy? = null,
     private val locale: Locale = Locale.getDefault(),
     private val zone: ZoneId = ZoneId.systemDefault(),
+    private val nativeWindowHandle: (() -> Long)? = null,
+    private val nativeUiDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Swing,
+    private val nativeFileDialogs: Boolean = false,
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
@@ -166,10 +169,11 @@ class DesktopPlatformHost(
         }
     }
     override suspend fun copySensitiveText(label: String, text: String): Result<Unit> = result {
-        withContext(Dispatchers.Swing) {
+        withContext(if (nativeWindowHandle != null) nativeUiDispatcher else Dispatchers.Swing) {
             requireGui()
             if (System.getProperty("os.name").startsWith("Windows", true)) {
-                copyWindowsSensitiveText(owner, text)
+                if (nativeWindowHandle != null) copyWindowsSensitiveText(nativeWindowHandle.invoke(), text)
+                else copyWindowsSensitiveText(owner, text)
                 warn("已请求 Windows 不记录或同步此剪贴板内容；其他应用仍可能读取，请使用后及时清除")
             } else {
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
@@ -200,6 +204,7 @@ class DesktopPlatformHost(
     }
 
     override suspend fun openDocument(mimeTypes: List<String>): Result<String?> = result {
+        if (nativeFileDialogs) return@result nativeDialog("open", "", mimeTypes, false)
         withContext(Dispatchers.Swing) {
             requireGui()
             val chooser = JFileChooser().apply { configureMimeTypes(mimeTypes); dialogTitle = "选择文件" }
@@ -208,10 +213,18 @@ class DesktopPlatformHost(
     }
 
     override suspend fun createDocument(name: String, mimeType: String): Result<String?> = result {
+        if (nativeFileDialogs) return@result nativeDialog("save", name, listOf(mimeType), false)
         withContext(Dispatchers.Swing) { chooseDestination(name, listOf(mimeType), false) }
     }
     override suspend fun pickDestination(location: ComicExportLocation): Result<String?> = result {
+        if (nativeFileDialogs) return@result nativeDialog(
+            if (location.directory) "folder" else "save", location.name, listOf(location.mimeType), !location.directory)
         withContext(Dispatchers.Swing) { chooseDestination(location.name, listOf(location.mimeType), location.directory, archive = !location.directory) }
+    }
+
+    private suspend fun nativeDialog(kind: String, name: String, mimeTypes: List<String>, archive: Boolean): String? {
+        val handle = withContext(nativeUiDispatcher) { requireNotNull(nativeWindowHandle).invoke() }
+        return WindowsFileDialogs.choose(handle, kind, name, mimeTypes, archive)
     }
 
     private fun chooseDestination(name: String, mimeTypes: List<String>, directory: Boolean, archive: Boolean = false): String? {
