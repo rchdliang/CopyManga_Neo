@@ -73,6 +73,7 @@ class PortableNetworkSettings(
     override val supportedRequestModes get() = network.supportedRequestModes
     private fun normalize(value: NetworkSettings) = PortableNetworkValidation.normalize(network.normalizeSettings(value))
     private val document = DocumentStore(storage, "network-settings.json", NetworkDocument.serializer(), NetworkDocument())
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
     override val settings: StateFlow<NetworkSettings> = object : StateFlow<NetworkSettings> {
         override val value get() = network.snapshot.settings
         override val replayCache get() = listOf(value)

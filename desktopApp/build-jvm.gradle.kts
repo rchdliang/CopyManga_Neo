@@ -19,8 +19,8 @@ dependencies {
     implementation(project(":shared"))
     implementation(when (portableDesktopTarget) {
                 null -> compose.desktop.currentOs
-                "windows-x64" -> compose.desktop.windows_x64
-                "windows-arm64" -> compose.desktop.windows_arm64
+                "windows-x64" -> libs.compose.multiplatform.windows.x64.get()
+                "windows-arm64" -> libs.compose.multiplatform.windows.arm64.get()
                 else -> error("copymanga.desktopTarget must be windows-x64 or windows-arm64")
             })
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")

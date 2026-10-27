@@ -112,7 +112,7 @@ class AppRouteNavHostStateSceneTest {
             // Exercise both rememberNavController and private payload saver together. Framework
             // restoration wins; the SavedNavigation fallback must not append duplicate visits.
             val saved = registry.performSave()
-            scene?.close()
+            scene.close()
             scene = null
             runCurrent()
             registry = SaveableStateRegistry(saved) { true }

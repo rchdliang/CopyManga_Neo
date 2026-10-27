@@ -3,7 +3,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -83,7 +83,7 @@ internal fun AboutPage(
             0, 3, enabled = !state.checking, onClick = onCheckUpdate
         )
         ProfileListItem(
-            Icons.Outlined.OpenInNew, "GitHub", "项目源码、发布与反馈", 1, 3,
+            Icons.AutoMirrored.Outlined.OpenInNew, "GitHub", "项目源码、发布与反馈", 1, 3,
             onClick = { open(ProjectLinks.GITHUB) })
         ProfileListItem(
             Icons.Outlined.Code, "第三方库", "使用的库、许可证与开源致谢", 2, 3,

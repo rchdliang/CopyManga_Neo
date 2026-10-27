@@ -72,7 +72,6 @@ class FileCacheStorage(directory: String) : CacheStorage {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val commit: suspend () -> Unit = {
                 Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                Unit
             }
             if (publish == null) commit() else publish(commit)
         } finally { Files.deleteIfExists(temporary.toPath()) }

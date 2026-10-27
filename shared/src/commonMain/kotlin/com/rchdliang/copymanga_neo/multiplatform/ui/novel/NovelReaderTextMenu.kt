@@ -50,7 +50,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.platform.LocalClipboardManager
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.rememberTextClipboard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.TextClipboard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.copyText
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -213,7 +219,9 @@ private fun NovelReaderSelectionMenu(
     onBounds: (Rect?) -> Unit
 ) {
     val data by remember(request) { derivedStateOf(request.dataProvider::data) }
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberTextClipboard()
+    val toast = LocalToastHost.current
+    val scope = rememberCoroutineScope()
     val selectedParts = state.selection?.selectedTexts.orEmpty()
     val canCopy = data.components.any { it.key == TextContextMenuKeys.CopyKey } &&
         selectedParts.any { it.isNotEmpty() }
@@ -231,8 +239,11 @@ private fun NovelReaderSelectionMenu(
                 canAnnotate = selected != null,
                 canSearch = query.isNotBlank(),
                 onCopy = {
-                    clipboard.setText(novelClipboardText(selectedParts))
-                    state.dismiss()
+                    val text = novelClipboardText(selectedParts)
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                        copyNovelSelection(clipboard, text, state::dismiss)
+                            .onFailure { toast.showToast("复制失败，请检查剪贴板权限") }
+                    }
                 },
                 onAnnotate = { selected?.let { state.dismiss(); onAnnotate(it) } },
                 onSearch = { state.dismiss(); onSearch(query) },
@@ -360,7 +371,11 @@ private fun NovelReaderTextMenuPreview() {
     }
 }
 
-/** Matches Compose SelectionManager.getSelectedText, retaining spans and inter-selectable newlines. */
+/** 复制完成后才清除选区；权限拒绝时保留选区供用户重试。 */
+internal suspend fun copyNovelSelection(clipboard: TextClipboard, text: AnnotatedString, onCopied: () -> Unit): Result<Unit> =
+    clipboard.copyText(text).onSuccess { onCopied() }
+
+/** 合并不同文本组件的选区，保留样式和段落之间的换行。 */
 internal fun novelClipboardText(parts: List<AnnotatedString>): AnnotatedString {
     val text = AnnotatedString.Builder()
     parts.forEachIndexed { index, part ->

@@ -44,6 +44,7 @@ internal class WindowsReaderImageDecoder(private val source: ImageSource, privat
 }
 
 /** 保留宽高比，最多约 64 MiB 输出位图；不对原始文件及磁盘缓存做重采样。 */
+@OptIn(coil3.annotation.ExperimentalCoilApi::class)
 internal fun decodeWindowsReaderImage(bytes: ByteArray, options: Options): DecodeResult =
     Image.makeFromEncoded(bytes).use { image ->
         val (width, height) = DecodeUtils.computeDstSize(

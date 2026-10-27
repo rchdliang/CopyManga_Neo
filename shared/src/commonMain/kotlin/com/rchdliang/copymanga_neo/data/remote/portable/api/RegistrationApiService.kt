@@ -17,7 +17,7 @@ class RegistrationApiService(private val client: CopyMangaClient, private val ww
         version: String = CopyMangaNetworkConfig.WEB_VERSION,
         platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
-    ): PortableResponse<RegistrationResponse> = client.call(ApiRequest(path = "/api/v3/register", method = "POST", query = emptyList(), form = listOfNotNull("username" to username.toString(), "password" to rawPassword.toString(), "source" to source.toString(), "version" to version.toString(), "platform" to platform.toString()), headers = headers, www = www, mode = null, appIdentity = null), serializer<RegistrationResponse>())
+    ): PortableResponse<RegistrationResponse> = client.call(ApiRequest(path = "/api/v3/register", method = "POST", query = emptyList(), form = listOfNotNull("username" to username, "password" to rawPassword, "source" to source, "version" to version, "platform" to platform.toString()), headers = headers, www = www, mode = null, appIdentity = null), serializer<RegistrationResponse>())
 
     suspend fun register(
         username: String,
@@ -28,5 +28,5 @@ class RegistrationApiService(private val client: CopyMangaClient, private val ww
         question: String = "",
         answer: String = "",
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
-    ): PortableResponse<RegistrationResponse> = client.call(ApiRequest(path = "/api/v3/register", method = "POST", query = emptyList(), form = listOfNotNull("username" to username.toString(), "password" to rawPassword.toString(), "mobile" to mobile.toString(), "code" to code.toString(), "invite_code" to inviteCode.toString(), "question" to question.toString(), "answer" to answer.toString()), headers = headers, www = www, mode = null, appIdentity = null), serializer<RegistrationResponse>())
+    ): PortableResponse<RegistrationResponse> = client.call(ApiRequest(path = "/api/v3/register", method = "POST", query = emptyList(), form = listOfNotNull("username" to username, "password" to rawPassword, "mobile" to mobile, "code" to code, "invite_code" to inviteCode, "question" to question, "answer" to answer), headers = headers, www = www, mode = null, appIdentity = null), serializer<RegistrationResponse>())
 }

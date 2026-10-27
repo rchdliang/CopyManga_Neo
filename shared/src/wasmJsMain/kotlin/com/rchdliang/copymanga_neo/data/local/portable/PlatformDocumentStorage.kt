@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package com.rchdliang.copymanga_neo.data.local.portable
 
 import kotlin.JsFun

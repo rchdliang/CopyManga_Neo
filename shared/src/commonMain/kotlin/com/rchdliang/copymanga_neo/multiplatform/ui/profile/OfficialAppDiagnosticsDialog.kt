@@ -16,7 +16,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalClipboardManager
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.rememberTextClipboard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.copyText
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -32,7 +36,8 @@ internal fun OfficialAppDiagnosticsDialog(
     refresh: () -> Unit,
     close: () -> Unit
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberTextClipboard()
+    val scope = rememberCoroutineScope()
     val toast = LocalToastHost.current
     if (LocalRouteActive.current) Dialog(
         onDismissRequest = close,
@@ -64,8 +69,11 @@ internal fun OfficialAppDiagnosticsDialog(
                         )
                     }
                     TextButton(onClick = {
-                        clipboard.setText(AnnotatedString(report))
-                        toast.showToast("报告已复制")
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            clipboard.copyText(AnnotatedString(report))
+                                .onSuccess { toast.showToast("报告已复制") }
+                                .onFailure { toast.showToast("复制失败，请检查剪贴板权限") }
+                        }
                     }) { Text("复制报告", color = MaterialTheme.colorScheme.primary) }
                     TextButton(onClick = close) {
                         Text(

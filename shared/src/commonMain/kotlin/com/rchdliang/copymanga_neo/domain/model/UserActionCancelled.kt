@@ -6,7 +6,6 @@ class UserActionCancelled : Exception("User dismissed action")
 /** Nullable native completion payloads distinguish dismissal from an acknowledged action. */
 fun Result<String?>.asUserActionResult(): Result<Unit> = mapCatching { value ->
     if (value == null) throw UserActionCancelled()
-    Unit
 }
 
 /** Native share completion may include an error even when a completion flag is set. */

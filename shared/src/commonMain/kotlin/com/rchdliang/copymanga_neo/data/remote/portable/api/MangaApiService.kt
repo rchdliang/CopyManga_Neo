@@ -18,7 +18,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         limit: Int = 21,
         update: Boolean = true,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<RankingResponse> = client.call(ApiRequest(path = "/api/v3/ranks", method = "GET", query = listOfNotNull("type" to type.toString(), "date_type" to period.toString(), "audience_type" to audience.toString(), "offset" to offset.toString(), "limit" to limit.toString(), "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<RankingResponse>())
+    ): PortableResponse<RankingResponse> = client.call(ApiRequest(path = "/api/v3/ranks", method = "GET", query = listOfNotNull("type" to type.toString(), "date_type" to period, "audience_type" to audience, "offset" to offset.toString(), "limit" to limit.toString(), "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<RankingResponse>())
 
     suspend fun getNewestComics(
         limit: Int = 21,
@@ -26,7 +26,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         update: Boolean? = null,
         date: String? = null,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<NewestResponse> = client.call(ApiRequest(path = "/api/v3/update/newest", method = "GET", query = listOfNotNull("limit" to limit.toString(), "offset" to offset.toString(), update?.let { "_update" to it.toString() }, date?.let { "date" to it.toString() }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<NewestResponse>())
+    ): PortableResponse<NewestResponse> = client.call(ApiRequest(path = "/api/v3/update/newest", method = "GET", query = listOfNotNull("limit" to limit.toString(), "offset" to offset.toString(), update?.let { "_update" to it.toString() }, date?.let { "date" to it }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<NewestResponse>())
 
     suspend fun getComicTopics(
         type: Int = 1,
@@ -41,7 +41,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         limit: String? = "",
         offset: String? = "",
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<TopicDetailResponse> = client.call(ApiRequest(path = "/api/v3/topic/${pathWord.encodeURLPathPart()}", method = "GET", query = listOfNotNull(limit?.let { "limit" to it.toString() }, offset?.let { "offset" to it.toString() }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<TopicDetailResponse>())
+    ): PortableResponse<TopicDetailResponse> = client.call(ApiRequest(path = "/api/v3/topic/${pathWord.encodeURLPathPart()}", method = "GET", query = listOfNotNull(limit?.let { "limit" to it }, offset?.let { "offset" to it }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<TopicDetailResponse>())
 
     suspend fun getComicTopicContents(
         pathWord: String,
@@ -84,7 +84,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         offset: Int = 0,
         update: Boolean = true,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("free_type" to freeType.toString(), top?.let { "top" to it.toString() }, theme?.let { "theme" to it.toString() }, "ordering" to ordering.toString(), "limit" to limit.toString(), "offset" to offset.toString(), "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
+    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("free_type" to freeType.toString(), top?.let { "top" to it }, theme?.let { "theme" to it }, "ordering" to ordering, "limit" to limit.toString(), "offset" to offset.toString(), "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
 
     suspend fun getFinishedComics(
         freeType: Int = 1,
@@ -93,7 +93,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         limit: Int = 21,
         ordering: String = "-datetime_updated",
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("free_type" to freeType.toString(), "top" to top.toString(), "offset" to offset.toString(), "limit" to limit.toString(), "ordering" to ordering.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
+    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("free_type" to freeType.toString(), "top" to top, "offset" to offset.toString(), "limit" to limit.toString(), "ordering" to ordering), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
 
     suspend fun getOfficialChapter(
         pathWord: String,
@@ -147,7 +147,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         freeType: Int = 1,
         ordering: OrderType = OrderType.UPDATED_DESC,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("theme" to theme.toString(), "offset" to offset.toString(), "limit" to limit.toString(), "free_type" to freeType.toString(), "ordering" to ordering.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
+    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("theme" to theme, "offset" to offset.toString(), "limit" to limit.toString(), "free_type" to freeType.toString(), "ordering" to ordering.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
 
     suspend fun search(
         platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
@@ -157,7 +157,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         queryType: QueryType?,
         update: Boolean = true,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/search/comic", method = "GET", query = listOfNotNull("platform" to platform.toString(), "q" to query.toString(), "limit" to limit.toString(), "offset" to offset.toString(), queryType?.let { "q_type" to it.toString() }, "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
+    ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/search/comic", method = "GET", query = listOfNotNull("platform" to platform.toString(), "q" to query, "limit" to limit.toString(), "offset" to offset.toString(), queryType?.let { "q_type" to it.toString() }, "_update" to update.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
 
     suspend fun getFavoriteComics(
         freeType: Int = 1,
@@ -216,7 +216,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         platform: Int = CopyMangaNetworkConfig.WEB_PLATFORM,
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
         requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
-    ): PortableResponse<LoginResponse> = client.call(ApiRequest(path = "/api/v3/login", method = "POST", query = emptyList(), form = listOfNotNull("username" to username.toString(), "password" to password.toString(), "salt" to salt.toString(), "source" to source.toString(), "version" to version.toString(), "platform" to platform.toString()), headers = headers, www = www, mode = requestMode, appIdentity = null), serializer<LoginResponse>())
+    ): PortableResponse<LoginResponse> = client.call(ApiRequest(path = "/api/v3/login", method = "POST", query = emptyList(), form = listOfNotNull("username" to username, "password" to password, "salt" to salt, "source" to source, "version" to version, "platform" to platform.toString()), headers = headers, www = www, mode = requestMode, appIdentity = null), serializer<LoginResponse>())
 
     suspend fun queryComicStatus(
         pathWord: String,
@@ -230,7 +230,7 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         isCollect: Int = 1,
         update: Boolean = true,
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
-    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/comic", method = "POST", query = emptyList(), form = listOfNotNull("comic_id" to comicId.toString(), "is_collect" to isCollect.toString(), "_update" to update.toString()), headers = headers, www = www, mode = null, appIdentity = null), serializer<SimpleResponse>())
+    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/comic", method = "POST", query = emptyList(), form = listOfNotNull("comic_id" to comicId, "is_collect" to isCollect.toString(), "_update" to update.toString()), headers = headers, www = www, mode = null, appIdentity = null), serializer<SimpleResponse>())
 
     suspend fun removeFavorite(
         collectId: Int,

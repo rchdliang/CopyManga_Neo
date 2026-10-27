@@ -91,12 +91,15 @@ val generateOfficialAppConfig = tasks.register<GenerateOfficialAppConfig>("gener
 }
 
 kotlin {
+    // 平台异常类型需要 expect/actual 类；显式确认使用该 Beta 语言特性。
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
     android {
         namespace = "com.rchdliang.copymanga_neo.shared"
         compileSdk = 37
         buildToolsVersion = "37.0.0"
         minSdk = 31
         androidResources { enable = true }
+        withHostTest {}
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
     }
     jvm("desktop") { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
@@ -105,6 +108,7 @@ kotlin {
     targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         binaries.framework { baseName = "CopyMangaShared"; isStatic = true }
     }
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
     wasmJs { browser { commonWebpackConfig { outputFileName = "copymanga-neo.js" } }; binaries.executable() }
     sourceSets {
         commonMain {
@@ -117,11 +121,11 @@ kotlin {
             // NavHost exposes these only at runtime; the input bridge imports their public APIs.
             implementation("org.jetbrains.androidx.navigationevent:navigationevent-compose:1.1.0")
             implementation("androidx.navigationevent:navigationevent:1.1.1")
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation("org.jetbrains.compose.ui:ui-tooling-preview:1.12.1")
+            implementation(libs.compose.multiplatform.runtime)
+            implementation(libs.compose.multiplatform.foundation)
+            implementation(libs.compose.multiplatform.ui)
+            implementation(libs.compose.multiplatform.resources)
+            implementation(libs.compose.multiplatform.ui.tooling.preview)
             implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
             implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
             implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
@@ -155,8 +159,8 @@ kotlin {
         getByName("desktopMain").dependencies {
             implementation(when (portableDesktopTarget) {
                 null -> compose.desktop.currentOs
-                "windows-x64" -> compose.desktop.windows_x64
-                "windows-arm64" -> compose.desktop.windows_arm64
+                "windows-x64" -> libs.compose.multiplatform.windows.x64.get()
+                "windows-arm64" -> libs.compose.multiplatform.windows.arm64.get()
                 else -> error("copymanga.desktopTarget must be windows-x64 or windows-arm64")
             })
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
@@ -166,7 +170,7 @@ kotlin {
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreDesktopDirectory"] as File)
         getByName("desktopTest").dependencies {
-            implementation("org.jetbrains.compose.ui:ui-test:1.12.1")
+            implementation(libs.compose.multiplatform.ui.test)
         }
         iosMain.dependencies { implementation("io.ktor:ktor-client-darwin:3.6.0") }
         wasmJsMain.dependencies { implementation("io.ktor:ktor-client-js:3.6.0") }
@@ -176,7 +180,7 @@ kotlin {
 dependencies {
     // Common-code previews render through the shared Android target, not :app's
     // debug classpath. The Android KMP plugin has no debugImplementation variant.
-    androidRuntimeClasspath("org.jetbrains.compose.ui:ui-tooling:1.12.1")
+    androidRuntimeClasspath(libs.compose.multiplatform.ui.tooling)
 }
 
 compose.resources {

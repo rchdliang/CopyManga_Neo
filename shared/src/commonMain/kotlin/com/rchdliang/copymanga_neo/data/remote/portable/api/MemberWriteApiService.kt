@@ -23,7 +23,7 @@ class MemberWriteApiService(private val client: CopyMangaClient, private val www
         isCollect: Int = 1,
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
         requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
-    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/book", method = "POST", query = emptyList(), form = listOfNotNull("book_id" to bookId.toString(), "is_collect" to isCollect.toString()), headers = headers + mapOf("Authorization" to authorization), www = www, mode = requestMode, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<SimpleResponse>())
+    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/book", method = "POST", query = emptyList(), form = listOfNotNull("book_id" to bookId, "is_collect" to isCollect.toString()), headers = headers + mapOf("Authorization" to authorization), www = www, mode = requestMode, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<SimpleResponse>())
 
     suspend fun novelFavorites(
         authorization: String,
@@ -34,7 +34,7 @@ class MemberWriteApiService(private val client: CopyMangaClient, private val www
         update: Boolean? = null,
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders(),
         requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
-    ): PortableResponse<JsonObject> = client.call(ApiRequest(path = "/api/v3/member/collect/books", method = "GET", query = listOfNotNull("offset" to offset.toString(), "limit" to limit.toString(), "free_type" to freeType.toString(), "ordering" to ordering.toString(), update?.let { "_update" to it.toString() }), form = null, headers = headers + mapOf("Authorization" to authorization), www = www, mode = requestMode, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<JsonObject>())
+    ): PortableResponse<JsonObject> = client.call(ApiRequest(path = "/api/v3/member/collect/books", method = "GET", query = listOfNotNull("offset" to offset.toString(), "limit" to limit.toString(), "free_type" to freeType.toString(), "ordering" to ordering, update?.let { "_update" to it.toString() }), form = null, headers = headers + mapOf("Authorization" to authorization), www = www, mode = requestMode, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<JsonObject>())
 
     suspend fun removeNovelFavoritesWeb(
         collectIds: Map<String, Int>,
@@ -55,7 +55,7 @@ class MemberWriteApiService(private val client: CopyMangaClient, private val www
         authorization: String,
         isCollect: Int = 1,
         headers: Map<String, String> = CopyMangaNetworkConfig.noAuthApiHeaders()
-    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/comic", method = "POST", query = emptyList(), form = listOfNotNull("comic_id" to comicId.toString(), "is_collect" to isCollect.toString()), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<SimpleResponse>())
+    ): PortableResponse<SimpleResponse> = client.call(ApiRequest(path = "/api/v3/member/collect/comic", method = "POST", query = emptyList(), form = listOfNotNull("comic_id" to comicId, "is_collect" to isCollect.toString()), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<SimpleResponse>())
 
     suspend fun removeFavorites(
         collectIds: List<Int>,

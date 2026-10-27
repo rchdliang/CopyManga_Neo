@@ -23,7 +23,7 @@ class PortableLoginRetryTest {
         var values = initial
         var writes = 0
         override suspend fun readAll() = values
-        override suspend fun writeAll(next: Map<RequestMode, StoredCredential>) { values = next; writes++ }
+        override suspend fun writeAll(values: Map<RequestMode, StoredCredential>) { this.values = values; writes++ }
     }
     private fun password(request: io.ktor.client.request.HttpRequestData): String {
         val form = parseQueryString((request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString())

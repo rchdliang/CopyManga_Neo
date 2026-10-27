@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec
 import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenEnvSpec
 import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenPlugin
@@ -10,10 +12,12 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
-    kotlin("multiplatform") version "2.4.20" apply false
-    kotlin("jvm") version "2.4.20" apply false
-    kotlin("plugin.serialization") version "2.4.20" apply false
-    id("org.jetbrains.compose") version "1.12.1" apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.compose.multiplatform) apply false
+    // 覆盖 Compose 自动带入的 1.2.0，使用已修复 Gradle 9.8 弃用 API 的版本。
+    alias(libs.plugins.compose.hot.reload) apply false
     id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
 }
 

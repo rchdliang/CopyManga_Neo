@@ -41,5 +41,6 @@ class CopyMangaImageNetworkClient(
     }
 }
 
+@OptIn(coil3.annotation.ExperimentalCoilApi::class)
 fun copyMangaImageFetcherFactory(client:CopyMangaClient,timeoutSeconds:()->Int = {15}):NetworkFetcher.Factory =
     NetworkFetcher.Factory(networkClient={CopyMangaImageNetworkClient(client,timeoutSeconds)})

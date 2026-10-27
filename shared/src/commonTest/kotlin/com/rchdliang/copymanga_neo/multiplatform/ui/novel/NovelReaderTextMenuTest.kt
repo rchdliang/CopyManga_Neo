@@ -8,6 +8,13 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.TextClipboard
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
@@ -19,6 +26,49 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 class NovelReaderTextMenuTest {
+    @Test
+    fun copyKeepsStyledSelectionUntilClipboardCompletes() = runTest {
+        val finished = CompletableDeferred<Unit>()
+        val text = novelClipboardText(listOf(
+            AnnotatedString("第一段", SpanStyle(fontWeight = FontWeight.Bold)),
+            AnnotatedString("第二段🙂")
+        ))
+        var copied: AnnotatedString? = null
+        var dismissed = false
+        val clipboard = TextClipboard { copied = it; finished.await() }
+        val copy = async(start = CoroutineStart.UNDISPATCHED) {
+            copyNovelSelection(clipboard, text) { dismissed = true }
+        }
+        assertEquals("第一段\n第二段🙂", copied?.text)
+        assertEquals(text.spanStyles, copied?.spanStyles)
+        assertFalse(dismissed)
+        finished.complete(Unit)
+        assertTrue(copy.await().isSuccess)
+        assertTrue(dismissed)
+    }
+
+    @Test
+    fun clipboardFailureDoesNotDismissSelection() = runTest {
+        var dismissed = false
+        val denied = IllegalStateException("permission denied")
+        val result = copyNovelSelection(TextClipboard { throw denied }, AnnotatedString("text")) {
+            dismissed = true
+        }
+        assertSame(denied, result.exceptionOrNull())
+        assertFalse(dismissed)
+    }
+
+    @Test
+    fun clipboardCancellationPropagatesWithoutDismissal() = runTest {
+        var dismissed = false
+        assertFailsWith<CancellationException> {
+            copyNovelSelection(TextClipboard { throw CancellationException() }, AnnotatedString("text")) {
+                dismissed = true
+            }
+        }
+        assertFalse(dismissed)
+    }
+
     @Test
     fun menuAppearsAboveSelection() {
         assertEquals(

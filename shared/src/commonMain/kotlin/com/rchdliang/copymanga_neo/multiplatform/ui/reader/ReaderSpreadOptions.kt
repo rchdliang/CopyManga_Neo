@@ -5,7 +5,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ViewWeek
-import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -77,7 +77,7 @@ internal fun ReaderPairingEditor(tools: ReaderToolsSettings, onChange: ((ReaderT
 @Composable
 internal fun ReaderOperationHelp() {
     val navigate = LocalReaderSettingsNavigation.current
-    ReaderSettingsLink(Icons.Outlined.HelpOutline, "操作说明", index = 1, count = 2, onClick = { navigate(ReaderSettingsPage("操作说明") {
+    ReaderSettingsLink(Icons.AutoMirrored.Outlined.HelpOutline, "操作说明", index = 1, count = 2, onClick = { navigate(ReaderSettingsPage("操作说明") {
         Text("触控", style = MaterialTheme.typography.titleSmall)
         Text("轻点两侧或滑动翻页；双击缩放，放大后拖动。双指可缩放，复原后点击左右 15% 区域翻页。")
         Text("键盘与鼠标", style = MaterialTheme.typography.titleSmall)

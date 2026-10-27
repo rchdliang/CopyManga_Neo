@@ -1230,7 +1230,7 @@ class DownloadManager(
                 ) request.cancel()
                 select {
                     request.onAwait { it }
-                    restricted?.onAwait { throw DownloadNetworkUnavailableException() }
+                    restricted.onAwait { throw DownloadNetworkUnavailableException() }
                 }
             } catch (error: CancellationException) {
                 currentCoroutineContext().ensureActive()
@@ -1238,7 +1238,7 @@ class DownloadManager(
             } finally {
                 activeRequests.remove(requestKey, request)
                 request.cancel()
-                restricted?.cancel()
+                restricted.cancel()
             }
         }
     }
@@ -1265,7 +1265,7 @@ class DownloadManager(
                 if (comicDownloadKey(comic) in pausedTasks || comicTask(comic)?.chapters?.none { it.chapter.uuid == uuid } != false) request.cancel()
                 select {
                     request.onAwait { it }
-                    restricted?.onAwait { Result.failure(IOException("等待网络连接")) }
+                    restricted.onAwait { Result.failure(IOException("等待网络连接")) }
                 }
             } catch (error: CancellationException) {
                 currentCoroutineContext().ensureActive()
@@ -1273,7 +1273,7 @@ class DownloadManager(
             } finally {
                 activeRequests.remove(comicDownloadKey(comic), request)
                 request.cancel()
-                restricted?.cancel()
+                restricted.cancel()
             }
         }
     }

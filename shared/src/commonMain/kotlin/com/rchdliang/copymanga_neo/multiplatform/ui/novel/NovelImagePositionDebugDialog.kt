@@ -17,7 +17,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalClipboardManager
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.rememberTextClipboard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.copyText
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
+import kotlinx.coroutines.CoroutineStart
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -31,7 +34,8 @@ internal fun NovelImagePositionDebugDialog(
     sample: NovelImagePositionDebugSample,
     onDismiss: () -> Unit
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberTextClipboard()
+    val toast = LocalToastHost.current
     val scope = rememberCoroutineScope()
     var copied by remember(sample.id) { mutableStateOf(false) }
     if (LocalRouteActive.current) AlertDialog(
@@ -67,9 +71,10 @@ internal fun NovelImagePositionDebugDialog(
         },
         dismissButton = {
             TextButton(onClick = {
-                scope.launch {
-                    clipboard.setText(AnnotatedString(sample.json))
-                    copied = true
+                scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    clipboard.copyText(AnnotatedString(sample.json))
+                        .onSuccess { copied = true }
+                        .onFailure { toast.showToast("复制失败，请检查剪贴板权限") }
                 }
             }) {
                 Text(

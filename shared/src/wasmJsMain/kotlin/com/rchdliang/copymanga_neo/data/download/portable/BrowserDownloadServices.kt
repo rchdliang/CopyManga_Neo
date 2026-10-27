@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package com.rchdliang.copymanga_neo.data.download.portable
 
 import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository

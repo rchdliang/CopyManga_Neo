@@ -17,7 +17,7 @@ kotlin {
 }
 dependencies {
     implementation(project(":shared"))
-    implementation(compose.desktop.windows_x64)
+    implementation(libs.compose.multiplatform.windows.x64)
     implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
     implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")

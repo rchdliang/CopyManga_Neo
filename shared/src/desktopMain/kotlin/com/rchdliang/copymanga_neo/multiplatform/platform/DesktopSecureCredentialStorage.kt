@@ -84,7 +84,6 @@ class DesktopSecureCredentialStorage(
                 "application", applicationId, "mode", "sessions-v2"), value)
             check(output.exit == 0) { "安全凭据保存失败，请确认Secret Service正在运行且已解锁；登录信息没有写入普通文件" }
         }
-        Unit
     }
 
     private fun invokeDpapi(operation: String, input: String): String {

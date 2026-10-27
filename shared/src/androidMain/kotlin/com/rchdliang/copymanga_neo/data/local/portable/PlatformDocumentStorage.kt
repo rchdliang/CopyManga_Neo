@@ -36,13 +36,11 @@ private class FileDocumentStorage(private val root: Path) : DocumentStorage {
                 Files.move(temporary, destination)
             }
         } finally { Files.deleteIfExists(temporary) }
-        Unit
     }
-    override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) { Files.deleteIfExists(path(key)); Unit }
+    override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) { Files.deleteIfExists(path(key)) }
     override suspend fun append(key: String, value: String): Unit = withContext(Dispatchers.IO) {
         Files.createDirectories(root)
         Files.write(path(key), value.toByteArray(Charsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND)
-        Unit
     }
     override suspend fun size(key: String): Long = withContext(Dispatchers.IO) {
         val file = path(key)

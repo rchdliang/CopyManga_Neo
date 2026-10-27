@@ -24,8 +24,8 @@ class PortableAccountPersistenceTest {
         val values = initial.toMutableMap()
         var afterWrite: (() -> Unit)? = null
         override suspend fun readAll() = values.toMap()
-        override suspend fun writeAll(next: Map<RequestMode, StoredCredential>) {
-            values.clear(); values.putAll(next)
+        override suspend fun writeAll(values: Map<RequestMode, StoredCredential>) {
+            this.values.clear(); this.values.putAll(values)
             afterWrite?.invoke()
         }
     }

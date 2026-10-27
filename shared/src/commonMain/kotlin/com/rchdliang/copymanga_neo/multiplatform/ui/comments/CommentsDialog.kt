@@ -82,7 +82,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.rememberTextClipboard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.copyText
+import kotlinx.coroutines.CoroutineStart
 import androidx.compose.ui.text.AnnotatedString
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.AppToastHost
@@ -767,7 +769,8 @@ internal fun CommentCard(
     onReport: (MangaComment) -> Unit = {},
     enabled: Boolean = true
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = rememberTextClipboard()
+    val toast = LocalToastHost.current
     val scope = rememberCoroutineScope()
     var menuComment by remember(comment.id) { mutableStateOf<MangaComment?>(null) }
     val longPress: (MangaComment) -> Unit = { menuComment = it }
@@ -847,8 +850,9 @@ internal fun CommentCard(
                 text = { Text("复制", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {
                     menuComment?.let { selected ->
-                        scope.launch {
-                            clipboard.setText(AnnotatedString(selected.content))
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            clipboard.copyText(AnnotatedString(selected.content))
+                                .onFailure { toast.showToast("复制失败，请检查剪贴板权限") }
                         }
                     }
                     menuComment = null

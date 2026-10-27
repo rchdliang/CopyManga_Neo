@@ -118,7 +118,7 @@ class BrowserPlatformHost : UiPlatform, ReaderPlatform, NovelReaderPlatform, Com
         catch (error: Exception) { Result.failure(error) }
         finally { stream?.let { token -> withContext(NonCancellable) { operation("streamAbort", "reference" to token) } } }
     }
-    override suspend fun openNotificationSettings(): Result<Unit> = operation("notificationSettings").map { Unit }
+    override suspend fun openNotificationSettings(): Result<Unit> = operation("notificationSettings").map {}
     override suspend fun requestDownloadNotificationPermissionOnce() { operation("notifications").onFailure { warn(it.message ?: "无法请求通知权限") } }
 
     private suspend fun operation(name: String, vararg arguments: Pair<String, String>): Result<String?> {

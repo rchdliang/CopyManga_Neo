@@ -230,7 +230,7 @@ internal fun ComicPending(path: String?, modifier: Modifier = Modifier) {
         modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center
     ) {
-        if (failed && path != null) TextButton(onClick = { context?.retry?.invoke(path) }) {
+        if (failed && path != null) TextButton(onClick = { context.retry(path) }) {
             Text("重试", color = MaterialTheme.colorScheme.primary)
         } else LoadingIndicator(Modifier.size(40.dp), color = MaterialTheme.colorScheme.primary)
     }

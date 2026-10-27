@@ -85,10 +85,10 @@ class ReaderSurfaceUiTest {
                     val name="spread-spine-${if(rtl==1) "rtl" else "ltr"}-${if(bordered==1) "borders" else "continuous"}-$width"
                     val output=File("build/reports/reader-settings-ui/$name.png");output.parentFile.mkdirs()
                     ImageIO.write(initial,"png",output)
-                    zoom!!.toggleZoom(Offset(width/2f,height/2f),5f);zoom!!.pan(Offset(50f,20f));frames()
-                    assertTrue(zoom!!.zoomed);assertTrue(zoom!!.offset!=Offset.Zero)
-                    zoom!!.reset();frames()
-                    assertEquals(1f,zoom!!.scale);assertEquals(Offset.Zero,zoom!!.offset)
+                    zoom!!.toggleZoom(Offset(width/2f,height/2f),5f);zoom.pan(Offset(50f,20f));frames()
+                    assertTrue(zoom.zoomed);assertTrue(zoom.offset!=Offset.Zero)
+                    zoom.reset();frames()
+                    assertEquals(1f,zoom.scale);assertEquals(Offset.Zero,zoom.offset)
                     assertEquals(initial.getRGB(width/2,height/2),image().getRGB(width/2,height/2))
                 } finally { scene.close();loader.shutdown() }
             }

@@ -319,8 +319,10 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                     } else if (phase == DesktopWindowPhase.BACKGROUND) {
                         // Deliberately dispose reading effects while retaining window, graph and saveables.
                     } else if (ready != null) appState.SaveableStateProvider("application") {
-                        CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
-                            openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                        com.rchdliang.copymanga_neo.multiplatform.platform.DesktopUriHandlerProvider {
+                            CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
+                                openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                        }
                     } else StartupSurface(error) { attempt++ }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
                     if (phase == DesktopWindowPhase.CONFIRM_CLOSE) AlertDialog(

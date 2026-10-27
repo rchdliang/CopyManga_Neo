@@ -150,11 +150,12 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                     }
                 }
         }
+        var quitHidden by remember { mutableStateOf(false) }
         DecoratedWindow(
             title = "CopyManga Neo",
             icon = appIcon,
             state = windowState,
-            visible = phase.visible,
+            visible = phase.visible && !quitHidden,
             onPreviewKeyEvent = fullscreenKey@ { event ->
                 if (phase.showApplication && event.key == Key.F11 &&
                     !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) {
@@ -242,33 +243,38 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                 val recovery = quitRecovery
                 quitRecovery = DesktopQuitRecovery.SAVE
                 failedQuit = false
-                // This effect starts after applyChanges disposes the application branch. Keep
-                // route VMs/saveables until persistence succeeds, including on a background close.
-                if (target == DesktopWindowPhase.FLUSH_QUIT) startupJob?.cancelAndJoin()
-                val result = desktopFlushWindowTransition(target,
-                    flushReading = { graph?.repositories?.localReading?.flush() ?: Result.success(Unit) },
-                    trayStatus = { trayStatus },
-                    recovery = recovery,
-                    retryRead = { graph?.repositories?.localReading?.retryRead() ?: Result.success(Unit) },
-                    quit = {
-                        owner.viewModelStore.clear()
-                        graph?.shutdown()
-                        exitApplication()
-                        scope.cancel()
-                    })
-                if (result.isFailure) {
-                    reopenAfterFlush = false
-                    failedQuit = target == DesktopWindowPhase.FLUSH_QUIT
-                    error = "阅读记录尚未保存，窗口保持打开：${result.exceptionOrNull()?.message}"
-                    phase = DesktopWindowPhase.OPEN
-                } else if (target == DesktopWindowPhase.FLUSH_BACKGROUND) {
-                    if (reopenAfterFlush) {
+                // Keep shutdown in the application scope after the window becomes invisible.
+                if (target == DesktopWindowPhase.FLUSH_QUIT) quitHidden = true
+                scope.launch {
+                    // This effect starts after applyChanges disposes the application branch. Keep
+                    // route VMs/saveables until persistence succeeds, including on a background close.
+                    if (target == DesktopWindowPhase.FLUSH_QUIT) startupJob?.cancelAndJoin()
+                    val result = desktopFlushWindowTransition(target,
+                        flushReading = { graph?.repositories?.localReading?.flush() ?: Result.success(Unit) },
+                        trayStatus = { trayStatus },
+                        recovery = recovery,
+                        retryRead = { graph?.repositories?.localReading?.retryRead() ?: Result.success(Unit) },
+                        quit = {
+                            owner.viewModelStore.clear()
+                            graph?.shutdown()
+                            exitApplication()
+                            scope.cancel()
+                        })
+                    if (result.isFailure) {
                         reopenAfterFlush = false
+                        failedQuit = target == DesktopWindowPhase.FLUSH_QUIT
+                        error = "阅读记录尚未保存，窗口保持打开：${result.exceptionOrNull()?.message}"
                         phase = DesktopWindowPhase.OPEN
-                        reopen()
-                    } else {
-                        phase = result.getOrThrow()
-                        if (phase == DesktopWindowPhase.OPEN) windowState.isMinimized = true
+                        quitHidden = false
+                    } else if (target == DesktopWindowPhase.FLUSH_BACKGROUND) {
+                        if (reopenAfterFlush) {
+                            reopenAfterFlush = false
+                            phase = DesktopWindowPhase.OPEN
+                            reopen()
+                        } else {
+                            phase = result.getOrThrow()
+                            if (phase == DesktopWindowPhase.OPEN) windowState.isMinimized = true
+                        }
                     }
                 }
             }
@@ -351,13 +357,13 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                         dispatchBack = host.backDispatcher::dispatchBack)
                 }) {
                     val ready = graph
-                    if (phase.flushing) Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); NativeText("正在保存阅读记录…")
-                    } else if (phase == DesktopWindowPhase.BACKGROUND) {
+                    if (phase.flushing) StartupSurface() else if (phase == DesktopWindowPhase.BACKGROUND) {
                         // Deliberately dispose reading effects while retaining window, graph and saveables.
                     } else if (ready != null) appState.SaveableStateProvider("application") {
-                        CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
-                            openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                        com.rchdliang.copymanga_neo.multiplatform.platform.DesktopUriHandlerProvider {
+                            CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
+                                openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                        }
                     } else StartupSurface(error) { attempt++ }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
                     if (phase == DesktopWindowPhase.CONFIRM_CLOSE) AlertDialog(
