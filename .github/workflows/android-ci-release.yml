@@ -136,11 +136,11 @@ jobs:
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/release/SHA256SUMS.txt
-          # 0.10.25 先保留为尝鲜版草稿，核验签名和附件后再发布。
+          # 这些版本先保留为草稿，核验签名和附件后再发布。
           name: ${{ github.ref_name == 'android-v0.10.25' && 'v0.10.25 尝鲜版 · 原生 Android' || github.ref_name }}
-          draft: ${{ github.ref_name == 'android-v0.10.25' }}
+          draft: ${{ github.ref_name == 'android-v0.10.25' || github.ref_name == 'android-v0.10.27' }}
           prerelease: ${{ github.ref_name == 'android-v0.10.25' }}
-          make_latest: ${{ github.ref_name == 'android-v0.10.25' && 'false' || 'legacy' }}
+          make_latest: ${{ (github.ref_name == 'android-v0.10.25' || github.ref_name == 'android-v0.10.27') && 'false' || 'legacy' }}
           target_commitish: ${{ github.sha }}
           body_path: release_body.txt
           fail_on_unmatched_files: true
