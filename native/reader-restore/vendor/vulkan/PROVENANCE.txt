@@ -1,0 +1,4 @@
+Vulkan-Headers from KhronosGroup/Vulkan-Headers.
+Commit: 29f979ee5aa58b7b005f805ea8df7a855c39ff37
+Only vulkan_core.h, vk_platform.h, vk_video headers and licenses are vendored.
+Version is recorded in gradle/libs.versions.toml (vulkanHeaders).

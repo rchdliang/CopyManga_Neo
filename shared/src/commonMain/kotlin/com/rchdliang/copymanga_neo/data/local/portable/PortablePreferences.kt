@@ -34,6 +34,7 @@ class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRep
     private val document = DocumentStore(storage, "app-settings.json", AppPreferenceDocument.serializer(), AppPreferenceDocument())
     override val settings: Flow<AppSettings> = document.state.map { it.app.copy(comicImageConcurrency = it.app.comicImageConcurrency.coerceIn(1, 10), comicDownloadLimitKiB = it.app.comicDownloadLimitKiB.coerceAtLeast(0)) }
     suspend fun initialize() = document.ensureLoaded()
+    override suspend fun setAutoCheckUpdates(enabled: Boolean) = document.update { it.copy(app = it.app.copy(autoCheckUpdates = enabled)) }
     override suspend fun setThemeMode(mode: AppThemeMode) = document.update { it.copy(app = it.app.copy(themeMode = mode)) }
     override suspend fun setSimplifyChinese(enabled: Boolean) = document.update {
         it.copy(app = it.app.copy(simplifyChinese = enabled), chineseDefaultInitialized = true)

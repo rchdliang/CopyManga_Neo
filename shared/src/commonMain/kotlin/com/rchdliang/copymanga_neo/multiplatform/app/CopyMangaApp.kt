@@ -212,6 +212,11 @@ fun CopyMangaApp(
     val share = models.get("application") { startupTrace.measureSync("share_model") { ShareViewModel(repositories.shares) } }
     val session = models.get("application") { startupTrace.measureSync("session_model") { MainSessionModel(repositories.users, startupTrace) } }
     LaunchedEffect(session, shellDrawn) { if (shellDrawn) session.start() }
+    val updateModel = models.get("application", "automatic-update") { AboutViewModel(repositories.appInfo) }
+    val updateState by updateModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(updateModel, shellDrawn) {
+        if (shellDrawn) updateModel.checkAutomatically(platforms.buildInfo.versionName, preferences.autoCheckUpdates)
+    }
     val loggedIn by session.isLoggedIn.collectAsStateWithLifecycle()
     val avatar by session.avatar.collectAsStateWithLifecycle()
     val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, autoStart = false) } }
@@ -237,6 +242,22 @@ fun CopyMangaApp(
                 val colors = MaterialTheme.colorScheme
                 SideEffect { repositories.startupTrace.palette("shell", colors.primary.value, colors.surface.value) }
                 AppToastHost {
+                    updateState.update?.let { release ->
+                        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+                        val updateToast = LocalToastHost.current
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = updateModel::dismissUpdate,
+                            title = { Text("发现新版本", color = MaterialTheme.colorScheme.onSurface) },
+                            text = { Text("最新版本：${release.version}", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                                runCatching { uri.openUri(release.pageUrl) }.onFailure { updateToast.showToast("无法打开浏览器") }
+                                updateModel.dismissUpdate()
+                            }) { Text("查看发布页", color = MaterialTheme.colorScheme.primary) } },
+                            dismissButton = { androidx.compose.material3.TextButton(onClick = updateModel::dismissUpdate) {
+                                Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } }
+                        )
+                    }
                     val toast = LocalToastHost.current
                     LaunchedEffect(platforms.ui) {
                         platforms.ui.toastMessages.collect { toast.showToast(it) }

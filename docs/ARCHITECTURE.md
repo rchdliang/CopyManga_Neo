@@ -101,4 +101,4 @@ Android 使用 SAF 和前台导出服务，临时图片分享通过 FileProvider
 
 `LocalReaderSharpness` 提供默认关闭、持久化强度的显示锐化，仅作用于已加载的当前漫画页。Android API33+ 使用 AGSL，桌面使用 Skia；不支持的平台及超出表面预算的大图保持原图。强度为 0–100%、5% 一格，可临时对比锐化前后。
 
-`ReaderRestoreEngine` 是默认关闭的同尺寸画质修复原型：CMP Android 复用已加载位图，通过专用线程上的 GLES 3 四阶段 Anime4K Restore S / Soft S 处理，结果保存在会话内存中。无临时图片文件、模型下载或专用服务进程；桌面/iOS/Wasm 明确回退原图。源码实现、资源预算和未验证边界见 [画质修复说明](READER-RESTORATION.md)。
+`ReaderRestoreEngine` 是默认关闭的同尺寸画质修复后端：CMP Android、Windows 和 Linux 通过共享 JNI/Vulkan compute 引擎执行 Anime4K Restore / RestoreSoft，各有 S、M、L、VL、UL 五档，分别持久化档位，默认 M。分块计算并缓存内存结果，无临时图片文件、模型下载或专用服务进程；iOS/Wasm 明确回退原图。调节面板只在进入时自动放大一次，后续模式/档位切换与关闭面板均保留用户调整的位置和缩放。源码实现、资源预算和验证边界见 [画质修复说明](READER-RESTORATION.md)。

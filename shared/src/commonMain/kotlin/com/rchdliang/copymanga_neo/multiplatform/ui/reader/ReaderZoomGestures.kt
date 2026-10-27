@@ -41,6 +41,18 @@ class ReaderZoomState {
 
     internal fun viewportCenter() = Offset(viewport.width / 2f, viewport.height / 2f)
 
+    internal data class Snapshot(val scale: Float, val offset: Offset)
+    internal fun snapshot() = Snapshot(scale, offset)
+    internal fun restore(snapshot: Snapshot) {
+        stopFling()
+        scale = snapshot.scale.coerceIn(1f, READER_MAX_SCALE)
+        offset = clamp(snapshot.offset)
+    }
+    internal fun maximize(focal: Offset = viewportCenter(), maximum: Float = READER_MAX_SCALE) {
+        stopFling()
+        transform(maximum / scale, focal, viewportCenter() - focal, maximum)
+    }
+
     internal fun updateViewport(size: IntSize) {
         viewport = size
         offset = clamp(offset)
@@ -123,7 +135,7 @@ fun Modifier.readerImageZoomable(
     state: ReaderZoomState,
     scope: CoroutineScope,
     isContinuous: Boolean,
-    maxScale: Float = 5f,
+    maxScale: Float = READER_MAX_SCALE,
     isContentScrolling: () -> Boolean = { false },
     enabledAt: (Offset) -> Boolean = { true }
 ): Modifier = composed {

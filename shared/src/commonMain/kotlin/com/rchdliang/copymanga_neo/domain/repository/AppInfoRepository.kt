@@ -11,5 +11,5 @@ interface AppInfoRepository {
 
 object ProjectLinks {
     const val GITHUB = "https://github.com/rchdliang/CopyManga_Neo"
-    const val RELEASES_API = "https://api.github.com/repos/rchdliang/CopyManga_Neo/releases/latest"
+    const val RELEASES_API = "https://api.github.com/repos/rchdliang/CopyManga_Neo/releases"
 }

@@ -24,8 +24,8 @@
 | 平台 | Android、Windows、Linux；另有 iOS 与 Web/Wasm 构建目标 | Android |
 | Android 系统要求 | Android 12 及以上 | Android 12 及以上 |
 | 单页、双页、自动布局 | 支持，按漫画保存 | 支持，按漫画保存 |
-| 锐化 | Android 13 及以上、桌面 | 暂无 |
-| AI 增强（实验） | Android arm64、Windows x64 | 暂无 |
+| 锐化 | Android 13 及以上、桌面 | Android 13 及以上 |
+| 画质修复（实验） | Android、Windows、Linux 的 Vulkan GPU | 暂无 |
 
 两个 Android 应用使用不同包名，可以并存；应用数据分别保存，完整用户数据备份不能直接互导；轻量设置备份的覆盖范围见各分支 [PERSISTENCE.md](PERSISTENCE.md)。iOS、Web/Wasm 及桌面平台的构建条件和系统能力差异见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)与[架构说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/ARCHITECTURE.md)。
 
@@ -33,9 +33,9 @@
 
 | CMP 平台 | 当前测试情况与限制 |
 | --- | --- |
-| Android | 日常功能已进行较充分的实机测试，整体可用，仍可能存在缺陷。AI 增强耗时较长，保持实验性质，详见下方说明。 |
+| Android | 日常功能已进行较充分的实机测试，整体可用，仍可能存在缺陷。新 Vulkan 画质修复已通过编译，尚未进行真机验收。 |
 | Windows | 桌面验证主要在 Windows 进行，已检查启动、阅读器及部分原生增强功能；部分界面仍需优化，部分功能尚未充分测试。 |
-| Linux | 尚未经过实机验证；编译或打包成功不代表实际功能已验证可用。 |
+| Linux | 画质修复已通过软件 Vulkan 计算与 JNI 验证，尚未经过硬件 GPU 或完整界面实机验证。 |
 | iOS | 尚未经过 iPhone/iPad 实机验证；构建成功不代表安装、系统交互与日常功能已验证可用。工程最低部署目标为 iOS 16。 |
 | Web/Wasm | 测试有限，尚未完成全面功能验证；受浏览器跨域、后台执行、文件与存储能力限制。 |
 
@@ -62,15 +62,17 @@ Web/Wasm 的具体边界：
 
 ### 画质增强（CMP）
 
-- **锐化**：可调强度，默认关闭；Android 需要 Android 13 及以上和硬件加速，桌面使用平台图像滤镜。
-- **AI 增强（实验）**：自动、CPU 与 GPU 处理方式；模型约 2.65 MiB，首次使用确认后下载，校验完成后启用，可离线复用、删除和重新下载。
-- **实际显示反馈**：区分等待、处理中、结果已应用和失败回退；增强完成前继续显示原图。双页同时显示两张图片时使用原图。
+- **锐化**：0–100%、5% 一格，默认关闭；Android 需要 Android 13 及以上和硬件加速，桌面使用平台图像滤镜。
+- **画质修复（实验）**：使用 Vulkan 执行 Anime4K 同尺寸修复；“关 / Restore / RestoreSoft”按钮组搭配 S、M、L、VL、UL 五档，两种模式独立记忆档位，默认 M。模型随包提供，关闭时滑块不可用。
+- **实时调节**：进入调节面板自动放大一次，之后自由缩放、拖动；切换模式或档位、点击完成均保留当前视图。异步更新结果，无需单独预览按钮。处理失败或设备不支持时显示原图与状态。
 
-AI 增强默认关闭，处理耗时和画质收益取决于设备与图片。当前部分平板整页处理约需 50 秒，不适合逐页实时增强；输出分辨率增加不代表画质必然改善。iOS、Web/Wasm 和独立 Android 分支不提供此功能。
+画质修复默认关闭，开启时不叠加锐化，处理耗时和画质收益取决于设备与图片。旧 waifu2x 路径已移除，旧方案耗时不能代表当前方案。iOS、Web/Wasm 和独立 Android 分支不提供修复功能；输入限制和验证边界见 [画质修复说明](docs/READER-RESTORATION.md)。
 
 ## 界面截图
 
 以下为 CMP Android 平板实机界面，点击图片可查看大图。截图仅裁切系统状态栏或设置弹窗区域并适度缩小，不改变页面内容。漫画、小说片段、封面及作品信息来自内容平台，版权归相关权利方所有；阅读画面仅用于展示客户端界面。
+
+画质增强截图来自旧版界面，尚未更新为当前 Vulkan 修复面板。
 
 <details open>
 <summary>浏览与发现：首页、搜索、探索、专题、详情</summary>
@@ -154,7 +156,7 @@ Android 覆盖更新需要包名与签名一致。CMP 与独立 Android 不能�
 .\gradlew.bat :desktopApp:run -PenableAndroid=false
 ```
 
-macOS/Linux 使用 `./gradlew`。CMP Android arm64 与 Windows x64 的普通构建会校验并打包 AI 运行时，模型不随包分发；全新环境需要准备原生构建工具链，或使用经校验的运行库缓存。
+macOS/Linux 使用 `./gradlew`。CMP Android、Windows、Linux 的普通构建会编译并打包 Vulkan 修复运行库和十组模型；全新环境需要准备 Python、CMake 与 C++ 编译器。桌面跨平台打包需要提供匹配目标的预编译库。
 
 平台打包、签名、版本配置与网络配置见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)，同尺寸 GPU 修复原型的模型来源与限制见 [画质修复说明](docs/READER-RESTORATION.md)。请勿提交本地签名材料、账号凭据或私有配置。
 

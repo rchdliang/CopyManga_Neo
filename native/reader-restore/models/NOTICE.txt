@@ -1,0 +1,5 @@
+Anime4K Restore CNN / Restore CNN Soft, S / M / L / VL / UL.
+Copyright (c) 2019-2021 bloc97. Distributed under the included MIT license.
+Source: https://github.com/bloc97/Anime4K
+Commit: 7684e9586f8dcc738af08a1cdceb024cc184f426
+Upstream weights are unchanged. The MPV texture bindings are adapted to Vulkan compute shaders at build time.

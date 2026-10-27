@@ -14,19 +14,39 @@ import coil3.Image
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.selection.selectableGroup
+import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
+import kotlin.math.roundToInt
 
-internal enum class ReaderRestoreMode(val label: String, val asset: String) {
-    OFF("关闭", ""),
-    RESTORE("Restore S", "Anime4K_Restore_CNN_S.glsl"),
-    SOFT("Restore Soft S", "Anime4K_Restore_CNN_Soft_S.glsl"),
+internal enum class ReaderRestoreMode(val label: String) {
+    OFF("关"), RESTORE("Restore"), SOFT("RestoreSoft")
 }
 
-internal enum class ReaderQualityChoice(val label: String, val restore: ReaderRestoreMode) {
-    ORIGINAL("原图", ReaderRestoreMode.OFF),
-    SHARPEN("锐化", ReaderRestoreMode.OFF),
-    RESTORE("Restore S", ReaderRestoreMode.RESTORE),
-    SOFT("Restore Soft S", ReaderRestoreMode.SOFT),
+internal enum class ReaderRestoreLevel { S, M, L, VL, UL }
+
+internal data class ReaderRestoreSelection(val mode: ReaderRestoreMode, val level: ReaderRestoreLevel = ReaderRestoreLevel.M) {
+    val modelId: Int get() = (mode.ordinal - 1) * 5 + level.ordinal
+    val pack: String get() = (if (mode == ReaderRestoreMode.RESTORE) "restore_" else "soft_") + level.name.lowercase() + ".akv"
 }
+
+internal fun ReaderToolsSettings.restoreSelection(): ReaderRestoreSelection {
+    val mode = ReaderRestoreMode.entries.firstOrNull { it.name == restorationMode } ?: ReaderRestoreMode.OFF
+    val rememberedMode = if (mode == ReaderRestoreMode.OFF) restorationLastMode else mode.name
+    val value = if (rememberedMode == ReaderRestoreMode.SOFT.name) restoreSoftLevel else restoreLevel
+    return ReaderRestoreSelection(mode, ReaderRestoreLevel.entries.firstOrNull { it.name == value } ?: ReaderRestoreLevel.M)
+}
+
+internal fun ReaderToolsSettings.withRestoreMode(mode: ReaderRestoreMode) = copy(
+    restorationMode = mode.name,
+    restorationLastMode = if (mode == ReaderRestoreMode.OFF) restorationLastMode else mode.name
+)
+
+internal fun ReaderToolsSettings.withRestoreLevel(level: ReaderRestoreLevel): ReaderToolsSettings =
+    if (restorationMode == ReaderRestoreMode.SOFT.name ||
+        (restorationMode == ReaderRestoreMode.OFF.name && restorationLastMode == ReaderRestoreMode.SOFT.name)) {
+        copy(restoreSoftLevel = level.name)
+    } else copy(restoreLevel = level.name)
 
 internal enum class ReaderRestoreStage { ORIGINAL, PROCESSING, READY, UNAVAILABLE }
 internal data class ReaderRestoreStatus(val stage: ReaderRestoreStage, val text: String)
@@ -35,17 +55,17 @@ internal class ReaderRestoreUnavailable(message: String) : Exception(message)
 
 /** 首版只处理有界的单张静态图，不改变输入尺寸，不把长图偷偷缩小。 */
 internal fun readerRestoreSizeAllowed(width: Int, height: Int): Boolean =
-    width in 1..4096 && height in 1..4096 && width.toLong() * height <= 2_097_152L
+    width in 1..16384 && height in 1..16384 && width.toLong() * height <= 4_194_304L
 
 internal interface ReaderRestoreEngine {
     val unavailableReason: String?
-    suspend fun restore(source: Image, mode: ReaderRestoreMode, pageKey: String): ReaderRestoreOutput
+    suspend fun restore(source: Image, selection: ReaderRestoreSelection, pageKey: String): ReaderRestoreOutput
     fun clear()
     fun close()
 }
 
 internal class UnsupportedReaderRestoreEngine(override val unavailableReason: String) : ReaderRestoreEngine {
-    override suspend fun restore(source: Image, mode: ReaderRestoreMode, pageKey: String): ReaderRestoreOutput =
+    override suspend fun restore(source: Image, selection: ReaderRestoreSelection, pageKey: String): ReaderRestoreOutput =
         throw ReaderRestoreUnavailable(unavailableReason)
     override fun clear() = Unit
     override fun close() = Unit
@@ -55,20 +75,21 @@ internal class UnsupportedReaderRestoreEngine(override val unavailableReason: St
 internal expect fun rememberReaderRestoreEngine(): ReaderRestoreEngine
 
 internal val LocalReaderRestoreEngine = staticCompositionLocalOf<ReaderRestoreEngine?> { null }
-internal val LocalReaderRestoreMode = staticCompositionLocalOf { ReaderRestoreMode.OFF }
+internal val LocalReaderRestoreSelection = staticCompositionLocalOf { ReaderRestoreSelection(ReaderRestoreMode.OFF) }
 internal val LocalReaderRestoreStatus = staticCompositionLocalOf<((String, ReaderRestoreStatus) -> Unit)?> { null }
 
 /** 原图先显示；请求失效后拒收旧结果。翻页与切换模型不会修改原图、下载或历史记录。 */
 @Composable
 internal fun readerRestorePainter(original: Painter, source: Image, pageKey: String, active: Boolean): Painter {
     val engine = LocalReaderRestoreEngine.current
-    val mode = LocalReaderRestoreMode.current
+    val selection = LocalReaderRestoreSelection.current
+    val mode = selection.mode
     val report = LocalReaderRestoreStatus.current
-    var output by remember(engine, source, pageKey, mode) { mutableStateOf<ReaderRestoreOutput?>(null) }
-    var status by remember(engine, source, pageKey, mode) {
+    var output by remember(engine, source, pageKey, selection) { mutableStateOf<ReaderRestoreOutput?>(null) }
+    var status by remember(engine, source, pageKey, selection) {
         mutableStateOf(ReaderRestoreStatus(ReaderRestoreStage.ORIGINAL, "原图"))
     }
-    LaunchedEffect(engine, source, pageKey, mode, active) {
+    LaunchedEffect(engine, source, pageKey, selection, active) {
         if (!active || mode == ReaderRestoreMode.OFF || engine == null) return@LaunchedEffect
         output = null
         engine.unavailableReason?.let {
@@ -77,7 +98,9 @@ internal fun readerRestorePainter(original: Painter, source: Image, pageKey: Str
         }
         status = ReaderRestoreStatus(ReaderRestoreStage.PROCESSING, "修复中，先显示原图")
         try {
-            val result = engine.restore(source, mode, pageKey)
+            // 拖动档位时合并短时间内的请求，只处理最后选中的模型。
+            delay(150)
+            val result = engine.restore(source, selection, pageKey)
             currentCoroutineContext().ensureActive()
             output = result
             status = ReaderRestoreStatus(ReaderRestoreStage.READY,
@@ -92,7 +115,7 @@ internal fun readerRestorePainter(original: Painter, source: Image, pageKey: Str
     }
     // 在组合中读取，确保测量或异步状态改变时重新报告。
     val currentStatus = status
-    DisposableEffect(pageKey, source, engine, mode, active) {
+    DisposableEffect(pageKey, source, engine, selection, active) {
         onDispose {
             if (active && mode != ReaderRestoreMode.OFF) {
                 report?.invoke(pageKey, ReaderRestoreStatus(ReaderRestoreStage.ORIGINAL, "等待原图"))
@@ -106,53 +129,79 @@ internal fun readerRestorePainter(original: Painter, source: Image, pageKey: Str
     } else original
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+
+/** 模式与档位直接作用于阅读画面；两种模式的档位由调用者分别持久化。 */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ReaderRestoreControls(
-    mode: ReaderRestoreMode,
+    selection: ReaderRestoreSelection,
     unavailableReason: String?,
     status: String?,
     onMode: (ReaderRestoreMode) -> Unit,
-    onCompare: () -> Unit,
-    compareAvailable: Boolean = true,
+    onLevel: (ReaderRestoreLevel) -> Unit,
+    enabled: Boolean = true,
 ) {
     Text("画质修复", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-    Text(unavailableReason ?: "实验 · 保持图片尺寸，修复时不叠加锐化。",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ReaderRestoreMode.entries.forEach { option ->
-            FilterChip(selected = mode == option, onClick = { onMode(option) },
-                enabled = option == ReaderRestoreMode.OFF || unavailableReason == null,
-                label = { Text(option.label, color = MaterialTheme.colorScheme.onSurface) },
-                modifier = Modifier.testTag("reader-restore-${option.name}"))
+    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        ReaderRestoreMode.entries.forEachIndexed { index, option ->
+            ToggleButton(
+                checked = selection.mode == option,
+                onCheckedChange = { if (it && selection.mode != option) onMode(option) },
+                enabled = option == ReaderRestoreMode.OFF || (enabled && unavailableReason == null),
+                modifier = Modifier.weight(when (option) { ReaderRestoreMode.OFF -> .7f; ReaderRestoreMode.RESTORE -> 1f; ReaderRestoreMode.SOFT -> 1.3f })
+                    .testTag("reader-restore-${option.name}"),
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    2 -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+            ) { Text(option.label, color = LocalContentColor.current, maxLines = 1) }
         }
     }
-    status?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
-    TextButton(onClick = onCompare, enabled = compareAvailable) {
-        Text("对比原图、锐化与修复", color = if (compareAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+    val canAdjust = enabled && selection.mode != ReaderRestoreMode.OFF && unavailableReason == null
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("模型档位", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text(selection.level.name, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
     }
+    Slider(
+        value = selection.level.ordinal.toFloat(),
+        onValueChange = {
+            val level = ReaderRestoreLevel.entries[it.roundToInt().coerceIn(0, 4)]
+            if (level != selection.level) onLevel(level)
+        },
+        valueRange = 0f..4f, steps = 3, enabled = canAdjust,
+        modifier = Modifier.fillMaxWidth().testTag("reader-restore-level")
+    )
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        ReaderRestoreLevel.entries.forEach { level ->
+            Text(level.name, color = if (canAdjust && selection.level == level) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+    val message = unavailableReason ?: if (!enabled) "返回图片页后可调节" else status
+    message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ReaderQualityComparison(
-    choice: ReaderQualityChoice,
-    restoreAvailable: Boolean,
-    onChoice: (ReaderQualityChoice) -> Unit,
+internal fun ReaderRestoreAdjustmentPanel(
+    selection: ReaderRestoreSelection,
+    unavailableReason: String?,
+    status: String?,
+    onMode: (ReaderRestoreMode) -> Unit,
+    onLevel: (ReaderRestoreLevel) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(modifier, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReaderQualityChoice.entries.forEach { option ->
-                    FilterChip(selected = choice == option, onClick = { onChoice(option) },
-                        enabled = option.restore == ReaderRestoreMode.OFF || restoreAvailable,
-                        label = { Text(option.label, color = MaterialTheme.colorScheme.onSurface) },
-                        modifier = Modifier.testTag("reader-quality-${option.name}"))
+    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ReaderRestoreControls(selection, unavailableReason, status, onMode, onLevel)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("拖动画面查看细节", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onClose, modifier = Modifier.testTag("reader-restore-finish")) {
+                    Text("完成", color = MaterialTheme.colorScheme.primary)
                 }
             }
-            TextButton(onClick = onClose) { Text("完成对比", color = MaterialTheme.colorScheme.primary) }
         }
     }
 }

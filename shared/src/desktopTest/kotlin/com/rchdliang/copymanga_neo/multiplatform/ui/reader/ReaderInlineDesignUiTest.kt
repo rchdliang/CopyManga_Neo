@@ -35,7 +35,7 @@ class ReaderInlineDesignUiTest {
     }
     @Test fun qualityNarrow() = runSkikoComposeUiTest(size = Size(390f, 800f)) {
         setContent { ReaderInlineDesignContent(true) }
-        onNodeWithTag("reader-restore-RESTORE").performScrollTo().performClick().assertIsSelected()
+        onNodeWithTag("reader-restore-RESTORE").performScrollTo().performClick().assertIsOn()
         onNodeWithText("画质增强").assertExists(); capture("quality-narrow")
     }
     @Test fun qualityWideDark() = runSkikoComposeUiTest(size = Size(560f, 800f)) {

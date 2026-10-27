@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -467,37 +469,58 @@ fun ReaderSuccessContent(
     val sharpenStatuses = remember { mutableStateMapOf<String, Boolean>() }
     androidx.compose.runtime.SideEffect { sharpenStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { sharpenStatuses.remove(it) } }
     val sharpness = tools.sharpness
-    var comparingSharpness by remember(page?.key, routeActive, sharpness, tools.pageLayout) { mutableStateOf(false) }
-    var beforeSharpness by remember(comparingSharpness) { mutableStateOf(false) }
     val activeSharpenKeys = if (isContinuous) setOfNotNull(page?.key)
         else spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it].key }.toSet()
     val sharpnessApplied = activeSharpenKeys.isNotEmpty() && activeSharpenKeys.all { sharpenStatuses[it] == true }
     val restoreEngine = rememberReaderRestoreEngine()
-    var restoreModeName by rememberSaveable { mutableStateOf(ReaderRestoreMode.OFF.name) }
-    val restoreMode = ReaderRestoreMode.entries.firstOrNull { it.name == restoreModeName } ?: ReaderRestoreMode.OFF
-    var qualityComparison by remember(page?.key, routeActive, tools.pageLayout) { mutableStateOf<ReaderQualityChoice?>(null) }
+    val restoreSelection = tools.restoreSelection()
+    val qualityAdjustment = remember { ReaderQualityAdjustmentState() }
     val restoreLifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val restoreActive = routeActive && restoreLifecycle.isAtLeast(Lifecycle.State.RESUMED)
-    val effectiveRestoreMode = if (restoreActive) qualityComparison?.restore ?: restoreMode else ReaderRestoreMode.OFF
-    val restoreStatuses = remember(effectiveRestoreMode) { mutableStateMapOf<String, ReaderRestoreStatus>() }
+    val effectiveRestoreSelection = if (restoreActive) restoreSelection else restoreSelection.copy(mode = ReaderRestoreMode.OFF)
+    val restoreStatuses = remember(effectiveRestoreSelection) { mutableStateMapOf<String, ReaderRestoreStatus>() }
     androidx.compose.runtime.SideEffect { restoreStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { restoreStatuses.remove(it) } }
     val activeRestoreStatuses = activeSharpenKeys.mapNotNull { restoreStatuses[it] }
-    val restoreLabel = if (effectiveRestoreMode == ReaderRestoreMode.OFF) null else when {
+    val restoreStatusText = activeRestoreStatuses.map { it.text }.distinct().joinToString("\n").takeIf { it.isNotEmpty() }
+    val restoreLabel = if (effectiveRestoreSelection.mode == ReaderRestoreMode.OFF) null else when {
         activeRestoreStatuses.any { it.stage == ReaderRestoreStage.PROCESSING } -> "画质修复中"
         activeRestoreStatuses.any { it.stage == ReaderRestoreStage.UNAVAILABLE } -> "修复未应用"
         activeRestoreStatuses.size == activeSharpenKeys.size && activeRestoreStatuses.isNotEmpty() &&
             activeRestoreStatuses.all { it.stage == ReaderRestoreStage.READY } -> "画质修复已应用"
         else -> "等待修复"
     }
-    val displayedSharpness = when {
-        qualityComparison == ReaderQualityChoice.SHARPEN -> sharpness.takeIf { it > 0f } ?: READER_SHARPNESS_RESTORE
-        qualityComparison != null || effectiveRestoreMode != ReaderRestoreMode.OFF -> 0f
-        comparingSharpness && beforeSharpness -> 0f
-        else -> sharpness
+    val displayedSharpness = if (effectiveRestoreSelection.mode != ReaderRestoreMode.OFF) 0f else sharpness
+    fun beginQualityAdjustment() {
+        val current = page?.takeIf { it.source != null } ?: return
+        val zoom = activeZoom
+        val leaves = spreads.getOrNull(pager.currentPage)?.visualIndices(dir == ReadingDirection.RIGHT_TO_LEFT).orEmpty()
+        val leafIndex = leaves.indexOfFirst { pages[it].key == current.key }
+        val focal = if ((!qualityAdjustment.active || !qualityAdjustment.isAttachedTo(zoom)) && zoom != null && !zoom.zoomed && !isContinuous && leaves.size == 2 && leafIndex >= 0) {
+            val center = zoom.viewportCenter()
+            androidx.compose.ui.geometry.Offset(center.x * (leafIndex + .5f), center.y)
+        } else null
+        automatic = false
+        showSettings = false
+        showControls = false
+        qualityAdjustment.begin(current.key, zoom, focal, if (isContinuous) READER_CONTINUOUS_MAX_SCALE else READER_MAX_SCALE)
     }
-    LaunchedEffect(restoreEngine, restoreActive) {
+    fun changeRestoreMode(mode: ReaderRestoreMode) {
+        onToolsChange { it.withRestoreMode(mode) }
+        beginQualityAdjustment()
+    }
+    fun changeRestoreLevel(level: ReaderRestoreLevel) {
+        onToolsChange { it.withRestoreLevel(level) }
+        beginQualityAdjustment()
+    }
+    LaunchedEffect(activeZoom) { if (qualityAdjustment.active) beginQualityAdjustment() }
+    LaunchedEffect(page?.key, restoreActive) {
+        if (!restoreActive || qualityAdjustment.pageKey != page?.key) qualityAdjustment.finish()
         if (!restoreActive) restoreEngine.clear()
     }
+    LaunchedEffect(restoreSelection.mode, qualityAdjustment.active) {
+        if (restoreSelection.mode == ReaderRestoreMode.OFF && !qualityAdjustment.active) restoreEngine.clear()
+    }
+    DisposableEffect(qualityAdjustment) { onDispose { qualityAdjustment.finish() } }
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
     LaunchedEffect(
@@ -862,9 +885,8 @@ fun ReaderSuccessContent(
         }
     }
 
-    BackHandler(enabled = (showControls || comparingSharpness || qualityComparison != null) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
-        comparingSharpness = false
-        qualityComparison = null
+    BackHandler(enabled = (showControls || qualityAdjustment.active) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+        qualityAdjustment.finish()
         showControls = false
     }
     val nested = remember { object : NestedScrollConnection {} }
@@ -876,14 +898,14 @@ fun ReaderSuccessContent(
             .focusRequester(focus)
             .readerSpreadKeyboard(
                 enabled = !isContinuous,
-                blocked = showSettings || showImageMenu || showBookmarks || showCatalog || restoring || !routeActive || externalModalVisible,
+                blocked = showSettings || qualityAdjustment.active || showImageMenu || showBookmarks || showCatalog || restoring || !routeActive || externalModalVisible,
                 rtl = dir == ReadingDirection.RIGHT_TO_LEFT, zoom = activeZoom,
                 onInteraction = { automatic = false }, onForward = ::forward, onBackward = ::backward
             )
             .readerKeyboardNavigation(
                 enabled = isContinuous && services?.platform is DesktopReaderKeyboard,
                 direction = dir,
-                blocked = !routeActive || externalModalVisible || showSettings || showImageMenu || showBookmarks || showCatalog || restoring || viewportCorrection.active
+                blocked = !routeActive || externalModalVisible || showSettings || qualityAdjustment.active || showImageMenu || showBookmarks || showCatalog || restoring || viewportCorrection.active
             ) { command ->
                 showControls = false
                 automatic = false
@@ -901,7 +923,7 @@ fun ReaderSuccessContent(
             }
             .onFocusChanged { if (!it.isFocused) pressedVolumeKeys.clear() }
             .onPreviewKeyEvent { event ->
-                if (!routeActive || showSettings || showImageMenu || showBookmarks || showCatalog || externalModalVisible || !tools.volumeKeys || (event.key != Key.VolumeUp && event.key != Key.VolumeDown)) false
+                if (!routeActive || qualityAdjustment.active || showSettings || showImageMenu || showBookmarks || showCatalog || externalModalVisible || !tools.volumeKeys || (event.key != Key.VolumeUp && event.key != Key.VolumeDown)) false
                 else {
                     if (event.type == KeyEventType.KeyUp) pressedVolumeKeys.remove(event.key)
                     if (event.type == KeyEventType.KeyDown && pressedVolumeKeys.add(event.key)) {
@@ -915,7 +937,7 @@ fun ReaderSuccessContent(
     ) {
         androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides displayedSharpness,
             LocalReaderRestoreEngine provides restoreEngine,
-            LocalReaderRestoreMode provides effectiveRestoreMode,
+            LocalReaderRestoreSelection provides effectiveRestoreSelection,
             LocalReaderRestoreStatus provides { key, status -> restoreStatuses[key] = status },
             LocalReaderSharpenStatus provides { key, applied -> sharpenStatuses[key] = applied }) {
         ReaderContent(
@@ -933,15 +955,17 @@ fun ReaderSuccessContent(
             continuousNestedScrollConnection = nested,
             onForward = ::forward,
             onBackward = ::backward,
-            onShowMenu = { showControls = !showControls },
+            onShowMenu = { if (!qualityAdjustment.active) showControls = !showControls },
             onImageLongPress = { selected ->
+                qualityAdjustment.finish()
                 automatic = false; selectedSource = selected.source
                 selectedTitle =
                     "${selected.chapterName} - 第${selected.page + 1}页"; showImageMenu = true
             },
-            onBottomAreaTap = { showControls = !showControls },
+            onBottomAreaTap = { if (!qualityAdjustment.active) showControls = !showControls },
             imageLoader = loader,
             imageQuality = services?.platform?.imageQuality,
+            qualityAdjusting = qualityAdjustment.active,
             tools = tools,
             onUserInteraction = { focus.requestFocus(); viewportCorrection.invalidate(); viewportAnchor.invalidate(); automatic = false; pendingChapter = null; restoring = false },
             onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },
@@ -960,7 +984,7 @@ fun ReaderSuccessContent(
             })
         }
         AnimatedVisibility(
-            showControls && !comparingSharpness && qualityComparison == null,
+            showControls && !qualityAdjustment.active,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -979,7 +1003,7 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && !comparingSharpness && qualityComparison == null && page?.source != null) ReaderRestingOverlay(
+        if (!showControls && !qualityAdjustment.active && page?.source != null) ReaderRestingOverlay(
             page.chapterName,
             if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
                     val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
@@ -988,7 +1012,7 @@ fun ReaderSuccessContent(
             Modifier.align(Alignment.BottomCenter), aiStatus = restoreLabel
         )
         AnimatedVisibility(
-            showControls && !comparingSharpness && qualityComparison == null && page != null,
+            showControls && !qualityAdjustment.active && page != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -1022,18 +1046,14 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (comparingSharpness && qualityComparison == null) ReaderSharpnessComparison(
-            before = beforeSharpness,
-            onToggle = { beforeSharpness = !beforeSharpness },
-            onClose = { comparingSharpness = false; showControls = false },
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)
+        if (qualityAdjustment.active) ReaderRestoreAdjustmentPanel(
+            restoreSelection, restoreEngine.unavailableReason, restoreStatusText,
+            onMode = ::changeRestoreMode, onLevel = ::changeRestoreLevel,
+            onClose = { qualityAdjustment.finish(); showControls = false; focus.requestFocus() },
+            modifier = if (viewportSize.width / density >= 900f)
+                Modifier.align(Alignment.CenterEnd).padding(16.dp).width(340.dp)
+            else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).widthIn(max = 460.dp).fillMaxWidth()
         )
-        qualityComparison?.let { choice ->
-            ReaderQualityComparison(choice, restoreEngine.unavailableReason == null,
-                onChoice = { qualityComparison = it },
-                onClose = { qualityComparison = null; showControls = false },
-                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp))
-        }
         if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
@@ -1058,37 +1078,22 @@ fun ReaderSuccessContent(
         },
         qualitySettings = {
             ReaderQualitySection {
-            ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
-                onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
-                onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
-            }
-            if (sharpness > 0f && readerSharpnessAvailable() && restoreMode == ReaderRestoreMode.OFF) {
-                Text(when {
-                    activeSharpenKeys.any { sharpenStatuses[it] == false } -> "当前部分图片未应用锐化（图片过大或渲染不可用）"
-                    sharpnessApplied -> "当前图片已启用锐化"
-                    else -> "等待当前图片加载"
-                }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                androidx.compose.material3.TextButton(enabled = sharpnessApplied, onClick = {
-                    automatic = false
-                    showSettings = false
-                    showControls = false
-                    comparingSharpness = true
-                }) {
-                    Text("对比锐化前后", color = if (sharpnessApplied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
-                }
-            }
+                ReaderRestoreControls(restoreSelection, restoreEngine.unavailableReason, restoreStatusText,
+                    onMode = ::changeRestoreMode, onLevel = ::changeRestoreLevel, enabled = page?.source != null)
             }
             ReaderQualitySection {
-                ReaderRestoreControls(restoreMode, restoreEngine.unavailableReason,
-                    activeRestoreStatuses.map { it.text }.distinct().joinToString("\n").takeIf { it.isNotEmpty() },
-                    onMode = { restoreModeName = it.name; comparingSharpness = false; qualityComparison = null },
-                    onCompare = {
-                        automatic = false
-                        showSettings = false
-                        showControls = false
-                        comparingSharpness = false
-                        qualityComparison = ReaderQualityChoice.ORIGINAL
-                    }, compareAvailable = page?.source != null)
+                if (restoreSelection.mode == ReaderRestoreMode.OFF) {
+                    ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
+                        onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
+                        onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
+                    }
+                    if (sharpness > 0f && readerSharpnessAvailable()) Text(
+                        if (activeSharpenKeys.any { sharpenStatuses[it] == false }) "当前部分图片未应用锐化（图片过大或渲染不可用）"
+                        else if (sharpnessApplied) "当前图片已启用锐化" else "等待当前图片加载",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("画质修复开启时暂停锐化", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },

@@ -63,9 +63,18 @@ object PortableBackupCodec {
     fun tools(value: ReaderToolsSettings): JsonObject = buildJsonObject {
         put("inlineComments", value.inlineComments); put("continuousChapters", value.continuousChapters); put("volumeKeys", value.volumeKeys)
         put("autoInterval", value.autoIntervalSeconds); put("imageRetries", value.imageRetries); put("imageTimeout", value.imageTimeoutSeconds); put("preload", value.preloadPages); put("sharpness", value.sharpness); put("sharpnessRestore", value.sharpnessRestore)
+        put("restorationMode", value.restorationMode); put("restorationLastMode", value.restorationLastMode)
+        put("restoreLevel", value.restoreLevel); put("restoreSoftLevel", value.restoreSoftLevel)
     }
     fun tools(value: JsonObject): ReaderToolsSettings = ReaderToolsSettings(value.boolean("inlineComments"), value.boolean("continuousChapters"), value.boolean("volumeKeys"),
-        value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).copy(sharpness = value["sharpness"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) { "备份锐化强度无效" } } ?: 0f, sharpnessRestore = value["sharpnessRestore"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) } ?: 0.20f).also { require(it == it.normalized()) }
+        value.integer("autoInterval"), value.integer("imageRetries"), value.integer("imageTimeout"), value.integer("preload")).copy(
+            sharpness = value["sharpness"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) { "备份锐化强度无效" } } ?: 0f,
+            sharpnessRestore = value["sharpnessRestore"]?.let { requireNotNull(it.jsonPrimitive.floatOrNull) } ?: 0.20f,
+            restorationMode = if ("restorationMode" in value) value.string("restorationMode") else "OFF",
+            restorationLastMode = if ("restorationLastMode" in value) value.string("restorationLastMode") else "RESTORE",
+            restoreLevel = if ("restoreLevel" in value) value.string("restoreLevel") else "M",
+            restoreSoftLevel = if ("restoreSoftLevel" in value) value.string("restoreSoftLevel") else "M"
+        ).also { require(it == it.normalized()) }
     fun encode(value: SettingsBackup): String = buildJsonObject {
         put("format", "copymanga-neo-settings"); put("version", 2)
         put("settings", buildJsonObject {

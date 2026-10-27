@@ -92,5 +92,5 @@ private fun ReaderDisplayPreviewContent() {
 @Preview(name = "阅读设置-画质增强", showBackground = true, widthDp = 600, heightDp = 850)
 @Composable private fun ReaderQualitySettingsPreview() = ReaderPreviewFrame("画质增强") {
     ReaderQualitySection { ReaderSharpnessControls(true, READER_SHARPNESS_RESTORE, READER_SHARPNESS_RESTORE, {}, {}) }
-    ReaderQualitySection { ReaderRestoreControls(ReaderRestoreMode.OFF, null, null, {}, {}) }
+    ReaderQualitySection { ReaderRestoreControls(ReaderRestoreSelection(ReaderRestoreMode.OFF), null, null, {}, {}) }
 }

@@ -90,6 +90,7 @@ internal fun ReaderContent(
     onImageReady: (String) -> Unit = {},
     trackedPageKeys: Set<String> = pages.map { it.key }.toSet(),
     imageQuality: ReaderImageQuality? = null,
+    qualityAdjusting: Boolean = false,
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -110,6 +111,7 @@ internal fun ReaderContent(
             Text("暂无图片", color = Color.White, modifier = Modifier.align(Alignment.Center))
         } else if (isContinuous) {
             val zoom = remember { ReaderZoomState() }
+            androidx.compose.runtime.SideEffect { onZoomAvailable(zoom) }
             var height by remember { mutableIntStateOf(0) }
             val visibleIndex by remember(listState) { derivedStateOf { listState.firstVisibleItemIndex } }
             DisposableEffect(zoom) { onDispose { zoom.stopFling() } }
@@ -132,18 +134,18 @@ internal fun ReaderContent(
                         height = it.height; zoom.updateViewport(it)
                     }
                     .readerWheelZoom(
-                        zoom, imageQuality != null, 3f, onUserInteraction,
+                        zoom, imageQuality != null, READER_CONTINUOUS_MAX_SCALE, onUserInteraction,
                         enabledAt = { touchedPage(it.y)?.source != null }
                     )
                     .readerImageZoomable(
-                        zoom, zoomScope, true, 3f,
+                        zoom, zoomScope, !qualityAdjusting, READER_CONTINUOUS_MAX_SCALE,
                         isContentScrolling = { listState.isScrollInProgress },
                         enabledAt = { touchedPage(it.y)?.source != null })
                     .readerTapGestures(
                         isRtl = false,
                         isContinuous = true,
-                        onForward = onForward,
-                        onBackward = onBackward,
+                        onForward = if (qualityAdjusting) onShowMenu else onForward,
+                        onBackward = if (qualityAdjusting) onShowMenu else onBackward,
                         onShowMenu = onShowMenu,
                         onLongPress = { position ->
                             touchedPage(position.y)?.takeIf { it.source != null }
@@ -153,21 +155,21 @@ internal fun ReaderContent(
                         onDoubleTap = {
                             if (touchedPage(it.y)?.source != null) zoom.toggleZoom(
                                 it,
-                                3f
+                                READER_CONTINUOUS_MAX_SCALE
                             )
                         },
                         allowTap = zoom::allowTap
                     )
             ) {
                 LazyColumn(
-                    state = listState, modifier = Modifier
+                    state = listState, userScrollEnabled = !qualityAdjusting, modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
                             scaleX = zoom.scale; scaleY = zoom.scale
                             translationX = zoom.offset.x; translationY = zoom.offset.y
                         }
                         .nestedScroll(continuousNestedScrollConnection)
-                        .mouseDragScroll(listState, Orientation.Vertical)
+                        .mouseDragScroll(listState, Orientation.Vertical, enabled = !qualityAdjusting)
                 ) {
                     itemsIndexed(pages, key = { _, page -> page.key }) { index, page ->
                         if (page.source == null) {
@@ -348,7 +350,7 @@ internal fun ReaderImageItem(
                                             state = zoomState,
                                             scope = zoomScope,
                                             isContinuous = isContinuous,
-                                            maxScale = 5f,
+                                            maxScale = READER_MAX_SCALE,
                                             isContentScrolling = isContentScrolling
                                         )
                                     ),

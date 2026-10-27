@@ -18,6 +18,8 @@ plugins {
 }
 
 
+apply(from = "gradle/reader-restore.gradle.kts")
+
 // 同一文件也由 iOS xcconfig 直接包含；所有发布版本只在此文件中维护。
 val releaseProperties = providers.fileContents(layout.projectDirectory.file("version.properties"))
     .asText.map { text -> Properties().apply { text.reader().use { load(it) } } }.get()

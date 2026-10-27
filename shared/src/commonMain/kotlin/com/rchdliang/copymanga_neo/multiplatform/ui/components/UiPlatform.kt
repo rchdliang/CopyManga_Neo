@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.emptyFlow
 /** Native operations required by the original UI. Hosts provide real platform adapters. */
 interface UiPlatform {
     val backDispatcher: UiBackDispatcher
+    /** 默认沿用图片库的封面解码，仅由指定平台覆盖。 */
+    val coverImageQuality: CoverImageQuality? get() = null
     /** Completion feedback for platform operations handled without a system share surface. */
     val toastMessages: Flow<String> get() = emptyFlow()
     suspend fun shareText(title: String, text: String): Result<Unit>

@@ -37,7 +37,7 @@ nucleus.application {
         toolchain { version = libs.versions.graalvm.get() }
         march = NativeImageMarch.COMPATIBILITY
         allCharsets = true
-        buildArgs.addAll("-J-Xmx" + providers.gradleProperty("nativeBuildHeap").getOrElse("8g"), "--parallelism=2")
+        buildArgs.addAll("-J-Xmx" + providers.gradleProperty("nativeBuildHeap").getOrElse("8g"), "--parallelism=2", "--enable-native-access=ALL-UNNAMED")
     }
     nativeDistributions {
         packageName = "CopyMangaNeo"

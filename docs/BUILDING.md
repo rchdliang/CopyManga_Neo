@@ -7,12 +7,14 @@
 - 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
 - Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
 - 桌面安装包使用对应操作系统及架构的 JDK；Windows EXE 安装向导需要 Inno Setup 6.5+，Linux DEB/RPM 需要系统打包工具。Windows 编译器可放入 PATH，也可通过环境变量 `ISCC` 指定 `ISCC.exe` 完整路径；标准的 Inno Setup 6 安装目录会自动检测。
-- 已移除旧超分原生运行库的工具链与 bundle 打包依赖。新的同尺寸画质修复资源随 CMP Android assets 分发；桌面修复后端尚未接入，当前限制见 [画质修复说明](READER-RESTORATION.md)。Windows Native Image 自身的工具链要求仍按下文执行。
+- CMP Android、Windows、Linux 的 Vulkan 画质修复需要 Python 3、CMake 和宿主 C++ 编译器；Windows 使用 Visual Studio C++ Build Tools，Linux 使用 GCC/Clang。Android NDK 版本来自版本目录，CMake 版本以应用构建脚本为准，可由已接受许可的 SDK 管理器安装。模型随包分发，首次构建需下载并编译固定版本的 glslang。Windows Native Image 自身的工具链要求仍按下文执行。
 - iOS 构建需要 macOS 和 Xcode；直接安装需要签名。未签名设备 IPA 可交给 SideStore / AltStore 使用用户自己的账号重签名。
 - 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
 - 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。
 
 Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行配置。修改构建脚本后重新同步；不要在仍运行的构建中改动输入文件。
+
+画质修复构建由 `gradle/reader-restore.gradle.kts` 管理：`prepareReaderRestoreModels` 将十组模型编译到 `build/reader-restore/generated-resources`，Android assets 与桌面资源自动依赖该任务；`prepareReaderRestoreDesktop` 编译并打包宿主 JNI 库。Android 原生库由 externalNativeBuild 构建。普通构建不需要手工复制模型或运行库。桌面跨平台打包需用 `-PreaderRestoreNativeLibrary=<目标平台库路径>` 提供与 `copymanga.desktopTarget` 匹配的预编译库，不会自动跨平台编译。运行时需要可用的 Vulkan GPU 驱动；缺少驱动时应用保留原图。
 
 ## 修改版本号
 
@@ -168,4 +170,4 @@ node --test tests/host/browser-activation.test.mjs
 python -m unittest discover -s tests/ci -p 'test_*.py'
 ```
 
-构建日志、报告和截图保存在被忽略的构建输出目录或仓库外。docs 仅维护本文件与架构说明，不保存逐轮迁移记录、测试次数或历史产物校验值。
+构建日志、报告和截图保存在被忽略的构建输出目录或仓库外。docs 维护持久的构建、架构与功能说明，不保存逐轮迁移记录、测试次数或历史产物校验值。

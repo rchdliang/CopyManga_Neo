@@ -24,7 +24,15 @@ class AboutViewModel(private val repository: AppInfoRepository) : ViewModel() {
         mutableState.update { it.copy(checking = false, message = "检查更新失败，请稍后重试") }
     }
 
-    fun checkForUpdate(currentVersion: String) {
+    private var autoCheckStarted = false
+
+    fun checkAutomatically(currentVersion: String, enabled: Boolean) {
+        if (autoCheckStarted) return
+        autoCheckStarted = true
+        if (enabled) checkForUpdate(currentVersion, automatic = true)
+    }
+
+    fun checkForUpdate(currentVersion: String, automatic: Boolean = false) {
         if (uiState.value.checking) return
         mutableState.update { it.copy(checking = true, update = null, message = null) }
         viewModelScope.launch(errors) {
@@ -35,7 +43,7 @@ class AboutViewModel(private val repository: AppInfoRepository) : ViewModel() {
                         mutableState.update {
                             it.copy(
                                 checking = false, update = release.takeIf { newer },
-                                message = if (newer) null else "已是最新版本"
+                                message = if (newer || automatic) null else "已是最新版本"
                             )
                         }
                     },
@@ -43,7 +51,7 @@ class AboutViewModel(private val repository: AppInfoRepository) : ViewModel() {
                         mutableState.update {
                             it.copy(
                                 checking = false,
-                                message = if (failure is com.rchdliang.copymanga_neo.domain.repository.PublicReleaseUnavailableException) failure.message else "检查更新失败，请稍后重试"
+                                message = if (automatic) null else if (failure is com.rchdliang.copymanga_neo.domain.repository.PublicReleaseUnavailableException) failure.message else "检查更新失败，请稍后重试"
                             )
                         }
                     }

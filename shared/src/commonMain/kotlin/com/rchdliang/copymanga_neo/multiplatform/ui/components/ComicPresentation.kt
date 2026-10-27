@@ -251,7 +251,7 @@ internal fun ComicCoverImage(
         )
         else {
             PreviewAwareAsyncImage(
-                model, contentDescription, Modifier
+                coverImageModel(model), contentDescription, Modifier
                     .matchParentSize()
                     .then(
                         if (visibility == ComicCoverVisibility.BLURRED) Modifier.blur(18.dp) else Modifier

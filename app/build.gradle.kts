@@ -56,17 +56,23 @@ val enableStartupProbes = providers.gradleProperty("enableStartupProbes")
 
 
 android {
+    sourceSets.getByName("main").assets.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
     sourceSets.getByName("main").kotlin.srcDir(
         if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
     )
     namespace = "com.rchdliang.copymanga_neo"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
+    ndkVersion = libs.versions.ndk.get()
+    externalNativeBuild {
+        cmake { path = rootProject.file("native/reader-restore/CMakeLists.txt"); version = "3.22.1" }
+    }
 
     defaultConfig {
         applicationId = "com.rchdliang.copymanga_neo"
         minSdk = 31
         targetSdk = 37
+        externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = rootProject.extra["copyMangaVersionCode"] as Int
         versionName = rootProject.extra["copyMangaVersionName"] as String
@@ -122,6 +128,10 @@ android {
         buildConfig = true
     }
     compileSdkMinor = 0
+}
+
+tasks.matching { it.name.matches(Regex("merge.*Assets")) }.configureEach {
+    dependsOn(rootProject.tasks.named("prepareReaderRestoreModels"))
 }
 
 

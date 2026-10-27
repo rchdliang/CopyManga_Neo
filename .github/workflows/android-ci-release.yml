@@ -5,7 +5,7 @@ on:
     branches:
       - Android
     tags:
-      - "v*"
+      - "android-v*"
   pull_request:
     branches:
       - Android
@@ -52,7 +52,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/Android' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/Android' || startsWith(github.ref, 'refs/tags/android-v'))
     runs-on: ubuntu-latest
 
     steps:
@@ -63,7 +63,7 @@ jobs:
           fetch-tags: true
 
       - name: Prepare release notes
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/android-v')
         run: |
           set -euo pipefail
           git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
@@ -110,7 +110,7 @@ jobs:
       - name: Build release APK
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
-          ENABLE_ABI_SPLITS: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          ENABLE_ABI_SPLITS: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/android-v') }}
         run: |
           test -n "$COPYMANGA_TAP_STRING" || { echo "Missing release configuration" >&2; exit 1; }
           ./gradlew assembleRelease "-PenableAbiSplits=$ENABLE_ABI_SPLITS"
@@ -125,7 +125,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub Release
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/android-v')
         uses: softprops/action-gh-release@v3
         with:
           files: app/build/outputs/apk/release/*.apk

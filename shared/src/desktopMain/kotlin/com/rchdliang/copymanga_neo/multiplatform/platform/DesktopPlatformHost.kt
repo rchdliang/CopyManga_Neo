@@ -71,6 +71,9 @@ class DesktopPlatformHost(
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
         com.rchdliang.copymanga_neo.multiplatform.ui.reader.windowsReaderImageQuality else null
 
+    override val coverImageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
+        com.rchdliang.copymanga_neo.multiplatform.ui.components.windowsCoverImageQuality else null
+
     override val notificationSettingsUnavailableReason: String?
         get() = desktopNotificationSettingsUnavailableReason(
             System.getProperty("os.name"), GraphicsEnvironment.isHeadless())

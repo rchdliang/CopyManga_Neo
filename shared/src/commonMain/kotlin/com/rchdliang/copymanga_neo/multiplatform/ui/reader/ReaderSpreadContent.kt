@@ -61,12 +61,12 @@ internal fun ReaderSpreadContent(
             } else {
                 val state = zooms.getOrPut(groupKey(spread)) { ReaderZoomState() }
                 Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged(state::updateViewport)
-                    .readerImageZoomable(state, scope, false, 5f, isContentScrolling = { pager.isScrollInProgress })
+                    .readerImageZoomable(state, scope, false, READER_MAX_SCALE, isContentScrolling = { pager.isScrollInProgress })
                     .readerTapGestures(rtl, false,
                         onForward = { if (state.zoomed) onShowMenu() else onForward() },
                         onBackward = { if (state.zoomed) onShowMenu() else onBackward() },
                         onShowMenu = onShowMenu, onBottomAreaTap = onShowMenu,
-                        onDoubleTap = { state.toggleZoom(it, 5f) }, allowTap = state::allowTap,
+                        onDoubleTap = { state.toggleZoom(it, READER_MAX_SCALE) }, allowTap = state::allowTap,
                         onLongPress = { point ->
                             val center = state.viewportCenter()
                             val scene = (point - center - state.offset) / state.scale + center

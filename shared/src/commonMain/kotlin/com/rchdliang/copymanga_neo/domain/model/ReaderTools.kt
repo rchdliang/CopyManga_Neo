@@ -14,7 +14,11 @@ data class ReaderToolsSettings(
     val pageAnimation: Boolean = true,
     val pairingRestarts: Map<String, List<Int>> = emptyMap(),
     val sharpness: Float = 0f,
-    val sharpnessRestore: Float = 0.20f
+    val sharpnessRestore: Float = 0.20f,
+    val restorationMode: String = "OFF",
+    val restorationLastMode: String = "RESTORE",
+    val restoreLevel: String = "M",
+    val restoreSoftLevel: String = "M"
 ) {
     fun normalized() = copy(
         autoIntervalSeconds = autoIntervalSeconds.coerceIn(2, 30),
@@ -23,10 +27,17 @@ data class ReaderToolsSettings(
         preloadPages = preloadPages.coerceIn(0, 3),
         sharpnessRestore = if (sharpnessRestore.isFinite()) sharpnessRestore.coerceIn(0.01f, 1f) else 0.20f,
         sharpness = if (sharpness.isFinite()) sharpness.coerceIn(0f, 1f) else 0f,
+        restorationMode = restorationMode.takeIf { it in setOf("OFF", "RESTORE", "SOFT") } ?: "OFF",
+        restorationLastMode = restorationLastMode.takeIf { it in setOf("RESTORE", "SOFT") } ?: "RESTORE",
+        restoreLevel = restoreLevel.takeIf { it in RESTORE_LEVEL_NAMES } ?: "M",
+        restoreSoftLevel = restoreSoftLevel.takeIf { it in RESTORE_LEVEL_NAMES } ?: "M",
         pageLayout = pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: "SINGLE",
         pairingRestarts = pairingRestarts.mapValues { (_, pages) -> pages.filter { it >= 0 }.distinct().sorted() }.filterValues { it.isNotEmpty() }
     )
 }
+
+/** 两种修复模式共用档位名称，各自保存选择。 */
+internal val RESTORE_LEVEL_NAMES = setOf("S", "M", "L", "VL", "UL")
 
 @kotlinx.serialization.Serializable
 data class ReaderBookmark(

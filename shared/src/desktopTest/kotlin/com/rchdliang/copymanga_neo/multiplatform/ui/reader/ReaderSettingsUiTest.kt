@@ -16,7 +16,6 @@ class ReaderSettingsUiTest {
     @Composable private fun Settings(onDismiss: () -> Unit = {}) {
         var tools by remember { mutableStateOf(ReaderToolsSettings()) }
         var layout by remember { mutableStateOf("AUTO") }
-        var restore by remember { mutableStateOf(ReaderRestoreMode.OFF) }
         MaterialTheme {
             ReaderSettingsDialog(ReadingDirection.RIGHT_TO_LEFT, PageScale.FIT_SCREEN,
                 ScreenOrientationSetting.SYSTEM_DEFAULT, {}, {}, {}, onDismiss,
@@ -28,7 +27,8 @@ class ReaderSettingsUiTest {
                             tools = tools.copy(sharpness = it)
                         }
                     }
-                    ReaderQualitySection { ReaderRestoreControls(restore, null, null, { restore = it }, {}) }
+                    ReaderQualitySection { ReaderRestoreControls(tools.restoreSelection(), null, null,
+                        { tools = tools.withRestoreMode(it) }, { tools = tools.withRestoreLevel(it) }) }
                 },
                 turnSettings = { ReaderToolsOptions(tools, { tools = it(tools) }) },
                 loadingSettings = { ReaderLoadingOptions(tools, { tools = it(tools) }) },
@@ -41,7 +41,7 @@ class ReaderSettingsUiTest {
         var open by mutableStateOf(true)
         setContent { if (open) Settings { open = false } }
         onNodeWithText("画质增强").performClick()
-        onNodeWithTag("reader-restore-SOFT").performScrollTo().performClick().assertIsSelected()
+        onNodeWithTag("reader-restore-SOFT").performScrollTo().performClick().assertIsOn()
         onNodeWithText("返回").performClick()
         onNodeWithText("阅读设置").assertExists()
         onNodeWithText("完成").performClick()
@@ -72,12 +72,23 @@ class ReaderSettingsUiTest {
         onNodeWithText("应用配页").assertIsNotEnabled()
     }
 
-    @Test fun unavailableRestoreKeepsOriginalAndSharpnessChoices() = runSkikoComposeUiTest(size = Size(520f, 300f)) {
-        var choice by mutableStateOf(ReaderQualityChoice.ORIGINAL)
-        setContent { MaterialTheme { ReaderQualityComparison(choice, false, { choice = it }, {}) } }
-        onNodeWithTag("reader-quality-RESTORE").assertIsNotEnabled()
-        onNodeWithTag("reader-quality-SOFT").assertIsNotEnabled()
-        onNodeWithTag("reader-quality-SHARPEN").performClick().assertIsSelected()
-        assertEquals(ReaderQualityChoice.SHARPEN, choice)
+    @Test fun levelsAreIndependentAndOffDisablesSlider() = runSkikoComposeUiTest(size = Size(520f, 900f)) {
+        setContent { Settings() }
+        onNodeWithText("画质增强").performClick()
+        val slider = onNodeWithTag("reader-restore-level").performScrollTo()
+        slider.assertIsNotEnabled()
+        onNodeWithTag("reader-restore-RESTORE").performScrollTo().performClick().assertIsOn()
+        slider.performScrollTo().assertIsEnabled()
+        assertEquals(3, slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].steps)
+        assertEquals(1f, slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(4f) }
+        onNodeWithTag("reader-restore-SOFT").performScrollTo().performClick()
+        assertEquals(1f, slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(0f) }
+        onNodeWithTag("reader-restore-RESTORE").performScrollTo().performClick()
+        assertEquals(4f, slider.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
+        onNodeWithTag("reader-restore-OFF").performClick()
+        slider.assertIsNotEnabled()
+        onNodeWithText("对比原图、锐化与修复").assertDoesNotExist()
     }
 }

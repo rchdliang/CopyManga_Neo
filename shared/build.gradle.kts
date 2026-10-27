@@ -163,6 +163,8 @@ kotlin {
             implementation("io.ktor:ktor-client-cio:3.6.0")
             implementation("net.java.dev.jna:jna:5.19.1")
         }
+        getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
+        getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreDesktopDirectory"] as File)
         getByName("desktopTest").dependencies {
             implementation("org.jetbrains.compose.ui:ui-test:1.12.1")
         }
@@ -171,9 +173,21 @@ kotlin {
     }
 }
 
+dependencies {
+    // Common-code previews render through the shared Android target, not :app's
+    // debug classpath. The Android KMP plugin has no debugImplementation variant.
+    androidRuntimeClasspath("org.jetbrains.compose.ui:ui-tooling:1.12.1")
+}
+
 compose.resources {
     packageOfResClass = "com.rchdliang.copymanga_neo.multiplatform.resources"
     publicResClass = true
+}
+
+// Keep native test extraction in the build directory, including read-only-home CI workers.
+tasks.matching { it.name == "desktopProcessResources" }.configureEach {
+    dependsOn(rootProject.tasks.named("prepareReaderRestoreModels"))
+    if (rootProject.extra["readerRestoreDesktopSupported"] as Boolean) dependsOn(rootProject.tasks.named("prepareReaderRestoreDesktop"))
 }
 
 // Keep native test extraction in the build directory, including read-only-home CI workers.

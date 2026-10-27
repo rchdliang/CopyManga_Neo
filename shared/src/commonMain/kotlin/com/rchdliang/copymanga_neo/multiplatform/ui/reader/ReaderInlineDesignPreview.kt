@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.domain.reading.*
+import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 
 @Composable
@@ -23,9 +24,10 @@ internal fun ReaderInlineDesignContent(quality: Boolean, dark: Boolean = false) 
                 if (quality) {
                     var strength by remember { mutableStateOf(READER_SHARPNESS_RESTORE) }
                     ReaderQualitySection { ReaderSharpnessControls(true, strength, READER_SHARPNESS_RESTORE, { strength = 0f }, { strength = it }) }
-                    var mode by remember { mutableStateOf(ReaderRestoreMode.OFF) }
+                    var restoreTools by remember { mutableStateOf(ReaderToolsSettings()) }
                     ReaderQualitySection {
-                        ReaderRestoreControls(mode, null, null, { mode = it }, {})
+                        ReaderRestoreControls(restoreTools.restoreSelection(), null, null,
+                            { restoreTools = restoreTools.withRestoreMode(it) }, { restoreTools = restoreTools.withRestoreLevel(it) })
                     }
                 } else {
                     var layout by remember { mutableStateOf("双页") }

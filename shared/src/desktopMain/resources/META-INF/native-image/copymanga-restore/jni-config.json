@@ -1,0 +1,10 @@
+[
+  {"name":"com.rchdliang.copymanga_neo.multiplatform.restore.VulkanRestoreBridge","methods":[
+    {"name":"create","parameterTypes":["boolean"]},
+    {"name":"loadModel","parameterTypes":["long","int","byte[]"]},
+    {"name":"renderTile","parameterTypes":["long","int","java.nio.ByteBuffer","int","int","java.nio.ByteBuffer","int","int"]},
+    {"name":"deviceName","parameterTypes":["long"]},
+    {"name":"destroy","parameterTypes":["long"]}
+  ]},
+  {"name":"java.lang.IllegalStateException","methods":[{"name":"<init>","parameterTypes":["java.lang.String"]}]}
+]
