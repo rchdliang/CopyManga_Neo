@@ -90,6 +90,8 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setAutoCheckUpdates(enabled: Boolean) = save { repository.setAutoCheckUpdates(enabled) }
+
     fun setThemeMode(mode: AppThemeMode) = save { repository.setThemeMode(mode) }
     fun setSimplifyChinese(enabled: Boolean) = save {
         if (enabled) {

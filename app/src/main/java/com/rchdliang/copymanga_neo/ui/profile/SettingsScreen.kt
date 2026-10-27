@@ -94,6 +94,7 @@ internal fun SettingsScreen(
         onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
+        onAutoCheckUpdatesChange = viewModel::setAutoCheckUpdates,
         onSimplifyChineseChange = viewModel::setSimplifyChinese,
         onDictionaryUpdate = viewModel::updateChineseDictionary,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
@@ -129,6 +130,7 @@ private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
+    onAutoCheckUpdatesChange: (Boolean) -> Unit = {},
     onSimplifyChineseChange: (Boolean) -> Unit = {},
     onDictionaryUpdate: () -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
@@ -231,6 +233,15 @@ internal fun SettingsPage(
                                         enabled = enabled
                                     )
                                 }
+                            }
+                        )
+                        ProfileSectionTitle("更新")
+                        ProfileListItem(
+                            Icons.Outlined.Refresh, "自动检查更新", "启动时检查新版本",
+                            index = 0, count = 1, enabled = enabled,
+                            onClick = { onAutoCheckUpdatesChange(!state.settings.autoCheckUpdates) },
+                            trailingContent = {
+                                Switch(checked = state.settings.autoCheckUpdates, onCheckedChange = null, enabled = enabled)
                             }
                         )
                         ProfileSectionTitle("应用管理")

@@ -25,6 +25,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
     @ApplicationContext context: Context
 ) : AppSettingsRepository {
     private val store = context.appSettingsDataStore
+    private val autoCheckUpdatesKey = booleanPreferencesKey("auto_check_updates")
     private val themeKey = stringPreferencesKey("theme_mode")
     private val wifiOnlyKey = booleanPreferencesKey("wifi_only_downloads")
     private val blurNovelIllustrationsKey =
@@ -45,10 +46,13 @@ class AppSettingsRepositoryImpl @Inject constructor(
             blurNovelIllustrationPreviews = prefs[blurNovelIllustrationsKey] ?: false,
             includePasswordInCredentialExport = prefs[exportPasswordKey] ?: false,
             simplifyChinese = prefs[simplifyChineseKey] ?: false,
+            autoCheckUpdates = prefs[autoCheckUpdatesKey] ?: true,
             comicImageConcurrency = (prefs[imageConcurrencyKey] ?: 3).coerceIn(1, 10),
             comicDownloadLimitKiB = (prefs[downloadLimitKey] ?: 0).coerceAtLeast(0)
         )
     }.distinctUntilChanged()
+
+    override suspend fun setAutoCheckUpdates(enabled: Boolean) = save { store.edit { it[autoCheckUpdatesKey] = enabled } }
 
     override suspend fun setThemeMode(mode: AppThemeMode) = save {
         store.edit { it[themeKey] = mode.name }
@@ -130,6 +134,7 @@ class AppSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun resetDefaults() = save {
         store.edit {
+            it.remove(autoCheckUpdatesKey)
             it.remove(themeKey)
             it.remove(wifiOnlyKey)
             it.remove(blurNovelIllustrationsKey)

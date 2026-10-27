@@ -190,6 +190,25 @@ class MainActivity : ComponentActivity() {
             }
             com.rchdliang.copymanga_neo.ui.components.MetadataTextHost(preferences.simplifyChinese, mainViewModel.chineseDictionary) {
                 CopyManga_NeoTheme(darkTheme = darkTheme) {
+                    val updateModel: com.rchdliang.copymanga_neo.ui.profile.AboutViewModel = hiltViewModel()
+                    val updateState by updateModel.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(updateModel) { updateModel.checkAutomatically(BuildConfig.VERSION_NAME, preferences.autoCheckUpdates) }
+                    updateState.update?.let { release ->
+                        val uri = androidx.compose.ui.platform.LocalUriHandler.current
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = updateModel::dismissUpdate,
+                            title = { Text("发现新版本", color = MaterialTheme.colorScheme.onSurface) },
+                            text = { Text("最新版本：${release.version}", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                                runCatching { uri.openUri(release.pageUrl) }
+                                    .onFailure { Toast.makeText(this@MainActivity, "无法打开浏览器", Toast.LENGTH_SHORT).show() }
+                                updateModel.dismissUpdate()
+                            }) { Text("查看发布页", color = MaterialTheme.colorScheme.primary) } },
+                            dismissButton = { androidx.compose.material3.TextButton(onClick = updateModel::dismissUpdate) {
+                                Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } }
+                        )
+                    }
                     val authError by authStorage.storageError.collectAsStateWithLifecycle()
                     var dismissAuthError by rememberSaveable { mutableStateOf(false) }
                     if (authError != null && !dismissAuthError) androidx.compose.material3.AlertDialog(

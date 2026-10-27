@@ -44,10 +44,20 @@ class GitHubMetadata @Inject constructor(private val resources: PublicResourceCl
     }
 
     suspend fun latestApp(): AppRelease {
-        val release = json(ProjectLinks.RELEASES_API)
-        require(!release.get("draft").asBoolean && !release.get("prerelease").asBoolean) { "暂无稳定发布" }
-        val tag = release.get("tag_name").asString
-        require(tag.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}"))) { "发布版本格式无效" }
-        return AppRelease(tag, tag.removePrefix("v"), "${ProjectLinks.GITHUB}/releases/tag/$tag")
+        for (page in 1..10) {
+            val releases = JsonParser.parseString(
+                resources.fetch("${ProjectLinks.RELEASES_API}?per_page=20&page=$page", ChineseDictionaryStore.MAX_METADATA_BYTES).decodeToString()
+            ).asJsonArray
+            for (item in releases) {
+                val release = item.asJsonObject
+                val tag = release.get("tag_name").asString
+                if (!release.get("draft").asBoolean && !release.get("prerelease").asBoolean &&
+                    tag.matches(Regex("android-v[0-9]+(\\.[0-9]+){1,3}"))) {
+                    return AppRelease(tag, tag.removePrefix("android-v"), "${ProjectLinks.GITHUB}/releases/tag/$tag")
+                }
+            }
+            if (releases.size() < 20) break
+        }
+        throw PublicReleaseUnavailableException()
     }
 }
