@@ -130,7 +130,11 @@ android {
     compileSdkMinor = 0
 }
 
-tasks.matching { it.name.matches(Regex("merge.*Assets")) }.configureEach {
+// 模型 assets 同时被资源合并及 Lint 的模型生成、分析任务读取。
+// 显式关联生产任务，避免 Release 完整任务图中的隐式依赖校验失败。
+tasks.matching {
+    it.name.matches(Regex("merge.*Assets")) || it.name.contains("lint", ignoreCase = true)
+}.configureEach {
     dependsOn(rootProject.tasks.named("prepareReaderRestoreModels"))
 }
 
