@@ -16,6 +16,8 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 
 画质修复构建由 `gradle/reader-restore.gradle.kts` 管理：`prepareReaderRestoreModels` 将十组模型编译到 `build/reader-restore/generated-resources`，Android assets 与桌面资源自动依赖该任务；`prepareReaderRestoreDesktop` 编译并打包宿主 JNI 库。Android 原生库由 externalNativeBuild 构建。普通构建不需要手工复制模型或运行库。桌面跨平台打包需用 `-PreaderRestoreNativeLibrary=<目标平台库路径>` 提供与 `copymanga.desktopTarget` 匹配的预编译库，不会自动跨平台编译。运行时需要可用的 Vulkan GPU 驱动；缺少驱动时应用保留原图。
 
+画质修复构建使用的 glslang 仅为宿主着色器编译工具，不链接或分发进应用；其源码下载中保留上游 `LICENSE.txt`。该工具包含多项许可证，不能概括为单一 MIT；若另行分发构建工具包，应保留该工具及其依赖的完整声明。应用随包分发的 Anime4K 模型和 Vulkan-Headers 声明由模型资源任务自动复制，版权信息不会因生成 SPIR-V 而省略。
+
 ## 修改版本号
 
 只编辑根目录的 [version.properties](../version.properties)：

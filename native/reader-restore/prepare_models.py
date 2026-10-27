@@ -41,6 +41,7 @@ def main():
     if wanted not in version: raise RuntimeError("glslang version must match the version catalog")
     subprocess.run([os.sys.executable,str(root/"native/reader-restore/compile_models.py"),"--models",str(root/"native/reader-restore/models"),"--output",str(args.output),"--compiler",str(executable)],check=True)
     shutil.copyfile(root/"native/reader-restore/vendor/vulkan/LICENSE.md",args.output/"reader-restore/LICENSE-Vulkan-Headers.txt")
+    shutil.copyfile(root/"native/reader-restore/vendor/vulkan/NOTICE.txt",args.output/"reader-restore/NOTICE-Vulkan-Headers.txt")
     for license in (root/"native/reader-restore/vendor/vulkan/LICENSES").glob("*.txt"):
         shutil.copyfile(license,args.output/"reader-restore"/("LICENSE-Vulkan-"+license.name))
 if __name__=="__main__":main()

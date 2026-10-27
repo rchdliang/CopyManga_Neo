@@ -22,6 +22,9 @@ tasks.register<Exec>("prepareReaderRestoreModels") {
     description = "Compile pinned Anime4K models to Vulkan SPIR-V packs"
     workingDir(restoreRoot)
     inputs.dir(restoreRoot.dir("native/reader-restore/models"))
+    inputs.files(fileTree(restoreRoot.dir("native/reader-restore/vendor/vulkan")) {
+        include("LICENSE.md", "LICENSES/*.txt", "NOTICE.txt")
+    })
     inputs.files(restoreRoot.file("native/reader-restore/compile_models.py"), restoreRoot.file("native/reader-restore/prepare_models.py"), restoreRoot.file("gradle/libs.versions.toml"))
     outputs.dir(restoreModelsOutput)
     commandLine(restorePython, restoreRoot.file("native/reader-restore/prepare_models.py").asFile.absolutePath,

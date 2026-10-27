@@ -1,0 +1,18 @@
+Vulkan-Headers
+Source: https://github.com/KhronosGroup/Vulkan-Headers
+Commit: 29f979ee5aa58b7b005f805ea8df7a855c39ff37
+
+vk_platform.h:
+Copyright 2014-2024 The Khronos Group Inc.
+
+vulkan_core.h and the included vk_video headers:
+Copyright 2015-2024 The Khronos Group Inc.
+
+All headers included by this project carry SPDX-License-Identifier: Apache-2.0.
+The upstream headers are retained without modification. The upstream repository
+license overview and both license texts are preserved separately; that overview
+does not change the Apache-2.0 license specified in these individual files.
+
+The application's Vulkan compute adapter is implemented by CopyManga Neo.
+The system Vulkan loader and GPU vendor driver are loaded dynamically and are
+not redistributed with this component.

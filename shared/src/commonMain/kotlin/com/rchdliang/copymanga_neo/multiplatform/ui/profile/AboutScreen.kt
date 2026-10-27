@@ -204,6 +204,16 @@ private val thirdPartyLibraries = listOf(
     ThirdPartyLibrary("Coil", "Apache-2.0", "https://github.com/coil-kt/coil"),
     ThirdPartyLibrary("Okio", "Apache-2.0", "https://github.com/square/okio"),
     ThirdPartyLibrary("OpenCC · 简化词典", "Apache-2.0", "https://github.com/BYVoid/OpenCC"),
+    ThirdPartyLibrary(
+        "Anime4K · 画质修复模型",
+        "MIT · Copyright (c) 2019–2021 bloc97",
+        "https://github.com/bloc97/Anime4K/tree/7684e9586f8dcc738af08a1cdceb024cc184f426"
+    ),
+    ThirdPartyLibrary(
+        "Vulkan-Headers · 画质修复接口",
+        "Apache-2.0 · Copyright 2014–2024 The Khronos Group Inc.",
+        "https://github.com/KhronosGroup/Vulkan-Headers/tree/29f979ee5aa58b7b005f805ea8df7a855c39ff37"
+    ),
     ThirdPartyLibrary("kixyubook · 阅读器参考实现", "MIT", "https://github.com/kkyu9527/kixyubook"),
     ThirdPartyLibrary(
         "Compose Multiplatform",
