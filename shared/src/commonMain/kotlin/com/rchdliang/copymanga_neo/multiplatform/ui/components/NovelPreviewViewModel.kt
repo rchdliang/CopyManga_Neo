@@ -47,9 +47,7 @@ class NovelPreviewViewModel(
         context = next
         revision++
         job?.cancel()
-        seed = null
-        cache.clear()
-        mutable.value = NovelPreviewUiState(epoch = mutable.value.epoch + 1)
+        mutable.update { it.copy(loading = false, error = null, epoch = it.epoch + 1) }
     }
 
     fun show(book: NovelBook?) {

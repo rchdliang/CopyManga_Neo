@@ -49,19 +49,11 @@ class HomeNovelViewModel constructor(
         if (started) return
         started = true
         viewModelScope.launch(errors) {
-            var loadedSession: LocalReadingSession? = null
             combine(auth.cacheReadyFlow, auth.sessionChanges, refresh) { ready, _, revision ->
                 (if (ready) auth.getReadingSessionSync() else null) to revision
             }.distinctUntilChanged().collectLatest { (session, _) ->
-                // 同会话刷新保留已展示的封面；切换账号、模式或会话代数时才清空。
-                mutable.update {
-                    if (session != null && session == loadedSession) it.copy(
-                        loading = true,
-                        error = null
-                    )
-                    else HomeNovelUiState()
-                }
-                loadedSession = session
+                // 公共列表在账号/API 切换时继续展示，旧请求仍由会话检查拦截。
+                mutable.update { it.copy(loading = true, error = null) }
                 val owner = session?.owner ?: return@collectLatest
                 try {
                     val result = withContext(Dispatchers.Default) {

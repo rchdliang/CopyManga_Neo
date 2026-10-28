@@ -24,9 +24,9 @@ class PortableNovelAnnotationsTest {
         assertEquals(10, repository.annotations.first().single().createdAt)
         for (other in listOf(original.copy(owner = "other"), original.copy(mode = "APP"),
             original.copy(path = "other"), original.copy(volume = "other"))) repository.save(other).getOrThrow()
-        assertEquals(5, repository.annotations.first().size)
-        repository.remove(original).getOrThrow()
         assertEquals(4, repository.annotations.first().size)
+        repository.remove(original).getOrThrow()
+        assertEquals(3, repository.annotations.first().size)
         val restored = PortableNovelAnnotations(files)
         restored.initialize().getOrThrow()
         assertEquals(repository.annotations.first(), restored.annotations.first())

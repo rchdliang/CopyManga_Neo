@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** 全平台共用详情补全、并发限制、失败退避和来源隔离；生命周期由应用图持有。 */
+/** 全平台共用详情补全、并发限制、失败退避和公共缓存与过期请求保护；生命周期由应用图持有。 */
 class PortableComicMetadataRepository(
     private val client: CopyMangaClient,
     private val cache: PortableComicCardCache? = null,
@@ -30,7 +30,7 @@ class PortableComicMetadataRepository(
     private val restoreGuard = Mutex()
     private var restored = false
     private var stored = emptyMap<String, ComicCardMetadata>()
-    private val legacyScope = source(client.state.snapshot)
+    private val legacyScope = source()
     private var observedGeneration = -1L
     private var observedSource = ""
     private val values = MutableStateFlow<Map<String, ComicCardMetadata>>(emptyMap())
@@ -51,9 +51,7 @@ class PortableComicMetadataRepository(
     private var workersStarted = false
     private val recent = linkedMapOf<String, Pair<Long, ComicDetailResult>>()
 
-    private fun source(snapshot: NetworkSnapshot): String = snapshot.settings.let {
-        "${it.requestMode}:${it.apiHost}:${it.selection}:${it.fixedHost}:${it.routes.getOrNull(it.routeIndex)}|"
-    }
+    private fun source(): String = "public|"
 
     /** 首次读取延后到需要展示资料时，避免增加冷启动阻塞。 */
     private suspend fun prepare(snapshot: NetworkSnapshot) {
@@ -65,7 +63,7 @@ class PortableComicMetadataRepository(
         }
         guard.withLock {
             client.state.requireCurrent(snapshot.generation)
-            val key = source(snapshot)
+            val key = source()
             if (observedGeneration == snapshot.generation) return@withLock
             if (observedSource != key) {
                 val inherited = if (key == legacyScope) legacyThemes.entries.value.mapValues { (path, entry) ->
@@ -80,7 +78,7 @@ class PortableComicMetadataRepository(
             retryAfter.clear()
             failureCount = 0
             stoppedUntil = 0
-            sourceState.value = "$key:${snapshot.generation}"
+            sourceState.value = key
         }
     }
 
@@ -225,7 +223,7 @@ class PortableComicMetadataRepository(
                     check(response.isSuccessful && body?.code == 200) { body?.message ?: "详情加载失败" }
                     val result = requireNotNull(body).results
                     val comic = result.comicDetail
-                    val key = source(snapshot) + path
+                    val key = source() + path
                     val value = guard.withLock {
                         client.state.requireCurrent(snapshot.generation)
                         val previous = values.value[path]

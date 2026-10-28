@@ -142,14 +142,14 @@ class PortableNovelAnnotations(storage: DocumentStorage) : NovelAnnotationReposi
             annotation.mode.isNotBlank() && annotation.path.isNotBlank() && annotation.volume.isNotBlank() &&
             annotation.text.isNotBlank() && annotation.style in setOf("PRIMARY", "SECONDARY", "TERTIARY")) { "标注内容无效" }
         val same = current.firstOrNull {
-            it.owner == annotation.owner && it.mode == annotation.mode && it.path == annotation.path &&
+            it.owner == annotation.owner && it.path == annotation.path &&
                 it.volume == annotation.volume && (it.id == annotation.id || it.range == annotation.range)
         }
         val updated = annotation.copy(id = same?.id ?: annotation.id, createdAt = same?.createdAt ?: annotation.createdAt)
-        current.filterNot { it.id == updated.id && it.owner == updated.owner && it.mode == updated.mode &&
+        current.filterNot { it.id == updated.id && it.owner == updated.owner &&
             it.path == updated.path && it.volume == updated.volume } + updated
     }
     override suspend fun remove(annotation: NovelAnnotation) = document.update { current ->
-        current.filterNot { it.id == annotation.id && it.owner == annotation.owner && it.mode == annotation.mode && it.path == annotation.path && it.volume == annotation.volume }
+        current.filterNot { it.id == annotation.id && it.owner == annotation.owner && it.path == annotation.path && it.volume == annotation.volume }
     }
 }

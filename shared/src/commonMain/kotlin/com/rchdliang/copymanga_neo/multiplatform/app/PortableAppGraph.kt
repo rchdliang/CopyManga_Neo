@@ -256,7 +256,6 @@ class PortableAppGraph private constructor(
                         manager.awaitActiveImageRequests()
                         currentCoroutineContext().ensureActive()
                         boundClients.retire { it.first < generation }
-                        loaders.forEach { it.memoryCache?.clear() }
                         cleanClients.retire { it.first < generation }
                     }
                 }

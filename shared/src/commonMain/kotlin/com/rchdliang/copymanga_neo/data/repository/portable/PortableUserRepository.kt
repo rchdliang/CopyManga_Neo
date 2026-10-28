@@ -33,7 +33,7 @@ class PortableUserRepository(
             val previous=storage.readAll()
             val loaded=previous.mapValues { (mode,stored) ->
                 if(mode==RequestMode.OFFICIAL_APP&&stored.session.token.isNotBlank()&&stored.appIdentity==null)
-                    stored.copy(session=PortableSession(),autoLogin=false) else stored
+                    stored.copy(session=PortableSession()) else stored
             }
             if(loaded!=previous)storage.writeAll(loaded)
             credentials.value=loaded
@@ -51,7 +51,7 @@ class PortableUserRepository(
         try {
             client.state.requireCurrent(expectedGeneration)
             val previous=storage.readAll()
-            val cleared=(previous[mode]?:stored(mode)).copy(session=PortableSession(),autoLogin=false)
+            val cleared=(previous[mode]?:stored(mode)).copy(session=PortableSession())
             storage.writeAll(previous+(mode to cleared))
             if(active().generation!=expectedGeneration) {
                 withContext(NonCancellable){storage.writeAll(previous)}
@@ -62,7 +62,32 @@ class PortableUserRepository(
     }
     private suspend fun awaitReady(){if(!ready.value)restoreSecureSessions()}
     private fun active()=client.state.snapshot
-    private fun stored(mode:RequestMode=active().settings.requestMode)=credentials.value[mode]?:StoredCredential(active().session(mode))
+    private fun rawStored(mode: RequestMode) = credentials.value[mode] ?: StoredCredential(active().session(mode))
+    private fun stored(mode: RequestMode = active().settings.requestMode): StoredCredential {
+        val raw = rawStored(mode)
+        val account = raw.session.username ?: raw.savedUsername
+        val shared = if (account == null) credentials.value.values.firstOrNull { it.savedUsername != null }
+            else credentials.value.values.firstOrNull { it.savedUsername == account && it.rememberPassword }
+        return if (shared == null || raw.savedUsername != null) raw else raw.copy(
+            savedUsername = shared.savedUsername, savedPassword = shared.savedPassword,
+            rememberPassword = shared.rememberPassword, autoLogin = shared.autoLogin)
+    }
+    /** 登录偏好属于账号；其他 API 的 token 和请求身份原样保留。 */
+    private fun sharedPreferences(mode: RequestMode, value: StoredCredential, aliases: Set<String> = emptySet()): Map<RequestMode, StoredCredential> {
+        val names = (aliases + setOfNotNull(value.session.username, value.savedUsername)).filter { it.isNotBlank() }.toSet()
+        val changes = mutableMapOf(mode to value)
+        RequestMode.entries.filter { it != mode }.forEach { other ->
+            val old = rawStored(other)
+            val account = old.session.username ?: old.savedUsername
+            if ((account == null || account in names) && (old.savedUsername == null || old.savedUsername in names)) changes[other] = old.copy(
+                session = if (old.session.token.isBlank() && value.session.username != null)
+                    old.session.copy(owner = value.session.owner, username = value.session.username, avatar = value.session.avatar) else old.session,
+                savedUsername = value.savedUsername, savedPassword = value.savedPassword,
+                rememberPassword = value.rememberPassword, autoLogin = value.autoLogin)
+        }
+        return changes
+    }
+
     private fun requirePersistence(remember:Boolean,automatic:Boolean) {
         require(!automatic||remember){"自动登录需要记住密码"}
         require((!remember&&!automatic)||storage.persistent){"此平台没有安全凭据存储，无法记住密码或自动登录；请取消这两个选项"}
@@ -93,24 +118,10 @@ class PortableUserRepository(
     }
     private suspend fun commit(
         snapshot:NetworkSnapshot,mode:RequestMode,value:StoredCredential,settings:NetworkSettings=snapshot.settings,
-        replaceSameAccount:Boolean=false,importedLogin:SavedLoginCredential?=null,accountAliases:Set<String> = emptySet()
+        replaceSameAccount:Boolean=false,accountAliases:Set<String> = emptySet()
     )=mutex.withLock {
         client.state.requireCurrent(snapshot.generation)
-        val changes=mutableMapOf(mode to value)
-        if(replaceSameAccount) {
-            val names=(setOfNotNull(value.session.username,value.savedUsername)+accountAliases).filter{it.isNotBlank()}.toSet()
-            RequestMode.entries.filter{it!=mode}.forEach { otherMode ->
-                val old=stored(otherMode)
-                val same=old.session.username in names||(old.session.username==null&&old.savedUsername in names)
-                var next=if(same)old.copy(session=PortableSession(),autoLogin=false) else old
-                if(importedLogin!=null&&(next.session.username==null||next.session.username in names)&&
-                    (next.savedUsername==null||next.savedUsername in names)) {
-                    next=next.copy(savedUsername=importedLogin.username,savedPassword=importedLogin.password,
-                        rememberPassword=true,autoLogin=false)
-                }
-                if(next!=old)changes[otherMode]=next
-            }
-        }
+        val changes = if (replaceSameAccount) sharedPreferences(mode, value, accountAliases) else mapOf(mode to value)
         val previous=storage.readAll()
         val configurationChanged=settings!=snapshot.settings
         require(!configurationChanged||!storage.persistent||persistImportedConfiguration!=null){"安全凭据存储尚未连接配置事务，无法持久化导入"}
@@ -236,12 +247,13 @@ class PortableUserRepository(
         val settings=snapshot.settings.copy(requestMode=mode,officialApp=bundle.appIdentity?.takeIf{mode==RequestMode.OFFICIAL_APP}?.applyTo(snapshot.settings.officialApp)?:snapshot.settings.officialApp)
         val capturedIdentity=if(mode==RequestMode.OFFICIAL_APP)bundle.appIdentity?:client.credentialIdentity() else null
         val value=StoredCredential(session,bundle.savedLogin?.username,bundle.savedLogin?.password,bundle.savedLogin!=null,false,capturedIdentity)
-        commit(snapshot,mode,value,settings,replaceSameAccount=true,importedLogin=bundle.savedLogin)
+        commit(snapshot,mode,value,settings,replaceSameAccount=true)
         CredentialImportResult(member.toMemberInfo(),mode,active().generation,bundle.sessions.map{it.mode}.filter{it!=mode}.toSet())
     }
     override suspend fun logout():Result<Unit> = result {
         awaitReady();val snapshot=active();val mode=snapshot.settings.requestMode;val token=snapshot.session().token
-        commit(snapshot,mode,stored(mode).copy(session=PortableSession(),autoLogin=false))
+        commit(snapshot,mode,stored(mode).copy(session=PortableSession(),autoLogin=false),
+            replaceSameAccount=true,accountAliases=setOfNotNull(snapshot.session().username,stored(mode).savedUsername))
         if(mode==RequestMode.OFFICIAL_APP&&token.isNotBlank())try { writes.logout("Token $token",requestMode=mode) }catch(e:CancellationException){throw e}catch(_:Exception){ /* Local logout remains valid if remote confirmation is unavailable. */ }
     }
     override fun sessionChanges():Flow<Long> = client.state.snapshots.map{it.generation}.distinctUntilChanged()
@@ -258,17 +270,18 @@ class PortableUserRepository(
             if(active().session(mode).token.isBlank())return@withLock
             val previous=storage.readAll()
             val value=stored(mode).copy(savedUsername=username.takeIf{rememberPassword},savedPassword=password.takeIf{rememberPassword},rememberPassword=rememberPassword,autoLogin=autoLogin)
+            val changes = sharedPreferences(mode, value, setOf(username))
             try {
-                storage.writeAll(previous+(mode to value))
+                storage.writeAll(previous+changes)
                 client.state.requireCurrent(expectedGeneration)
-                credentials.update{it+(mode to value)}
+                credentials.update{it+changes}
             } catch(error:Exception) {
                 withContext(NonCancellable){storage.writeAll(previous)}
                 throw error
             }
         }
     }
-    private fun <T> preference(selector:(StoredCredential)->T):Flow<T> = combine(client.state.snapshots,credentials){snapshot,values->selector(values[snapshot.settings.requestMode]?:StoredCredential(snapshot.session()))}.distinctUntilChanged()
+    private fun <T> preference(selector:(StoredCredential)->T):Flow<T> = combine(client.state.snapshots,credentials){snapshot,_->selector(stored(snapshot.settings.requestMode))}.distinctUntilChanged()
     override fun getRememberPassword()=preference{it.rememberPassword}
     override fun getAutoLogin()=preference{it.autoLogin}
     override fun getSavedUsername()=preference{it.savedUsername}

@@ -23,7 +23,7 @@ class PersistentThemeCatalogsTest {
         first.save(comic);first.save(RequestMode.WEB,web);first.save(RequestMode.OFFICIAL_APP,app);first.save("comic",evidence)
         val restored=PersistentThemeCatalogs(storage);restored.initialize().getOrThrow()
         assertEquals(comic,restored.themes.value)
-        assertEquals(web,restored.get(RequestMode.WEB));assertEquals(app,restored.get(RequestMode.OFFICIAL_APP))
+        assertEquals(app,restored.get(RequestMode.WEB));assertEquals(app,restored.get(RequestMode.OFFICIAL_APP))
         assertEquals(evidence,restored.entries.value["comic"])
     }
     @Test fun failedWriteStillPublishesCurrentSessionTags()=runTest {

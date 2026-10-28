@@ -38,15 +38,15 @@ class VerifiedPortableNovelCacheTest {
         assertEquals(listOf("旧正文"), cache.read(mode, "owner", "book", "v1")!!.document.lines)
     }
     @Test
-    fun malformedTextDoesNotPublishAndAccountCachesRemainIsolated() = runTest {
+    fun malformedTextDoesNotPublishAndPublicCacheIsSharedAcrossAccountsAndModes() = runTest {
         val files = Files(); val cache = VerifiedPortableNovelCache(files)
         assertFailsWith<CharacterCodingException> {
             cache.publish(mode, "owner", "book", "v1", metadata(), byteArrayOf(0xc3.toByte(), 0x28))
         }
         assertTrue(files.data.isEmpty())
         cache.publish(mode, "owner", "book", "v1", metadata(), "正文".encodeToByteArray())
-        assertNull(cache.read(mode, "someone-else", "book", "v1"))
-        assertNull(cache.read(RequestMode.OFFICIAL_APP, "owner", "book", "v1"))
+        assertEquals(listOf("正文"), cache.read(mode, "someone-else", "book", "v1")!!.document.lines)
+        assertEquals(listOf("正文"), cache.read(RequestMode.OFFICIAL_APP, "owner", "book", "v1")!!.document.lines)
         assertEquals(1, cache.list().size)
     }
     @Test
@@ -55,6 +55,10 @@ class VerifiedPortableNovelCacheTest {
         assertFalse(cache.publish(mode, "owner", "book", "v1", metadata(true), "正文".encodeToByteArray()).offlineReady)
         val cached = cache.writeImage(mode, "owner", "book", "v1", "https://example.org/image", byteArrayOf(1, 2, 3))
         assertTrue(cached.offlineReady)
+        val shared = cache.read(RequestMode.OFFICIAL_APP, "another-account", "book", "v1")!!
+        assertEquals(cached.cachedImages, shared.cachedImages)
+        cache.markDownloadRequested(RequestMode.OFFICIAL_APP, "another-account", "book", "v1")
+        assertTrue(cache.list().single().downloadRequested)
         assertTrue(cached.cachedImages.values.single().startsWith("memory://"))
         val image = files.data.keys.single { it.endsWith(".img") }
         files.data[image] = byteArrayOf(9)

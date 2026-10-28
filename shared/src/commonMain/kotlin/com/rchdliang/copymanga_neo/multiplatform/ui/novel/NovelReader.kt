@@ -182,11 +182,10 @@ internal fun NovelReader(
         exportState.message?.let { toast.showToast(it); illustrations.clearMessage() }
     }
     val bookmarks = local.bookmarks.filter {
-        it.owner == state.owner && it.kind == "novel" && it.path == path &&
-                it.group in setOf("default", state.mode.name)
+        it.owner == state.owner && it.kind == "novel" && it.path == path
     }.sortedByDescending { it.updatedAt }
     val annotations = savedAnnotations.filter {
-        it.owner == state.owner && it.mode == state.mode.name && it.path == path
+        it.owner == state.owner && it.path == path
     }.sortedByDescending { it.updatedAt }
     NovelReaderContent(
         state, preferences, bookmarks, viewModel.currentPosition(), onBack,

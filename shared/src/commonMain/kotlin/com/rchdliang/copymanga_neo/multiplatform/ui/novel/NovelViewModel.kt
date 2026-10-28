@@ -134,7 +134,7 @@ class NovelViewModel(
             DownloadTaskStatus.REQUESTING_PAGE, DownloadTaskStatus.DOWNLOADING
         )
         ui.copy(
-            cachedVolumes = cached.filter { it.owner == ui.owner && it.mode == ui.mode && it.book.path == path },
+            cachedVolumes = cached.filter { it.book.path == path },
             downloadTask = task, downloadInfo = info,
             downloading = downloading,
             caching = downloading && task?.volumes?.any {
@@ -167,7 +167,7 @@ class NovelViewModel(
     private var readerSearchJob: Job? = null
     private var readerSearchGeneration = 0
 
-    private data class ReaderSearchKey(val session: LocalReadingSession, val path: String)
+    private data class ReaderSearchKey(val path: String)
 
     private var readerSearchKey: ReaderSearchKey? = null
     private var readerSearchCatalogue: Pair<ReaderSearchKey, List<NovelVolume>>? = null
@@ -220,7 +220,6 @@ class NovelViewModel(
                 if (ready) auth.getReadingSessionSync() else null
             }.distinctUntilChanged().collect { session ->
                 cancelReaderSearch(clear = true)
-                readerSearchCatalogue = null
                 val previous = mutable.value
                 val previousPosition = currentPosition()
                 browseOrigins.clear()
@@ -237,8 +236,8 @@ class NovelViewModel(
                     downloading = false,
                     downloadProgress = null,
                     mode = session?.mode ?: network.settings.value.requestMode,
-                    books = emptyList(),
-                    total = null,
+                    books = previous.books,
+                    total = previous.total,
                     browseOriginPath = null,
                     tags = repository.cachedTags(
                         session?.mode ?: network.settings.value.requestMode
@@ -246,8 +245,8 @@ class NovelViewModel(
                     tagsLoading = false,
                     tagsError = null,
                     promotedTheme = null,
-                    book = null,
-                    volumes = emptyList(),
+                    book = previous.book,
+                    volumes = previous.volumes,
                     selectedVolumeIds = null,
                     managedVolumeIds = emptySet(),
                     applyingDownloads = false,
@@ -257,7 +256,7 @@ class NovelViewModel(
                     caching = false,
                     loadingMore = false,
                     loadMoreError = null,
-                    hasMore = false,
+                    hasMore = previous.hasMore,
                     bookLoading = false,
                     volumesLoading = false,
                     bookError = null,
@@ -296,7 +295,7 @@ class NovelViewModel(
                 val reader = selected.reader ?: return@collect
                 val owner = selected.owner ?: return@collect
                 if (reader.offlineReady || !cached.any {
-                        it.owner == owner && it.mode == selected.mode && it.book.path == reader.book.path &&
+                        it.book.path == reader.book.path &&
                                 it.volume.id == reader.volume.id && it.offlineReady
                     }) return@collect
                 repository.readVolume(selected.mode, owner, reader.book.path, reader.volume.id)
@@ -331,7 +330,7 @@ class NovelViewModel(
             val targetPath = resume?.path ?: path
             // 下载列表使用已发布索引；已有目标不能等待后台插图下载持有的扫描锁。
             if (targetPath != null && repository.cachedVolumes.value.none {
-                    it.owner == session.owner && it.mode == session.mode && it.book.path == targetPath
+                    it.book.path == targetPath
                 }) {
                 repository.awaitCachedVolumes().fold(
                     onSuccess = {}, onFailure = { if (it is CancellationException) throw it }
@@ -538,7 +537,7 @@ class NovelViewModel(
         val owner = sessionOwner ?: return
         val mode = mutable.value.mode
         val local = repository.cachedVolumes.value.filter {
-            it.owner == owner && it.mode == mode && it.book.path == path
+            it.book.path == path
         }
         mutable.update {
             it.copy(
@@ -864,7 +863,7 @@ class NovelViewModel(
         }
         cancelReaderSearch()
         val generation = readerSearchGeneration
-        val key = ReaderSearchKey(session, reader.book.path)
+        val key = ReaderSearchKey(reader.book.path)
         readerSearchKey = key
         val normalized = query.trim()
         mutableReaderSearch.value = NovelReaderSearchUiState(
@@ -956,7 +955,7 @@ class NovelViewModel(
         val selected = mutable.value
         val reader = selected.reader ?: return
         val owner = sessionOwner ?: return
-        if (auth.getReadingSessionSync() != key.session || !current(owner, selected.mode) ||
+        if (key.path != reader.book.path || !current(owner, selected.mode) ||
             reader.book.path != search.bookPath || search.progress.matches.none { it.key == hit.key }
         ) return
         if (hit.volumeId == reader.volume.id &&
@@ -1014,7 +1013,7 @@ class NovelViewModel(
     }
 
     fun updateAnnotation(annotation: NovelAnnotation, onDone: (Boolean) -> Unit) {
-        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name ||
+        if (annotation.owner != sessionOwner ||
             !current(annotation.owner, mutable.value.mode)
         ) {
             onDone(false)
@@ -1030,7 +1029,7 @@ class NovelViewModel(
                     if (current(
                             annotation.owner,
                             mutable.value.mode
-                        ) && annotation.mode == mutable.value.mode.name
+                        )
                     )
                         mutable.update { it.copy(notice = "标注已保存") }
                     onDone(true)
@@ -1038,7 +1037,7 @@ class NovelViewModel(
                 onFailure = { error ->
                     if (error is CancellationException) throw error
                     Log.w("NovelReader", "标注保存失败", error)
-                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                    if (annotation.owner == sessionOwner)
                         mutable.update { it.copy(notice = "标注保存失败，请重试") }
                     onDone(false)
                 }
@@ -1047,18 +1046,18 @@ class NovelViewModel(
     }
 
     fun removeAnnotation(annotation: NovelAnnotation) {
-        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name ||
+        if (annotation.owner != sessionOwner ||
             !current(annotation.owner, mutable.value.mode)
         ) return
         viewModelScope.launch(errors) {
             annotationStore.remove(annotation).fold(
                 onSuccess = {
-                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                    if (annotation.owner == sessionOwner)
                         mutable.update { it.copy(notice = "标注已删除") }
                 },
                 onFailure = { error ->
                     if (error is CancellationException) throw error
-                    if (annotation.owner == sessionOwner && annotation.mode == mutable.value.mode.name)
+                    if (annotation.owner == sessionOwner)
                         mutable.update { it.copy(notice = "标注删除失败，请重试") }
                 }
             )
@@ -1066,7 +1065,7 @@ class NovelViewModel(
     }
 
     fun jumpToAnnotation(annotation: NovelAnnotation) {
-        if (annotation.owner != sessionOwner || annotation.mode != mutable.value.mode.name) return
+        if (annotation.owner != sessionOwner) return
         val volume = mutable.value.reader
         if (volume?.book?.path == annotation.path && volume.volume.id == annotation.volume &&
             volume.document.textIn(annotation.range) != annotation.text

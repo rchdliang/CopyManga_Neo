@@ -237,7 +237,7 @@ class DownloadManager(
                         .filter { records.hasCompleteFiles(it) }.map { it.uuid }.toSet()
 
                     is NovelDownloadTask -> novels.cachedVolumes.value
-                        .filter { it.mode == task.mode && it.owner == task.owner && it.book.path == task.pathWord && it.offlineReady && it.visibleInDownloads }
+                        .filter { it.book.path == task.pathWord && it.offlineReady && it.visibleInDownloads }
                         .map { it.volume.id }.toSet()
                 }
                 val restored = task.withItems(task.items.map {
@@ -516,7 +516,7 @@ class DownloadManager(
             pausedTasks = pausedTasks + task.taskKey
             updateProgress(
                 task.taskKey, status = DownloadTaskStatus.PAUSED,
-                statusText = "请切换到下载所属账号和请求模式后继续"
+                statusText = "请等待账号会话就绪后继续"
             )
             return false
         }
@@ -716,7 +716,7 @@ class DownloadManager(
                     pausedTasks = pausedTasks + task.taskKey
                     updateProgress(
                         task.taskKey, status = DownloadTaskStatus.PAUSED,
-                        statusText = "请切换到下载所属账号和请求模式后继续"
+                        statusText = "请等待账号会话就绪后继续"
                     )
                 }
                 !(currentTasks[task.taskKey]?.taskId != task.taskId || task.taskKey in pausedTasks) && if (!networkAllowed() || task.taskKey in networkWaiting) {
@@ -792,12 +792,13 @@ class DownloadManager(
         currentTasks[comicDownloadKey(path)] as? ComicDownloadTask
 
     /** 仅正文/插图请求因内容种类而异，队列、暂停、网络策略与服务生命周期均共用。 */
-    private suspend fun processNovelTask(task: NovelDownloadTask) {
+    private suspend fun processNovelTask(request: NovelDownloadTask) {
+        val currentSession = sessions.getReadingSessionSync() ?: return
+        val task = request.copy(mode = currentSession.mode, owner = currentSession.owner ?: return)
         val repository = novels
-        val expectedSession = sessions.getReadingSessionSync()
+        val expectedSession = currentSession
         val key = task.taskKey
-        fun sessionValid() = expectedSession != null &&
-                sessions.getReadingSessionSync() == expectedSession && novelSessionAllowed(task)
+        fun sessionValid() = sessions.getReadingSessionSync() == expectedSession && novelSessionAllowed(task)
         while (true) {
             if (!sessionValid()) {
                 stateMutex.withLock {

@@ -37,10 +37,10 @@ class PortableNovelRepository(
         return s.generation
     }
     override suspend fun discover(mode:RequestMode,owner:String,offset:Int,order:String,theme:String,author:String):Result<NovelPage> = result {
-        page(api(mode,owner,listOf("books"),NovelRequestSpec.browse(mode==RequestMode.OFFICIAL_APP,offset,order,theme,author))).also{remember(mode,owner,it.books)}
+        page(api(mode,owner,listOf("books"),NovelRequestSpec.browse(mode==RequestMode.OFFICIAL_APP,offset,order,theme,author))).also{remember(it.books)}
     }
     override suspend fun search(mode:RequestMode,owner:String,offset:Int,query:String,type:String):Result<NovelPage> = result {
-        page(api(mode,owner,listOf("search","books"),NovelRequestSpec.search(mode==RequestMode.OFFICIAL_APP,offset,query,type))).also{remember(mode,owner,it.books)}
+        page(api(mode,owner,listOf("search","books"),NovelRequestSpec.search(mode==RequestMode.OFFICIAL_APP,offset,query,type))).also{remember(it.books)}
     }
     override suspend fun tags(mode:RequestMode,owner:String):Result<List<NovelTag>> = result {
         val generation=session(mode,owner);val tags=mutableListOf<NovelTag>();var offset=0
@@ -57,7 +57,7 @@ class PortableNovelRepository(
     }
     override fun cachedTags(mode:RequestMode)=themeCatalog.get(mode)
     override suspend fun detail(mode:RequestMode,owner:String,path:String):Result<NovelBook> = result {
-        PortableNovelJson.book(requireNotNull(api(mode,owner,listOf("book",path))["book"] as? JsonObject)).also{remember(mode,owner,listOf(it))}
+        PortableNovelJson.book(requireNotNull(api(mode,owner,listOf("book",path))["book"] as? JsonObject)).also{remember(listOf(it))}
     }
     override suspend fun volumes(mode:RequestMode,owner:String,path:String):Result<List<NovelVolume>> = result {
         requireNotNull(api(mode,owner,listOf("book",path,"volumes"))["list"] as? JsonArray).map{PortableNovelJson.volume(it.jsonObject)}.sortedBy{it.index}
@@ -90,7 +90,7 @@ class PortableNovelRepository(
                 val volume=response["volume"] as? JsonObject?:error("官方未返回可读内容")
                 require(PortableNovelJson.text(volume,"id")==id){"官方分卷与请求不一致"}
                 val address=PortableNovelJson.text(volume,"txt_addr");require(address.isNotBlank()){"官方未返回正文地址，请检查阅读权限"}
-                val book=PortableNovelJson.book(requireNotNull(response["book"] as? JsonObject)).withFallback(bookHints.value[key(mode,owner,path)]).withFallback(reading?.book)
+                val book=PortableNovelJson.book(requireNotNull(response["book"] as? JsonObject)).withFallback(bookHints.value[path]).withFallback(reading?.book)
                 require(book.path==path){"官方小说与请求不一致"}
                 val metadata=JsonObject(response+mapOf("book" to PortableNovelJson.bookJson(book)))
                 if(forDownload)requireDownloadNetwork()
@@ -144,11 +144,10 @@ class PortableNovelRepository(
     override suspend fun clearCache():Result<Unit> = result { mutex.withLock { cache.clear();publishCached() } }
     private suspend fun publishCached(){mutableCached.value=cache.list().sortedByDescending{it.lastAccessedAt}}
     private fun page(o:JsonObject)=NovelPage(requireNotNull(o["list"] as? JsonArray).map{PortableNovelJson.book(it.jsonObject)},requireNotNull(o["total"]).jsonPrimitive.int,requireNotNull(o["offset"]).jsonPrimitive.int,requireNotNull(o["limit"]).jsonPrimitive.int)
-    private fun key(mode:RequestMode,owner:String,path:String)="${mode.name}\u0000$owner\u0000$path"
-    private fun remember(mode:RequestMode,owner:String,books:List<NovelBook>) {
+    private fun remember(books:List<NovelBook>) {
         bookHints.update { current ->
             val next=LinkedHashMap(current)
-            books.forEach { book -> val key=key(mode,owner,book.path);next[key]=book.withFallback(next.remove(key)) }
+            books.forEach { book -> val key=book.path;next[key]=book.withFallback(next.remove(key)) }
             while(next.size>256)next.remove(next.keys.first())
             next
         }
@@ -156,7 +155,8 @@ class PortableNovelRepository(
     private suspend fun api(mode:RequestMode,owner:String,segments:List<String>,query:Map<String,String> = emptyMap(),selected:CopyMangaClient=client,fallback:Boolean=true):JsonObject {
         val generation=session(mode,owner);require(segments.all{it.isNotBlank()})
         val path="/api/v3/"+segments.joinToString("/"){it.encodeURLPathPart()}
-        val key=NovelTextDocument.sha256(owner+"\u0000"+mode.name+"\u0000"+path+"?"+query.entries.joinToString("&"){it.key.encodeURLParameter()+"="+it.value.encodeURLParameter()})
+        val semanticQuery=query.entries.filter { it.key !in setOf("platform", "_update", "free_type") }.sortedBy { it.key }
+        val key=NovelTextDocument.sha256(path+"?"+semanticQuery.joinToString("&"){it.key.encodeURLParameter()+"="+it.value.encodeURLParameter()})
         val cacheGeneration=cache.generation
         try {
             val result=selected.results(ApiRequest(path,query=query.toList(),mode=mode))

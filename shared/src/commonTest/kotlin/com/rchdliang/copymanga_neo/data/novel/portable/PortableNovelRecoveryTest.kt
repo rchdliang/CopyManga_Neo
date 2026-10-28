@@ -17,6 +17,38 @@ import io.ktor.http.*
 import kotlin.test.*
 
 class PortableNovelRecoveryTest {
+    @Test fun publicDetailAndDirectoryFallbackAreSharedAcrossAccountsAndProtocols() = runTest {
+        val files = Files()
+        val cache = VerifiedPortableNovelCache(files)
+        var offline = false
+        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))
+        val engine = HttpClient(MockEngine { request ->
+            if (offline) throw com.rchdliang.copymanga_neo.domain.platform.PlatformIOException("offline")
+            val result = if (request.url.encodedPath.endsWith("/volumes"))
+                """{"list":[{"id":"v1","name":"Volume","index":1}]}"""
+            else """{"book":{"path_word":"book","name":"Public title","author":[]}}"""
+            respond("""{"code":200,"results":$result}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val identity = object : com.rchdliang.copymanga_neo.data.remote.portable.PortableOfficialIdentity {
+            override val tapString = "synthetic-test-key"
+            override val loginDate = "2026-10-28 12:00:00.000Z"
+            override fun dateHeader() = "2026.10.28"
+            override fun resolve(settings: com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings) = settings.copy(
+                pseudoId = "test-pseudo", umString = "test-um", device = "test-device", deviceInfo = "test-info", buildTime = "test-build")
+        }
+        val client = CopyMangaClient(engine, state, identity = identity)
+        try {
+            val repository = PortableNovelRepository(client, cache)
+            val book = repository.detail(RequestMode.WEB, "guest", "book").getOrThrow()
+            val volumes = repository.volumes(RequestMode.WEB, "guest", "book").getOrThrow()
+            offline = true
+            state.update { it.copy(settings = it.settings.copy(requestMode = RequestMode.OFFICIAL_APP),
+                appSession = com.rchdliang.copymanga_neo.data.remote.portable.PortableSession("token", "user:another", "another")) }
+            assertEquals(book, repository.detail(RequestMode.OFFICIAL_APP, "user:another", "book").getOrThrow())
+            assertEquals(volumes, repository.volumes(RequestMode.OFFICIAL_APP, "user:another", "book").getOrThrow())
+            assertEquals(2, files.list("novel/metadata").size)
+        } finally { client.close(); engine.close() }
+    }
     private class Files : CacheStorage {
         val data = mutableMapOf<String, ByteArray>()
         override suspend fun read(path: String, limit: Int) = data[path]?.also { require(it.size <= limit) }

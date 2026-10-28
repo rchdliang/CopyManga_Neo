@@ -32,7 +32,7 @@ class ReaderCommentModels(
     private val entries = mutableMapOf<String, Entry>()
     private val drafts = mutableMapOf<String, CommentDraftSnapshot>()
     private var retained = emptySet<String>()
-    private fun ownerKey() = sessions.getReadingSessionSync()?.let { it.mode to it.owner }
+    private fun ownerKey() = sessions.getReadingSessionSync()?.let { it.owner }
     private var owner = ownerKey()
     internal val residentChapterCount get() = entries.size
 

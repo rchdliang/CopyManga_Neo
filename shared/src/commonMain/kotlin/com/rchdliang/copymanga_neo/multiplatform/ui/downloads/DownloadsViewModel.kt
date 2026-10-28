@@ -69,7 +69,6 @@ class DownloadsViewModel constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
-    private var displayedSession: LocalReadingSession? = null
 
     private data class Contents(
         val session: LocalReadingSession?,
@@ -100,9 +99,7 @@ class DownloadsViewModel constructor(
                 sessions.cacheReadyFlow, sessions.sessionChanges
             ) { comics, cached, ready, _ ->
                 val session = if (ready) sessions.getReadingSessionSync() else null
-                val owned = if (session?.owner == null) emptyList() else cached.filter {
-                    it.visibleInDownloads && it.owner == session.owner && it.mode == session.mode
-                }
+                val owned = cached.filter { it.visibleInDownloads }
                 val books = comics.map { DownloadedBookItem.Comic(it) } +
                         owned.groupBy { it.book.path }.values.map { volumes ->
                             DownloadedBookItem.Novel(
@@ -115,28 +112,19 @@ class DownloadsViewModel constructor(
             }
             combine(contents, downloadRepository.getDownloadProgress()) { content, progress ->
                 content to progress.values.filter {
-                    it.status != DownloadTaskStatus.COMPLETED &&
-                            (it.kind == DownloadKind.COMIC ||
-                                    (content.session?.owner != null && it.owner == content.session.owner &&
-                                            it.mode == content.session.mode))
+                    it.status != DownloadTaskStatus.COMPLETED
                 }.associateBy { it.taskKey }
             }.collect { (content, progress) ->
-                val changedSession = displayedSession != content.session
-                displayedSession = content.session
                 val validKeys = content.books.map { it.key }.toSet()
-                val comicKeys =
-                    content.books.filterIsInstance<DownloadedBookItem.Comic>().map { it.key }
-                        .toSet()
                 _uiState.update { state ->
                     val selected =
-                        state.selectedKeys.intersect(if (changedSession) comicKeys else validKeys)
+                        state.selectedKeys.intersect(validKeys)
                     state.copy(
                         isLoading = false,
                         downloadedBooks = content.books,
                         activeDownloads = progress,
                         selectedKeys = selected,
-                        isSelectionMode = state.isSelectionMode && content.books.isNotEmpty() &&
-                                (!changedSession || selected.isNotEmpty())
+                        isSelectionMode = state.isSelectionMode && content.books.isNotEmpty()
                     )
                 }
             }
@@ -197,7 +185,6 @@ class DownloadsViewModel constructor(
     fun deleteSelected() {
         val selected =
             _uiState.value.downloadedBooks.filter { it.key in _uiState.value.selectedKeys }
-        val session = sessions.getReadingSessionSync()
         if (selected.isEmpty()) return
         exitSelectionMode()
         viewModelScope.launch(exceptionHandler) {
@@ -211,12 +198,7 @@ class DownloadsViewModel constructor(
                         )
 
                         is DownloadedBookItem.Novel -> {
-                            check(
-                                session != null && session.owner == item.owner && session.mode == item.mode &&
-                                        sessions.getReadingSessionSync() == session
-                            ) { "账号或请求模式已变化，小说下载已保留" }
                             downloadRepository.cancelDownload(item.key)
-                            check(sessions.getReadingSessionSync() == session) { "账号或请求模式已变化，小说缓存已保留" }
                             novels.removeBook(item.mode, item.owner, item.info.book.path)
                                 .fold(onSuccess = {}, onFailure = { throw it })
                         }

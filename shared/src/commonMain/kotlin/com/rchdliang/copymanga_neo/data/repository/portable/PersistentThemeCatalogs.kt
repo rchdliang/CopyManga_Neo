@@ -23,15 +23,15 @@ class MemoryComicThemeCatalog:PortableComicThemeCatalog {
     override suspend fun save(themes:List<ComicFilterOption>) { mutable.value=themes }
 }
 class MemoryNovelThemeCatalog:PortableNovelThemeCatalog {
-    private val mutable=MutableStateFlow<Map<RequestMode,List<NovelTag>>>(emptyMap())
-    override fun get(mode:RequestMode)=mutable.value[mode]?:NovelThemeDefaults.themes
-    override suspend fun save(mode:RequestMode,themes:List<NovelTag>) { mutable.update{it+(mode to themes)} }
+    private val mutable=MutableStateFlow<List<NovelTag>>(NovelThemeDefaults.themes)
+    override fun get(mode:RequestMode)=mutable.value
+    override suspend fun save(mode:RequestMode,themes:List<NovelTag>) { mutable.value=themes }
 }
 
 @Serializable
 private data class ThemeCatalogDocument(
     val comicThemes:List<ComicFilterOption> = ComicFilterDefaults.themes,
-    val novelThemes:Map<RequestMode,List<NovelTag>> = emptyMap(),
+    val novelThemes:List<NovelTag> = emptyList(),
     val comicEntries:Map<String,CachedComicThemes> = emptyMap(),
 )
 
@@ -57,7 +57,7 @@ class PersistentThemeCatalogs(private val storage:DocumentStorage):
         return try {
             val restored=storage.read(KEY)?.let{json.decodeFromString(ThemeCatalogDocument.serializer(),it)}?:ThemeCatalogDocument()
             require(restored.comicThemes.all{it.name.isNotBlank()&&it.pathWord.isNotBlank()&&it.count!=null&&it.count>=0})
-            require(restored.novelThemes.values.flatten().all{it.name.isNotBlank()&&it.path.isNotBlank()&&it.count!=null&&it.count>=0})
+            require(restored.novelThemes.all{it.name.isNotBlank()&&it.path.isNotBlank()&&it.count!=null&&it.count>=0})
             document=restored.copy(comicEntries=restored.comicEntries.filter { (path,value)->path.isNotBlank()&&value.themes.all{it.name.isNotBlank()} })
             readable=true;initialized=true;publish();Result.success(Unit)
         } catch(error:CancellationException) { throw error
@@ -65,10 +65,10 @@ class PersistentThemeCatalogs(private val storage:DocumentStorage):
             initialized=true;readable=false;mutableError.value="标签缓存读取失败，原数据已保留";Result.failure(error)
         }
     }
-    override fun get(mode:RequestMode)=mutableNovel.value[mode]?:NovelThemeDefaults.themes
+    override fun get(mode:RequestMode)=mutableNovel.value.ifEmpty { NovelThemeDefaults.themes }
     override suspend fun save(path:String,themes:CachedComicThemes)=update { it.copy(comicEntries=it.comicEntries+(path to themes)) }
     override suspend fun save(themes:List<ComicFilterOption>)=update { it.copy(comicThemes=themes) }
-    override suspend fun save(mode:RequestMode,themes:List<NovelTag>)=update { it.copy(novelThemes=it.novelThemes+(mode to themes)) }
+    override suspend fun save(mode:RequestMode,themes:List<NovelTag>)=update { it.copy(novelThemes=themes) }
     private suspend fun update(transform:(ThemeCatalogDocument)->ThemeCatalogDocument)=mutex.withLock {
         if(!initialized)initializeLocked()
         document=transform(document);publish()
@@ -83,5 +83,5 @@ class PersistentThemeCatalogs(private val storage:DocumentStorage):
         mutableThemes.value=document.comicThemes
         mutableNovel.value=document.novelThemes
     }
-    private companion object { const val KEY="public-theme-catalogs" }
+    private companion object { const val KEY="shared-public-theme-catalogs" }
 }

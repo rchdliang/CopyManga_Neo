@@ -286,12 +286,17 @@ class PortableAppGraphTest {
             networkState.value = networkState.value.copy(requestMode = RequestMode.OFFICIAL_APP)
             revision.value++
             runCurrent()
-            assertNull(vm.state.value.book)
+            assertEquals(seed, vm.state.value.book)
             assertTrue(vm.state.value.epoch > 0)
             vm.show(seed); runCurrent()
             release.complete(Unit); runCurrent()
             assertEquals("owner-b", vm.state.value.book?.brief)
             assertEquals(listOf(RequestMode.WEB to "owner-a", RequestMode.OFFICIAL_APP to "owner-b"), calls)
+            current = LocalReadingSession(RequestMode.WEB, "owner-c", 2)
+            revision.value++; runCurrent()
+            vm.show(seed); runCurrent()
+            assertEquals("owner-b", vm.state.value.book?.brief) // Public metadata is reused; no old request is replayed.
+            assertEquals(2, calls.size)
         } finally { release.complete(Unit); vm.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); deleteNovelPreviewTemp(root) }
     }
 

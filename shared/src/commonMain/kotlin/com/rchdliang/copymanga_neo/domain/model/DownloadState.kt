@@ -4,8 +4,9 @@ package com.rchdliang.copymanga_neo.domain.model
 enum class DownloadKind { COMIC, NOVEL }
 
 fun comicDownloadKey(path: String) = "comic:${path.length}:$path"
+/** 下载内容按作品共享；mode/owner 仅保留调用方的请求来源信息。 */
 fun novelDownloadKey(mode: RequestMode, owner: String, path: String) =
-    "novel:${mode.name}:${owner.length}:$owner:${path.length}:$path"
+    "novel:${path.length}:$path"
 
 @kotlinx.serialization.Serializable
 enum class ChapterDownloadStatus { NOT_DOWNLOADED, WAITING, DOWNLOADING, DOWNLOADED, ERROR }
@@ -73,7 +74,7 @@ sealed interface BookDownloadTask {
 
 /** 同一持久任务追加单元时保留已有完成结果，只重试本次明确选中的失败项。 */
 fun BookDownloadTask.mergeRequest(request: BookDownloadTask): BookDownloadTask {
-    require(taskKey == request.taskKey && kind == request.kind) { "不能合并不同作品或会话的下载任务" }
+    require(taskKey == request.taskKey && kind == request.kind) { "不能合并不同类型或作品的下载任务" }
     val requested = request.items.map { it.id }.toSet()
     val known = items.map { it.id }.toSet()
     return withItems(items.map {
@@ -83,7 +84,7 @@ fun BookDownloadTask.mergeRequest(request: BookDownloadTask): BookDownloadTask {
 }
 
 fun NovelDownloadTask.matches(session: LocalReadingSession?): Boolean =
-    session != null && session.mode == mode && session.owner == owner
+    session?.owner != null
 
 @kotlinx.serialization.Serializable
 data class ComicDownloadTask(

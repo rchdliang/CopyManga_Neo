@@ -8,6 +8,41 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
 class PortableUserRepositoryTest {
+    @Test fun accountPasswordPreferencesAreSharedButModeTokensAndOtherAccountsAreNot() = runTest {
+        val identity = AppCredentialIdentity("1.0", "1", "pseudo", "um", "device", "info", "build")
+        val storage = object : SecureCredentialStorage {
+            override val persistent = true
+            var values = mapOf(
+                RequestMode.WEB to StoredCredential(PortableSession("web-token", "user:alice", "alice")),
+                RequestMode.OFFICIAL_APP to StoredCredential(PortableSession("app-token", "user:alice", "alice"), appIdentity = identity))
+            override suspend fun readAll() = values
+            override suspend fun writeAll(values: Map<RequestMode, StoredCredential>) { this.values = values }
+        }
+        val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))
+        val engine = HttpClient(MockEngine { error("No request should be sent") })
+        val client = CopyMangaClient(engine, state)
+        try {
+            val user = PortableUserRepository(client, storage)
+            user.restoreSecureSessions()
+            user.saveCredentials("alice", "shared-password", true, true, state.snapshot.generation)
+            assertEquals("web-token", storage.read(RequestMode.WEB)!!.session.token)
+            assertEquals("app-token", storage.read(RequestMode.OFFICIAL_APP)!!.session.token)
+            state.update { it.copy(settings = it.settings.copy(requestMode = RequestMode.OFFICIAL_APP)) }
+            assertEquals("shared-password", user.getSavedPasswordSync())
+            assertTrue(user.getAutoLoginSync())
+            user.saveCredentials("alice", "", false, false, state.snapshot.generation)
+            assertTrue(storage.values.values.all { !it.rememberPassword && it.savedPassword == null })
+            assertEquals("web-token", storage.read(RequestMode.WEB)!!.session.token)
+
+            storage.values = storage.values + (RequestMode.WEB to StoredCredential(
+                PortableSession("bob-token", "user:bob", "bob"), "bob", "bob-password", true))
+            val reloaded = PortableUserRepository(client, storage)
+            reloaded.restoreSecureSessions()
+            reloaded.saveCredentials("alice", "alice-password", true, false, state.snapshot.generation)
+            assertEquals("bob-password", storage.read(RequestMode.WEB)!!.savedPassword)
+            assertEquals("bob-token", storage.read(RequestMode.WEB)!!.session.token)
+        } finally { client.close(); engine.close() }
+    }
     @Test fun savingPreferencesRollsBackIfNetworkChangesDuringSecureWrite()=runTest {
         val initial=StoredCredential(PortableSession("existing-token","owner","user"),savedUsername="user")
         val state=PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB)))

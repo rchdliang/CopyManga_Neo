@@ -22,7 +22,7 @@ private data class MetadataDocument(val accessed: Long, val value: kotlinx.seria
 
 @Serializable
 private data class VolumeManifest(
-    val version: Int = 2,
+    val version: Int = 3,
     val mode: RequestMode,
     val owner: String,
     @SerialName("last_accessed") val lastAccessed: Long,
@@ -34,8 +34,8 @@ private data class VolumeManifest(
 )
 
 /**
- * Version-2 Android-compatible manifests and content-addressed text. Every read validates
- * ownership, raw text digest, official ranges and individual image digests before exposing URIs.
+ * Shared public volume cache. Mode and owner retain provenance only; every read validates
+ * book/volume identity, raw text digest, official ranges and individual image digests.
  */
 class VerifiedPortableNovelCache(
     private val storage: CacheStorage,
@@ -46,11 +46,11 @@ class VerifiedPortableNovelCache(
     override val generation: Long get() = cacheGeneration.value
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val digestPattern = Regex("[0-9a-f]{64}")
-    private val root = "novel/volumes"
+    private val root = "novel/shared-volumes"
 
-    private fun directory(mode: RequestMode, owner: String, path: String, id: String): String {
-        require(owner.isNotBlank() && path.isNotBlank() && id.isNotBlank()) { "小说缓存身份无效" }
-        val parts = listOf(mode.name, owner, path, id)
+    private fun directory(path: String, id: String): String {
+        require(path.isNotBlank() && id.isNotBlank()) { "小说缓存身份无效" }
+        val parts = listOf(path, id)
         require(parts.none { '\u0000' in it }) { "小说缓存身份包含无效字符" }
         return "$root/${NovelTextDocument.sha256(parts.joinToString("\u0000"))}"
     }
@@ -66,7 +66,7 @@ class VerifiedPortableNovelCache(
     private data class Loaded(val manifest: VolumeManifest, val reading: NovelReadingVolume)
     private suspend fun load(directory: String, repair: Boolean = true): Loaded? {
         var manifest = manifest(directory) ?: return null
-        require(manifest.version == 2) { "小说缓存格式无效" }
+        require(manifest.version == 3) { "小说缓存格式无效" }
         require(digestPattern.matches(manifest.textHash) && manifest.textFile == "text.${manifest.textHash}.txt") {
             "小说缓存正文身份无效"
         }
@@ -74,7 +74,7 @@ class VerifiedPortableNovelCache(
             ?: throw PlatformIOException("小说缓存正文缺失")
         require(ReadingContentHash.sha256(bytes) == manifest.textHash) { "小说缓存正文校验失败" }
         val reading = PortableNovelJson.parseReading(manifest.result.toString(), bytes)
-        require(directory == directory(manifest.mode, manifest.owner, reading.book.path, reading.volume.id)) {
+        require(directory == directory(reading.book.path, reading.volume.id)) {
             "小说缓存身份无效"
         }
         val urls = reading.sections.filter { it.type == 2 }.mapNotNull { it.image }.distinct()
@@ -105,10 +105,9 @@ class VerifiedPortableNovelCache(
         storage.list(directory).filterNot { it in retained }.forEach { storage.remove(it) }
     }
     override suspend fun read(mode: RequestMode, owner: String, path: String, id: String): NovelReadingVolume? = mutex.withLock {
-        val dir = directory(mode, owner, path, id)
+        val dir = directory(path, id)
         val loaded = load(dir) ?: return@withLock null
-        require(loaded.manifest.mode == mode && loaded.manifest.owner == owner &&
-            loaded.reading.book.path == path && loaded.reading.volume.id == id) { "小说缓存身份不一致" }
+        require(loaded.reading.book.path == path && loaded.reading.volume.id == id) { "小说缓存身份不一致" }
         writeManifest(dir, loaded.manifest.copy(lastAccessed = now()))
         loaded.reading
     }
@@ -119,7 +118,7 @@ class VerifiedPortableNovelCache(
         require(metadataJson.encodeToByteArray().size <= JSON_LIMIT && textBytes.size <= TEXT_LIMIT) {
             "小说缓存资源超过大小限制"
         }
-        val dir = directory(mode, owner, path, id)
+        val dir = directory(path, id)
         // Validate before either file is published, retaining the prior revision on any failure.
         val reading = PortableNovelJson.parseReading(metadataJson, textBytes)
         require(reading.book.path == path && reading.volume.id == id) { "官方返回的小说或分卷标识不一致" }
@@ -145,7 +144,7 @@ class VerifiedPortableNovelCache(
         mode: RequestMode, owner: String, path: String, id: String, url: String, bytes: ByteArray
     ): NovelReadingVolume = mutex.withLock {
         require(bytes.isNotEmpty() && bytes.size <= IMAGE_LIMIT) { "小说插图资源超过大小限制或为空" }
-        val dir = directory(mode, owner, path, id)
+        val dir = directory(path, id)
         val loaded = load(dir) ?: throw PlatformIOException("请先缓存小说正文")
         require(loaded.reading.sections.any { it.type == 2 && it.image == url }) { "插图不属于当前分卷" }
         val key = NovelTextDocument.sha256(url)
@@ -154,7 +153,7 @@ class VerifiedPortableNovelCache(
         requireNotNull(load(dir)).reading
     }
     override suspend fun markDownloadRequested(mode: RequestMode, owner: String, path: String, id: String) = mutex.withLock {
-        val dir = directory(mode, owner, path, id)
+        val dir = directory(path, id)
         val loaded = load(dir) ?: throw PlatformIOException("请先缓存小说正文")
         writeManifest(dir, loaded.manifest.copy(downloadRequested = true))
     }
@@ -175,7 +174,7 @@ class VerifiedPortableNovelCache(
         }.sortedByDescending { it.lastAccessedAt }
     override suspend fun list(): List<NovelCachedVolume> = mutex.withLock { scan() }
     override suspend fun removeVolume(mode: RequestMode, owner: String, path: String, id: String) = mutex.withLock {
-        storage.remove(directory(mode, owner, path, id))
+        storage.remove(directory(path, id))
     }
     override suspend fun removeBook(mode: RequestMode, owner: String, path: String) = mutex.withLock {
         // Read identities from manifests, even if a damaged text file makes a volume unlistable.
@@ -185,8 +184,8 @@ class VerifiedPortableNovelCache(
                 ?: continue
             val book = (manifest.result["book"] as? JsonObject)?.let(PortableNovelJson::book) ?: continue
             val volume = (manifest.result["volume"] as? JsonObject)?.let(PortableNovelJson::volume) ?: continue
-            if (manifest.mode == mode && manifest.owner == owner && book.path == path &&
-                dir == directory(mode, owner, path, volume.id)) storage.remove(dir)
+            if (book.path == path &&
+                dir == directory(path, volume.id)) storage.remove(dir)
         }
     }
     override suspend fun clear() = mutex.withLock {

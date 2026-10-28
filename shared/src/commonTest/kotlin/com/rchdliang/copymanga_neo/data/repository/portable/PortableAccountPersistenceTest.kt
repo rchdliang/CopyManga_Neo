@@ -62,7 +62,7 @@ class PortableAccountPersistenceTest {
         } finally { client.close(); http.close() }
     }
 
-    @Test fun verifiedLoginInvalidatesOnlySameAccountOtherModeAndRetainsItsPassword() = runTest {
+    @Test fun verifiedLoginSharesSameAccountPasswordAndPreservesOtherProtocolToken() = runTest {
         for (otherName in listOf("alice", "bob")) {
             val other = credential(otherName, app)
             val storage = Storage(mapOf(web to credential("alice", web), app to other))
@@ -74,10 +74,10 @@ class PortableAccountPersistenceTest {
                 assertEquals("new-token", state.snapshot.webSession.token)
                 val saved = storage.values.getValue(app)
                 if (otherName == "alice") {
-                    assertEquals("", state.snapshot.appSession.token)
-                    assertEquals("", saved.session.token)
-                    assertFalse(saved.autoLogin)
-                    assertEquals("old-password", saved.savedPassword)
+                    assertEquals(other.session.token, state.snapshot.appSession.token)
+                    assertEquals(other.session.token, saved.session.token)
+                    assertTrue(saved.autoLogin)
+                    assertEquals("new-password", saved.savedPassword)
                 } else assertEquals(other, saved)
             } finally { client.close(); http.close() }
         }
@@ -120,7 +120,7 @@ class PortableAccountPersistenceTest {
         }
     }
 
-    @Test fun unrememberedLoginStillInvalidatesOtherModeUsingTransientInputAlias() = runTest {
+    @Test fun unrememberedLoginSharesPreferenceUsingAliasWithoutDiscardingOtherModeToken() = runTest {
         for (otherName in listOf("login-alias", "alice", "bob")) {
             val other = credential(otherName, app)
             val storage = Storage(mapOf(app to other))
@@ -133,10 +133,10 @@ class PortableAccountPersistenceTest {
                 assertNull(storage.values.getValue(web).savedPassword)
                 val saved = storage.values.getValue(app)
                 if (otherName == "bob") assertEquals(other, saved) else {
-                    assertEquals("", saved.session.token)
+                    assertEquals(other.session.token, saved.session.token)
                     assertFalse(saved.autoLogin)
-                    assertEquals(other.savedUsername, saved.savedUsername)
-                    assertEquals(other.savedPassword, saved.savedPassword)
+                    assertNull(saved.savedUsername)
+                    assertNull(saved.savedPassword)
                 }
             } finally { client.close(); http.close() }
         }
@@ -156,7 +156,7 @@ class PortableAccountPersistenceTest {
                     assertEquals("imported-password", saved.savedPassword)
                     assertTrue(saved.rememberPassword)
                     assertFalse(saved.autoLogin)
-                    assertTrue(saved.session.token.isEmpty())
+                    assertEquals(other?.session?.token.orEmpty(), saved.session.token)
                 } else {
                     assertEquals(other.savedPassword, saved.savedPassword)
                     assertEquals(other.savedUsername, saved.savedUsername)
@@ -177,7 +177,7 @@ class PortableAccountPersistenceTest {
             storage.afterWrite = {
                 storage.afterWrite = null
                 assertEquals("imported-token", storage.values.getValue(web).session.token)
-                assertEquals("", storage.values.getValue(app).session.token)
+                assertEquals(initial.getValue(app).session.token, storage.values.getValue(app).session.token)
                 error("snapshot acknowledgement failed")
             }
             assertTrue(repository.importLoginCredential(imported()).isFailure)

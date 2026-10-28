@@ -13,6 +13,20 @@ import kotlin.test.*
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ComicMetadataRepositoryTest {
+    @Test fun publicCardMetadataSurvivesAccountModeAndHostChanges() = runTest {
+        val f = Fixture(this)
+        try {
+            f.repo.preload(listOf("book")); runCurrent()
+            assertEquals(1, f.calls)
+            val scope = f.repo.cacheScope.value
+            f.state.update { it.copy(settings = it.settings.copy(requestMode = RequestMode.OFFICIAL_APP, apiHost = "other.example"),
+                appSession = PortableSession("other-token", "user:other", "other")) }
+            f.repo.preload(listOf("book")); runCurrent()
+            assertEquals("public summary", f.repo.metadata.value["book"]?.brief)
+            assertEquals(scope, f.repo.cacheScope.value)
+            assertEquals(1, f.calls)
+        } finally { f.close() }
+    }
     private class Storage : DocumentStorage {
         val documents = mutableMapOf<String, String>()
         override suspend fun read(key: String) = documents[key]

@@ -12,7 +12,7 @@ data class NovelCacheProgress(
     val bytes: Long = 0L
 )
 
-/** 经过正文及插图摘要校验的本地卷，账号和请求模式是缓存身份的一部分。 */
+/** 经过正文及插图摘要校验的共享本地卷；账号和请求模式仅记录下载来源。 */
 @kotlinx.serialization.Serializable
 data class NovelCachedVolume(
     val mode: RequestMode,

@@ -124,7 +124,8 @@ class DownloadManagerTest {
         }
     }
     private class Fixture(scope: CoroutineScope, val documents: Documents = Documents(), val files: Files = Files(),
-                          network: NetworkSettingsRepository = NetworkSettings) {
+                          network: NetworkSettingsRepository = NetworkSettings,
+                          novels: NovelRepository = Novels, sessions: ReadingSessionRepository = Sessions) {
         val records = DownloadRecords(documents, files)
         val queue = DownloadQueueStore(documents)
         val manga = Manga()
@@ -141,12 +142,34 @@ class DownloadManagerTest {
                 override fun onWorkAvailable() { foregroundRequests++ }
                 override suspend fun awaitReady() { onWorkAvailable(); foregroundGate?.await() }
             },
-            queue, policy, network, Comments(records), LocalDownloadAccess(), Novels, Sessions, scope)
+            queue, policy, network, Comments(records), LocalDownloadAccess(), novels, sessions, scope)
     }
     private fun task() = ComicDownloadTask("book", "作品", null, listOf(ChapterDownloadItem(
         ChapterInfo(1, "chapter", 1, 1, null, "第一章", "id", "book", null, "default", 0, null, null, null, null),
         ChapterDownloadStatus.WAITING
     )), "作者", "连载", null, null, taskId = "task")
+
+    @Test fun publicNovelTaskUsesCurrentAccountAndApiWhenResumed() = runTest {
+        val book = NovelBook("novel", "Novel", "", emptyList())
+        val volume = NovelVolume("volume", "Volume", 1, null, null)
+        val requests = mutableListOf<Pair<RequestMode, String>>()
+        val novels = object : NovelRepository by Novels {
+            override suspend fun readVolume(mode: RequestMode, owner: String, path: String, id: String,
+                allImages: Boolean, refresh: Boolean, onProgress: (NovelCacheProgress) -> Unit, forDownload: Boolean): Result<NovelReadingVolume> {
+                requests += mode to owner
+                return Result.success(NovelReadingVolume(book, volume, emptyList(),
+                    com.rchdliang.copymanga_neo.domain.reading.NovelTextDocument.decode("text".encodeToByteArray(), "UTF-8"), emptyMap(), true))
+            }
+        }
+        val sessions = object : ReadingSessionRepository by Sessions {
+            override fun getReadingSessionSync() = LocalReadingSession(RequestMode.OFFICIAL_APP, "user:current", 2)
+        }
+        val f = Fixture(backgroundScope, novels = novels, sessions = sessions)
+        runCurrent()
+        f.manager.enqueue(NovelDownloadTask(RequestMode.WEB, "user:old", book, listOf(NovelDownloadItem(volume))))
+        runCurrent()
+        assertEquals(listOf(RequestMode.OFFICIAL_APP to "user:current"), requests)
+    }
 
     @Test fun workerCountIsBoundedAndPauseCancelsEveryInFlightImage() = runTest {
         val f = Fixture(backgroundScope)

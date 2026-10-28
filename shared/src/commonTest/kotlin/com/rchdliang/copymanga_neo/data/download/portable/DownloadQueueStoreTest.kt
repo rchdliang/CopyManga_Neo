@@ -43,7 +43,7 @@ class DownloadQueueStoreTest {
     )
 
     @Test
-    fun samePathAcrossContentAndAccountsUsesIndependentPersistentKeys() = runTest {
+    fun publicNovelTaskIsSharedAcrossAccountsAndModesButSeparateFromComic() = runTest {
         val dao = MemoryQueue()
         val store = DownloadQueueStore(dao)
         listOf(
@@ -52,14 +52,12 @@ class DownloadQueueStoreTest {
             novel("user:b"),
             novel(mode = RequestMode.OFFICIAL_APP)
         ).forEach { store.save(it) }
-        assertEquals(4, store.load().size)
-        assertEquals(4, store.load().map { it.taskKey }.toSet().size)
+        assertEquals(2, store.load().size)
+        assertEquals(2, store.load().map { it.taskKey }.toSet().size)
         store.remove(novel().taskKey)
         assertEquals(
             setOf(
-                comic().taskKey,
-                novel("user:b").taskKey,
-                novel(mode = RequestMode.OFFICIAL_APP).taskKey
+                comic().taskKey
             ),
             store.load().map { it.taskKey }.toSet()
         )
@@ -120,16 +118,16 @@ class DownloadQueueStoreTest {
     }
 
     @Test
-    fun taskCannotResumeUnderAnotherAccountOrMode() {
+    fun publicTaskCanResumeUsingAnotherAccountOrMode() {
         assertTrue(novel().matches(LocalReadingSession(RequestMode.WEB, "user:a", 9)))
-        assertFalse(novel().matches(LocalReadingSession(RequestMode.WEB, "user:b", 9)))
-        assertFalse(novel().matches(LocalReadingSession(RequestMode.OFFICIAL_APP, "user:a", 9)))
+        assertTrue(novel().matches(LocalReadingSession(RequestMode.WEB, "user:b", 9)))
+        assertTrue(novel().matches(LocalReadingSession(RequestMode.OFFICIAL_APP, "user:a", 9)))
         assertFalse(novel().matches(null))
     }
 
     @Test
-    fun mergingDifferentOwnersIsRejected() {
-        kotlin.test.assertFailsWith<IllegalArgumentException> { novel().mergeRequest(novel("user:b")) }
+    fun mergingDifferentOwnersKeepsOnePublicTask() {
+        assertEquals(1, novel().mergeRequest(novel("user:b")).items.size)
     }
 
     private class MemoryQueue : DocumentStorage {
