@@ -18,7 +18,13 @@ object PortableNovelJson {
     fun shelfPage(result:JsonObject,offset:Int):NovelShelfPage {
         require(result["offset"]?.jsonPrimitive?.int==offset){"小说书架分页位置无效"}
         val rows=requireNotNull(result["list"] as? JsonArray){"小说书架缺少列表"}
-        val entries=rows.map { element->val row=element.jsonObject;val id=requireNotNull(row["uuid"]?.jsonPrimitive?.intOrNull){"小说收藏记录缺少 ID"};require(id>0){"小说收藏记录 ID 无效"};NovelShelfEntry(id,book(requireNotNull(row["book"] as? JsonObject))) }
+        val entries = rows.map { element ->
+            val row = element.jsonObject
+            val id = requireNotNull(row["uuid"]?.jsonPrimitive?.intOrNull) { "小说收藏记录缺少 ID" }
+            require(id > 0) { "小说收藏记录 ID 无效" }
+            val bookJson = requireNotNull(row["book"] as? JsonObject)
+            NovelShelfEntry(id, book(bookJson), text(bookJson, "last_chapter_id"), text(bookJson, "last_chapter_name"))
+        }
         return NovelShelfPage(entries,requireNotNull(result["total"]).jsonPrimitive.int,offset,requireNotNull(result["limit"]).jsonPrimitive.int)
     }
     fun sections(o:JsonObject,doc:NovelTextDocument):List<NovelSection> = requireNotNull(o["contents"] as? JsonArray){"小说目录缺失"}.map { value->

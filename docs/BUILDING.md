@@ -156,6 +156,29 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 `gradle.properties` 中的 Wasm 增量链接配置及堆大小用于当前工具链。遇到旧链接缓存错误时，先停止构建，再只清理相关的生成链接缓存；不要删除源文件、账号数据或其他平台产物。
 
+## CMP Android 与 Windows 正式发布草稿
+
+[CMP release draft](../.github/workflows/cmp-release.yml) 仅支持手动运行，且只允许选择 `CMP` 分支。不会响应 push、PR 或标签事件；不构建 Linux、Wasm、iOS。原 Android 自动工作流和多平台测试工作流保持独立。
+
+1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交到 CMP 后，在 Actions → CMP release draft → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
+2. 工作流固定运行开始时的提交，构建 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal）及 Windows x64 Native Image 安装程序。Android 会验证 APK 签名与非调试标志；两个平台都必须通过 App 协议配置核对。
+3. 两个平台均成功后，汇总附件并创建 `cmp-v<完整版本>` 的 **GitHub Release 草稿**，附带每个安装包的 SHA-256 文件和记录版本、提交、校验值的 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
+4. 从草稿下载最终安装包，在 Android 验证覆盖安装、数据保留、登录、阅读和下载，在 Windows 验证安装、启动及升级；补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
+
+使用既有仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`，无需新增名称。前四项必须对应原发布密钥，以保持覆盖升级能力。复用的 `prepare-test-signing.py` 虽保留历史文件名，但只负责安全恢复签名材料；正式流程执行的是 `:app:assembleRelease`。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
+
+若本地签名文件位于另一个 checkout，本地打包时需单独准备 CMP 的被忽略配置，并按原文件所在目录解析相对 `storeFile`；不能直接假设相对路径在 CMP 目录仍有效。这与 Actions 使用仓库 Secrets 是两条独立路径。
+
+工作流不自动修改版本号、不移动现有标签、不覆盖已公开 Release。相同版本的已有标签必须指向同一提交；已有草稿也必须固定到同一提交，才能重跑草稿任务恢复上传，并保留人工编辑的发布说明。不同提交需要新版本，或由维护者检查并处理未发布草稿；不要删除已公开版本来重用版本号。若构建失败，不会进入草稿任务；若附件上传中断，草稿可能不完整，应重跑失败任务并等待成功后再验收。中间 Actions 产物保留七天，过期后需重新构建。
+
+发布自动化的本地检查（不会访问 GitHub 或创建 Release）：
+
+```sh
+node --test tests/ci/test_cmp_release.cjs
+python -m unittest discover -s tests/ci -p 'test_android_signing.py'
+python -m unittest discover -s tests/ci -p 'test_app_config.py'
+```
+
 ## CI 与检查
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。

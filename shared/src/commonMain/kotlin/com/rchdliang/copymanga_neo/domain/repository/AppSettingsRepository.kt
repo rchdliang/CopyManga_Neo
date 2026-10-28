@@ -25,5 +25,7 @@ interface AppSettingsRepository {
     /** 搜索结果与发现结果分别保存布局偏好。 */
     suspend fun getSearchCompactLayout(keywordSearch: Boolean): Result<Boolean>
     suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean): Result<Unit>
+    suspend fun getFavoritesNovelSelected(): Result<Boolean>
+    suspend fun setFavoritesNovelSelected(selected: Boolean): Result<Unit>
     suspend fun resetDefaults(): Result<Unit>
 }

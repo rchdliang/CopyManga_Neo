@@ -1,0 +1,168 @@
+name: CMP release draft
+run-name: CMP Android + Windows release draft (${{ github.sha }})
+
+# 仅手动启动；发布草稿必须由维护者验收后在 Releases 页面公开。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cmp-release-draft
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/CMP'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check release automation
+        run: node --test tests/ci/test_cmp_release.cjs
+      - name: Validate version and destination
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await require('./.github/scripts/cmp-release.cjs').prepare({github, context, core});
+
+  android:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Install Android SDK packages
+        run: |
+          ndk_version=$(sed -n 's/^ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+          test -n "$ndk_version"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'build-tools;37.0.0' 'cmake;3.22.1' "ndk;$ndk_version"
+      - name: Check signing and packaged configuration helpers
+        run: |
+          python3 -m unittest discover -s tests/ci -p 'test_android_signing.py'
+          python3 -m unittest discover -s tests/ci -p 'test_app_config.py'
+      - name: Restore existing release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python3 .github/scripts/prepare-test-signing.py
+      - name: Build signed release APKs
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease -PenableAbiSplits=true -PrequireOfficialAppConfig=true \
+            --no-daemon --no-configuration-cache --max-workers=1 --stacktrace
+      - name: Verify release APK signatures and configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: |
+          python3 .github/scripts/verify-app-config.py android 'app/build/outputs/apk/release/*.apk'
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+            test "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest debuggable "$apk")" = false
+          done
+      - name: Remove ephemeral signing material
+        if: ${{ always() }}
+        run: |
+          rm -f -- "$GITHUB_WORKSPACE/keystore.properties"
+          rm -rf -- "$RUNNER_TEMP/android-test-signing"
+      - name: Upload signed release APKs
+        uses: actions/upload-artifact@v6
+        with:
+          name: cmp-release-android-${{ github.run_id }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
+  windows:
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Check Windows build tools
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 compiler missing' }
+          "ISCC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          cmake --version
+          if ($LASTEXITCODE -ne 0) { throw 'CMake missing' }
+      - name: Build Windows x64 Native Image installer
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: |
+          ./gradlew :desktopApp:packageInnoSetup -PenableAndroid=false -PdesktopRuntime=native \
+            -PrequireOfficialAppConfig=true --no-daemon --no-configuration-cache --max-workers=1 \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            "-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8" --stacktrace
+      - name: Verify Windows packaged configuration
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python .github/scripts/verify-app-config.py desktop-native desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: cmp-release-windows-${{ github.run_id }}
+          path: |
+            desktopApp/build/installer/*-windows-x64-setup.exe
+            desktopApp/build/installer/*-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
+  draft:
+    needs: [android, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: cmp-release-android-${{ github.run_id }}
+          path: release-assets
+      - uses: actions/download-artifact@v8
+        with:
+          name: cmp-release-windows-${{ github.run_id }}
+          path: release-assets
+      - name: Validate assets and create or resume draft
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await require('./.github/scripts/cmp-release.cjs').publish({github, context, core});

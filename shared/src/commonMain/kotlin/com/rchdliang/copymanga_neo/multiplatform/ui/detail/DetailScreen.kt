@@ -639,7 +639,7 @@ fun DetailContent(
                                 modifier = Modifier.semantics { role = Role.RadioButton }
                             ) {
                                 Text(
-                                    text = group.name,
+                                    text = metadataText(group.name),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = LocalContentColor.current
                                 )

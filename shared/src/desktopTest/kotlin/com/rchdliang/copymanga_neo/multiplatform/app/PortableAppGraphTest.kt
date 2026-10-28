@@ -132,25 +132,80 @@ class PortableAppGraphTest {
         val graph = PortableAppGraph.create(services(root), backgroundScope)
         val calls = AtomicInteger()
         val requested = CompletableDeferred<Unit>()
+        val novelOffsets = mutableListOf<Int>()
+        var failSecondPage = true
+        val readingSession = graph.repositories.sessions.getReadingSessionSync()!!
+        val localRecords = MutableStateFlow(LocalReadingSnapshot(records = listOf(
+            LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
+            LocalReadingRecord(readingSession.owner!!, "novel", "novel-2", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
+            LocalReadingRecord("different-owner", "novel", "novel-1", "latest", "Latest", group = readingSession.mode.name, updatedAt = 2),
+            LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "latest", "Latest", group = "OTHER_MODE", updatedAt = 3)
+        )))
+        val localReading = object : com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository by graph.repositories.localReading {
+            override val snapshot = localRecords
+        }
+        val novelShelf = object : com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository by graph.repositories.novelShelf {
+            override suspend fun list(offset: Int): Result<NovelShelfPage> {
+                novelOffsets += offset
+                if (offset == 1 && failSecondPage) return Result.failure(Exception("offline"))
+                // The shelf API uses last_chapter_id for the latest novel volume too.
+                val json = kotlinx.serialization.json.Json.parseToJsonElement("""
+                    {"offset":$offset,"total":3,"limit":1,"list":[{"uuid":${offset + 1},"last_browse":null,
+                    "book":{"path_word":"novel-${offset + 1}","name":"Novel","last_chapter_id":"latest","last_chapter_name":"Latest"}}]}
+                """) as kotlinx.serialization.json.JsonObject
+                return Result.success(com.rchdliang.copymanga_neo.data.novel.portable.PortableNovelJson.shelfPage(json, offset))
+            }
+        }
         val users = object : com.rchdliang.copymanga_neo.domain.repository.UserRepository by graph.repositories.users {
             override fun isLoggedInSync() = true
         }
         val manga = object : MangaRepository by graph.repositories.manga {
             override suspend fun getFavoriteComics(): Result<List<FavoriteItem>> {
                 calls.incrementAndGet(); requested.complete(Unit)
-                return Result.success(emptyList())
+                return Result.success(listOf(FavoriteItem(1, null, null, null, FavoriteComic(
+                    "comic", true, "Comic", "comic", null, null, null, 0, null, null,
+                    "latest", "Latest", BrowseInfo("comic", "comic", "old", "Old")
+                ))))
             }
         }
         val model = com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesViewModel(
-            manga, users, graph.repositories.readingProgress, graph.repositories.novelShelf, autoStart = false)
+            manga, users, graph.repositories.readingProgress, novelShelf,
+            graph.repositories.appSettings, localReading, graph.repositories.sessions, autoStart = false)
         try {
             runCurrent()
             assertTrue(model.uiState.value.isLoggedIn)
             assertTrue(model.uiState.value.isLoading)
             assertEquals(0, calls.get())
+            assertTrue(novelOffsets.isEmpty())
             model.start(); model.start(); runCurrent(); requested.await()
             model.uiState.first { !it.isLoading }
             assertEquals(1, calls.get())
+            runCurrent()
+            assertEquals(listOf(0, 1), novelOffsets)
+            assertEquals(1, model.uiState.value.updatedNovelCount)
+            assertEquals(1, model.uiState.value.updatedComicCount)
+            assertEquals(2, model.uiState.value.updatedCount)
+            assertNotNull(model.uiState.value.novelLoadMoreError)
+            failSecondPage = false
+            model.retryMoreNovels(); runCurrent()
+            assertEquals(listOf(0, 1, 1, 2), novelOffsets)
+            assertEquals(3, model.uiState.value.novels.size)
+            assertEquals(2, model.uiState.value.updatedNovelCount) // Unread novel-3 is excluded.
+            assertEquals("Old", model.uiState.value.novelReadingProgress["novel-1"]?.name)
+            assertEquals("old", model.uiState.value.novelReadingProgress["novel-2"]?.chapter)
+            assertFalse(model.uiState.value.novelReadingProgress.containsKey("novel-3"))
+            assertEquals(3, model.uiState.value.updatedCount)
+            assertFalse(model.uiState.value.novelsHaveMore)
+            assertEquals(com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.COMIC, model.uiState.value.selectedKind)
+            localRecords.value = localRecords.value.copy(records = localRecords.value.records +
+                LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "latest", "Latest", group = readingSession.mode.name, updatedAt = 4))
+            runCurrent()
+            assertEquals(1, model.uiState.value.updatedNovelCount)
+            assertFalse("novel-1" in model.uiState.value.updatedNovelPaths)
+            assertEquals("Latest", model.uiState.value.novelReadingProgress["novel-1"]?.name)
+            model.selectKind(com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.NOVEL)
+            runCurrent()
+            assertTrue(graph.repositories.appSettings.getFavoritesNovelSelected().getOrThrow())
         } finally {
             model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
             root.toFile().deleteRecursively()

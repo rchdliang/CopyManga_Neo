@@ -10,9 +10,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import com.rchdliang.copymanga_neo.domain.model.NovelBook
 import com.rchdliang.copymanga_neo.domain.model.displayBookTitle
 import com.rchdliang.copymanga_neo.multiplatform.ui.search.SearchBookRow
@@ -103,13 +105,17 @@ fun NovelTransitionCard(
     compact: Boolean = true,
     isSelected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    selectionMode: Boolean = false
+    selectionMode: Boolean = false,
+    statusText: String? = null,
+    statusColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     NovelSharedTransitionProvider {
         if (compact) ComicCard(
             name = displayBookTitle(book.path, book.name),
             cover = book.cover,
             subtitle = book.authors.joinToString(" / ") { it.name }.ifBlank { "作者信息暂缺" },
+            statusText = statusText,
+            statusColor = statusColor,
             sharedTransitionKey = if (selectionMode) null else "novel:$source:${book.path}",
             comicPathWord = novelTransitionPath(book.path),
             enableExpansion = !selectionMode && onLongClick == null,

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,8 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -163,16 +166,25 @@ fun FavoritesContent(
         PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal) {
             FavoritesKind.entries.forEach { kind ->
                 val selected = uiState.selectedKind == kind
+                val updates = if (kind == FavoritesKind.COMIC) uiState.updatedComicCount else uiState.updatedNovelCount
                 Tab(
                     selected = selected,
+                    modifier = Modifier.semantics {
+                        if (updates > 0) stateDescription = "$updates 部${kind.label}有新内容"
+                    },
                     enabled = !uiState.isDeleting,
                     onClick = { onKindSelected(kind) },
                     text = {
-                        Text(
-                            kind.label,
-                            color = if (selected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                kind.label,
+                                color = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (updates > 0) Badge {
+                                Text(if (updates > 99) "99+" else updates.toString(), color = MaterialTheme.colorScheme.onError)
+                            }
+                        }
                     }
                 )
             }
@@ -257,8 +269,17 @@ fun FavoritesContent(
                             if (showingNovels) {
                                 items(uiState.novels, key = { "novel:${it.collectId}" }) { entry ->
                                     val book = entry.book
+                                    val progress = uiState.novelReadingProgress[book.path]
+                                    val (statusText, statusColor) = rememberReadingStatus(
+                                        hasRead = !progress?.chapter.isNullOrBlank(),
+                                        hasUnreadUpdate = book.path in uiState.updatedNovelPaths,
+                                        latestChapterName = entry.lastChapterName,
+                                        lastReadChapterName = progress?.name.orEmpty()
+                                    )
                                     NovelTransitionCard(
                                         book = book, source = "bookshelf",
+                                        statusText = statusText,
+                                        statusColor = statusColor,
                                         isSelected = entry.collectId in uiState.selectedIds,
                                         selectionMode = uiState.isSelectionMode,
                                         onClick = {
@@ -487,17 +508,32 @@ private fun SelectionBottomBar(
  */
 @Composable
 private fun rememberReadingStatus(comic: FavoriteComic): Pair<String, Color> {
+    return rememberReadingStatus(
+        hasRead = !comic.browse?.chapterUuid.isNullOrBlank(),
+        hasUnreadUpdate = comic.hasUnreadUpdate,
+        latestChapterName = comic.lastChapterName,
+        lastReadChapterName = comic.browse?.chapterName.orEmpty()
+    )
+}
+
+@Composable
+private fun rememberReadingStatus(
+    hasRead: Boolean,
+    hasUnreadUpdate: Boolean,
+    latestChapterName: String,
+    lastReadChapterName: String
+): Pair<String, Color> {
     return when {
-        comic.browse == null || comic.browse.chapterUuid.isNullOrBlank() -> {
+        !hasRead -> {
             "还未读过" to MaterialTheme.colorScheme.primary
         }
 
-        comic.hasUnreadUpdate -> {
-            "有新内容：${comic.lastChapterName}" to MaterialTheme.colorScheme.primary
+        hasUnreadUpdate -> {
+            (if (latestChapterName.isBlank()) "有新内容" else "有新内容：$latestChapterName") to MaterialTheme.colorScheme.primary
         }
 
         else -> {
-            "上次读到：${comic.browse.chapterName ?: ""}" to MaterialTheme.colorScheme.onSurfaceVariant
+            (if (lastReadChapterName.isBlank()) "已读过" else "上次读到：$lastReadChapterName") to MaterialTheme.colorScheme.onSurfaceVariant
         }
     }
 }

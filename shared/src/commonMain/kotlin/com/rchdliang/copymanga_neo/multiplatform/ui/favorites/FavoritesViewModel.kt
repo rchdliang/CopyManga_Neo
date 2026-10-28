@@ -4,11 +4,16 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
+import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.NovelShelfEntry
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
+import com.rchdliang.copymanga_neo.domain.repository.AppSettingsRepository
+import com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
+import com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
@@ -42,11 +47,17 @@ data class FavoritesUiState(
     val novelsLoadingMore: Boolean = false,
     val novelsError: String? = null,
     val novelLoadMoreError: String? = null,
-    val novelsHaveMore: Boolean = false
+    val novelsHaveMore: Boolean = false,
+    val updatedNovelPaths: Set<String> = emptySet(),
+    val novelReadingProgress: Map<String, LocalReadingRecord> = emptyMap()
 ) {
-    /** 角标按漫画计数，与卡片上的“有新内容”共用判定。 */
+    /** 按有新内容的作品计数，不是新增章节/卷数。 */
     val updatedComicCount: Int
         get() = if (isLoggedIn) favorites.count { it.comic.hasUnreadUpdate } else 0
+    val updatedNovelCount: Int
+        get() = if (isLoggedIn) updatedNovelPaths.size else 0
+    val updatedCount: Int
+        get() = updatedComicCount + updatedNovelCount
 }
 
 class FavoritesViewModel constructor(
@@ -54,14 +65,30 @@ class FavoritesViewModel constructor(
     private val userRepository: UserRepository,
     private val readingProgress: ReadingProgressRepository,
     private val novelShelf: NovelShelfRepository,
+    private val appSettings: AppSettingsRepository,
+    private val localReading: LocalReadingRepository,
+    private val sessions: ReadingSessionRepository,
     autoStart: Boolean = true
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState(
         isLoggedIn = userRepository.isLoggedInSync(), isLoading = userRepository.isLoggedInSync()))
     val uiState: StateFlow<FavoritesUiState> =
-        combine(_uiState, readingProgress.progress) { state, progress ->
-            if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) state else state.copy(
+        combine(_uiState, readingProgress.progress, localReading.snapshot, sessions.sessionChanges) { state, progress, local, _ ->
+            val session = sessions.getReadingSessionSync()
+            val latestNovels = local.records.asSequence()
+                .filter { state.isLoggedIn && session != null && it.kind == "novel" && it.owner == session.owner && it.group == session.mode.name }
+                .groupBy { it.path }
+                .mapValues { (_, records) -> records.maxBy { it.updatedAt } }
+            val updatedNovels = if (!state.isLoggedIn) emptySet() else state.novels.filter { entry ->
+                val lastRead = latestNovels[entry.book.path]?.chapter
+                !lastRead.isNullOrBlank() && entry.lastChapterId.isNotBlank() && lastRead != entry.lastChapterId
+            }.map { it.book.path }.toSet()
+            val withNovelUpdates = state.copy(
+                updatedNovelPaths = updatedNovels,
+                novelReadingProgress = latestNovels
+            )
+            if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) withNovelUpdates else withNovelUpdates.copy(
                 favorites = state.favorites.map { item ->
                     val local = progress.records[item.comic.pathWord]
                     if (local == null) item else item.copy(
@@ -78,6 +105,8 @@ class FavoritesViewModel constructor(
     private var novelOffset = 0
     private var novelsLoaded = false
     private var hasResumedMainScreen = false
+    private var kindSelectedByUser = false
+    private val kindWrites = Channel<FavoritesKind>(Channel.CONFLATED)
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         UiLog.e("FavoritesViewModel", "Unhandled coroutine exception", throwable)
@@ -108,7 +137,28 @@ class FavoritesViewModel constructor(
     }
 
     private var started = false
-    init { if (autoStart) start() }
+    init {
+        viewModelScope.launch {
+            appSettings.getFavoritesNovelSelected().fold(
+                onSuccess = { selected ->
+                    if (!kindSelectedByUser) _uiState.update {
+                        it.copy(selectedKind = if (selected) FavoritesKind.NOVEL else FavoritesKind.COMIC)
+                    }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    UiLog.w("FavoritesViewModel", "读取书架 tab 失败", error)
+                }
+            )
+            for (kind in kindWrites) {
+                appSettings.setFavoritesNovelSelected(kind == FavoritesKind.NOVEL).onFailure { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update { it.copy(toastMessage = "书架 tab 保存失败") }
+                }
+            }
+        }
+        if (autoStart) start()
+    }
 
     /** 首页先绘制再同步角标；直接进入书架时也可以立即调用，重复调用不重复订阅。 */
     fun start() {
@@ -129,7 +179,7 @@ class FavoritesViewModel constructor(
                 )
                 if (loggedIn) {
                     refreshFavorites(showError = false)
-                    if (_uiState.value.selectedKind == FavoritesKind.NOVEL) loadNovels()
+                    loadNovels()
                 }
             }
         }
@@ -141,6 +191,8 @@ class FavoritesViewModel constructor(
 
     fun selectKind(kind: FavoritesKind) {
         if (_uiState.value.isDeleting) return
+        kindSelectedByUser = true
+        kindWrites.trySend(kind)
         _uiState.update {
             it.copy(
                 selectedKind = kind,
@@ -166,10 +218,9 @@ class FavoritesViewModel constructor(
         loadMoreNovels()
     }
 
-    /** 复用书架刷新语义：保留当前作品，追加失败只重试失败页。 */
+    /** 顺序读取所有分页以统计完整角标；保留已显示作品，追加失败只重试失败页。 */
     private fun loadNovels(append: Boolean = false) {
         if (!_uiState.value.isLoggedIn || _uiState.value.isDeleting || novelLoadJob?.isActive == true) return
-        val requestedOffset = if (append) novelOffset else 0
         _uiState.update {
             it.copy(
                 novelsLoading = !append, novelsLoadingMore = append,
@@ -177,33 +228,37 @@ class FavoritesViewModel constructor(
             )
         }
         novelLoadJob = viewModelScope.launch(novelExceptionHandler) {
-            val result = novelShelf.list(requestedOffset)
-            currentCoroutineContext().ensureActive()
-            result.fold(
-                onSuccess = { page ->
-                    novelOffset = page.nextOffset
-                    novelsLoaded = true
-                    _uiState.update {
-                        it.copy(
-                            novelsLoading = false, novelsLoadingMore = false,
-                            novels = (if (append) it.novels + page.entries else page.entries)
-                                .distinctBy { entry -> entry.collectId },
-                            novelsHaveMore = page.hasMore && page.nextOffset > requestedOffset
-                        )
-                    }
-                },
-                onFailure = { error ->
+            var appending = append
+            var requestedOffset = if (append) novelOffset else 0
+            do {
+                val result = novelShelf.list(requestedOffset)
+                currentCoroutineContext().ensureActive()
+                val page = result.getOrElse { error ->
                     if (error is CancellationException) throw error
                     val message = error.message ?: "轻小说书架加载失败"
                     _uiState.update {
                         it.copy(
                             novelsLoading = false, novelsLoadingMore = false,
-                            novelsError = if (append) null else message,
-                            novelLoadMoreError = if (append) message else null
+                            novelsError = if (appending) null else message,
+                            novelLoadMoreError = if (appending) message else null
                         )
                     }
+                    return@launch
                 }
-            )
+                novelOffset = page.nextOffset
+                novelsLoaded = true
+                val hasMore = page.hasMore && page.nextOffset > requestedOffset
+                _uiState.update {
+                    it.copy(
+                        novelsLoading = false, novelsLoadingMore = hasMore,
+                        novels = (if (appending) it.novels + page.entries else page.entries)
+                            .distinctBy { entry -> entry.collectId },
+                        novelsHaveMore = hasMore
+                    )
+                }
+                appending = true
+                requestedOffset = page.nextOffset
+            } while (hasMore)
         }
     }
 
@@ -212,8 +267,7 @@ class FavoritesViewModel constructor(
         readingProgress.retryPending()
         if (hasResumedMainScreen) {
             refreshFavorites(showError = false)
-            if (_uiState.value.selectedKind == FavoritesKind.NOVEL) loadNovels()
-            else novelsLoaded = false
+            loadNovels()
         }
         hasResumedMainScreen = true
     }

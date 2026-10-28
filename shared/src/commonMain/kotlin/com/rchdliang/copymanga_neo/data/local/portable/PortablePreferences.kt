@@ -18,6 +18,7 @@ internal data class AppPreferenceDocument(
     val ranks: HomeRankPreferences = HomeRankPreferences(),
     val compactSearch: Boolean = false,
     val compactDiscovery: Boolean = false,
+    val favoritesNovelSelected: Boolean = false,
     val chineseDefaultInitialized: Boolean = false
 )
 
@@ -69,6 +70,12 @@ class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRep
     }
     override suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean) = document.update {
         if (keywordSearch) it.copy(compactSearch = compact) else it.copy(compactDiscovery = compact)
+    }
+    override suspend fun getFavoritesNovelSelected(): Result<Boolean> = document.ensureLoaded().map {
+        document.state.value.favoritesNovelSelected
+    }
+    override suspend fun setFavoritesNovelSelected(selected: Boolean) = document.update {
+        it.copy(favoritesNovelSelected = selected)
     }
     override suspend fun resetDefaults() = document.update { AppPreferenceDocument(chineseDefaultInitialized = true) }
 }

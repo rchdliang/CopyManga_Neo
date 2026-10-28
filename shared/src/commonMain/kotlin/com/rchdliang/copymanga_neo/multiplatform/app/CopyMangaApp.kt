@@ -219,7 +219,7 @@ fun CopyMangaApp(
     }
     val loggedIn by session.isLoggedIn.collectAsStateWithLifecycle()
     val avatar by session.avatar.collectAsStateWithLifecycle()
-    val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, autoStart = false) } }
+    val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, repositories.appSettings, repositories.localReading, repositories.sessions, autoStart = false) } }
     LaunchedEffect(favorites, shellDrawn) { if (shellDrawn) favorites.start() }
     val favoritesState by favorites.uiState.collectAsStateWithLifecycle()
     val exports = models.get("application", "export") { handle -> startupTrace.measureSync("export_model") { ComicExportViewModel(repositories.export, handle) } }
@@ -290,7 +290,7 @@ fun CopyMangaApp(
                                         if (route.destination == "main") {
                                             LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { favorites.onMainScreenResumed() }
                                             Box(Modifier.statusBarsPadding()) {
-                                                MainNavigationShell(navigation.tab, navigation::select, loggedIn, avatar, favoritesState.updatedComicCount) {
+                                                MainNavigationShell(navigation.tab, navigation::select, loggedIn, avatar, favoritesState.updatedCount) {
                                                     AnimatedContent(
                                                         navigation.tab, label = "main destination transition",
                                                         transitionSpec = {
@@ -458,7 +458,7 @@ private fun TabIcon(tab: MainTab, selected: Boolean, updates: Int) {
         if (showBadge) Badge(containerColor = MaterialTheme.colorScheme.error) {
             Text(if (updates > 99) "99+" else updates.toString(), color = MaterialTheme.colorScheme.onError)
         }
-    }, modifier = Modifier.semantics { if (showBadge) stateDescription = "$updates 部漫画有新内容" }) {
+    }, modifier = Modifier.semantics { if (showBadge) stateDescription = "$updates 部作品有新内容" }) {
         Icon(icon, tab.title)
     }
 }

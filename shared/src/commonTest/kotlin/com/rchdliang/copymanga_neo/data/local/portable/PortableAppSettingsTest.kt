@@ -8,6 +8,17 @@ import kotlin.test.assertFalse
 import kotlinx.coroutines.flow.first
 
 class PortableAppSettingsTest {
+    @Test fun bookshelfTabSurvivesRestartAndDefaultsToComicsForExistingSettings() = runTest {
+        val documents = Documents()
+        documents.values["app-settings.json"] = "{}"
+        val settings = PortableAppSettings(documents)
+        assertFalse(settings.getFavoritesNovelSelected().getOrThrow())
+        settings.setFavoritesNovelSelected(true).getOrThrow()
+        assertEquals(true, PortableAppSettings(documents).getFavoritesNovelSelected().getOrThrow())
+        settings.setFavoritesNovelSelected(false).getOrThrow()
+        assertFalse(PortableAppSettings(documents).getFavoritesNovelSelected().getOrThrow())
+    }
+
     private class Documents : DocumentStorage {
         val values = mutableMapOf<String, String>()
         override suspend fun read(key: String) = values[key]
