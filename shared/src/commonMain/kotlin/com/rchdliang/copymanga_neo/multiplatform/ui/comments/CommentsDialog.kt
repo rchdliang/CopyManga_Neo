@@ -162,7 +162,7 @@ internal fun CommentsPanel(
     var fabVisible by remember(target, state.parent?.id) { mutableStateOf(true) }
     val keyboard = LocalSoftwareKeyboardController.current
     val dismiss = {
-        if (!state.posting) {
+        if (!state.posting && !state.deleting) {
             loginAfterDiscard = false
             if (viewModel.hasDraft()) confirmDiscard = true else onDismiss()
         }
@@ -175,7 +175,7 @@ internal fun CommentsPanel(
     }
     val back = {
         when {
-            state.posting || state.reporting -> Unit
+            state.posting || state.reporting || state.deleting -> Unit
             state.reportTarget != null -> viewModel.closeReport()
             composerOpen -> closeComposer()
             state.parent != null -> viewModel.backToComments()
@@ -255,18 +255,18 @@ internal fun CommentsPanel(
             composerOpen = false
         }
     }
-    CommentsHost(embedded = embedded, onBack = back, posting = state.posting) {
+    CommentsHost(embedded = embedded, onBack = back, posting = state.posting || state.deleting) {
         // Resolve the host inside the dialog window. An activity-level toast is covered
         // by this full-window dialog, so report feedback must be displayed here.
         val toast = LocalToastHost.current
         ActiveRouteLaunchedEffect(state.message) {
-            state.message?.takeIf { it.contains("举报") }?.let {
+            state.message?.takeIf { it.contains("举报") || it.contains("删除") }?.let {
                 toast.showToast(it)
                 viewModel.clearMessage()
             }
         }
         BackHandler(
-            enabled = !state.posting && (!embedded || state.reportTarget != null || composerOpen || state.parent != null),
+            enabled = state.deleting || (!state.posting && (!embedded || state.reportTarget != null || composerOpen || state.parent != null)),
             onBack = back
         )
         CommentsContent(
@@ -287,6 +287,8 @@ internal fun CommentsPanel(
             onShowReplies = viewModel::showReplies,
             onDraftChange = viewModel::setDraft, onPost = viewModel::post,
             onReport = viewModel::openReport,
+            canDelete = viewModel::canDelete,
+            onDelete = viewModel::delete,
             modifier = modifier,
             embedded = embedded,
             onColumnCountChange = { columnCount = it },
@@ -372,7 +374,9 @@ internal fun CommentsContent(
     onLogin: (() -> Unit)? = null,
     embedded: Boolean = false,
     onColumnCountChange: (Int) -> Unit = {},
-    onDownloadComments: () -> Unit = {}
+    onDownloadComments: () -> Unit = {},
+    canDelete: (MangaComment) -> Boolean = { false },
+    onDelete: (MangaComment) -> Unit = {}
 ) {
     val pullState = rememberPullToRefreshState()
     BoxWithConstraints(
@@ -418,7 +422,7 @@ internal fun CommentsContent(
             Modifier
                 .matchParentSize()
                 .clickable(
-                    enabled = !state.posting && !state.reporting,
+                    enabled = !state.posting && !state.reporting && !state.deleting,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onDismiss
@@ -453,7 +457,7 @@ internal fun CommentsContent(
                 ) {
                     if (state.parent != null) IconButton(
                         onClick = onBackToComments,
-                        enabled = !state.posting
+                        enabled = !state.posting && !state.deleting
                     ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回评论") }
                     Column(Modifier.weight(1f)) {
                         Row(
@@ -483,9 +487,9 @@ internal fun CommentsContent(
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    if (embedded) TextButton(onClick = onDismiss, enabled = !state.posting) {
+                    if (embedded) TextButton(onClick = onDismiss, enabled = !state.posting && !state.deleting) {
                         Text("阅读菜单", color = MaterialTheme.colorScheme.primary)
-                    } else IconButton(onClick = onDismiss, enabled = !state.posting) {
+                    } else IconButton(onClick = onDismiss, enabled = !state.posting && !state.deleting) {
                         Icon(Icons.Default.Close, "关闭")
                     }
                 }
@@ -569,10 +573,12 @@ internal fun CommentsContent(
                                             comment = parent,
                                             currentTime = currentTime,
                                             onReport = onReport,
+                                            canDelete = canDelete,
+                                            onDelete = onDelete,
                                             onReply = if (state.postingAllowed) ({
                                                 onCompose(parent)
                                             }) else null,
-                                            enabled = !state.posting
+                                            enabled = !state.posting && !state.deleting
                                         )
                                         CommentDivider()
                                         Text(
@@ -609,6 +615,8 @@ internal fun CommentsContent(
                                                     previewTotal = preview?.total,
                                                     threadUsername = state.parent?.username,
                                                     onReport = onReport,
+                                                    canDelete = canDelete,
+                                                    onDelete = onDelete,
                                                     onClick = if (state.parent == null && target.kind != CommentKind.CHAPTER &&
                                                         (preview?.total ?: comment.replyCount) > 0
                                                     ) ({
@@ -620,7 +628,7 @@ internal fun CommentsContent(
                                                     onShowReplies = if (state.parent == null && target.kind != CommentKind.CHAPTER && preview?.comments?.isNotEmpty() == true) ({
                                                         onShowReplies(comment)
                                                     }) else null,
-                                                    enabled = !state.posting
+                                                    enabled = !state.posting && !state.deleting
                                                 )
                                                 CommentDivider()
                                             }
@@ -767,7 +775,9 @@ internal fun CommentCard(
     onShowReplies: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
     onReport: (MangaComment) -> Unit = {},
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    canDelete: (MangaComment) -> Boolean = { false },
+    onDelete: (MangaComment) -> Unit = {}
 ) {
     val clipboard = rememberTextClipboard()
     val toast = LocalToastHost.current
@@ -780,7 +790,7 @@ internal fun CommentCard(
                 .fillMaxWidth()
                 .combinedClickable(
                     enabled = enabled, onClick = { onClick?.invoke() },
-                    onLongClickLabel = "复制或举报",
+                    onLongClickLabel = "评论操作",
                     onLongClick = { longPress(comment) }
                 )
                 .padding(16.dp),
@@ -846,6 +856,12 @@ internal fun CommentCard(
             }
         }
         if (LocalRouteActive.current) DropdownMenu(expanded = menuComment != null, onDismissRequest = { menuComment = null }) {
+            menuComment?.takeIf(canDelete)?.let { selected ->
+                DropdownMenuItem(
+                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                    onClick = { menuComment = null; onDelete(selected) }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("复制", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = {

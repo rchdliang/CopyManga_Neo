@@ -30,6 +30,48 @@ class PortableCommentRepository(
     private val auth = AuthStateAdapter(client)
     private val networkSettings = NetworkSettingsAdapter(client.state)
     private val downloadMutex = Mutex()
+    override fun supportsDeletion(target: CommentTarget): Boolean =
+        client.state.snapshot.settings.requestMode == RequestMode.OFFICIAL_APP &&
+                target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
+
+    override suspend fun deleteComment(target: CommentTarget, comment: MangaComment): Result<Unit> = result {
+        require(supportsDeletion(target)) { "当前模式不支持删除此类评论" }
+        require(target.id.isNotBlank() && comment.id.isNotBlank()) { "评论标识无效" }
+        val authorId = comment.userId?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("缺少作者信息，请刷新评论")
+        val snapshot = client.state.snapshot
+        val mode = snapshot.settings.requestMode
+        check(mode == RequestMode.OFFICIAL_APP) { "请求模式已改变，请刷新评论" }
+        val token = snapshot.session(mode).token.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("请先登录后删除")
+        // 发送前以服务器身份验证所有权；同名账号或切换账号不能沿用旧菜单授权。
+        val member = com.rchdliang.copymanga_neo.data.remote.portable.api.MangaApiService(client)
+            .getMemberInfoWithCredential("Token $token", requestMode = mode)
+        client.state.requireCurrent(snapshot.generation)
+        checkResponse(member.code(), member.body()?.code, member.body()?.message)
+        check(member.body()?.results?.userId?.takeIf { it.isNotBlank() } == authorId) {
+            "只能删除自己的评论"
+        }
+        val response = api.deleteComment(target, comment.id, "Token $token", mode)
+        checkWriteResponse(response)
+        client.state.requireCurrent(snapshot.generation)
+        // 清理已有离线快照，防止联网删除后离线仍展示该条目。
+        if (target.kind == CommentKind.CHAPTER) {
+            try {
+                val cached = downloads?.read(target.id)
+                if (cached != null && cached.comments.any { it.id == comment.id }) {
+                    downloads.save(target.id, cached.copy(
+                        comments = cached.comments.filterNot { it.id == comment.id },
+                        total = (cached.total - 1).coerceAtLeast(0)
+                    ))
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                throw com.rchdliang.copymanga_neo.domain.repository.CommentDeletedCacheException(error)
+            }
+        }
+    }
     override suspend fun getDownloadedChapterComments(uuid:String):Result<DownloadedChapterComments?> = result {
         if(downloads?.hasCompleteChapter(uuid)!=true) null else downloads.read(uuid)
     }
@@ -144,8 +186,9 @@ class PortableCommentRepository(
                 reason.trim(),
                 "Token $token",
                 headers = CommentApiService.reportHeaders(
-                    networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
-                )
+                    mode == RequestMode.OFFICIAL_APP
+                ),
+                requestMode = mode
             )
 
             CommentKind.CHAPTER -> api.reportChapterComment(
@@ -153,7 +196,9 @@ class PortableCommentRepository(
                 target.id,
                 type,
                 reason.trim(),
-                "Token $token"
+                "Token $token",
+                headers = CommentApiService.reportHeaders(mode == RequestMode.OFFICIAL_APP),
+                requestMode = mode
             )
         }
         if (response.code() == 401 || response.body()?.code == 401) {
@@ -215,7 +260,8 @@ class PortableCommentRepository(
             )
 
             CommentKind.CHAPTER -> api.chapterComments(
-                target.id, offset, limit = if (appMode) 10 else 30, headers = headers
+                target.id, offset, limit = if (appMode) 20 else 30, headers = headers,
+                view = if (appMode) "list" else null
             )
         }
         check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
@@ -232,7 +278,8 @@ class PortableCommentRepository(
                 dto.comment.orEmpty(),
                 dto.createdAt.orEmpty(),
                 dto.replyCount?.text()?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                dto.parentUsername
+                dto.parentUsername,
+                dto.userId
             )
         }
         val returnedOffset = page.offset ?: offset

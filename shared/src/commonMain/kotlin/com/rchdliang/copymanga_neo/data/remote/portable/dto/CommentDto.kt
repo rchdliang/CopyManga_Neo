@@ -46,7 +46,8 @@ data class CommentDto(
     @SerialName("comment") val comment: String? = null,
     @SerialName("create_at") val createdAt: String? = null,
     @SerialName("count") val replyCount: JsonElement? = null,
-    @SerialName("parent_user_name") val parentUsername: String? = null
+    @SerialName("parent_user_name") val parentUsername: String? = null,
+    @SerialName("user_id") val userId: String? = null
 )
 
 @Serializable

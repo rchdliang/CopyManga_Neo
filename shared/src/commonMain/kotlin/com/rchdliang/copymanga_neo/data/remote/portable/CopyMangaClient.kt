@@ -201,7 +201,7 @@ class CopyMangaClient(
                     headers.forEach { (key,value) -> header(key,value) }
                     form?.let { fields ->
                         val parameters = Parameters.build { fields.forEach { (key, value) -> append(key, value) } }
-                        if (app && request.method == "POST" && path == "/api/v3/member/bookcomment") {
+                        if (app && request.method == "POST" && path in setOf("/api/v3/member/bookcomment", "/api/v3/member/comment")) {
                             setBody(io.ktor.http.content.TextContent(
                                 NovelCommentFormPolicy.encodeAppTopLevelReply(request.method, path, parameters.formUrlEncode()),
                                 ContentType.Application.FormUrlEncoded
@@ -332,8 +332,8 @@ class CopyMangaClient(
         val result=ByteArray(size);var offset=0;chunks.forEach { it.copyInto(result,offset);offset+=it.size };return result
     }
     private fun requiresMemberForm(method:String,path:String)=
-        (method=="POST"&&path in setOf("/api/v3/member/collect/comic","/api/v3/member/collect/book","/api/v3/member/comment","/api/v3/member/bookcomment","/api/v3/member/roast","/api/v3/member/comment/report","/api/v3/member/bookcomment/report","/api/v3/member/update/info"))||
-        (method=="DELETE"&&path in setOf("/api/v3/member/collect/comics","/api/v3/member/collect/books","/api/v3/member/browse/comics"))
+        (method=="POST"&&path in setOf("/api/v3/member/collect/comic","/api/v3/member/collect/book","/api/v3/member/comment","/api/v3/member/bookcomment","/api/v3/member/roast","/api/v3/member/comment/report","/api/v3/member/bookcomment/report","/api/v3/member/roast/report","/api/v3/member/update/info"))||
+        (method=="DELETE"&&path in setOf("/api/v3/member/collect/comics","/api/v3/member/collect/books","/api/v3/member/browse/comics","/api/v3/member/comment","/api/v3/member/roast"))
     private fun permitsEmptyResult(method:String,path:String)=
-        (method=="POST"&&path in setOf("/api/v3/logout","/api/v3/member/collect/comic","/api/v3/member/collect/book","/api/v3/member/comment","/api/v3/member/bookcomment","/api/v3/member/roast","/api/v3/member/comment/report","/api/v3/member/bookcomment/report","/api/v3/member/update/info"))||(method=="DELETE"&&path=="/api/v3/member/browse/comics")
+        (method=="POST"&&path in setOf("/api/v3/logout","/api/v3/member/collect/comic","/api/v3/member/collect/book","/api/v3/member/comment","/api/v3/member/bookcomment","/api/v3/member/roast","/api/v3/member/comment/report","/api/v3/member/bookcomment/report","/api/v3/member/roast/report","/api/v3/member/update/info"))||(method=="DELETE"&&path in setOf("/api/v3/member/browse/comics","/api/v3/member/comment","/api/v3/member/roast"))
 }

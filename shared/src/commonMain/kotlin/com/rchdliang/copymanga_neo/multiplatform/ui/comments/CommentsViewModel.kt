@@ -59,6 +59,8 @@ data class CommentsUiState(
     val replyTo: MangaComment? = null,
     val draft: String = "",
     val loggedIn: Boolean = false,
+    val currentUserId: String? = null,
+    val deleting: Boolean = false,
     val posting: Boolean = false,
     val postingAllowed: Boolean = true,
     val checkingPermission: Boolean = false,
@@ -87,6 +89,8 @@ class CommentsViewModel constructor(
     private var readJob: Job? = null
     private var postJob: Job? = null
     private var reportJob: Job? = null
+    private var deleteJob: Job? = null
+    private var identityJob: Job? = null
     private var permissionJob: Job? = null
     private var downloadJob: Job? = null
     private var permissionPathWord: String? = null
@@ -99,6 +103,7 @@ class CommentsViewModel constructor(
         state.update {
             it.copy(
                 posting = false,
+                deleting = false,
                 reporting = false,
                 reportLoading = false,
                 downloadingComments = false,
@@ -111,22 +116,27 @@ class CommentsViewModel constructor(
 
     init {
         viewModelScope.launch(handler) {
-            var previous: Pair<Boolean, String?>? = null
-            combine(users.isLoggedIn(), users.getUsername()) { loggedIn, name -> loggedIn to name }
+            var previous: Triple<Boolean, String?, Long>? = null
+            combine(users.isLoggedIn(), users.getUsername(), users.sessionChanges()) { loggedIn, name, version ->
+                Triple(loggedIn, name, version)
+            }
                 .distinctUntilChanged().collect { account ->
                     if (previous != null && previous != account) {
                         postJob?.cancel()
                         reportJob?.cancel()
+                        deleteJob?.cancel()
+                        identityJob?.cancel()
                         state.update {
                             it.copy(
                                 reportTarget = null, reporting = false, reportLoading = false,
-                                posting = false,
-                                message = "登录状态已变化，请确认后再发表"
+                                posting = false, deleting = false, currentUserId = null,
+                                message = if (it.deleting) "登录状态已变化，请刷新确认删除结果" else "登录状态已变化，请确认后再发表"
                             )
                         }
                     }
                     previous = account
                     state.update { it.copy(loggedIn = account.first) }
+                    refreshDeleteIdentity()
                 }
         }
     }
@@ -151,6 +161,7 @@ class CommentsViewModel constructor(
         }
         pendingReaderDrafts = null
         load(refresh = true)
+        refreshDeleteIdentity()
         if (postingAllowed && permissionPathWord != null) retryPermission()
     }
 
@@ -196,6 +207,8 @@ class CommentsViewModel constructor(
     }
 
     fun close() {
+        deleteJob?.cancel()
+        identityJob?.cancel()
         reportJob?.cancel()
         permissionJob?.cancel()
         downloadJob?.cancel()
@@ -204,7 +217,86 @@ class CommentsViewModel constructor(
         revision++
         readJob?.cancel()
         postJob?.cancel()
-        state.update { it.copy(target = null, posting = false, downloadingComments = false) }
+        state.update { it.copy(target = null, posting = false, deleting = false, downloadingComments = false) }
+    }
+
+    /** 作者 ID 来自当前会话的服务器资料；昵称相同不代表同一账号。 */
+    private fun refreshDeleteIdentity() {
+        identityJob?.cancel()
+        state.update { it.copy(currentUserId = null) }
+        val target = state.value.target ?: return
+        if (!users.isLoggedInSync() || !repository.supportsDeletion(target)) return
+        val session = users.sessionVersionSync()
+        identityJob = viewModelScope.launch(handler) {
+            val member = users.getMemberInfo().getOrNull()
+            ensureActive()
+            if (session == users.sessionVersionSync() && state.value.target == target) {
+                state.update { it.copy(currentUserId = member?.userId?.takeIf(String::isNotBlank)) }
+            }
+        }
+    }
+
+    fun canDelete(comment: MangaComment): Boolean {
+        val current = state.value
+        val target = current.target ?: return false
+        return current.loggedIn && !current.deleting && !current.posting && !current.reporting &&
+                !current.downloadingComments && !current.currentUserId.isNullOrBlank() &&
+                current.currentUserId == comment.userId && repository.supportsDeletion(target)
+    }
+
+    fun delete(comment: MangaComment) {
+        if (!canDelete(comment)) return
+        val current = state.value
+        val target = current.target ?: return
+        val parentId = current.parent?.id ?: current.replyPreviews.entries
+            .firstOrNull { (_, preview) -> preview.comments.any { it.id == comment.id } }?.key
+        saveDraft()
+        readJob?.cancel()
+        val requestRevision = ++revision
+        invalidatePreviews()
+        state.update { it.copy(deleting = true, message = null, feed = it.feed.copy(loading = false, refreshing = false)) }
+        deleteJob = viewModelScope.launch(handler) {
+            fun completeDeletion(message: String) {
+                if (requestRevision != revision) return
+                fun CommentFeed.withoutDeleted(): CommentFeed = copy(
+                    items = items.filterNot { it.id == comment.id }.map {
+                        if (it.id == parentId) it.copy(replyCount = (it.replyCount - 1).coerceAtLeast(0)) else it
+                    },
+                    total = (total - if (items.any { it.id == comment.id }) 1 else 0).coerceAtLeast(0)
+                )
+                rootFeed = rootFeed.withoutDeleted()
+                replyDrafts.remove(comment.id)
+                state.update {
+                    val removedParent = it.parent?.id == comment.id
+                    val removedReplyTarget = it.replyTo?.id == comment.id
+                    it.copy(
+                        deleting = false,
+                        parent = if (removedParent) null else it.parent?.let { parent ->
+                            if (parent.id == parentId) parent.copy(replyCount = (parent.replyCount - 1).coerceAtLeast(0)) else parent
+                        },
+                        replyTo = if (removedParent || removedReplyTarget) null else it.replyTo,
+                        draft = if (removedParent) rootDraft else if (removedReplyTarget) "" else it.draft,
+                        feed = if (removedParent) rootFeed else it.feed.withoutDeleted(),
+                        message = message
+                    )
+                }
+                load(refresh = true)
+            }
+            repository.deleteComment(target, comment).fold(
+                onSuccess = {
+                    ensureActive()
+                    completeDeletion("删除成功")
+                },
+                onFailure = { error ->
+                    ensureActive()
+                    if (error is com.rchdliang.copymanga_neo.domain.repository.CommentDeletedCacheException) {
+                        completeDeletion(error.message ?: "评论已删除，请刷新离线缓存")
+                    } else if (requestRevision == revision) state.update {
+                        it.copy(deleting = false, message = (error.message ?: "删除失败") + "，请刷新确认结果后再操作")
+                    }
+                }
+            )
+        }
     }
 
     private fun DownloadedChapterComments.toFeed(loading: Boolean = false) = CommentFeed(
@@ -217,7 +309,7 @@ class CommentsViewModel constructor(
         val current = state.value
         val target = current.target ?: return
         if (target.kind != CommentKind.CHAPTER || !current.canDownloadComments ||
-            current.posting || current.reporting || current.downloadingComments
+            current.posting || current.reporting || current.deleting || current.downloadingComments
         ) return
         readJob?.cancel()
         val requestRevision = ++revision
@@ -279,7 +371,7 @@ class CommentsViewModel constructor(
     fun openReport(comment: MangaComment) {
         val current = state.value
         val target = current.target ?: return
-        if (current.reporting || current.posting) return
+        if (current.reporting || current.posting || current.deleting) return
         if (!current.loggedIn) {
             state.update { it.copy(message = "请先到“我的”登录后举报") }
             return
@@ -322,7 +414,7 @@ class CommentsViewModel constructor(
         val current = state.value
         val target = current.target ?: return
         val comment = current.reportTarget ?: return
-        if (current.reporting || current.reportLoading || !current.loggedIn ||
+        if (current.reporting || current.deleting || current.reportLoading || !current.loggedIn ||
             CommentText.length(reason) > CommentText.MAX_LENGTH ||
             current.reportConfig?.types?.none { it.type == type } != false
         ) return
@@ -360,7 +452,7 @@ class CommentsViewModel constructor(
 
     /** 直接打开输入面板时保留列表位置，并按回复对象隔离草稿。 */
     fun startReply(comment: MangaComment) {
-        if (state.value.posting || state.value.target?.kind !in setOf(CommentKind.COMIC, CommentKind.NOVEL)) return
+        if (state.value.posting || state.value.deleting || state.value.target?.kind !in setOf(CommentKind.COMIC, CommentKind.NOVEL)) return
         saveDraft()
         state.update {
             it.copy(
@@ -372,7 +464,7 @@ class CommentsViewModel constructor(
     }
 
     fun startComment() {
-        if (state.value.posting) return
+        if (state.value.posting || state.value.deleting) return
         saveDraft()
         val parent = state.value.parent
         state.update {
@@ -435,7 +527,7 @@ class CommentsViewModel constructor(
 
     fun showReplies(comment: MangaComment) {
         val current = state.value
-        if (current.posting || current.target == null || current.target.kind == CommentKind.CHAPTER) return
+        if (current.posting || current.deleting || current.target == null || current.target.kind == CommentKind.CHAPTER) return
         if (current.parent == null) {
             saveDraft()
             rootFeed = current.feed.copy(loading = false, refreshing = false)
@@ -454,7 +546,7 @@ class CommentsViewModel constructor(
     }
 
     fun backToComments() {
-        if (state.value.posting) return
+        if (state.value.posting || state.value.deleting) return
         readJob?.cancel()
         revision++
         saveDraft()
@@ -472,7 +564,7 @@ class CommentsViewModel constructor(
     fun load(refresh: Boolean, fromPullToRefresh: Boolean = false) {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.reporting || current.downloadingComments ||
+        if (current.posting || current.reporting || current.deleting || current.downloadingComments ||
             ((!refresh || fromPullToRefresh) && current.feed.loading)
         ) return
         val offset = if (refresh) 0 else current.feed.nextOffset ?: return
@@ -557,7 +649,7 @@ class CommentsViewModel constructor(
     fun post() {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.downloadingComments || !current.postingAllowed) return
+        if (current.posting || current.deleting || current.downloadingComments || !current.postingAllowed) return
         if (!current.loggedIn) {
             state.update { it.copy(message = "请先到“我的”登录") }; return
         }

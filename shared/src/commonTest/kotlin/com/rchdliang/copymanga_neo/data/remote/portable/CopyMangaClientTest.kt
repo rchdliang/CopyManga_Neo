@@ -101,7 +101,8 @@ class CopyMangaClientTest {
         val body = "comment=reply_id%3D&reply_id=&book_id=synthetic"
         assertEquals("comment=reply_id%3D&reply_id&book_id=synthetic",
             NovelCommentFormPolicy.encodeAppTopLevelReply("POST", "/api/v3/member/bookcomment", body))
-        assertEquals(body, NovelCommentFormPolicy.encodeAppTopLevelReply("POST", "/api/v3/member/comment", body))
+        assertEquals("comment=reply_id%3D&reply_id&book_id=synthetic",
+            NovelCommentFormPolicy.encodeAppTopLevelReply("POST", "/api/v3/member/comment", body))
         assertEquals(body, NovelCommentFormPolicy.encodeAppTopLevelReply("GET", "/api/v3/member/bookcomment", body))
     }
 

@@ -62,7 +62,7 @@ class ReaderCommentModels(
         }.also { value ->
             entry.inline = value
             entry.observer = viewModelScope.launch {
-                value.uiState.map { it.posting || it.reporting || it.downloadingComments }
+                value.uiState.map { it.posting || it.reporting || it.deleting || it.downloadingComments }
                     .distinctUntilChanged().drop(1).collect { busy -> if (!busy) prune() }
             }
         }
@@ -79,7 +79,7 @@ class ReaderCommentModels(
             val entry = entries.getValue(chapter)
             val state = entry.inline?.uiState?.value
             // 已提交的写请求要完成后再释放，不能因为滚出窗口而取消或重试发表。
-            if (state?.posting == true || state?.reporting == true || state?.downloadingComments == true) return@forEach
+            if (state?.posting == true || state?.reporting == true || state?.deleting == true || state?.downloadingComments == true) return@forEach
             val draft = entry.inline?.captureReaderDrafts()
             if (draft != null && !draft.isEmpty) drafts[chapter] = draft else drafts.remove(chapter)
             entries.remove(chapter)
