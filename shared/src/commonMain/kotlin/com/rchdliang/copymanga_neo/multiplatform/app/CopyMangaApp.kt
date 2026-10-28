@@ -232,7 +232,10 @@ fun CopyMangaApp(
     LaunchedEffect(retryExportId) {
         retryExportId?.let { exports.retry(it); onExportRetryConsumed() }
     }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { repositories.risk.resumeIfExpired() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        repositories.risk.resumeIfExpired()
+        repositories.retryCloudReadingSync()
+    }
     val appImageLoader = remember(platforms.imageLoader) { startupTrace.measureSync("image_loader") { platforms.imageLoader(10) } }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, LocalUiPlatform provides platforms.ui, LocalShareViewModel provides share,
         LocalAppImageLoader provides appImageLoader, LocalStartupTrace provides repositories.startupTrace,

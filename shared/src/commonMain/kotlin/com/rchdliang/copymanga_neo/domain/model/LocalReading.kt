@@ -20,7 +20,9 @@ data class LocalReadingRecord(
     val cover: String = "",
     val authors: String = "",
     /** 最后记录的位置是否停在章末；回翻后清除，与永久已读标记分开。 */
-    val atChapterEnd: Boolean = false
+    val atChapterEnd: Boolean = false,
+    /** 云端只提供章节级位置；首次本机阅读会替换为精确位置。 */
+    val cloudImported: Boolean = false
 ) {
     // Length-prefixing prevents delimiter collisions in names and account identifiers.
     val key: String

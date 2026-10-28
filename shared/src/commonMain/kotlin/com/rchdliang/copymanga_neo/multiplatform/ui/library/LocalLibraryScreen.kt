@@ -125,11 +125,11 @@ fun LocalLibraryContent(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp)
             ) {
-                Text(
-                    if (state.owner == "guest") "游客书库 · 保存在本机" else if (state.owner == null) "正在读取本地书库…" else "当前账号的本地书库",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+//                Text(
+//                    if (state.owner == "guest") "游客书库 · 保存在本机" else if (state.owner == null) "正在读取本地书库…" else "当前账号的本地书库",
+//                    style = MaterialTheme.typography.labelLarge,
+//                    color = MaterialTheme.colorScheme.onSurfaceVariant
+//                )
                 PrimaryTabRow(selectedTabIndex = if (marks) 1 else 0) {
                     listOf(
                         "阅读历史" to state.history.size,

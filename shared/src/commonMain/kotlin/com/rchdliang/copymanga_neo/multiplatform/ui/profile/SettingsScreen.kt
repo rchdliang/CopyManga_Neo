@@ -274,7 +274,7 @@ internal fun SettingsPage(
 
             SettingsDestination.READING -> {
                 Text(
-                    "漫画：只用于新打开的作品。轻小说：未单独设置的作品沿用此项。",
+                    "全局默认设置，不更改已有设置",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -306,8 +306,8 @@ internal fun SettingsPage(
                     onClick = { picker = SettingsPicker.ORIENTATION })
                 ProfileSectionTitle("轻小说插图")
                 ProfileListItem(
-                    Icons.Outlined.VisibilityOff, "默认模糊插图预览",
-                    "预览防剧透；全屏清晰，可按作品调整。",
+                    Icons.Outlined.VisibilityOff, "模糊插图预览",
+                    "预览防剧透",
                     index = 0, count = 1, enabled = enabled,
                     onClick = { onNovelIllustrationBlurChange(!state.settings.blurNovelIllustrationPreviews) },
                     trailingContent = {
@@ -598,7 +598,6 @@ private fun DownloadLimitDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DownloadConcurrencyDialog(
     initialValue: Int,

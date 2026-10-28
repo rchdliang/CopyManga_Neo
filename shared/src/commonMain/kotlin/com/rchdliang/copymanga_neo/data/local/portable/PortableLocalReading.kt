@@ -63,6 +63,25 @@ class PortableLocalReading(storage: DocumentStorage, private val scope: Coroutin
     }.maxByOrNull { it.updatedAt }
     override fun permitsCoarse(owner: String, kind: String, path: String) = ReadingMergePolicy.canUseCoarse(
         owner, kind, path, snapshot.value.clearedOwners, snapshot.value.deletedBooks)
+
+    /** 只补缺失作品；云端空结果、旧进度均不能覆盖本机位置、完成状态或书签。 */
+    suspend fun importCloudHistory(owner: String, records: List<LocalReadingRecord>, current: () -> Boolean): Result<Unit> = mutate { s ->
+        if (!current()) return@mutate s
+        val occupied = (s.records + pending.value.values).map { it.bookKey }.toMutableSet()
+        val additions = records.filter { r ->
+            r.owner == owner && r.kind == "comic" && r.path.isNotBlank() && r.chapter.isNotBlank() &&
+                ReadingMergePolicy.canUseCoarse(owner, r.kind, r.path, s.clearedOwners, s.deletedBooks) &&
+                r.key !in s.deleted && occupied.add(r.bookKey)
+        }.map { it.copy(completed = false, atChapterEnd = false, cloudImported = true, group = "") }
+        s.copy(records = s.records + additions)
+    }
+
+    fun canAssumeCloudCatchUp(owner: String, path: String, chapter: String): Boolean {
+        if (!permitsCoarse(owner, "comic", path)) return false
+        if (pending.value.values.any { it.owner == owner && it.kind == "comic" && it.path == path }) return false
+        val records = snapshot.value.records.filter { it.owner == owner && it.kind == "comic" && it.path == path }
+        return records.isNotEmpty() && records.all { it.cloudImported } && records.any { it.chapter == chapter }
+    }
     override fun record(value: LocalReadingRecord) {
         val record = value.copy(title = safeBookTitle(value.path, value.title), updatedAt = nextVersion())
         if (record.completed) completed.update { it + (record.key to record.updatedAt) }

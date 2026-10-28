@@ -10,7 +10,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlin.time.Clock
 
-/** 单独保存追更基线，旧的“最后读到哪章”不会在迁移时生成更新提醒。 */
+/** 本机阅读与首次云端默认追平分别处理；后续按作品最新章节判断跨组更新。 */
 class PortableShelfReading(
     storage: DocumentStorage,
     private val sessions: ReadingSessionRepository,
@@ -59,15 +59,17 @@ class PortableShelfReading(
         operations.withLock {
             if (!current(session) || deletion(key) != deletionAtStart) return@withLock
             document.update { state ->
-                val old = state.records[key.id]?.takeIf(::survives) ?: ShelfReadingRecord(key)
                 val latest = state.books(session, reading.kind)[reading.path]
+                val old = latest?.takeIf(::survives) ?: ShelfReadingRecord(key)
                 val changed = old.chapter != reading.chapter || (reading.completed && !old.completed) ||
                     latest?.key != key
                 needsCheck = (session.generation to key.id) !in checked ||
-                    (changed && (reading.chapter !in old.catalog || reading.completed && reading.chapter == old.catalog.lastOrNull()))
+                        (changed && (reading.chapter !in old.catalog || reading.completed &&
+                            reading.chapter == old.latestChapterId.ifBlank { old.catalog.lastOrNull().orEmpty() }))
                 if (!changed) state else {
                     val at = maxOf(Clock.System.now().toEpochMilliseconds(), (latest?.readAt ?: 0) + 1)
-                    state.copy(records = state.records + (key.id to old.copy(key = key).read(reading.chapter, reading.name, reading.completed, at)
+                    state.copy(records = state.records.filterValues { it.key.bookKey != key.bookKey } +
+                        (key.id to old.copy(key = key).read(reading.chapter, reading.name, reading.completed, at)
                         .copy(historyCutoff = deletionAtStart)))
                 }
             }.onFailure { needsCheck = false }
@@ -79,13 +81,33 @@ class PortableShelfReading(
         maxOf(it.clearedOwners[key.owner] ?: -1, it.deletedBooks[key.bookKey] ?: -1)
     }
 
+    /** 只为首次云端导入的作品建立默认基线，不覆盖已有本地追更状态。 */
+    suspend fun importCloudHistory(session: LocalReadingSession, items: List<BrowseHistoryItem>,
+        eligible: (BrowseHistoryItem) -> Boolean): Result<Unit> = operations.withLock {
+        document.update { state ->
+            if (!current(session) || session.owner == null) return@update state
+            val records = state.records.toMutableMap()
+            items.forEach { item ->
+                val chapter = item.lastReadChapterId?.takeIf { it.isNotBlank() } ?: return@forEach
+                val key = ShelfReadingKey(session.owner, session.mode, "comic", item.pathWord)
+                if (records.values.any { it.key.bookKey == key.bookKey } || !eligible(item)) return@forEach
+                val latest = item.latestChapterId?.takeIf { it.isNotBlank() } ?: chapter
+                records[key.id] = ShelfReadingRecord(key, chapter, item.lastReadChapterName.orEmpty(),
+                    readAt = Clock.System.now().toEpochMilliseconds(), historyCutoff = deletion(key),
+                    catalog = listOf(chapter, latest).distinct(), latestName = item.latestChapterName.orEmpty(),
+                    caughtUpChapter = chapter, latestChapterId = latest, knownWhenCaughtUp = setOf(chapter), assumedFromCloud = true)
+            }
+            state.copy(records = records)
+        }
+    }
+
     override fun refresh(session: LocalReadingSession, kind: String, paths: Set<String>) {
         scope.launch {
             if (document.ensureLoaded().isFailure || !current(session)) return@launch
             pruneDeleted()
             snapshot.value.books(session, kind).values.filter {
                 it.key.path in paths && (it.caughtUpChapter != null ||
-                    it.completed && (it.chapter == it.catalog.lastOrNull() || it.chapter !in it.catalog))
+                    it.completed && (it.chapter == it.latestChapterId.ifBlank { it.catalog.lastOrNull().orEmpty() } || it.chapter !in it.catalog))
             }.forEach { record -> launch { checkCatalog(session, record.key.copy(mode = session.mode)) } }
         }
     }

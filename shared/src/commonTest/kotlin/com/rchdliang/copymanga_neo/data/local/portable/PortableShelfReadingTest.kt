@@ -10,6 +10,28 @@ import kotlin.test.*
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortableShelfReadingTest {
+    @Test fun updatesFollowTheWholeComicAcrossTranslationGroups() = runTest {
+        val docs = Documents()
+        val sessions = Sessions()
+        val local = PortableLocalReading(docs, backgroundScope)
+        var catalog = listOf(ShelfChapter("c23", "23", "default"), ShelfChapter("c24", "24话", "other_honyakuchimu", true))
+        val tracking = PortableShelfReading(docs, sessions, local, backgroundScope) { Result.success(catalog) }
+        val session = sessions.current
+        tracking.record(session, position("comic", 24, true).copy(group = "other_honyakuchimu")); runCurrent()
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, tracking.state(session, "comic").status)
+        catalog = catalog.map { it.copy(latest = false) } + ShelfChapter("c25", "第25话", "default", true)
+        tracking.refresh(session, "comic", setOf("book")); runCurrent()
+        assertEquals(ShelfReadingStatus.UPDATED, tracking.state(session, "comic").status)
+        assertEquals("第25话", tracking.state(session, "comic").latestName)
+        tracking.record(session, position("comic", 25).copy(group = "default")); runCurrent()
+        assertEquals(ShelfReadingStatus.READING, tracking.state(session, "comic").status)
+        assertEquals(1, tracking.snapshot.value.records.size)
+        tracking.record(session, position("comic", 25, true).copy(group = "default")); runCurrent()
+        catalog = catalog.map { it.copy(latest = false) } + ShelfChapter("c26", "26", "other_honyakuchimu", true)
+        tracking.refresh(session, "comic", setOf("book")); runCurrent()
+        tracking.record(session, position("comic", 24).copy(group = "other_honyakuchimu")); runCurrent()
+        assertEquals(ShelfReadingStatus.UPDATED, tracking.state(session, "comic").status) // Rereading a known old chapter is not acknowledgement.
+    }
     private class Documents : DocumentStorage {
         val values = mutableMapOf<String, String>()
         override suspend fun read(key: String) = values[key]

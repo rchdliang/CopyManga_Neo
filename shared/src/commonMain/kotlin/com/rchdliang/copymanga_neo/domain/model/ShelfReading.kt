@@ -14,9 +14,9 @@ data class ShelfReadingKey(
     val bookKey: String get() = ReadingMergePolicy.key(owner, kind, path)
 }
 
-data class ShelfChapter(val id: String, val name: String)
+data class ShelfChapter(val id: String, val name: String, val group: String = "", val latest: Boolean = false)
 
-/** 续读位置与追更基线分开保存；只有在线完整目录能建立/更新追平基线。 */
+/** 续读位置与追更基线分开保存；首次云端导入默认追平，实际阅读后由完整目录确认。 */
 @Serializable
 data class ShelfReadingRecord(
     val key: ShelfReadingKey,
@@ -28,15 +28,20 @@ data class ShelfReadingRecord(
     val catalog: List<String> = emptyList(),
     val latestName: String = "",
     val caughtUpChapter: String? = null,
+    val latestChapterId: String = "",
+    val knownWhenCaughtUp: Set<String> = emptySet(),
+    /** 首次云端同步采用用户指定的“默认追平”；不等价于本机读完证据。 */
+    val assumedFromCloud: Boolean = false,
     // 保留离线期间实际读过的章节，联网后再判定是否已开始追平基线之后的新内容。
     val startedSinceCaughtUp: Set<String> = emptySet()
 ) {
     val status: ShelfReadingStatus get() {
-        val frontier = caughtUpChapter?.let(catalog::indexOf) ?: -1
+        val latest = latestChapterId.ifBlank { catalog.lastOrNull().orEmpty() }
         return when {
-            frontier >= 0 && frontier < catalog.lastIndex -> ShelfReadingStatus.UPDATED
+            caughtUpChapter != null && latest.isNotBlank() && latest != caughtUpChapter &&
+                (assumedFromCloud || latest !in knownWhenCaughtUp) -> ShelfReadingStatus.UPDATED
             chapter.isBlank() -> ShelfReadingStatus.UNREAD
-            frontier >= 0 && chapter == caughtUpChapter -> ShelfReadingStatus.CAUGHT_UP
+            caughtUpChapter != null && chapter == caughtUpChapter -> ShelfReadingStatus.CAUGHT_UP
             else -> ShelfReadingStatus.READING
         }
     }
@@ -51,24 +56,28 @@ data class ShelfReadingRecord(
     fun observeCatalog(chapters: List<ShelfChapter>): ShelfReadingRecord {
         if (chapters.isEmpty() || chapters.any { it.id.isBlank() } || chapters.map { it.id }.distinct().size != chapters.size) return this
         val ids = chapters.map { it.id }
-        var next = copy(catalog = ids, latestName = chapters.last().name)
+        if (chapters.count { it.latest } > 1) return this
+        val explicitLatest = chapters.singleOrNull { it.latest }
+        val latest = explicitLatest ?: chapters.last()
+        var next = copy(catalog = ids, latestName = latest.name, latestChapterId = latest.id)
         // 删除、重编号或换目录不能用“不相等”推断新增。
         val frontier = catalog.indexOf(caughtUpChapter)
         val newFrontier = ids.indexOf(caughtUpChapter)
-        if (caughtUpChapter != null && (newFrontier < 0 || frontier < 0 ||
-                catalog.take(frontier + 1) != ids.take(newFrontier + 1))) {
+        if (caughtUpChapter != null && !assumedFromCloud && (newFrontier < 0 ||
+                explicitLatest == null && (frontier < 0 || catalog.take(frontier + 1) != ids.take(newFrontier + 1)))) {
             next = next.copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet())
         }
         next = next.consumeStartedUpdate()
-        return if (next.completed && next.chapter == ids.last()) {
-            next.copy(caughtUpChapter = next.chapter, startedSinceCaughtUp = emptySet())
+        return if (next.completed && next.chapter == latest.id) {
+            next.copy(caughtUpChapter = next.chapter, startedSinceCaughtUp = emptySet(),
+                knownWhenCaughtUp = ids.toSet(), assumedFromCloud = false)
         } else next
     }
 
     private fun consumeStartedUpdate(): ShelfReadingRecord {
-        val frontier = caughtUpChapter?.let(catalog::indexOf) ?: return this
-        return if (frontier >= 0 && startedSinceCaughtUp.any { catalog.indexOf(it) > frontier }) {
-            copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet())
+        val frontier = caughtUpChapter ?: return this
+        return if (startedSinceCaughtUp.any { it != frontier && (assumedFromCloud || it !in knownWhenCaughtUp) }) {
+            copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet(), assumedFromCloud = false)
         } else this
     }
 }

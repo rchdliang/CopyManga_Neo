@@ -357,6 +357,72 @@ class PortableAppGraphTest {
             assertEquals(1, requests)
         } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
     }
+    @Test fun cloudHistoryReaderResolvesTheChapterGroupBeforeLoadingContent() = runTest {
+        val root = Files.createTempDirectory("reader-cloud-group-")
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        val r = graph.repositories
+        val requests = mutableListOf<String>()
+        val manga = object : MangaRepository by r.manga {
+            override suspend fun getChapterInfo(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterInfo> {
+                requests += "resolve:$chapterUuid"
+                return Result.success(ChapterInfo(0, chapterUuid, 1, 0, null, "24话", "book", comicPathWord,
+                    null, "other_honyakuchimu", 0, null, null, null, null))
+            }
+            override suspend fun getChapterContent(comicPathWord: String, chapterUuid: String, group: String): Result<ChapterContent> {
+                requests += "content:$group"
+                return Result.success(ChapterContent(listOf("image"), null, null, "24话"))
+            }
+        }
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
+        try {
+            model.loadChapter("book", "chapter24", "")
+            val result = model.uiState.first { it is ReaderUiState.Success || it is ReaderUiState.Error }
+            val ready = assertIs<ReaderUiState.Success>(result)
+            assertEquals("other_honyakuchimu", ready.chapters.single().group)
+            assertEquals(listOf("resolve:chapter24", "content:other_honyakuchimu"), requests)
+        } finally { model.viewModelScope.cancel(); graph.close(); Dispatchers.resetMain(); root.toFile().deleteRecursively() }
+    }
+
+    @Test fun shelfCatalogUsesGlobalLatestChapterEvenWhenAnotherGroupAppearsLast() = runTest {
+        val root = Files.createTempDirectory("shelf-global-latest-")
+        val graph = PortableAppGraph.create(services(root), backgroundScope)
+        fun chapter(id: String, group: String) = ChapterInfo(0, id, 1, 0, null, id, "book", "book",
+            null, group, 0, null, null, null, null)
+        val groups = listOf(ChapterGroup("default", 1, "默认"), ChapterGroup("other", 1, "其它汉化版"))
+        val chapters = linkedMapOf("default" to listOf(chapter("25", "default")), "other" to listOf(chapter("24", "other")))
+        val display = DisplayValue("", 0)
+        val comic = ComicInfo("book", false, false, 0, "漫画", null, "book", false, false,
+            display, display, display, null, null, null, display, display, null, null, null, null, null,
+            null, LastChapter("25", "第25话"), null, null)
+        var fallback = false
+        val pagedGroups = mutableListOf<String>()
+        val manga = object : MangaRepository by graph.repositories.manga {
+            override suspend fun getChapterCatalog(pathWord: String, forceRefresh: Boolean): Result<ChapterCatalog> {
+                assertTrue(forceRefresh)
+                return if (fallback) Result.failure(Exception("catalog unavailable")) else Result.success(ChapterCatalog(groups, chapters))
+            }
+            override suspend fun getComicDetail(pathWord: String) = Result.success(
+                ComicDetail(comic, groups.associateBy { it.pathWord }, false, false, true, false, false))
+            override suspend fun getChapters(pathWord: String, group: String, offset: Int, limit: Int): Result<ChapterList> {
+                pagedGroups += group
+                return Result.success(ChapterList(chapters.getValue(group), 1))
+            }
+        }
+        try {
+            val key = ShelfReadingKey("owner", RequestMode.WEB, "comic", "book", "other")
+            suspend fun catalog() = com.rchdliang.copymanga_neo.data.local.portable.loadShelfReadingCatalog(
+                key, manga, graph.repositories.novels).getOrThrow()
+            val complete = catalog()
+            assertEquals("25", complete.single { it.latest }.id)
+            assertEquals("24", complete.last().id)
+            assertEquals(setOf("default", "other"), complete.map { it.group }.toSet())
+            fallback = true
+            assertEquals(complete, catalog())
+            assertEquals(listOf("default", "other"), pagedGroups)
+        } finally { graph.close(); root.toFile().deleteRecursively() }
+    }
+
     @Test fun continuousReaderReleasesOldChaptersAndReloadsInBothDirections() = runTest {
         val root = Files.createTempDirectory("reader-window-")
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))

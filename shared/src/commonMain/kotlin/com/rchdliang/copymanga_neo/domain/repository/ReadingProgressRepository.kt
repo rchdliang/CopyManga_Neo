@@ -22,7 +22,8 @@ interface ReadingProgressRepository {
     suspend fun acceptRemote(
         owner: String,
         records: Map<String, BrowseInfo?>,
-        requestVersion: Long
+        requestVersion: Long,
+        onlyMissing: Boolean = false
     ): Result<Unit>
 
     fun retryPending()

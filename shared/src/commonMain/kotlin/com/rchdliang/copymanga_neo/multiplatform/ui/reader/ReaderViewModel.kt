@@ -321,13 +321,18 @@ class ReaderViewModel constructor(
                     return@launch
                 }
 
-                repository.getChapterContent(comicPathWord, chapterUuid, group)
+                // 云端历史只给章节 UUID；进入正文时再定位汉化组，避免把跨组记录当成默认组。
+                val resolvedGroup = if (group.isBlank()) repository.getChapterInfo(comicPathWord, chapterUuid, "default")
+                    .getOrThrow().groupPathWord?.takeIf { it.isNotBlank() }
+                    ?: error("无法确定上次阅读章节的汉化组") else group
+                ensureActive()
+                repository.getChapterContent(comicPathWord, chapterUuid, resolvedGroup)
                     .onSuccess { content ->
                         ensureActive()
                         if (!keepContent) chain = emptyList()
                         currentChapterUuid = chapterUuid
-                        currentGroup = group
-                        publish(content, chapterUuid, group)
+                        currentGroup = resolvedGroup
+                        publish(content, chapterUuid, resolvedGroup)
 
                     }
                     .onFailure { error ->

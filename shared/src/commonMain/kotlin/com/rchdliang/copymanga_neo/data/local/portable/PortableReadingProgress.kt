@@ -131,7 +131,7 @@ class PortableReadingProgress(
         }
     }
 
-    override suspend fun acceptRemote(owner: String, records: Map<String, BrowseInfo?>, requestVersion: Long): Result<Unit> {
+    override suspend fun acceptRemote(owner: String, records: Map<String, BrowseInfo?>, requestVersion: Long, onlyMissing: Boolean): Result<Unit> {
         val epoch = observeGeneration()
         if (owner != currentOwner || requestVersion <= epoch.previousGenerationCeiling) return Result.success(Unit)
         firstLoad.await()
@@ -141,10 +141,11 @@ class PortableReadingProgress(
                 val local = data.owners[owner].orEmpty().toMutableMap()
                 records.forEach { (path, browse) ->
                     val previous = local[path]
+                    if (onlyMissing && previous != null) return@forEach
                     if (previous != null && previous.version >= requestVersion) return@forEach
                     if (previous?.pendingSync == true && previous.chapterUuid != browse?.chapterUuid) return@forEach
                     val uuid = browse?.chapterUuid?.takeIf { it.isNotBlank() }
-                    if (uuid == null) local.remove(path) else local[path] = ReadingProgress(uuid,
+                    if (uuid != null) local[path] = ReadingProgress(uuid,
                         browse.chapterName.orEmpty().ifBlank { previous?.takeIf { it.chapterUuid == uuid }?.chapterName.orEmpty() },
                         previous?.takeIf { it.chapterUuid == uuid }?.groupPathWord, requestVersion, false, previous?.lastReadGroupPathWord)
                 }

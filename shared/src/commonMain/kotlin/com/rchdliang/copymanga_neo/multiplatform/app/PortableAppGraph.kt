@@ -189,6 +189,10 @@ class PortableAppGraph private constructor(
                     inspectImage = services.readerImageIo::inspect)
                 val novelShelf = PortableNovelShelfRepository(client)
                 val progress = PortableReadingProgress(documents, state, manga, appScope)
+                val shelfReading = PortableShelfReading(documents, session, localReading, appScope) { key ->
+                    loadShelfReadingCatalog(key, manga, novels)
+                }
+                val cloudReading = PortableCloudReadingSync(state, manga, progress, localReading, shelfReading, appScope)
                 val records = DownloadRecords(documents, cache)
                 val access = LocalDownloadAccess()
                 val comments = PortableCommentRepository(client, DownloadedCommentStore(records))
@@ -199,6 +203,7 @@ class PortableAppGraph private constructor(
                 // 首帧之后预热；通知/下载命令可以直接 await，不依赖界面或帧时钟。
                 val background = appScope.launch(start = CoroutineStart.LAZY) {
                     probe.mark("background_start")
+                    cloudReading.start()
                     supervisorScope {
                         // 非首屏数据在主页绘制后预热。首次使用仍会自行 ensureLoaded，不能依赖这次预热。
                         val slots = kotlinx.coroutines.sync.Semaphore(2)
@@ -281,9 +286,6 @@ class PortableAppGraph private constructor(
                         novels.clearCache().getOrThrow()
                     }
                 }
-                val shelfReading = PortableShelfReading(documents, session, localReading, appScope) { key ->
-                    loadShelfReadingCatalog(key, manga, novels)
-                }
                 val repositories = AppRepositories(manga, discovery, novels, novelShelf, users, session, downloads, comments,
                     PortableShareLinkRepository(client, network::persistShareHosts), localReading, progress, appSettings, readerPreferences, readerTools,
                     novelPreferences, annotations, blacklist, network, risk, storage,
@@ -291,6 +293,7 @@ class PortableAppGraph private constructor(
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
                     novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client), startupTrace = probe,
                     shelfReading = shelfReading,
+                    retryCloudReadingSync = cloudReading::retry,
                     appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {
                         override suspend fun latestRelease() = try { Result.success(GitHubMetadata(client).latestApp()) }
                         catch (cancel: CancellationException) { throw cancel }

@@ -43,6 +43,7 @@ data class AppRepositories(
     val chineseDictionary: ChineseDictionaryRepository,
     val appInfo: AppInfoRepository,
     val shelfReading: ShelfReadingRepository,
+    val retryCloudReadingSync: () -> Unit = {},
     val startupTrace: StartupTrace = StartupTrace.None
 )
 

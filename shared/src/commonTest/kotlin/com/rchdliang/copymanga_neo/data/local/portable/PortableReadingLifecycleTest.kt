@@ -51,9 +51,11 @@ class PortableReadingLifecycleTest {
         values["reading-progress.json"] = storageJson.encodeToString(ProgressData.serializer(), data)
     }
     private fun state(owner: String = "user:a") = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB), webSession = PortableSession("token", owner)))
-    private class Manga : MangaRepository {
+    internal class Manga : MangaRepository {
         var calls = 0
         var clears = 0
+        var history: suspend (Int) -> Result<BrowseHistoryPage> = { Result.success(BrowseHistoryPage(emptyList(), null)) }
+        val historyOffsets = mutableListOf<Int>()
         var submit: suspend () -> Result<TrialContent> = { Result.failure(IllegalStateException("offline")) }
         var confirm: suspend () -> Result<ComicStatus> = { Result.success(ComicStatus(BrowseInfo(null, "book", "chapter", "chapter"), null)) }
         var clear: suspend () -> Result<Unit> = { Result.success(Unit) }
@@ -73,7 +75,7 @@ class PortableReadingLifecycleTest {
         override suspend fun getRecComics(limit: Int, offset: Int): Nothing = error("unused")
         override suspend fun getThemeComics(theme: String, offset: Int): Nothing = error("unused")
         override suspend fun getFavoriteComics(): Nothing = error("unused")
-        override suspend fun getBrowseHistory(offset: Int): Nothing = error("unused")
+        override suspend fun getBrowseHistory(offset: Int): Result<BrowseHistoryPage> { historyOffsets += offset; return history(offset) }
         override suspend fun addFavorite(comicId: String): Nothing = error("unused")
         override suspend fun removeFavorite(collectId: Int): Nothing = error("unused")
         override suspend fun removeFavorites(collectIds: List<Int>): Nothing = error("unused")

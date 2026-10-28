@@ -32,7 +32,8 @@ object PortableBackupCodec {
             val r = LocalReadingRecord(o.string("owner"), o.string("kind"), o.string("path"), o.string("chapter"), o.string("name"),
                 o.string("group"), o.string("title"), o.integer("page"), fraction, o.string("section"), o.integer("line"), o.integer("character"),
                 o.boolean("completed"), o.long("at"), o.string("cover"), o.string("authors"),
-                atChapterEnd = if ("atChapterEnd" in o) o.boolean("atChapterEnd") else false)
+                atChapterEnd = if ("atChapterEnd" in o) o.boolean("atChapterEnd") else false,
+                cloudImported = if ("cloudImported" in o) o.boolean("cloudImported") else false)
             return r
         }
         fun times(key: String) = raw.getValue(key).jsonObject.mapValues { (_, value) ->
