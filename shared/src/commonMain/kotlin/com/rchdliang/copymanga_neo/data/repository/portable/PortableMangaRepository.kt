@@ -54,10 +54,8 @@ class PortableMangaRepository(
     private fun usesOfficialApp() = networkSettings.settings.value.requestMode ==
             com.rchdliang.copymanga_neo.domain.model.RequestMode.OFFICIAL_APP
 
-    private data class CachedCatalog(val result: Result<ChapterCatalog>, val expiresAt: Long)
-
     private val catalogMutex = Mutex()
-    private val catalogCache = BoundedLruMap<String, CachedCatalog>(8)
+    private val catalogCache = BoundedLruMap<String, CachedChapterCatalog>(8)
 
     override suspend fun getChapterCatalog(
         pathWord: String,
@@ -67,9 +65,14 @@ class PortableMangaRepository(
             catalogMutex.withLock {
                 val generation = networkSettings.generation
                 val appMode = usesOfficialApp()
-                val cacheKey = "$generation:$pathWord"
+                val cacheKey = pathWord
+                val failureKey = "$generation:$pathWord"
                 if (!forceRefresh) {
-                    catalogCache[cacheKey]?.takeIf { it.expiresAt > monotonicNanos() }?.let {
+                    val now = monotonicNanos()
+                    catalogCache[cacheKey]?.takeIf { it.canReuse(now, appMode) }?.let {
+                        return@withLock it.result
+                    }
+                    catalogCache[failureKey]?.takeIf { it.canReuse(now, appMode) }?.let {
                         return@withLock it.result
                     }
                 }
@@ -126,11 +129,13 @@ class PortableMangaRepository(
                 if (appMode && result.isFailure) return@withLock result
                 // 失败短暂缓存，避免连续阅读或下载时反复等待同一个失败请求；手动刷新不受影响。
                 val lifetime = if (result.isSuccess) 300L else 30L
-                catalogCache[cacheKey] = CachedCatalog(
-                    result,
-                    monotonicNanos() + TimeUnit.SECONDS.toNanos(lifetime)
+                val expiresAt = monotonicNanos() + TimeUnit.SECONDS.toNanos(lifetime)
+                val cached = result.fold(
+                    onSuccess = { CachedChapterCatalog.success(it, appMode, expiresAt, catalogCache[cacheKey]) },
+                    onFailure = { CachedChapterCatalog(Result.failure(it), expiresAt) },
                 )
-                result
+                catalogCache[if (result.isSuccess) cacheKey else failureKey] = cached
+                cached.result
             }
         }
 
