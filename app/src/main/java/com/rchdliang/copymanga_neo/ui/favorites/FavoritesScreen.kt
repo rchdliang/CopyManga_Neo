@@ -255,8 +255,14 @@ private fun FavoritesContent(
                             if (showingNovels) {
                                 items(uiState.novels, key = { "novel:${it.collectId}" }) { entry ->
                                     val book = entry.book
+                                    val readingStatus = uiState.novelReadingStatuses[book.path]
+                                        ?: NovelShelfReadingStatus()
                                     NovelTransitionCard(
                                         book = book, source = "bookshelf",
+                                        statusText = readingStatus.text,
+                                        statusColor = if (readingStatus.highlighted)
+                                            MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
                                         isSelected = entry.collectId in uiState.selectedIds,
                                         selectionMode = uiState.isSelectionMode,
                                         onClick = {

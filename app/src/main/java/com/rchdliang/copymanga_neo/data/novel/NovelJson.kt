@@ -59,7 +59,11 @@ internal object NovelJson {
             val row = element.asJsonObject
             val collectId = requireNotNull(row["uuid"]) { "小说收藏记录缺少 ID" }.asInt
             require(collectId > 0) { "小说收藏记录 ID 无效" }
-            NovelShelfEntry(collectId, book(requireNotNull(row.getAsJsonObject("book"))))
+            val bookJson = requireNotNull(row.getAsJsonObject("book"))
+            NovelShelfEntry(
+                collectId, book(bookJson),
+                text(bookJson, "last_chapter_id"), text(bookJson, "last_chapter_name")
+            )
         }
         return NovelShelfPage(entries, result["total"].asInt, offset, result["limit"].asInt)
     }

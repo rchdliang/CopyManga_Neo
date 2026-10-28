@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.NovelShelfEntry
+import com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
@@ -37,6 +38,7 @@ data class FavoritesUiState(
     val isDeleting: Boolean = false,
     val selectedKind: FavoritesKind = FavoritesKind.COMIC,
     val novels: List<NovelShelfEntry> = emptyList(),
+    val novelReadingStatuses: Map<String, NovelShelfReadingStatus> = emptyMap(),
     val novelsLoading: Boolean = false,
     val novelsLoadingMore: Boolean = false,
     val novelsError: String? = null,
@@ -53,13 +55,17 @@ class FavoritesViewModel @Inject constructor(
     private val mangaRepository: MangaRepository,
     private val userRepository: UserRepository,
     private val readingProgress: ReadingProgressRepository,
-    private val novelShelf: NovelShelfRepository
+    private val novelShelf: NovelShelfRepository,
+    private val localReading: LocalReadingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState: StateFlow<FavoritesUiState> =
-        combine(_uiState, readingProgress.progress) { state, progress ->
+        combine(_uiState, readingProgress.progress, localReading.snapshot) { state, progress, localSnapshot ->
             if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) state else state.copy(
+                novelReadingStatuses = novelShelfReadingStatuses(
+                    state.novels, localSnapshot.records, progress.owner
+                ),
                 favorites = state.favorites.map { item ->
                     val local = progress.records[item.comic.pathWord]
                     if (local == null) item else item.copy(

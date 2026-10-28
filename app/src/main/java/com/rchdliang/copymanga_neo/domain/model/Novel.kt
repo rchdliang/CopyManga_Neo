@@ -38,7 +38,12 @@ data class NovelPage(val books: List<NovelBook>, val total: Int, val offset: Int
 }
 
 /** 收藏记录 ID 与作品 UUID 不同，批量取消收藏必须使用前者。 */
-data class NovelShelfEntry(val collectId: Int, val book: NovelBook)
+data class NovelShelfEntry(
+    val collectId: Int,
+    val book: NovelBook,
+    val lastChapterId: String = "",
+    val lastChapterName: String = ""
+)
 
 data class NovelShelfPage(
     val entries: List<NovelShelfEntry>,
