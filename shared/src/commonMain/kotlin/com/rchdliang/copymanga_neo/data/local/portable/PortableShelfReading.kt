@@ -4,18 +4,23 @@ import com.rchdliang.copymanga_neo.domain.model.*
 import com.rchdliang.copymanga_neo.domain.repository.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlin.time.Clock
 
-/** 本机阅读与首次云端默认追平分别处理；后续按作品最新章节判断跨组更新。 */
+/** 合并本机和云端续读位置，保留真实追更资格；按作品最新章节判断跨组更新。 */
 class PortableShelfReading(
     storage: DocumentStorage,
     private val sessions: ReadingSessionRepository,
     private val reading: LocalReadingRepository,
     private val scope: CoroutineScope,
+    private val remoteProgress: ReadingProgressRepository? = null,
     private val loadCatalog: suspend (ShelfReadingKey) -> Result<List<ShelfChapter>>
 ) : ShelfReadingRepository {
     private val document = DocumentStore(storage, "shelf-reading.json", ShelfReadingSnapshot.serializer(), ShelfReadingSnapshot(),
@@ -28,6 +33,8 @@ class PortableShelfReading(
     private val slots = Semaphore(2)
     private data class ReadEvent(val session: LocalReadingSession, val reading: LocalReadingRecord, val deletion: Long)
     private val events = Channel<ReadEvent>(Channel.UNLIMITED)
+    private data class LocalRead(val version: Long, val chapter: String)
+    private val localReads = MutableStateFlow<Map<String, LocalRead>>(emptyMap())
 
     init {
         scope.launch {
@@ -36,9 +43,57 @@ class PortableShelfReading(
         }
         // 正文事件按上报顺序处理，避免“完成旧章”晚于“开始新章”落盘而重新点亮 badge。
         scope.launch { for (event in events) accept(event) }
+        // 收藏和详情接口也能更新云端续读章节，已有书架状态必须跟随同一进度源。
+        remoteProgress?.let { progress ->
+            scope.launch {
+                document.ensureLoaded()
+                combine(progress.progress, reading.snapshot) { remote, local -> remote to local }.collect { (remote, local) ->
+                    val session = sessions.getReadingSessionSync() ?: return@collect
+                    val owner = session.owner ?: return@collect
+                    if (!remote.isReady || remote.error != null || remote.owner != owner || owner == "guest") return@collect
+                    val books = snapshot.value.books(session, "comic")
+                    val positions = local.records.filter { it.owner == owner && it.kind == "comic" }
+                        .groupBy { it.path }.mapValues { (_, records) -> records.maxBy { it.updatedAt } }
+                    val changed = remote.records.filter { (path, position) ->
+                        val localPosition = positions[path]
+                        val realCompletion = localPosition?.let { !it.cloudImported && it.completed } == true
+                        (!position.pendingSync || localPosition?.cloudImported == false) &&
+                            (books[path]?.let { it.chapter != position.chapterUuid || realCompletion && !it.completed ||
+                                localPosition?.cloudImported == false && it.chapterName != localPosition.name }
+                                ?: (localPosition?.cloudImported == false)) &&
+                            localPosition?.chapter == position.chapterUuid &&
+                            acceptsProgress(session, path, position) &&
+                            reading.permitsCoarse(owner, "comic", path)
+                    }
+                    if (changed.isEmpty()) return@collect
+                    val items = changed.map { (path, position) ->
+                        BrowseHistoryItem(0, "", path, null, emptyList(),
+                            position.chapterUuid, position.chapterName, null, null)
+                    }
+                    importCloudHistory(session, items) { item ->
+                        current(session) && progress.progress.value.owner == owner &&
+                            progress.progress.value.records[item.pathWord] == changed[item.pathWord] &&
+                            reading.latest(owner, "comic", item.pathWord)?.chapter == item.lastReadChapterId &&
+                            acceptsProgress(session, item.pathWord, changed.getValue(item.pathWord)) &&
+                            reading.permitsCoarse(owner, "comic", item.pathWord)
+                    }.onSuccess {
+                        refresh(session, "comic", changed.keys)
+                        // 恢复真实完成记录时重新核对目录，不依赖旧书架保存的最新章指针。
+                        snapshot.value.books(session, "comic").values
+                            .filter { it.key.path in changed && it.completed && it.caughtUpChapter == null }
+                            .forEach { record -> scope.launch { checkCatalog(session, record.key) } }
+                    }
+                }
+            }
+        }
     }
 
     private fun current(session: LocalReadingSession) = sessions.getReadingSessionSync() == session
+    private fun acceptsProgress(session: LocalReadingSession, path: String, position: ReadingProgress): Boolean {
+        val owner = session.owner ?: return false
+        val local = localReads.value[ShelfReadingKey(owner, session.mode, "comic", path).bookKey] ?: return true
+        return position.chapterUuid == local.chapter || position.version > local.version
+    }
     private fun survives(record: ShelfReadingRecord): Boolean = record.historyCutoff >= deletion(record.key)
     private suspend fun pruneDeleted() = operations.withLock {
         document.update { it.copy(records = it.records.filterValues(::survives)) }
@@ -48,6 +103,11 @@ class PortableShelfReading(
         if (!current(session) || session.owner != reading.owner || reading.chapter.isBlank()) return
         val key = ShelfReadingKey(reading.owner, session.mode, reading.kind, reading.path,
             if (reading.kind == "comic") reading.group else "")
+        // 在排队落盘之前立即作废旧快照；其他作品的同步也会重发整张进度表。
+        if (reading.kind == "comic") remoteProgress?.let { progress ->
+            val version = progress.requestVersion()
+            localReads.update { it + (key.bookKey to LocalRead(version, reading.chapter)) }
+        }
         events.trySend(ReadEvent(session, reading, deletion(key)))
     }
 
@@ -81,7 +141,7 @@ class PortableShelfReading(
         maxOf(it.clearedOwners[key.owner] ?: -1, it.deletedBooks[key.bookKey] ?: -1)
     }
 
-    /** 只为首次云端导入的作品建立默认基线，不覆盖已有本地追更状态。 */
+    /** 合并已被统一进度仓库接受的云端章节，不推定完成或追平。 */
     suspend fun importCloudHistory(session: LocalReadingSession, items: List<BrowseHistoryItem>,
         eligible: (BrowseHistoryItem) -> Boolean): Result<Unit> = operations.withLock {
         document.update { state ->
@@ -90,12 +150,26 @@ class PortableShelfReading(
             items.forEach { item ->
                 val chapter = item.lastReadChapterId?.takeIf { it.isNotBlank() } ?: return@forEach
                 val key = ShelfReadingKey(session.owner, session.mode, "comic", item.pathWord)
-                if (records.values.any { it.key.bookKey == key.bookKey } || !eligible(item)) return@forEach
-                val latest = item.latestChapterId?.takeIf { it.isNotBlank() } ?: chapter
-                records[key.id] = ShelfReadingRecord(key, chapter, item.lastReadChapterName.orEmpty(),
-                    readAt = Clock.System.now().toEpochMilliseconds(), historyCutoff = deletion(key),
-                    catalog = listOf(chapter, latest).distinct(), latestName = item.latestChapterName.orEmpty(),
-                    caughtUpChapter = chapter, latestChapterId = latest, knownWhenCaughtUp = setOf(chapter), assumedFromCloud = true)
+                if (!eligible(item)) return@forEach
+                val old = records.values.filter { it.key.bookKey == key.bookKey && survives(it) }
+                    .maxByOrNull { it.readAt }?.withoutCloudAssumption() ?: ShelfReadingRecord(key)
+                val precise = reading.latest(session.owner, "comic", item.pathWord)
+                    ?.takeIf { it.chapter == chapter && !it.cloudImported }
+                val name = precise?.name?.takeIf { it.isNotBlank() } ?: item.lastReadChapterName.orEmpty()
+                var next = old.copy(
+                    latestChapterId = item.latestChapterId?.takeIf { it.isNotBlank() } ?: old.latestChapterId,
+                    latestName = item.latestChapterName?.takeIf { it.isNotBlank() } ?: old.latestName,
+                    historyCutoff = deletion(key))
+                // 同一云端章节的重复拉取不能再次消费之后出现的新提醒。
+                if (old.chapter != chapter) {
+                    next = next.copy(key = key).read(chapter, name, precise?.completed == true,
+                        maxOf(Clock.System.now().toEpochMilliseconds(), old.readAt + 1))
+                } else {
+                    next = next.copy(chapterName = name.ifBlank { old.chapterName },
+                        completed = old.completed || precise?.completed == true)
+                }
+                records.entries.removeAll { it.value.key.bookKey == key.bookKey }
+                records[next.key.id] = next
             }
             state.copy(records = records)
         }
@@ -135,11 +209,16 @@ class PortableShelfReading(
     }
 
     companion object {
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
         val migrations: Map<Int, (kotlinx.serialization.json.JsonElement) -> kotlinx.serialization.json.JsonElement> = mapOf(
             1 to { payload ->
                 storageJson.encodeToJsonElement(ShelfReadingSnapshot.serializer(),
                     storageJson.decodeFromJsonElement(ShelfReadingSnapshot.serializer(), payload).unified())
+            },
+            2 to { payload ->
+                val previous = storageJson.decodeFromJsonElement(ShelfReadingSnapshot.serializer(), payload)
+                storageJson.encodeToJsonElement(ShelfReadingSnapshot.serializer(),
+                    previous.copy(records = previous.records.mapValues { it.value.withoutCloudAssumption() }))
             }
         )
     }

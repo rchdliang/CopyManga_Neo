@@ -16,7 +16,7 @@ data class ShelfReadingKey(
 
 data class ShelfChapter(val id: String, val name: String, val group: String = "", val latest: Boolean = false)
 
-/** 续读位置与追更基线分开保存；首次云端导入默认追平，实际阅读后由完整目录确认。 */
+/** 续读位置、追更资格与本轮提醒分别保存；云端章节位置不代表读完或曾经追平。 */
 @Serializable
 data class ShelfReadingRecord(
     val key: ShelfReadingKey,
@@ -30,18 +30,21 @@ data class ShelfReadingRecord(
     val caughtUpChapter: String? = null,
     val latestChapterId: String = "",
     val knownWhenCaughtUp: Set<String> = emptySet(),
-    /** 首次云端同步采用用户指定的“默认追平”；不等价于本机读完证据。 */
+    /** 兼容旧存档；迁移时撤销这种缺乏阅读证据的追平假设。 */
     val assumedFromCloud: Boolean = false,
     // 保留离线期间实际读过的章节，联网后再判定是否已开始追平基线之后的新内容。
-    val startedSinceCaughtUp: Set<String> = emptySet()
+    val startedSinceCaughtUp: Set<String> = emptySet(),
+    /** 已确认这一轮提醒时的目录；回读其中章节不会消除下一轮提醒。 */
+    val knownWhenAcknowledged: Set<String> = emptySet()
 ) {
     val status: ShelfReadingStatus get() {
         val latest = latestChapterId.ifBlank { catalog.lastOrNull().orEmpty() }
         return when {
             caughtUpChapter != null && latest.isNotBlank() && latest != caughtUpChapter &&
-                (assumedFromCloud || latest !in knownWhenCaughtUp) -> ShelfReadingStatus.UPDATED
+                !assumedFromCloud && latest !in knownWhenCaughtUp && latest !in knownWhenAcknowledged -> ShelfReadingStatus.UPDATED
             chapter.isBlank() -> ShelfReadingStatus.UNREAD
-            caughtUpChapter != null && chapter == caughtUpChapter -> ShelfReadingStatus.CAUGHT_UP
+            caughtUpChapter != null && !assumedFromCloud && completed &&
+                chapter == caughtUpChapter && chapter == latest -> ShelfReadingStatus.CAUGHT_UP
             else -> ShelfReadingStatus.READING
         }
     }
@@ -65,21 +68,30 @@ data class ShelfReadingRecord(
         val newFrontier = ids.indexOf(caughtUpChapter)
         if (caughtUpChapter != null && !assumedFromCloud && (newFrontier < 0 ||
                 explicitLatest == null && (frontier < 0 || catalog.take(frontier + 1) != ids.take(newFrontier + 1)))) {
-            next = next.copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet())
+            next = next.copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet(), knownWhenAcknowledged = emptySet())
         }
         next = next.consumeStartedUpdate()
         return if (next.completed && next.chapter == latest.id) {
             next.copy(caughtUpChapter = next.chapter, startedSinceCaughtUp = emptySet(),
-                knownWhenCaughtUp = ids.toSet(), assumedFromCloud = false)
+                knownWhenCaughtUp = ids.toSet(), assumedFromCloud = false, knownWhenAcknowledged = emptySet())
         } else next
     }
 
     private fun consumeStartedUpdate(): ShelfReadingRecord {
         val frontier = caughtUpChapter ?: return this
-        return if (startedSinceCaughtUp.any { it != frontier && (assumedFromCloud || it !in knownWhenCaughtUp) }) {
-            copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet(), assumedFromCloud = false)
+        val latest = latestChapterId.ifBlank { catalog.lastOrNull().orEmpty() }
+        // 离线打开的新章先保留事件，目录确认后再消除本轮提醒；回读旧章不消除。
+        return if (!assumedFromCloud && latest.isNotBlank() && latest != frontier &&
+            startedSinceCaughtUp.any { it in catalog && it !in knownWhenCaughtUp && it !in knownWhenAcknowledged }) {
+            copy(knownWhenAcknowledged = catalog.toSet(), startedSinceCaughtUp = emptySet())
         } else this
     }
+
+    /** 撤销旧版首次云端导入产生的假追平，不影响真实阅读获得的资格。 */
+    fun withoutCloudAssumption(): ShelfReadingRecord =
+        if (!assumedFromCloud) this else copy(caughtUpChapter = null, knownWhenCaughtUp = emptySet(),
+            assumedFromCloud = false, startedSinceCaughtUp = emptySet(), knownWhenAcknowledged = emptySet())
+
 }
 
 @Serializable

@@ -274,8 +274,10 @@ fun FavoritesContent(
                                     val progress = uiState.novelReadingProgress[book.path]
                                     val (statusText, statusColor) = rememberReadingStatus(
                                         tracking = uiState.novelReadingStates[book.path],
-                                        hasRead = !progress?.chapter.isNullOrBlank(),
-                                        lastReadChapterName = progress?.name.orEmpty()
+                                        lastReadChapterId = progress?.chapter.orEmpty(),
+                                        lastReadChapterName = progress?.name.orEmpty(),
+                                        latestChapterId = entry.lastChapterId,
+                                        latestChapterName = entry.lastChapterName
                                     )
                                     NovelTransitionCard(
                                         book = book, source = "bookshelf",
@@ -511,32 +513,25 @@ private fun SelectionBottomBar(
 private fun rememberReadingStatus(comic: FavoriteComic, tracking: ShelfReadingRecord? = null): Pair<String, Color> {
     return rememberReadingStatus(
         tracking = tracking,
-        hasRead = !comic.browse?.chapterUuid.isNullOrBlank(),
-        lastReadChapterName = comic.browse?.chapterName.orEmpty()
+        lastReadChapterId = comic.browse?.chapterUuid.orEmpty(),
+        lastReadChapterName = comic.browse?.chapterName.orEmpty(),
+        latestChapterId = comic.lastChapterId,
+        latestChapterName = comic.lastChapterName
     )
 }
 
 @Composable
 private fun rememberReadingStatus(
     tracking: ShelfReadingRecord?,
-    hasRead: Boolean,
-    lastReadChapterName: String
+    lastReadChapterId: String,
+    lastReadChapterName: String,
+    latestChapterId: String,
+    latestChapterName: String = ""
 ): Pair<String, Color> {
-    val status = tracking?.status ?: if (hasRead) ShelfReadingStatus.READING else ShelfReadingStatus.UNREAD
-    val chapterName = tracking?.chapterName?.takeIf { it.isNotBlank() } ?: lastReadChapterName
-    return when (status) {
-        ShelfReadingStatus.UNREAD -> {
-            "还未读过" to MaterialTheme.colorScheme.primary
-        }
-        ShelfReadingStatus.UPDATED -> {
-            val latestChapterName = tracking?.latestName.orEmpty()
-            (if (latestChapterName.isBlank()) "有新内容" else "有新内容：$latestChapterName") to MaterialTheme.colorScheme.primary
-        }
-        ShelfReadingStatus.CAUGHT_UP -> "已读至最新" to MaterialTheme.colorScheme.onSurfaceVariant
-        ShelfReadingStatus.READING -> {
-            (if (chapterName.isBlank()) "继续阅读" else "继续阅读：$chapterName") to MaterialTheme.colorScheme.onSurfaceVariant
-        }
-    }
+    val status = favoritesReadingStatus(tracking, lastReadChapterId, lastReadChapterName,
+        latestChapterId, latestChapterName)
+    return status.text to if (status.emphasized) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 // region Previews

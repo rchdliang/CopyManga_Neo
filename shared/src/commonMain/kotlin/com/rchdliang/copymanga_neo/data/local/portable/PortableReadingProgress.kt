@@ -154,6 +154,13 @@ class PortableReadingProgress(
         }
     }
 
+    /** 直接检查持久层，避免 StateFlow 尚未发布或另一请求已更新时合并过期云端位置。 */
+    fun matchesRemote(owner: String, path: String, chapter: String, requestVersion: Long): Boolean {
+        if (owner != currentOwner) return false
+        val record = document.state.value.owners[owner]?.get(path) ?: return false
+        return !record.pendingSync && record.version >= requestVersion && record.chapterUuid == chapter
+    }
+
     override fun retryPending() { signals.trySend(Unit) }
     private suspend fun syncPending(owner: String, generation: Long) {
         if (owner == "guest" || !load.value.finished || document.error.value != null) return

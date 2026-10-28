@@ -52,7 +52,7 @@ class PortableShelfReadingTest {
     private fun PortableShelfReading.state(session: LocalReadingSession, kind: String) =
         snapshot.value.books(session, kind).getValue("book")
 
-    @Test fun mangaAndNovelPersistAcknowledgementAndRearmOnlyAfterCatchingUp() = runTest {
+    @Test fun mangaAndNovelPersistAcknowledgementAndNotifyOnTheNextRelease() = runTest {
         for (kind in listOf("comic", "novel")) {
             val docs = Documents()
             val sessions = Sessions()
@@ -84,7 +84,7 @@ class PortableShelfReadingTest {
             assertEquals(ShelfReadingStatus.READING, restored.state(session, kind).status)
             total = 104
             restored.refresh(session, kind, setOf("book")); runCurrent()
-            assertEquals(ShelfReadingStatus.READING, restored.state(session, kind).status)
+            assertEquals(ShelfReadingStatus.UPDATED, restored.state(session, kind).status)
             restored.record(session, position(kind, 104, true)); runCurrent()
             assertEquals(ShelfReadingStatus.CAUGHT_UP, restored.state(session, kind).status)
             total = 105
@@ -110,13 +110,13 @@ class PortableShelfReadingTest {
         tracking.record(session, position("comic", 101)); runCurrent()
         gate.complete(Unit); runCurrent()
         assertEquals(ShelfReadingStatus.READING, tracking.state(session, "comic").status)
-        assertNull(tracking.state(session, "comic").caughtUpChapter)
+        assertEquals("c100", tracking.state(session, "comic").caughtUpChapter)
 
         gate = CompletableDeferred()
         tracking.record(session, position("comic", 102, true)); runCurrent()
         sessions.current = session.copy(mode = RequestMode.OFFICIAL_APP, generation = 2)
         gate.complete(Unit); runCurrent()
-        assertNull(tracking.state(session, "comic").caughtUpChapter)
+        assertEquals("c100", tracking.state(session, "comic").caughtUpChapter)
         assertEquals(ShelfReadingStatus.READING, tracking.state(sessions.current, "comic").status)
         tracking.record(session, position("comic", 102, true)); runCurrent()
         assertEquals(ShelfReadingStatus.READING, tracking.state(sessions.current, "comic").status)
@@ -204,7 +204,7 @@ class PortableShelfReadingTest {
             assertEquals(1, tracking.snapshot.value.records.size)
             val restored = PortableShelfReading(docs, sessions, local, backgroundScope) { Result.success(chapters(103)) }
             restored.refresh(sessions.current, kind, setOf("book")); runCurrent()
-            assertEquals(ShelfReadingStatus.READING, restored.state(sessions.current, kind).status)
+            assertEquals(ShelfReadingStatus.UPDATED, restored.state(sessions.current, kind).status)
         }
     }
 
@@ -221,13 +221,38 @@ class PortableShelfReadingTest {
         val old = ShelfReadingSnapshot(mapOf(legacyId(waiting.key) to waiting, legacyId(started.key) to started))
         docs.values["shelf-reading.json"] = DocumentEnvelope.encode("copymanga.document/shelf-reading.json", 1,
             storageJson.encodeToJsonElement(ShelfReadingSnapshot.serializer(), old))
-        val tracking = PortableShelfReading(docs, sessions, local, backgroundScope) { Result.success(chapters(103)) }
+        val tracking = PortableShelfReading(docs, sessions, local, backgroundScope) { Result.success(chapters(102)) }
         tracking.refresh(sessions.current, "novel", setOf("book")); runCurrent()
         assertEquals(1, tracking.snapshot.value.records.size)
         assertEquals(ShelfReadingStatus.READING, tracking.state(sessions.current, "novel").status)
         assertEquals("c101", tracking.state(sessions.current, "novel").chapter)
-        assertTrue(docs.values.containsKey("shelf-reading.json.before-v2"))
-        // Version 2 is also accepted by the existing personal-data backup path.
+        assertTrue(docs.values.containsKey("shelf-reading.json.before-v3"))
+        // 迁移后的新版本仍可通过个人数据备份导出。
+        assertTrue(PortableUserDataBackup(docs).export().contains("shelf-reading.json"))
+    }
+
+    @Test fun migrationRemovesAssumedCatchUpButKeepsRealEvidence() = runTest {
+        val docs = Documents()
+        val sessions = Sessions()
+        val key = ShelfReadingKey("owner", RequestMode.WEB, "comic", "imported")
+        val assumed = ShelfReadingRecord(key, chapter = "c10", caughtUpChapter = "c10",
+            catalog = listOf("c10", "c100"), latestChapterId = "c100",
+            knownWhenCaughtUp = setOf("c10"), assumedFromCloud = true)
+        val real = ShelfReadingRecord(key.copy(path = "real"))
+            .read("c100", "100", true, 1).observeCatalog(chapters(100))
+        val previous = ShelfReadingSnapshot(listOf(assumed, real).associateBy { it.key.id })
+        docs.values["shelf-reading.json"] = DocumentEnvelope.encode("copymanga.document/shelf-reading.json", 2,
+            storageJson.encodeToJsonElement(ShelfReadingSnapshot.serializer(), previous))
+        val local = PortableLocalReading(docs, backgroundScope)
+        val shelf = PortableShelfReading(docs, sessions, local, backgroundScope) { Result.success(chapters(101)) }
+        runCurrent()
+        val books = shelf.snapshot.value.books(sessions.current, "comic")
+        assertNull(books.getValue("imported").caughtUpChapter)
+        assertFalse(books.getValue("imported").assumedFromCloud)
+        assertEquals(ShelfReadingStatus.READING, books.getValue("imported").status)
+        assertEquals("c100", books.getValue("real").caughtUpChapter)
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, books.getValue("real").status)
+        assertTrue(docs.values.containsKey("shelf-reading.json.before-v3"))
         assertTrue(PortableUserDataBackup(docs).export().contains("shelf-reading.json"))
     }
 }

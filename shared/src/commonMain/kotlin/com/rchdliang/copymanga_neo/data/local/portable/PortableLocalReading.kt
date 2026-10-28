@@ -64,24 +64,50 @@ class PortableLocalReading(storage: DocumentStorage, private val scope: Coroutin
     override fun permitsCoarse(owner: String, kind: String, path: String) = ReadingMergePolicy.canUseCoarse(
         owner, kind, path, snapshot.value.clearedOwners, snapshot.value.deletedBooks)
 
-    /** 只补缺失作品；云端空结果、旧进度均不能覆盖本机位置、完成状态或书签。 */
-    suspend fun importCloudHistory(owner: String, records: List<LocalReadingRecord>, current: () -> Boolean): Result<Unit> = mutate { s ->
-        if (!current()) return@mutate s
-        val occupied = (s.records + pending.value.values).map { it.bookKey }.toMutableSet()
-        val additions = records.filter { r ->
-            r.owner == owner && r.kind == "comic" && r.path.isNotBlank() && r.chapter.isNotBlank() &&
-                ReadingMergePolicy.canUseCoarse(owner, r.kind, r.path, s.clearedOwners, s.deletedBooks) &&
-                r.key !in s.deleted && occupied.add(r.bookKey)
-        }.map { it.copy(completed = false, atChapterEnd = false, cloudImported = true, group = "") }
-        s.copy(records = s.records + additions)
+    /** 请求开始时截取本机版本，防止迟到的云端响应覆盖请求期间的阅读。 */
+    fun cloudRequestVersion(): Long = versions.value
+
+    fun canMergeCloudHistory(owner: String, path: String, requestVersion: Long): Boolean =
+        permitsCoarse(owner, "comic", path) &&
+            pending.value.values.none { it.owner == owner && it.kind == "comic" && it.path == path } &&
+            snapshot.value.records.none {
+                it.owner == owner && it.kind == "comic" && it.path == path && it.updatedAt > requestVersion
+            }
+
+    fun isCurrentCloudPosition(record: LocalReadingRecord): Boolean =
+        permitsCoarse(record.owner, record.kind, record.path) &&
+            pending.value.values.none { it.bookKey == record.bookKey } &&
+            latest(record.owner, record.kind, record.path) == record
+
+    /** 合并章节级位置；同章精确页码、完成状态和书签始终保留。 */
+    suspend fun importCloudHistory(
+        owner: String, records: List<LocalReadingRecord>, requestVersion: Long,
+        eligible: (LocalReadingRecord) -> Boolean
+    ): Result<Map<String, LocalReadingRecord>> {
+        val accepted = mutableMapOf<String, LocalReadingRecord>()
+        return mutate { s ->
+            accepted.clear()
+            val merged = s.records.associateBy { it.key }.toMutableMap()
+            records.forEach { r ->
+                if (r.owner != owner || r.kind != "comic" || r.path.isBlank() || r.chapter.isBlank() ||
+                    !eligible(r) || !canMergeCloudHistory(owner, r.path, requestVersion) || r.key in s.deleted) return@forEach
+                val old = merged[r.key]
+                val latest = s.records.filter { it.bookKey == r.bookKey }.maxByOrNull { it.updatedAt }
+                val next = if (old != null) {
+                    old.copy(
+                        title = safeBookTitle(r.path, r.title, old.title),
+                        name = r.name.ifBlank { old.name }, cover = r.cover.ifBlank { old.cover },
+                        authors = r.authors.ifBlank { old.authors },
+                        updatedAt = if (latest?.chapter == r.chapter) old.updatedAt else nextVersion())
+                } else r.copy(completed = false, atChapterEnd = false, cloudImported = true,
+                    group = "", updatedAt = if (latest == null) r.updatedAt else nextVersion())
+                merged[r.key] = next
+                accepted[r.path] = next
+            }
+            s.copy(records = merged.values.toList())
+        }.map { accepted.toMap() }
     }
 
-    fun canAssumeCloudCatchUp(owner: String, path: String, chapter: String): Boolean {
-        if (!permitsCoarse(owner, "comic", path)) return false
-        if (pending.value.values.any { it.owner == owner && it.kind == "comic" && it.path == path }) return false
-        val records = snapshot.value.records.filter { it.owner == owner && it.kind == "comic" && it.path == path }
-        return records.isNotEmpty() && records.all { it.cloudImported } && records.any { it.chapter == chapter }
-    }
     override fun record(value: LocalReadingRecord) {
         val record = value.copy(title = safeBookTitle(value.path, value.title), updatedAt = nextVersion())
         if (record.completed) completed.update { it + (record.key to record.updatedAt) }

@@ -4,7 +4,6 @@ import com.rchdliang.copymanga_neo.data.remote.portable.NetworkSnapshot
 import com.rchdliang.copymanga_neo.data.remote.portable.PortableNetworkState
 import com.rchdliang.copymanga_neo.domain.model.*
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
-import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Clock
@@ -13,7 +12,7 @@ import kotlin.time.Clock
 class PortableCloudReadingSync(
     private val state: PortableNetworkState,
     private val manga: MangaRepository,
-    private val progress: ReadingProgressRepository,
+    private val progress: PortableReadingProgress,
     private val local: PortableLocalReading,
     private val shelf: PortableShelfReading,
     private val scope: CoroutineScope
@@ -53,6 +52,7 @@ class PortableCloudReadingSync(
         progress.awaitReady(owner).error?.let { error(it) }
         if (!current(snapshot)) return
         val version = progress.requestVersion()
+        val localVersion = local.cloudRequestVersion()
         val importedAt = Clock.System.now().toEpochMilliseconds()
         val seenBooks = mutableSetOf<String>()
         var offset = 0
@@ -68,20 +68,22 @@ class PortableCloudReadingSync(
                     authors = item.authors.joinToString(",") { it.name },
                     updatedAt = (importedAt - ordinal++).coerceAtLeast(0), cloudImported = true)
             }
-            local.importCloudHistory(owner, positions) { current(snapshot) }.getOrThrow()
+            val resumes = entries.filter { local.canMergeCloudHistory(owner, it.pathWord, localVersion) }
+                .associate { it.pathWord to BrowseInfo(null, it.pathWord, it.lastReadChapterId, it.lastReadChapterName) }
+            progress.acceptRemote(owner, resumes, version).getOrThrow()
             if (!current(snapshot)) return
-            // 已有本机精确位置优先；只为尚无粗略进度的作品补入，绝不反向上报。
-            val resumes = entries.mapNotNull { item ->
-                if (!local.permitsCoarse(owner, "comic", item.pathWord)) null
-                else local.latest(owner, "comic", item.pathWord)?.let {
-                    item.pathWord to BrowseInfo(null, item.pathWord, it.chapter, it.name)
-                }
-            }.toMap()
-            progress.acceptRemote(owner, resumes, version, onlyMissing = true).getOrThrow()
+            fun accepted(path: String, chapter: String) =
+                current(snapshot) && progress.matchesRemote(owner, path, chapter, version)
+            val merged = local.importCloudHistory(owner, positions, localVersion) {
+                accepted(it.path, it.chapter)
+            }.getOrThrow()
             if (!current(snapshot)) return
             shelf.importCloudHistory(session, entries) { item ->
-                current(snapshot) && local.canAssumeCloudCatchUp(owner, item.pathWord, item.lastReadChapterId.orEmpty())
+                merged[item.pathWord]?.let { record ->
+                    accepted(record.path, record.chapter) && local.isCurrentCloudPosition(record)
+                } == true
             }.getOrThrow()
+            shelf.refresh(session, "comic", merged.keys)
             val next = page.nextOffset ?: return
             require(page.items.isNotEmpty() && next > offset) { "云端历史分页没有前进" }
             offset = next

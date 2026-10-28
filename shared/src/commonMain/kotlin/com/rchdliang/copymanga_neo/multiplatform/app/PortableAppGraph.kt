@@ -189,7 +189,7 @@ class PortableAppGraph private constructor(
                     inspectImage = services.readerImageIo::inspect)
                 val novelShelf = PortableNovelShelfRepository(client)
                 val progress = PortableReadingProgress(documents, state, manga, appScope)
-                val shelfReading = PortableShelfReading(documents, session, localReading, appScope) { key ->
+                val shelfReading = PortableShelfReading(documents, session, localReading, appScope, progress) { key ->
                     loadShelfReadingCatalog(key, manga, novels)
                 }
                 val cloudReading = PortableCloudReadingSync(state, manga, progress, localReading, shelfReading, appScope)

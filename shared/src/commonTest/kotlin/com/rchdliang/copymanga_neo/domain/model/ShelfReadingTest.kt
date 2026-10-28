@@ -20,17 +20,29 @@ class ShelfReadingTest {
         assertEquals(ShelfReadingStatus.UPDATED, state.observeCatalog(chapters(102)).status)
     }
 
-    @Test fun beginningAnyNewChapterDisarmsUntilNextCatchUp() {
+    @Test fun beginningNewContentAcknowledgesOnlyTheCurrentRelease() {
         var state = caughtUp(100).observeCatalog(chapters(102))
         assertEquals(ShelfReadingStatus.UPDATED, state.status)
         state = state.read("c101", "第 101 章", false, 2)
         assertEquals(ShelfReadingStatus.READING, state.status)
-        assertNull(state.caughtUpChapter)
+        assertEquals("c100", state.caughtUpChapter)
         state = state.observeCatalog(chapters(103))
-        assertEquals(ShelfReadingStatus.READING, state.status)
+        assertEquals(ShelfReadingStatus.UPDATED, state.status)
         state = state.read("c103", "第 103 章", true, 3).observeCatalog(chapters(103))
         assertEquals(ShelfReadingStatus.CAUGHT_UP, state.status)
         assertEquals(ShelfReadingStatus.UPDATED, state.observeCatalog(chapters(104)).status)
+    }
+
+    @Test fun acknowledgedReleaseDoesNotHideNextReleaseWhenRereadOrCompleted() {
+        val started = caughtUp(100).observeCatalog(chapters(105)).read("c101", "101", false, 2)
+        assertEquals(ShelfReadingStatus.READING, started.status)
+        val updated = started.observeCatalog(chapters(106))
+        assertEquals(ShelfReadingStatus.UPDATED, updated.status)
+        assertEquals(ShelfReadingStatus.UPDATED, updated.read("c101", "101", true, 3).status)
+        assertEquals(ShelfReadingStatus.UPDATED, updated.read("c102", "102", false, 4).status)
+        assertEquals(ShelfReadingStatus.READING, updated.read("c106", "106", false, 5).status)
+        // 服务端最新指针退回同一轮已知章节，也不能凭“不相等”制造新提醒。
+        assertEquals(ShelfReadingStatus.READING, started.observeCatalog(chapters(104)).status)
     }
 
     @Test fun rereadingOldChaptersDoesNotAcknowledgeNewContent() {
@@ -43,7 +55,7 @@ class ShelfReadingTest {
         val state = caughtUp(100).read("c101", "第 101 章", false, 2)
             .read("c10", "第 10 章", false, 3).observeCatalog(chapters(102))
         assertEquals(ShelfReadingStatus.READING, state.status)
-        assertNull(state.caughtUpChapter)
+        assertEquals("c100", state.caughtUpChapter)
         // An offline completion alone cannot create an assumed catch-up baseline.
         val offline = ShelfReadingRecord(key).read("c100", "末章", true, 1)
         assertEquals(ShelfReadingStatus.READING, offline.status)
