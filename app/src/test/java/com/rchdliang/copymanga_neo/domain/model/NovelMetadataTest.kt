@@ -13,7 +13,7 @@ class NovelMetadataTest {
     fun sparseVolumeKeepsKnownMetadata() {
         val volume = NovelBook("spice", "", "", emptyList())
         assertEquals(detail, volume.withFallback(detail))
-        assertEquals(detail, volume.copy(name = "spice").withFallback(detail))
+        assertEquals(detail, volume.copy(name = "  ").withFallback(detail))
     }
 
     @Test
@@ -32,9 +32,9 @@ class NovelMetadataTest {
     }
 
     @Test
-    fun failedDetailLookupDoesNotRestoreLegacyPathTitle() {
-        val volume = NovelBook("spice", "spice", "", emptyList())
-        val saved = NovelBook("spice", " SPICE ", "", emptyList())
+    fun missingTitlesStayBlankAfterFailedDetailLookup() {
+        val volume = NovelBook("spice", "", "", emptyList())
+        val saved = NovelBook("spice", "  ", "", emptyList())
         val merged = volume.withFallback(null).withFallback(saved)
         assertEquals("", merged.name)
         assertEquals("", safeBookTitle(merged.path, merged.name, saved.name))
@@ -43,7 +43,7 @@ class NovelMetadataTest {
 
     @Test
     fun realSavedTitleSurvivesSparseVolumeAndFailedDetailLookup() {
-        val volume = NovelBook("spice", "spice", "", emptyList())
+        val volume = NovelBook("spice", "", "", emptyList())
         val merged = volume.withFallback(detail)
         assertEquals(detail.name, safeBookTitle(merged.path, merged.name, "spice"))
         assertEquals(detail.name, displayBookTitle(merged.path, merged.name))
@@ -53,6 +53,6 @@ class NovelMetadataTest {
     fun blankTitleShowsMissingStateWithoutPersistingPlaceholder() {
         assertEquals("", safeBookTitle("spice", null, "  "))
         assertEquals("作品信息暂缺", displayBookTitle("spice", null, " "))
-        assertEquals("狼与香辛料", safeBookTitle("spice", "SPICE", " 狼与香辛料 "))
+        assertEquals("狼与香辛料", safeBookTitle("spice", "", " 狼与香辛料 "))
     }
 }
