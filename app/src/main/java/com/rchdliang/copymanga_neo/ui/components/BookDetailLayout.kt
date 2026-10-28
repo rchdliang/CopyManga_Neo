@@ -242,10 +242,10 @@ fun BookDetailLayout(
             val expanded = atTop || expandReadingButton
             ExtendedFloatingActionButton(
                 onClick = onRead, expanded = expanded,
-                icon = { Icon(Icons.Default.PlayArrow, if (expanded) null else readingLabel) },
+                icon = { Icon(Icons.Default.PlayArrow, if (expanded) null else metadataText(readingLabel)) },
                 text = {
                     Text(
-                        readingTargetName.orEmpty(),
+                        metadataText(readingTargetName.orEmpty()),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -306,7 +306,7 @@ fun BookDetailActions(
         }
         Button(onClick = onRead, modifier = Modifier.weight(1f), enabled = canRead) {
             Text(
-                readingLabel,
+                metadataText(readingLabel),
                 color = LocalContentColor.current,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

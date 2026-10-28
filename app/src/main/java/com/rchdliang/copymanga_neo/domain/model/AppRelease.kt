@@ -1,6 +1,14 @@
 package com.rchdliang.copymanga_neo.domain.model
 
-data class AppRelease(val tag: String, val version: String, val pageUrl: String)
+enum class AppReleaseChannel { ANDROID, CMP }
+
+data class AppRelease(
+    val tag: String,
+    val version: String,
+    val pageUrl: String,
+    val releaseNotes: String = "",
+    val channel: AppReleaseChannel = AppReleaseChannel.ANDROID
+)
 
 object AppVersion {
     fun isNewer(latest: String, current: String): Boolean {

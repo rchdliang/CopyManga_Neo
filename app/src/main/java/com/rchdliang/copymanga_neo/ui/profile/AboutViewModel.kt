@@ -42,7 +42,9 @@ class AboutViewModel @Inject constructor(private val repository: AppInfoReposito
             try {
                 repository.latestRelease().fold(
                     onSuccess = { release ->
-                        val newer = AppVersion.isNewer(release.version, currentVersion)
+                        // CMP 是独立应用，迁移提示不与旧版 Android 的版本号比较。
+                        val newer = release.channel == com.rchdliang.copymanga_neo.domain.model.AppReleaseChannel.CMP ||
+                            AppVersion.isNewer(release.version, currentVersion)
                         mutableState.update {
                             it.copy(
                                 checking = false, update = release.takeIf { newer },

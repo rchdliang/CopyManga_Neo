@@ -43,21 +43,13 @@ class GitHubMetadata @Inject constructor(private val resources: PublicResourceCl
         return DictionaryRelease(tag.removePrefix("ver.").removePrefix("v"), commit, files)
     }
 
-    suspend fun latestApp(): AppRelease {
-        for (page in 1..10) {
-            val releases = JsonParser.parseString(
-                resources.fetch("${ProjectLinks.RELEASES_API}?per_page=20&page=$page", ChineseDictionaryStore.MAX_METADATA_BYTES).decodeToString()
-            ).asJsonArray
-            for (item in releases) {
-                val release = item.asJsonObject
-                val tag = release.get("tag_name").asString
-                if (!release.get("draft").asBoolean && !release.get("prerelease").asBoolean &&
-                    tag.matches(Regex("android-v[0-9]+(\\.[0-9]+){1,3}"))) {
-                    return AppRelease(tag, tag.removePrefix("android-v"), "${ProjectLinks.GITHUB}/releases/tag/$tag")
-                }
-            }
-            if (releases.size() < 20) break
+    suspend fun latestApp(): AppRelease = selectAppRelease { page ->
+        val bytes = try {
+            resources.fetch("${ProjectLinks.RELEASES_API}?per_page=20&page=$page", ChineseDictionaryStore.MAX_METADATA_BYTES)
+        } catch (error: PublicResourceHttpException) {
+            if (error.status == 404) throw PublicReleaseUnavailableException()
+            throw error
         }
-        throw PublicReleaseUnavailableException()
+        JsonParser.parseString(bytes.decodeToString()).asJsonArray
     }
 }
