@@ -139,7 +139,7 @@ class PortableAppGraphTest {
             LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
             LocalReadingRecord(readingSession.owner!!, "novel", "novel-2", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
             LocalReadingRecord("different-owner", "novel", "novel-1", "latest", "Latest", group = readingSession.mode.name, updatedAt = 2),
-            LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "latest", "Latest", group = "OTHER_MODE", updatedAt = 3)
+            LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "latest", "Latest", group = RequestMode.WEB.name, updatedAt = 3)
         )))
         val localReading = object : com.rchdliang.copymanga_neo.domain.repository.LocalReadingRepository by graph.repositories.localReading {
             override val snapshot = localRecords
@@ -170,7 +170,7 @@ class PortableAppGraphTest {
         }
         val model = com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesViewModel(
             manga, users, graph.repositories.readingProgress, novelShelf,
-            graph.repositories.appSettings, localReading, graph.repositories.sessions, autoStart = false)
+            graph.repositories.appSettings, localReading, graph.repositories.sessions, graph.repositories.shelfReading, autoStart = false)
         try {
             runCurrent()
             assertTrue(model.uiState.value.isLoggedIn)
@@ -182,26 +182,26 @@ class PortableAppGraphTest {
             assertEquals(1, calls.get())
             runCurrent()
             assertEquals(listOf(0, 1), novelOffsets)
-            assertEquals(1, model.uiState.value.updatedNovelCount)
-            assertEquals(1, model.uiState.value.updatedComicCount)
-            assertEquals(2, model.uiState.value.updatedCount)
+            assertEquals(0, model.uiState.value.updatedNovelCount)
+            assertEquals(0, model.uiState.value.updatedComicCount)
+            assertEquals(0, model.uiState.value.updatedCount)
             assertNotNull(model.uiState.value.novelLoadMoreError)
             failSecondPage = false
             model.retryMoreNovels(); runCurrent()
             assertEquals(listOf(0, 1, 1, 2), novelOffsets)
             assertEquals(3, model.uiState.value.novels.size)
-            assertEquals(2, model.uiState.value.updatedNovelCount) // Unread novel-3 is excluded.
-            assertEquals("Old", model.uiState.value.novelReadingProgress["novel-1"]?.name)
+            assertEquals(0, model.uiState.value.updatedNovelCount) // Legacy positions do not prove a past catch-up.
+            assertEquals("Latest", model.uiState.value.novelReadingProgress["novel-1"]?.name)
             assertEquals("old", model.uiState.value.novelReadingProgress["novel-2"]?.chapter)
             assertFalse(model.uiState.value.novelReadingProgress.containsKey("novel-3"))
-            assertEquals(3, model.uiState.value.updatedCount)
+            assertEquals(0, model.uiState.value.updatedCount)
             assertFalse(model.uiState.value.novelsHaveMore)
             assertEquals(com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.COMIC, model.uiState.value.selectedKind)
             localRecords.value = localRecords.value.copy(records = localRecords.value.records +
                 LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "latest", "Latest", group = readingSession.mode.name, updatedAt = 4))
             runCurrent()
-            assertEquals(1, model.uiState.value.updatedNovelCount)
-            assertFalse("novel-1" in model.uiState.value.updatedNovelPaths)
+            assertEquals(0, model.uiState.value.updatedNovelCount)
+            assertTrue(model.uiState.value.novelReadingStates.isEmpty())
             assertEquals("Latest", model.uiState.value.novelReadingProgress["novel-1"]?.name)
             model.selectKind(com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.NOVEL)
             runCurrent()
@@ -366,7 +366,7 @@ class PortableAppGraphTest {
                     (number + 1).takeIf { it <= 100 }?.toString(), chapterUuid))
             }
         }
-        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
         fun state() = assertIs<ReaderUiState.Success>(model.uiState.value)
         suspend fun awaitChapter(id: String) {
             model.uiState.first { it is ReaderUiState.Success && it.chapters.any { chapter -> chapter.uuid == id } }
@@ -427,7 +427,7 @@ class PortableAppGraphTest {
                 return Result.success(ChapterContent(listOf("image-$i"), null, (i + 1).toString()))
             }
         }
-        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
         try {
             r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
             model.loadChapter("book", "0", "default")
@@ -527,7 +527,7 @@ class PortableAppGraphTest {
                 return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
             }
         }
-        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
         suspend fun contains(id: String) { model.uiState.first { it is ReaderUiState.Success && it.chapters.any { c -> c.uuid == id } } }
         try {
             r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
@@ -562,7 +562,7 @@ class PortableAppGraphTest {
                 return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
             }
         }
-        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
         try {
             r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
             model.loadChapter("book", "2")
@@ -603,7 +603,7 @@ class PortableAppGraphTest {
                 return Result.success(ChapterContent(listOf("image-$n"), (n - 1).toString(), (n + 1).toString()))
             }
         }
-        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions)
+        val model = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading)
         try {
             r.readerTools.updateSettings { it.copy(continuousChapters = true) }.getOrThrow()
             model.loadChapter("book", "2"); model.uiState.first { it is ReaderUiState.Success }

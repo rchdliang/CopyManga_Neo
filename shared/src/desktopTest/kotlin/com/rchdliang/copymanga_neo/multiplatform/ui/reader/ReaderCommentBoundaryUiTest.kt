@@ -235,7 +235,7 @@ class ReaderCommentBoundaryUiTest {
                 Result.success<DownloadedChapterComments?>(null)
         }
         val reader = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress,
-            r.readerTools, r.localReading, r.sessions)
+            r.readerTools, r.localReading, r.sessions, r.shelfReading)
         val comments = ReaderCommentModels(repository, r.users, manga, r.downloads, r.sessions)
         private val actions = ReaderImageActionsViewModel(r.images, SavedStateHandle())
         private val modal = CommentsViewModel(repository, r.users, manga, r.downloads)

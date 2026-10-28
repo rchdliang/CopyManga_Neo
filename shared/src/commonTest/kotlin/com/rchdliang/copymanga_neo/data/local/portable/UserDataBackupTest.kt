@@ -56,6 +56,26 @@ class UserDataBackupTest {
     }
 
     @Test
+    fun shelfCatchUpEvidenceRoundTripsAndLegacyRestoreRemovesExistingEvidence() = runTest {
+        val source = Disk()
+        val key = ShelfReadingKey("owner", RequestMode.WEB, "novel", "book")
+        val record = ShelfReadingRecord(key).read("one", "第一卷", true, 1)
+            .observeCatalog(listOf(ShelfChapter("one", "第一卷")))
+        val document = DocumentStore(source, "shelf-reading.json", ShelfReadingSnapshot.serializer(), ShelfReadingSnapshot())
+        document.update { ShelfReadingSnapshot(mapOf(key.id to record)) }.getOrThrow()
+        val archive = PortableUserDataBackup(source).export()
+        val target = Disk()
+        PortableUserDataBackup(target).apply { prepare(archive); recover() }
+        val loaded = DocumentStore(target, "shelf-reading.json", ShelfReadingSnapshot.serializer(), ShelfReadingSnapshot())
+        loaded.load().getOrThrow()
+        assertEquals(record, loaded.state.value.records[key.id])
+        val root = Json.parseToJsonElement(archive).jsonObject
+        val legacy = JsonObject(root + ("entries" to JsonObject(root.getValue("entries").jsonObject - "shelf-reading.json")))
+        PortableUserDataBackup(target).apply { prepare(legacy.toString()); recover() }
+        assertFalse(target.values.containsKey("shelf-reading.json"))
+    }
+
+    @Test
     fun unknownArchiveVersionAndUnlistedPathsCannotBeImported() = runTest {
         val storage = Disk()
         val backup = PortableUserDataBackup(storage)

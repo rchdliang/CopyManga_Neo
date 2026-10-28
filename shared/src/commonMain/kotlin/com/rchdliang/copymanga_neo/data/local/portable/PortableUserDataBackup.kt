@@ -79,8 +79,10 @@ class PortableUserDataBackup(private val storage: DocumentStorage) {
             if (raw == JsonNull) null else (raw as? JsonPrimitive)?.also { require(it.isString) }?.content
                 ?: error("备份条目无效")
         }
-        require(result.keys == serializers.keys) { "备份数据清单不受支持" }
-        return result
+        val legacyKeys = serializers.keys - "shelf-reading.json"
+        require(result.keys == serializers.keys || result.keys == legacyKeys) { "备份数据清单不受支持" }
+        // 老备份没有追平证据；恢复时清除当前机器的追更基线，不从最后阅读位置猜测。
+        return if (result.keys == legacyKeys) result + ("shelf-reading.json" to null) else result
     }
 
     private fun validate(values: Map<String, String?>) {
@@ -88,7 +90,9 @@ class PortableUserDataBackup(private val storage: DocumentStorage) {
             if (raw != null) {
                 val limit = if (key == "reading-library.json") PortableBackupCodec.MAX_READING_BYTES else 16 * 1024 * 1024
                 require(raw.encodeToByteArray().size <= limit) { "单项用户数据过大" }
-                val decoded = DocumentEnvelope.decode(raw, "copymanga.document/$key", 1, emptyMap())
+                val decoded = DocumentEnvelope.decode(raw, "copymanga.document/$key",
+                    if (key == "shelf-reading.json") PortableShelfReading.SCHEMA_VERSION else 1,
+                    if (key == "shelf-reading.json") PortableShelfReading.migrations else emptyMap())
                 val model = strict.decodeFromJsonElement(serializers.getValue(key), decoded.payload)
                 when (key) {
                     "comic-reader-settings.json" -> {
@@ -97,6 +101,11 @@ class PortableUserDataBackup(private val storage: DocumentStorage) {
                         require(preferences.comics.all { (path, value) -> path.isNotBlank() && value == value.normalized() })
                     }
                     "reading-library.json" -> PortableBackupCodec.validateReading(model as LocalReadingSnapshot)
+                    "shelf-reading.json" -> require((model as ShelfReadingSnapshot).records.all { (id, record) ->
+                        id == record.key.id && record.key.kind in setOf("comic", "novel") &&
+                            record.key.owner.isNotBlank() && record.key.path.isNotBlank() &&
+                            record.catalog.distinct().size == record.catalog.size
+                    })
                     "novel-reader-settings.json" -> require((model as NovelReaderPreferences) == model.normalized())
                     "reader-tools.json" -> require((model as ReaderToolsSettings) == model.normalized())
                     "novel-annotations.json" -> (model as List<*>).forEach { entry ->
@@ -126,6 +135,7 @@ class PortableUserDataBackup(private val storage: DocumentStorage) {
             "novel-annotations.json" to ListSerializer(NovelAnnotation.serializer()),
             "reading-library.json" to LocalReadingSnapshot.serializer(),
             "reading-progress.json" to ProgressDocument.serializer(),
+            "shelf-reading.json" to ShelfReadingSnapshot.serializer(),
             "reader-tools.json" to ReaderToolsSettings.serializer(),
             "theme-blacklist.json" to BlacklistDocument.serializer()
         )

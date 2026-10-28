@@ -113,7 +113,8 @@ class NovelViewModel(
     private val auth: ReadingSessionRepository,
     private val downloads: DownloadRepository,
     private val readerSettings: NovelReaderPreferencesRepository,
-    private val annotationStore: NovelAnnotationRepository
+    private val annotationStore: NovelAnnotationRepository,
+    private val shelfReading: com.rchdliang.copymanga_neo.domain.repository.ShelfReadingRepository
 ) : ViewModel() {
     private val mutable = MutableStateFlow(
         NovelUiState(
@@ -763,6 +764,7 @@ class NovelViewModel(
         )
         lastPosition = r
         reading.record(r)
+        auth.getReadingSessionSync()?.let { shelfReading.record(it, r) }
     }
 
     /** 历史入口缺少详情目录时按需补齐，不阻塞已经打开的正文。 */

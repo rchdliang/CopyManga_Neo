@@ -37,7 +37,8 @@ class ReaderViewModel constructor(
     private val readingProgress: ReadingProgressRepository,
     private val tools: com.rchdliang.copymanga_neo.domain.repository.ReaderToolsRepository,
     private val localReading: LocalReadingRepository,
-    private val auth: com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository
+    private val auth: com.rchdliang.copymanga_neo.domain.repository.ReadingSessionRepository,
+    private val shelfReading: com.rchdliang.copymanga_neo.domain.repository.ShelfReadingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ReaderUiState>(ReaderUiState.Loading)
@@ -58,6 +59,7 @@ class ReaderViewModel constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val localReadingError = localReading.error
     private var readerOwner: String? = null
+    private var readerSession: com.rchdliang.copymanga_neo.domain.model.LocalReadingSession? = null
     fun savedPosition(chapter: String) =
         readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
             ?.let { localReading.position(it, "comic", currentComicPathWord, chapter) }
@@ -67,23 +69,23 @@ class ReaderViewModel constructor(
             readerOwner?.takeIf { it == readingProgress.currentOwner && it == auth.getReadingSessionSync()?.owner }
                 ?: return
         val item = chain.firstOrNull { it.uuid == chapter } ?: return
-        localReading.record(
-            LocalReadingRecord(
-                owner,
-                "comic",
-                currentComicPathWord,
-                chapter,
-                item.content.chapterName,
-                group = item.group,
-                title = comicTitle,
-                cover = comicCover,
-                authors = comicAuthors,
-                page = page,
-                fraction = fraction,
-                completed = completed,
-                atChapterEnd = completed
-            )
+        val record = LocalReadingRecord(
+            owner,
+            "comic",
+            currentComicPathWord,
+            chapter,
+            item.content.chapterName,
+            group = item.group,
+            title = comicTitle,
+            cover = comicCover,
+            authors = comicAuthors,
+            page = page,
+            fraction = fraction,
+            completed = completed,
+            atChapterEnd = completed
         )
+        localReading.record(record)
+        readerSession?.let { shelfReading.record(it, record) }
         if (currentChapterUuid != chapter || lastReportedChapter != chapter) {
             readingProgress.recordRead(
                 owner,
@@ -283,6 +285,7 @@ class ReaderViewModel constructor(
                 val loadedProgress = readingProgress.awaitReady(progressOwner)
                 loadedProgress.error?.let { _toastMessage.value = it }
                 readerOwner = progressOwner
+                readerSession = auth.getReadingSessionSync()
                 // 先加载漫画的完整设置，再展示图片，避免方向或缩放先闪回全局值。
                 prefs.initializeComic(comicPathWord).fold(
                     onSuccess = { ensureActive(); mutablePreferences.value = it },

@@ -66,6 +66,8 @@ import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
+import com.rchdliang.copymanga_neo.domain.model.ShelfReadingRecord
+import com.rchdliang.copymanga_neo.domain.model.ShelfReadingStatus
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicCard
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.GridLoadMoreEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
@@ -271,9 +273,8 @@ fun FavoritesContent(
                                     val book = entry.book
                                     val progress = uiState.novelReadingProgress[book.path]
                                     val (statusText, statusColor) = rememberReadingStatus(
+                                        tracking = uiState.novelReadingStates[book.path],
                                         hasRead = !progress?.chapter.isNullOrBlank(),
-                                        hasUnreadUpdate = book.path in uiState.updatedNovelPaths,
-                                        latestChapterName = entry.lastChapterName,
                                         lastReadChapterName = progress?.name.orEmpty()
                                     )
                                     NovelTransitionCard(
@@ -318,7 +319,7 @@ fun FavoritesContent(
                             ) { favorite ->
                                 val isSelected = favorite.uuid in uiState.selectedIds
                                 val comic = favorite.comic
-                                val (statusText, statusColor) = rememberReadingStatus(comic)
+                                val (statusText, statusColor) = rememberReadingStatus(comic, uiState.comicReadingStates[comic.pathWord])
                                 ComicCard(
                                     name = comic.name,
                                     cover = comic.cover,
@@ -507,33 +508,33 @@ private fun SelectionBottomBar(
  * @return Pair(状态文本, 颜色)
  */
 @Composable
-private fun rememberReadingStatus(comic: FavoriteComic): Pair<String, Color> {
+private fun rememberReadingStatus(comic: FavoriteComic, tracking: ShelfReadingRecord? = null): Pair<String, Color> {
     return rememberReadingStatus(
+        tracking = tracking,
         hasRead = !comic.browse?.chapterUuid.isNullOrBlank(),
-        hasUnreadUpdate = comic.hasUnreadUpdate,
-        latestChapterName = comic.lastChapterName,
         lastReadChapterName = comic.browse?.chapterName.orEmpty()
     )
 }
 
 @Composable
 private fun rememberReadingStatus(
+    tracking: ShelfReadingRecord?,
     hasRead: Boolean,
-    hasUnreadUpdate: Boolean,
-    latestChapterName: String,
     lastReadChapterName: String
 ): Pair<String, Color> {
-    return when {
-        !hasRead -> {
+    val status = tracking?.status ?: if (hasRead) ShelfReadingStatus.READING else ShelfReadingStatus.UNREAD
+    val chapterName = tracking?.chapterName?.takeIf { it.isNotBlank() } ?: lastReadChapterName
+    return when (status) {
+        ShelfReadingStatus.UNREAD -> {
             "还未读过" to MaterialTheme.colorScheme.primary
         }
-
-        hasUnreadUpdate -> {
+        ShelfReadingStatus.UPDATED -> {
+            val latestChapterName = tracking?.latestName.orEmpty()
             (if (latestChapterName.isBlank()) "有新内容" else "有新内容：$latestChapterName") to MaterialTheme.colorScheme.primary
         }
-
-        else -> {
-            (if (lastReadChapterName.isBlank()) "已读过" else "上次读到：$lastReadChapterName") to MaterialTheme.colorScheme.onSurfaceVariant
+        ShelfReadingStatus.CAUGHT_UP -> "已读至最新" to MaterialTheme.colorScheme.onSurfaceVariant
+        ShelfReadingStatus.READING -> {
+            (if (chapterName.isBlank()) "继续阅读" else "继续阅读：$chapterName") to MaterialTheme.colorScheme.onSurfaceVariant
         }
     }
 }

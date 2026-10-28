@@ -219,7 +219,7 @@ fun CopyMangaApp(
     }
     val loggedIn by session.isLoggedIn.collectAsStateWithLifecycle()
     val avatar by session.avatar.collectAsStateWithLifecycle()
-    val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, repositories.appSettings, repositories.localReading, repositories.sessions, autoStart = false) } }
+    val favorites = models.get("tab:FAVORITES") { startupTrace.measureSync("favorites_model") { FavoritesViewModel(repositories.manga, repositories.users, repositories.readingProgress, repositories.novelShelf, repositories.appSettings, repositories.localReading, repositories.sessions, repositories.shelfReading, autoStart = false) } }
     LaunchedEffect(favorites, shellDrawn) { if (shellDrawn) favorites.start() }
     val favoritesState by favorites.uiState.collectAsStateWithLifecycle()
     val exports = models.get("application", "export") { handle -> startupTrace.measureSync("export_model") { ComicExportViewModel(repositories.export, handle) } }
@@ -508,13 +508,13 @@ private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppReposito
         "explore" -> ComicExploreScreen(nav::comic, back,
             models.get(route.id, defaults = route.arguments) { ComicExploreViewModel(r.discovery, it, autoStart = false) })
         "novel" -> NovelScreen(onBack = back, initialResume = route.resume, initialPath = route.path.takeIf { it.isNotBlank() },
-            viewModel = models.get(route.id) { NovelViewModel(r.novels, r.novelShelf, r.localReading, r.readingProgress, r.network, r.sessions, r.downloads, r.novelPreferences, r.annotations) },
+            viewModel = models.get(route.id) { NovelViewModel(r.novels, r.novelShelf, r.localReading, r.readingProgress, r.network, r.sessions, r.downloads, r.novelPreferences, r.annotations, r.shelfReading) },
             commentsViewModel = comments("novel"),
             illustrations = models.get(route.id, "novel-illustrations") { NovelIllustrationsViewModel(r.novelPreferences, r.appSettings, r.novelIllustrations, it) },
             readerPlatform = p.reader)
         "reader" -> ReaderScreen(chapterPathWord = route.chapter, comicPathWord = route.path, chapterName = route.chapterName,
             groupPathWord = route.group, onNavigateBack = back, initialPage = route.page, initialFraction = route.fraction,
-            viewModel = models.get(route.id) { ReaderViewModel(r.manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions) },
+            viewModel = models.get(route.id) { ReaderViewModel(r.manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading) },
             services = ReaderUiServices(p.reader, p.imageLoader,
                 models.get(route.id) { ReaderImageActionsViewModel(r.images, it) },
                 models.get(route.id) { ReaderCommentModels(r.comments, r.users, r.manga, r.downloads, r.sessions) },

@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
+import com.rchdliang.copymanga_neo.domain.model.ShelfReadingRecord
+import com.rchdliang.copymanga_neo.domain.model.ShelfReadingStatus
+import com.rchdliang.copymanga_neo.domain.repository.ShelfReadingRepository
 import com.rchdliang.copymanga_neo.domain.model.NovelShelfEntry
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository
@@ -48,14 +51,15 @@ data class FavoritesUiState(
     val novelsError: String? = null,
     val novelLoadMoreError: String? = null,
     val novelsHaveMore: Boolean = false,
-    val updatedNovelPaths: Set<String> = emptySet(),
+    val comicReadingStates: Map<String, ShelfReadingRecord> = emptyMap(),
+    val novelReadingStates: Map<String, ShelfReadingRecord> = emptyMap(),
     val novelReadingProgress: Map<String, LocalReadingRecord> = emptyMap()
 ) {
     /** 按有新内容的作品计数，不是新增章节/卷数。 */
     val updatedComicCount: Int
-        get() = if (isLoggedIn) favorites.count { it.comic.hasUnreadUpdate } else 0
+        get() = if (isLoggedIn) favorites.count { comicReadingStates[it.comic.pathWord]?.status == ShelfReadingStatus.UPDATED } else 0
     val updatedNovelCount: Int
-        get() = if (isLoggedIn) updatedNovelPaths.size else 0
+        get() = if (isLoggedIn) novels.count { novelReadingStates[it.book.path]?.status == ShelfReadingStatus.UPDATED } else 0
     val updatedCount: Int
         get() = updatedComicCount + updatedNovelCount
 }
@@ -68,24 +72,22 @@ class FavoritesViewModel constructor(
     private val appSettings: AppSettingsRepository,
     private val localReading: LocalReadingRepository,
     private val sessions: ReadingSessionRepository,
+    private val shelfReading: ShelfReadingRepository,
     autoStart: Boolean = true
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState(
         isLoggedIn = userRepository.isLoggedInSync(), isLoading = userRepository.isLoggedInSync()))
     val uiState: StateFlow<FavoritesUiState> =
-        combine(_uiState, readingProgress.progress, localReading.snapshot, sessions.sessionChanges) { state, progress, local, _ ->
+        combine(_uiState, readingProgress.progress, localReading.snapshot, sessions.sessionChanges, shelfReading.snapshot) { state, progress, local, _, shelf ->
             val session = sessions.getReadingSessionSync()
             val latestNovels = local.records.asSequence()
-                .filter { state.isLoggedIn && session != null && it.kind == "novel" && it.owner == session.owner && it.group == session.mode.name }
+                .filter { state.isLoggedIn && session != null && it.kind == "novel" && it.owner == session.owner }
                 .groupBy { it.path }
                 .mapValues { (_, records) -> records.maxBy { it.updatedAt } }
-            val updatedNovels = if (!state.isLoggedIn) emptySet() else state.novels.filter { entry ->
-                val lastRead = latestNovels[entry.book.path]?.chapter
-                !lastRead.isNullOrBlank() && entry.lastChapterId.isNotBlank() && lastRead != entry.lastChapterId
-            }.map { it.book.path }.toSet()
             val withNovelUpdates = state.copy(
-                updatedNovelPaths = updatedNovels,
+                comicReadingStates = if (state.isLoggedIn) shelf.books(session, "comic") else emptyMap(),
+                novelReadingStates = if (state.isLoggedIn) shelf.books(session, "novel") else emptyMap(),
                 novelReadingProgress = latestNovels
             )
             if (!state.isLoggedIn || progress.owner != readingProgress.currentOwner) withNovelUpdates else withNovelUpdates.copy(
@@ -228,6 +230,7 @@ class FavoritesViewModel constructor(
             )
         }
         novelLoadJob = viewModelScope.launch(novelExceptionHandler) {
+            val session = sessions.getReadingSessionSync()
             var appending = append
             var requestedOffset = if (append) novelOffset else 0
             do {
@@ -245,6 +248,7 @@ class FavoritesViewModel constructor(
                     }
                     return@launch
                 }
+                if (session != null) shelfReading.refresh(session, "novel", page.entries.map { it.book.path }.toSet())
                 novelOffset = page.nextOffset
                 novelsLoaded = true
                 val hasMore = page.hasMore && page.nextOffset > requestedOffset
@@ -276,6 +280,7 @@ class FavoritesViewModel constructor(
         if (!_uiState.value.isLoggedIn || loadJob?.isActive == true) return
 
         loadJob = viewModelScope.launch(exceptionHandler) {
+            val session = sessions.getReadingSessionSync()
             val owner = readingProgress.awaitOwner()
             val requestVersion = readingProgress.requestVersion()
             readingProgress.retryPending()
@@ -284,6 +289,7 @@ class FavoritesViewModel constructor(
             currentCoroutineContext().ensureActive()
             result.fold(
                 onSuccess = { favorites ->
+                    if (session != null) shelfReading.refresh(session, "comic", favorites.map { it.comic.pathWord }.toSet())
                     readingProgress.acceptRemote(
                         owner,
                         favorites.associate { it.comic.pathWord to it.comic.browse },

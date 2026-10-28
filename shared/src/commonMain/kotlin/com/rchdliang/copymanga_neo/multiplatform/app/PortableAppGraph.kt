@@ -282,12 +282,16 @@ class PortableAppGraph private constructor(
                         novels.clearCache().getOrThrow()
                     }
                 }
+                val shelfReading = PortableShelfReading(documents, session, localReading, appScope) { key ->
+                    loadShelfReadingCatalog(key, manga, novels)
+                }
                 val repositories = AppRepositories(manga, discovery, novels, novelShelf, users, session, downloads, comments,
                     PortableShareLinkRepository(client, network::persistShareHosts), localReading, progress, appSettings, readerPreferences, readerTools,
                     novelPreferences, annotations, blacklist, network, risk, storage,
                     PortableSettingsBackup(appSettings, readerPreferences, localReading, readerTools, userData), logs, imageActions, export, debugStore,
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
                     novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client), startupTrace = probe,
+                    shelfReading = shelfReading,
                     appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {
                         override suspend fun latestRelease() = try { Result.success(GitHubMetadata(client).latestApp()) }
                         catch (cancel: CancellationException) { throw cancel }

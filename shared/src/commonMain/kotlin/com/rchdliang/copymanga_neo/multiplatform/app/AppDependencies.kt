@@ -42,6 +42,7 @@ data class AppRepositories(
     val novelIllustrations: NovelIllustrationExportRepository,
     val chineseDictionary: ChineseDictionaryRepository,
     val appInfo: AppInfoRepository,
+    val shelfReading: ShelfReadingRepository,
     val startupTrace: StartupTrace = StartupTrace.None
 )
 
