@@ -69,7 +69,8 @@ interface CommentApiService {
         @Field("report_reason") reason: String,
         @Header("Authorization") authorization: String,
         @Field("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = postHeaders()
+        @HeaderMap headers: Map<String, String> = postHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
     ): Response<CommentPostResponseDto>
 
     @GET("api/v3/comment/config")
@@ -87,11 +88,12 @@ interface CommentApiService {
         @Field("report_reason") reason: String,
         @Header("Authorization") authorization: String,
         @Field("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = postHeaders()
+        @HeaderMap headers: Map<String, String> = postHeaders(),
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode? = null
     ): Response<CommentPostResponseDto>
 
     companion object {
-        /** 尚未验证的吐槽举报提交沿用 Web 协议；已确认接口按请求模式选择公共头。 */
+        /** Web 保留网页头；App 按请求模式构造官方请求头与公共表单。 */
         fun headers(): Map<String, String> = CopyMangaNetworkConfig.apiHeaders() +
                 ("X-Copy-Comment" to "1")
 
@@ -122,8 +124,30 @@ interface CommentApiService {
         @Query("offset") offset: Int = 0,
         @Query("limit") limit: Int = 30,
         @Query("_update") update: Boolean = true,
-        @HeaderMap headers: Map<String, String> = headers()
+        @HeaderMap headers: Map<String, String> = headers(),
+        @Query("view") view: String? = null
     ): Response<CommentResponseDto>
+
+    /** 删除使用表单请求体，并固定请求模式及登录凭据。 */
+    @FormUrlEncoded
+    @retrofit2.http.HTTP(method = "DELETE", path = "api/v3/member/comment", hasBody = true)
+    suspend fun deleteComicComment(
+        @Field("comic_id") comicId: String,
+        @Field("comment_id") commentId: String,
+        @Header("Authorization") authorization: String,
+        @HeaderMap headers: Map<String, String>,
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode
+    ): Response<CommentPostResponseDto>
+
+    @FormUrlEncoded
+    @retrofit2.http.HTTP(method = "DELETE", path = "api/v3/member/roast", hasBody = true)
+    suspend fun deleteChapterComment(
+        @Field("chapter_id") chapterId: String,
+        @Field("roast_id") roastId: String,
+        @Header("Authorization") authorization: String,
+        @HeaderMap headers: Map<String, String>,
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode
+    ): Response<CommentPostResponseDto>
 
     @FormUrlEncoded
     @POST("api/v3/member/comment")

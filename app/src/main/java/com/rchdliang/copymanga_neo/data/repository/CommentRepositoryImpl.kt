@@ -36,10 +36,67 @@ class CommentRepositoryImpl @Inject constructor(
     private val auth: AuthDataStore,
     private val networkSettings: NetworkSettingsStore,
     private val downloadedComments: DownloadedChapterCommentsDao,
-    private val downloadedChapters: DownloadedChapterDao
+    private val downloadedChapters: DownloadedChapterDao,
+    private val mangaApi: com.rchdliang.copymanga_neo.data.remote.api.MangaApiService
 ) : CommentRepository {
     private val downloadMutex = Mutex()
     private val gson = Gson()
+
+    override fun supportsDeletion(target: CommentTarget): Boolean =
+        networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP &&
+                target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
+
+    override suspend fun deleteComment(target: CommentTarget, comment: MangaComment): Result<Unit> = result {
+        require(supportsDeletion(target)) { "当前模式不支持删除此类评论" }
+        require(target.id.isNotBlank() && comment.id.isNotBlank()) { "评论标识无效" }
+        val authorId = comment.userId?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("缺少作者信息，请刷新评论")
+        val mode = networkSettings.settings.value.requestMode
+        check(mode == RequestMode.OFFICIAL_APP) { "请求模式已改变，请刷新评论" }
+        val generation = auth.getAuthGeneration()
+        val networkGeneration = networkSettings.generation
+        val token = auth.getTokenSync()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("请先登录后删除")
+        fun requireCurrent() {
+            check(networkSettings.generation == networkGeneration &&
+                    auth.getAuthGeneration() == generation && auth.getTokenSync() == token) {
+                "登录状态或网络已变化，请刷新确认删除结果"
+            }
+        }
+        val member = mangaApi.getMemberInfoWithCredential("Token $token", requestMode = mode)
+        requireCurrent()
+        checkResponse(member.code(), member.body()?.code, member.body()?.message)
+        check(member.body()?.results?.userId?.takeIf { it.isNotBlank() } == authorId) { "只能删除自己的评论" }
+        val headers = CommentApiService.postHeaders(true)
+        val response = when (target.kind) {
+            CommentKind.COMIC -> api.deleteComicComment(target.id, comment.id, "Token $token", headers, mode)
+            CommentKind.CHAPTER -> api.deleteChapterComment(target.id, comment.id, "Token $token", headers, mode)
+            CommentKind.NOVEL -> error("当前不支持删除小说评论")
+        }
+        if (response.code() == 401 || response.body()?.code == 401) {
+            networkSettings.ifCurrent(networkGeneration) {
+                auth.clearAuthSyncIfTokenMatches(token, mode, generation)
+            }
+        }
+        checkWriteResponse(response)
+        requireCurrent()
+        if (target.kind == CommentKind.CHAPTER) {
+            try {
+                val cached = downloadedComments.get(target.id)
+                if (cached != null) {
+                    val rows = gson.fromJson(cached.commentsJson, Array<MangaComment>::class.java).toList()
+                    if (rows.any { it.id == comment.id }) downloadedComments.save(
+                        target.id, gson.toJson(rows.filterNot { it.id == comment.id }),
+                        (cached.total - 1).coerceAtLeast(0), cached.complete, cached.closed, cached.savedAt
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                throw com.rchdliang.copymanga_neo.domain.repository.CommentDeletedCacheException(error)
+            }
+        }
+    }
 
     override suspend fun getDownloadedChapterComments(uuid: String): Result<DownloadedChapterComments?> =
         result {
@@ -165,8 +222,9 @@ class CommentRepositoryImpl @Inject constructor(
                 reason.trim(),
                 "Token $token",
                 headers = CommentApiService.reportHeaders(
-                    networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP
-                )
+                    mode == RequestMode.OFFICIAL_APP
+                ),
+                requestMode = mode
             )
 
             CommentKind.CHAPTER -> api.reportChapterComment(
@@ -174,7 +232,9 @@ class CommentRepositoryImpl @Inject constructor(
                 target.id,
                 type,
                 reason.trim(),
-                "Token $token"
+                "Token $token",
+                headers = CommentApiService.reportHeaders(mode == RequestMode.OFFICIAL_APP),
+                requestMode = mode
             )
         }
         if (response.code() == 401 || response.body()?.code == 401) {
@@ -237,7 +297,8 @@ class CommentRepositoryImpl @Inject constructor(
             )
 
             CommentKind.CHAPTER -> api.chapterComments(
-                target.id, offset, limit = if (appMode) 10 else 30, headers = headers
+                target.id, offset, limit = if (appMode) 20 else 30, headers = headers,
+                view = if (appMode) "list" else null
             )
         }
         check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
@@ -254,7 +315,8 @@ class CommentRepositoryImpl @Inject constructor(
                 dto.comment.orEmpty(),
                 dto.createdAt.orEmpty(),
                 dto.replyCount?.text()?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
-                dto.parentUsername
+                dto.parentUsername,
+                dto.userId
             )
         }
         val returnedOffset = page.offset ?: offset

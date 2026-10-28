@@ -19,8 +19,17 @@ import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 
 /** 只处理 App 模式 API 的请求字段。 */
-class OfficialAppInterceptor @Inject constructor(private val identity: OfficialAppIdentity) :
-    Interceptor {
+class OfficialAppInterceptor internal constructor(
+    private val resolveIdentity: (OfficialAppSettings) -> OfficialAppSettings,
+    private val sessionDate: () -> String,
+    private val signingKey: () -> String
+) : Interceptor {
+    @Inject
+    constructor(identity: OfficialAppIdentity) : this(
+        identity::resolve,
+        { identity.loginDate },
+        { BuildConfig.OFFICIAL_APP_TAP_STRING }
+    )
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
@@ -54,8 +63,8 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         profile: OfficialAppSettings,
         timestampSeconds: Long = System.currentTimeMillis() / 1000
     ): Request {
-        val app = identity.resolve(profile)
-        val tapString = BuildConfig.OFFICIAL_APP_TAP_STRING.takeIf { it.isNotEmpty() }
+        val app = resolveIdentity(profile)
+        val tapString = signingKey().takeIf { it.isNotEmpty() }
             ?: throw IOException("当前安装包缺少 App 模式所需配置")
         val timestamp = timestampSeconds.toString()
         val mac = Mac.getInstance("HmacSHA256").apply {
@@ -136,7 +145,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
                     "userAgent" to "COPY/${app.version}",
                     "isGoogle" to "false",
                     "pseudoID" to app.pseudoId,
-                    "dt" to identity.loginDate,
+                    "dt" to sessionDate(),
                     "tapString" to tapString,
                     "umString" to app.umString,
                     "buildTime" to app.buildTime,
@@ -166,10 +175,11 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             "/api/v3/member/roast",
             "/api/v3/member/comment/report",
             "/api/v3/member/bookcomment/report",
+            "/api/v3/member/roast/report",
             "/api/v3/member/update/info"
         )
 
-        "DELETE" -> path == "/api/v3/member/browse/comics"
+        "DELETE" -> path in setOf("/api/v3/member/browse/comics", "/api/v3/member/comment", "/api/v3/member/roast")
         else -> false
     }
 
@@ -182,14 +192,17 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
             "/api/v3/member/roast",
             "/api/v3/member/comment/report",
             "/api/v3/member/bookcomment/report",
+            "/api/v3/member/roast/report",
             "/api/v3/member/update/info"
         )) || (method == "DELETE" && path in setOf(
             "/api/v3/member/collect/comics",
             "/api/v3/member/collect/books",
-            "/api/v3/member/browse/comics"
+            "/api/v3/member/browse/comics",
+            "/api/v3/member/comment",
+            "/api/v3/member/roast"
         ))
 
-    /** App 小说顶层抓包使用裸 reply_id；其余字段仍由 FormBody 完成编码。 */
+    /** App 漫画与小说顶层评论使用裸 reply_id；其余字段仍由 FormBody 编码。 */
     private fun memberFormBody(
         method: String,
         path: String,
@@ -198,7 +211,7 @@ class OfficialAppInterceptor @Inject constructor(private val identity: OfficialA
         val form = FormBody.Builder().apply {
             fields.forEach { (key, value) -> add(key, value) }
         }.build()
-        if (method != "POST" || path != "/api/v3/member/bookcomment" ||
+        if (method != "POST" || path !in setOf("/api/v3/member/bookcomment", "/api/v3/member/comment") ||
             fields.none { it.first == "reply_id" && it.second.isEmpty() }
         ) return form
         return (0 until form.size).joinToString("&") { index ->

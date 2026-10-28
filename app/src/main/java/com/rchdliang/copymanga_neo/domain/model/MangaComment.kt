@@ -14,7 +14,9 @@ data class MangaComment(
     val content: String,
     val createdAt: String,
     val replyCount: Int = 0,
-    val parentUsername: String? = null
+    val parentUsername: String? = null,
+    /** 服务端作者标识；旧离线数据缺失时不允许按昵称判断所有权。 */
+    val userId: String? = null
 )
 
 data class CommentPage(val comments: List<MangaComment>, val total: Int, val nextOffset: Int?)
