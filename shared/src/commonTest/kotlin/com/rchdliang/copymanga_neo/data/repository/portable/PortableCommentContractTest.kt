@@ -35,19 +35,18 @@ class PortableCommentContractTest {
     private val member = """{"code":200,"results":{"user_id":"author-id","username":"synthetic-user"}}"""
     private val success = """{"code":200,"message":"ok","results":null}"""
 
-    @Test fun fullChapterFeedAndPaginationUseListViewOnlyInAppMode() = runTest {
+    @Test fun fullChapterFeedAndPaginationUseListViewInBothModes() = runTest {
         for (mode in RequestMode.entries) {
             var calls = 0
             val engine = MockEngine { request ->
-                val app = mode == RequestMode.OFFICIAL_APP
                 assertEquals("/api/v3/roasts", request.url.encodedPath)
-                assertEquals(if (app) "list" else null, request.url.parameters["view"])
-                assertEquals(if (app) "20" else "30", request.url.parameters["limit"])
-                assertEquals(if (app) null else "true", request.url.parameters["_update"])
+                assertEquals("list", request.url.parameters["view"])
+                assertEquals("20", request.url.parameters["limit"])
+                assertNull(request.url.parameters["_update"])
                 assertNull(request.url.parameters["request_id"])
-                val offset = if (calls++ == 0) 0 else if (app) 20 else 30
+                val offset = if (calls++ == 0) 0 else 20
                 assertEquals(offset.toString(), request.url.parameters["offset"])
-                respond("""{"code":200,"results":{"list":[{"id":17,"user_id":"author-id","user_name":"same nickname","comment":"hello"}],"total":55,"limit":${if(app)20 else 30},"offset":$offset}}""", headers = headers)
+                respond("""{"code":200,"results":{"list":[{"id":17,"user_id":"author-id","user_name":"same nickname","comment":"hello"}],"total":55,"limit":20,"offset":$offset}}""", headers = headers)
             }
             val client = CopyMangaClient(HttpClient(engine), state(mode), identity = identity)
             try {
@@ -56,7 +55,7 @@ class PortableCommentContractTest {
                 // 仓库在 Default 执行；超时也使用真实调度器，避免测试虚拟时钟抢跑。
                 val first = withContext(Dispatchers.Default) { repository.getComments(target).getOrThrow() }
                 assertEquals("author-id", first.comments.single().userId)
-                assertEquals(if(mode == RequestMode.OFFICIAL_APP)20 else 30, first.nextOffset)
+                assertEquals(20, first.nextOffset)
                 withContext(Dispatchers.Default) { repository.getComments(target, first.nextOffset!!).getOrThrow() }
                 assertEquals(2, calls)
             } finally { client.close() }
@@ -69,12 +68,13 @@ class PortableCommentContractTest {
             val engine = MockEngine { request ->
                 assertEquals(HttpMethod.Post, request.method)
                 assertEquals("/api/v3/member/comment", request.url.encodedPath)
+                assertEquals(if(mode == RequestMode.OFFICIAL_APP)"3" else null, request.url.parameters["platform"])
                 val body = (request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString()
                 val form = parseQueryString(body)
                 assertEquals("text + & reply_id=", form["comment"])
                 if (calls++ == 0) {
                     if (mode == RequestMode.OFFICIAL_APP) assertTrue("reply_id" in body.split('&'))
-                    else assertFalse(body.split('&').any { it.startsWith("reply_id") })
+                    else assertTrue("reply_id=" in body.split('&'))
                 } else assertEquals("parent-id", form["reply_id"])
                 assertEquals(if(mode == RequestMode.OFFICIAL_APP) identity.tapString else null, form["tapString"])
                 respond(success, headers = headers)
@@ -91,7 +91,7 @@ class PortableCommentContractTest {
     }
 
     @Test fun deletesVerifyAuthorAndSendAuthenticatedDeleteFormsAcceptingNullResults() = runTest {
-        for (kind in listOf(CommentKind.COMIC, CommentKind.CHAPTER)) {
+        for (mode in RequestMode.entries) for (kind in listOf(CommentKind.COMIC, CommentKind.CHAPTER)) {
             var deletes = 0
             var members = 0
             val engine = MockEngine { request ->
@@ -109,16 +109,17 @@ class PortableCommentContractTest {
                     val form = parseQueryString(body)
                     assertEquals("target-id", form[if(chapter)"chapter_id" else "comic_id"])
                     assertEquals("comment-id", form[if(chapter)"roast_id" else "comment_id"])
-                    assertEquals("Token synthetic-token", form["authorization"])
-                    assertEquals(identity.tapString, form["tapString"])
-                    assertEquals("3", form["platform"])
-                    assertEquals("3", request.url.parameters["platform"])
-                    assertNull(form["_update"])
+                    val app = mode == RequestMode.OFFICIAL_APP
+                    assertEquals(if(app)"Token synthetic-token" else null, form["authorization"])
+                    assertEquals(if(app)identity.tapString else null, form["tapString"])
+                    assertEquals(if(app)"3" else null, form["platform"])
+                    assertEquals(if(app)"3" else null, request.url.parameters["platform"])
+                    assertEquals(if(!app && chapter)"true" else null, form["_update"])
                     assertNull(request.url.parameters["comment_id"])
                     respond(success, headers = headers)
                 }
             }
-            val client = CopyMangaClient(HttpClient(engine), state(), identity = identity)
+            val client = CopyMangaClient(HttpClient(engine), state(mode), identity = identity)
             try {
                 PortableCommentRepository(client).deleteComment(CommentTarget(kind, "target-id"), comment()).getOrThrow()
                 assertEquals(1, members)
@@ -127,7 +128,7 @@ class PortableCommentContractTest {
         }
     }
 
-    @Test fun wrongAuthorMissingAuthorAndUnverifiedModesNeverSendDelete() = runTest {
+    @Test fun wrongAuthorMissingAuthorAndUnsupportedKindsNeverSendDelete() = runTest {
         var gets = 0
         val engine = MockEngine { request ->
             assertEquals(HttpMethod.Get, request.method)
@@ -143,9 +144,9 @@ class PortableCommentContractTest {
             assertTrue(repository.deleteComment(target, comment(null)).isFailure)
             assertTrue(repository.deleteComment(CommentTarget(CommentKind.NOVEL, "book"), comment()).isFailure)
             network.update { it.copy(settings = it.settings.copy(requestMode = RequestMode.WEB)) }
-            assertFalse(repository.supportsDeletion(target))
-            assertTrue(repository.deleteComment(target, comment()).isFailure)
-            assertEquals(1, gets)
+            assertTrue(repository.supportsDeletion(target))
+            assertTrue(repository.deleteComment(target, comment("another-id")).isFailure)
+            assertEquals(2, gets)
         } finally { client.close() }
     }
 
@@ -265,6 +266,31 @@ class PortableCommentContractTest {
             assertTrue(result.isFailure)
             assertEquals("synthetic rejection", result.exceptionOrNull()?.message)
             assertEquals(1, calls)
+        } finally { client.close() }
+    }
+
+    @Test fun webProtocolMigrationPreservesCustomValuesAndAppIdentity() {
+        val old = NetworkSettings(version = "2026.08.24")
+        val normalized = com.rchdliang.copymanga_neo.data.local.portable.PortableNetworkValidation.normalize(old)
+        assertEquals("2026.10.16", normalized.version)
+        assertEquals(old.officialApp, normalized.officialApp)
+        assertEquals("custom-version", com.rchdliang.copymanga_neo.data.local.portable.PortableNetworkValidation
+            .normalize(old.copy(version = "custom-version")).version)
+    }
+
+    @Test fun webChapterPostOmitsUpdateAndAppIdentityFields() = runTest {
+        val client = CopyMangaClient(HttpClient(MockEngine { request ->
+            assertEquals("/api/v3/member/roast", request.url.encodedPath)
+            val form = parseQueryString((request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString())
+            assertEquals(setOf("chapter_id", "roast"), form.names())
+            assertEquals("synthetic text", form["roast"])
+            assertNull(request.url.parameters["platform"])
+            respond(success, headers = headers)
+        }), state(RequestMode.WEB))
+        try {
+            PortableCommentRepository(client).postComment(
+                CommentTarget(CommentKind.CHAPTER, "chapter"), "synthetic text"
+            ).getOrThrow()
         } finally { client.close() }
     }
 }

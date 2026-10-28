@@ -110,7 +110,7 @@ class CopyMangaClientTest {
         val engine=MockEngine { request ->
             assertEquals("api.copy4000.com",request.url.host);assertEquals("1",request.headers["platform"])
             assertEquals(CopyMangaNetworkConfig.WEB_API_USER_AGENT,request.headers["User-Agent"])
-            assertEquals("2026.08.24",request.headers["version"]);assertEquals("author",request.url.parameters["q_type"])
+            assertEquals("2026.10.16",request.headers["version"]);assertEquals("author",request.url.parameters["q_type"])
             assertEquals("hello world",request.url.parameters["q"]);assertNull(request.headers["Authorization"])
             respond("""{"code":200,"results":{"list":[],"total":0,"limit":20,"offset":0}}""",headers=headersOf(HttpHeaders.ContentType,"application/json"))
         }

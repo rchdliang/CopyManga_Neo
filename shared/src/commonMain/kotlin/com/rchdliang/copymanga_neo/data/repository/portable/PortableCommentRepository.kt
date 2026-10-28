@@ -31,8 +31,7 @@ class PortableCommentRepository(
     private val networkSettings = NetworkSettingsAdapter(client.state)
     private val downloadMutex = Mutex()
     override fun supportsDeletion(target: CommentTarget): Boolean =
-        client.state.snapshot.settings.requestMode == RequestMode.OFFICIAL_APP &&
-                target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
+        target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
 
     override suspend fun deleteComment(target: CommentTarget, comment: MangaComment): Result<Unit> = result {
         require(supportsDeletion(target)) { "当前模式不支持删除此类评论" }
@@ -41,7 +40,6 @@ class PortableCommentRepository(
             ?: throw IllegalStateException("缺少作者信息，请刷新评论")
         val snapshot = client.state.snapshot
         val mode = snapshot.settings.requestMode
-        check(mode == RequestMode.OFFICIAL_APP) { "请求模式已改变，请刷新评论" }
         val token = snapshot.session(mode).token.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("请先登录后删除")
         // 发送前以服务器身份验证所有权；同名账号或切换账号不能沿用旧菜单授权。
@@ -256,12 +254,12 @@ class PortableCommentRepository(
                 replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
                 offset,
                 if (appMode) limit.coerceAtMost(10) else limit,
-                headers = headers
+                headers = headers,
+                update = true.takeIf { !appMode && !replyId.isNullOrBlank() }
             )
 
             CommentKind.CHAPTER -> api.chapterComments(
-                target.id, offset, limit = if (appMode) 20 else 30, headers = headers,
-                view = if (appMode) "list" else null
+                target.id, offset, limit = 20, headers = headers, view = "list"
             )
         }
         check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
@@ -317,7 +315,7 @@ class PortableCommentRepository(
             CommentKind.COMIC -> api.postComicComment(
                 target.id,
                 content.trim(),
-                replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
+                replyId.orEmpty(),
                 "Token $token",
                 headers = headers
             )

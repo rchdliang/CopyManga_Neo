@@ -54,7 +54,7 @@ object PortableNetworkValidation {
         return value.copy(apiHost = host(value.apiHost), wwwHost = host(value.wwwHost),
             loginHost = value.loginHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty(),
             routes = routes, shareHosts = value.shareHosts.take(20).map(::host).distinct(), fixedHost = fixed,
-            version = value.version.trim(), proxyAddress = value.proxyAddress.trim(),
+            version = NetworkDefaults.normalizeWebVersion(value.version), proxyAddress = value.proxyAddress.trim(),
             officialApp = app.copy(apiHost = host(app.apiHost), loginHost = host(app.loginHost)))
     }
 }

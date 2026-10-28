@@ -92,26 +92,27 @@ class CommentApiService(private val client: CopyMangaClient, private val www: Bo
         replyId: String? = null,
         offset: Int = 0,
         limit: Int = 20,
-        headers: Map<String, String> = headers()
-    ): PortableResponse<CommentResponseDto> = client.call(ApiRequest(path = "/api/v3/comments", method = "GET", query = listOfNotNull("comic_id" to comicId, replyId?.let { "reply_id" to it }, "offset" to offset.toString(), "limit" to limit.toString()), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<CommentResponseDto>())
+        headers: Map<String, String> = headers(),
+        update: Boolean? = null
+    ): PortableResponse<CommentResponseDto> = client.call(ApiRequest(path = "/api/v3/comments", method = "GET", query = listOfNotNull("comic_id" to comicId, replyId?.let { "reply_id" to it }, "offset" to offset.toString(), "limit" to limit.toString(), update?.let { "_update" to it.toString() }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<CommentResponseDto>())
 
     suspend fun chapterComments(
         chapterId: String,
         offset: Int = 0,
         limit: Int = 30,
-        update: Boolean = true,
+        update: Boolean? = null,
         headers: Map<String, String> = headers(),
         view: String? = null
-    ): PortableResponse<CommentResponseDto> = client.call(ApiRequest(path = "/api/v3/roasts", method = "GET", query = listOfNotNull("chapter_id" to chapterId, "offset" to offset.toString(), "limit" to limit.toString(), "_update" to update.toString(), view?.let { "view" to it }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<CommentResponseDto>())
+    ): PortableResponse<CommentResponseDto> = client.call(ApiRequest(path = "/api/v3/roasts", method = "GET", query = listOfNotNull("chapter_id" to chapterId, "offset" to offset.toString(), "limit" to limit.toString(), update?.let { "_update" to it.toString() }, view?.let { "view" to it }), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<CommentResponseDto>())
 
-    /** 官方 App 删除接口使用 DELETE 表单，不将条目 ID 放进 URL。 */
+    /** 两种模式均使用 DELETE 表单；网页章节删除额外携带 _update=true。 */
     suspend fun deleteComment(
         target: CommentTarget,
         commentId: String,
         authorization: String,
         requestMode: RequestMode
     ): PortableResponse<CommentPostResponseDto> {
-        require(requestMode == RequestMode.OFFICIAL_APP && target.kind != CommentKind.NOVEL)
+        require(target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER))
         val chapter = target.kind == CommentKind.CHAPTER
         return client.call(
             ApiRequest(
@@ -120,8 +121,8 @@ class CommentApiService(private val client: CopyMangaClient, private val www: Bo
                 form = listOf(
                     (if (chapter) "chapter_id" else "comic_id") to target.id,
                     (if (chapter) "roast_id" else "comment_id") to commentId
-                ),
-                headers = postHeaders(true) + ("Authorization" to authorization),
+                ) + if (chapter && requestMode == RequestMode.WEB) listOf("_update" to "true") else emptyList(),
+                headers = postHeaders(requestMode == RequestMode.OFFICIAL_APP) + ("Authorization" to authorization),
                 mode = requestMode,
                 invalidateCurrentSessionOn401 = true
             ),
@@ -134,15 +135,15 @@ class CommentApiService(private val client: CopyMangaClient, private val www: Bo
         content: String,
         replyId: String?,
         authorization: String,
-        platform: Int = 3,
+        platform: Int? = null,
         headers: Map<String, String> = postHeaders()
-    ): PortableResponse<CommentPostResponseDto> = client.call(ApiRequest(path = "/api/v3/member/comment", method = "POST", query = listOfNotNull("platform" to platform.toString()), form = listOfNotNull("comic_id" to comicId, "comment" to content, replyId?.let { "reply_id" to it }), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<CommentPostResponseDto>())
+    ): PortableResponse<CommentPostResponseDto> = client.call(ApiRequest(path = "/api/v3/member/comment", method = "POST", query = listOfNotNull(platform?.let { "platform" to it.toString() }), form = listOfNotNull("comic_id" to comicId, "comment" to content, replyId?.let { "reply_id" to it }), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<CommentPostResponseDto>())
 
     suspend fun postChapterComment(
         chapterId: String,
         content: String,
         authorization: String,
-        update: Boolean = true,
+        update: Boolean? = null,
         headers: Map<String, String> = postHeaders()
-    ): PortableResponse<CommentPostResponseDto> = client.call(ApiRequest(path = "/api/v3/member/roast", method = "POST", query = emptyList(), form = listOfNotNull("chapter_id" to chapterId, "roast" to content, "_update" to update.toString()), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<CommentPostResponseDto>())
+    ): PortableResponse<CommentPostResponseDto> = client.call(ApiRequest(path = "/api/v3/member/roast", method = "POST", query = emptyList(), form = listOfNotNull("chapter_id" to chapterId, "roast" to content, update?.let { "_update" to it.toString() }), headers = headers + mapOf("Authorization" to authorization), www = www, mode = null, appIdentity = null, invalidateCurrentSessionOn401 = true), serializer<CommentPostResponseDto>())
 }
