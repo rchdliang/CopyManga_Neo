@@ -100,22 +100,28 @@ class CommentAppProtocolTest {
     }
 
     @Test fun deletesCarryFormBodiesAndAcceptSuccessfulNullResults() = runBlocking {
-        val h = harness(RequestMode.OFFICIAL_APP)
+        for (mode in RequestMode.entries) {
+        val app = mode == RequestMode.OFFICIAL_APP
+        val h = harness(mode)
         try {
-            val headers = CommentApiService.postHeaders(true)
-            assertEquals(200, h.api.deleteComicComment("comic", "item", "Token synthetic", headers, RequestMode.OFFICIAL_APP).body()?.code)
-            assertEquals(200, h.api.deleteChapterComment("chapter", "item", "Token synthetic", headers, RequestMode.OFFICIAL_APP).body()?.code)
+            val headers = CommentApiService.postHeaders(app)
+            assertEquals(200, h.api.deleteComicComment("comic", "item", "Token synthetic", headers, mode).body()?.code)
+            assertEquals(200, h.api.deleteChapterComment("chapter", "item", "Token synthetic", headers, mode,
+                update = true.takeIf { !app }).body()?.code)
             h.requests.forEachIndexed { index, request ->
                 assertEquals("DELETE", request.method)
                 val fields = form(request)
                 assertEquals("item", fields[if(index == 0)"comment_id" else "roast_id"])
                 assertEquals(if(index == 0)"comic" else "chapter", fields[if(index == 0)"comic_id" else "chapter_id"])
-                assertEquals("Token synthetic", fields["authorization"])
-                assertEquals(secret, fields["tapString"])
+                assertEquals(if(app)"Token synthetic" else null, fields["authorization"])
+                assertEquals(if(app)secret else null, fields["tapString"])
+                assertEquals(if(!app && index == 1)"true" else null, fields["_update"])
+                assertEquals(if(app)"3" else null, request.url.queryParameter("platform"))
                 assertNull(request.url.queryParameter("comment_id"))
             }
             assertEquals(2, h.requests.size)
         } finally { h.close() }
+        }
     }
 
     @Test fun topLevelComicUsesBareReplyOnlyInAppAndRepliesRetainTheirId() = runBlocking {
@@ -123,11 +129,12 @@ class CommentAppProtocolTest {
             val h = harness(mode)
             try {
                 val app = mode == RequestMode.OFFICIAL_APP
-                h.api.postComicComment("comic", "text + &", if(app)"" else null, "Token synthetic", headers = CommentApiService.postHeaders(app))
+                h.api.postComicComment("comic", "text + &", "", "Token synthetic", headers = CommentApiService.postHeaders(app))
                 h.api.postComicComment("comic", "reply", "parent", "Token synthetic", headers = CommentApiService.postHeaders(app))
                 assertEquals("text + &", form(h.requests[0])["comment"])
                 if(app) assertTrue("reply_id" in body(h.requests[0]).split('&'))
-                else assertFalse(form(h.requests[0]).containsKey("reply_id"))
+                else assertTrue("reply_id=" in body(h.requests[0]).split('&'))
+                assertEquals(if(app)"3" else null, h.requests[0].url.queryParameter("platform"))
                 assertEquals("parent", form(h.requests[1])["reply_id"])
             } finally { h.close() }
         }
@@ -135,10 +142,11 @@ class CommentAppProtocolTest {
 
     @Test fun fullChapterViewAndAuthorFieldsSurviveProtocolAndParsing() = runBlocking {
         val response = """{"code":200,"results":{"list":[{"id":7,"user_id":"author","user_name":"nickname","comment":"text"}],"total":55,"limit":20,"offset":20}}"""
-        val h = harness(RequestMode.OFFICIAL_APP, response)
+        for (mode in RequestMode.entries) {
+        val h = harness(mode, response)
         try {
             val result = h.api.chapterComments("chapter", offset = 20, limit = 20,
-                headers = CommentApiService.readHeaders(true), view = "list")
+                headers = CommentApiService.readHeaders(mode == RequestMode.OFFICIAL_APP), view = "list")
             val request = h.requests.single()
             assertEquals("list", request.url.queryParameter("view"))
             assertEquals("20", request.url.queryParameter("limit"))
@@ -147,6 +155,7 @@ class CommentAppProtocolTest {
             assertEquals("author", result.body()?.results?.list?.single()?.userId)
             assertNull(Gson().fromJson("""{"id":"7","username":"nickname","content":"text"}""", MangaComment::class.java).userId)
         } finally { h.close() }
+        }
     }
 
     @Test fun reportBusinessFailureIsPreservedWithoutRetry() = runBlocking {
@@ -156,6 +165,28 @@ class CommentAppProtocolTest {
                 headers = CommentApiService.reportHeaders(true), requestMode = RequestMode.OFFICIAL_APP)
             assertEquals(400, result.body()?.code)
             assertEquals(1, h.requests.size)
+        } finally { h.close() }
+    }
+
+    @Test fun oldWebDefaultMigratesButCustomVersionAndAppProfileStayUnchanged() {
+        val original = NetworkSettings(version = "2026.08.24")
+        val migrated = NetworkSettingsCodec.decode(NetworkSettingsCodec.encode(original))
+        assertEquals("2026.10.16", migrated.version)
+        assertEquals(original.officialApp, migrated.officialApp)
+        assertEquals("custom-version", NetworkSettingsCodec.decode(
+            NetworkSettingsCodec.encode(original.copy(version = "custom-version"))
+        ).version)
+    }
+
+    @Test fun webChapterPostContainsOnlyCapturedBusinessFields() = runBlocking {
+        val h = harness(RequestMode.WEB)
+        try {
+            h.api.postChapterComment("chapter", "synthetic text", "Token synthetic",
+                headers = CommentApiService.postHeaders(false))
+            val request = h.requests.single()
+            assertEquals(setOf("chapter_id", "roast"), form(request).keys)
+            assertNull(request.url.queryParameter("platform"))
+            assertEquals("2026.10.16", request.header("version"))
         } finally { h.close() }
     }
 }

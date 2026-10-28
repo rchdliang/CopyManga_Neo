@@ -115,7 +115,8 @@ interface CommentApiService {
         @Query("reply_id") replyId: String? = null,
         @Query("offset") offset: Int = 0,
         @Query("limit") limit: Int = 20,
-        @HeaderMap headers: Map<String, String> = headers()
+        @HeaderMap headers: Map<String, String> = headers(),
+        @Query("_update") update: Boolean? = null
     ): Response<CommentResponseDto>
 
     @GET("api/v3/roasts")
@@ -123,7 +124,7 @@ interface CommentApiService {
         @Query("chapter_id") chapterId: String,
         @Query("offset") offset: Int = 0,
         @Query("limit") limit: Int = 30,
-        @Query("_update") update: Boolean = true,
+        @Query("_update") update: Boolean? = null,
         @HeaderMap headers: Map<String, String> = headers(),
         @Query("view") view: String? = null
     ): Response<CommentResponseDto>
@@ -146,7 +147,8 @@ interface CommentApiService {
         @Field("roast_id") roastId: String,
         @Header("Authorization") authorization: String,
         @HeaderMap headers: Map<String, String>,
-        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode
+        @retrofit2.http.Tag requestMode: com.rchdliang.copymanga_neo.domain.model.RequestMode,
+        @Field("_update") update: Boolean? = null
     ): Response<CommentPostResponseDto>
 
     @FormUrlEncoded
@@ -156,7 +158,7 @@ interface CommentApiService {
         @Field("comment") content: String,
         @Field("reply_id") replyId: String?,
         @Header("Authorization") authorization: String,
-        @Query("platform") platform: Int = 3,
+        @Query("platform") platform: Int? = null,
         @HeaderMap headers: Map<String, String> = postHeaders()
     ): Response<CommentPostResponseDto>
 
@@ -166,7 +168,7 @@ interface CommentApiService {
         @Field("chapter_id") chapterId: String,
         @Field("roast") content: String,
         @Header("Authorization") authorization: String,
-        @Field("_update") update: Boolean = true,
+        @Field("_update") update: Boolean? = null,
         @HeaderMap headers: Map<String, String> = postHeaders()
     ): Response<CommentPostResponseDto>
 }

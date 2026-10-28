@@ -12,7 +12,7 @@ import java.io.IOException
  *
  * 输出示例：
  *   → GET https://api.copy4000.com/api/v3/h5/homeIndex?_t=1716890000000
- *     Headers: [Authorization: Token xxx, version: 2026.08.24, region: 1, platform: 1, Accept: application/json]
+ *     Headers: [Authorization: Token xxx, version: <当前协议版本>, region: 1, platform: 1, Accept: application/json]
  *   ← 200 (234ms)
  */
 class RequestLoggingInterceptor : Interceptor {

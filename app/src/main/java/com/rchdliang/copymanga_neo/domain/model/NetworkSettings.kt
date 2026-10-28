@@ -36,7 +36,11 @@ data class AppCredentialIdentity(
 object NetworkDefaults {
     const val API_HOST = "api.copy4000.com"
     const val WWW_HOST = "www.copy3000.com"
-    const val WEB_VERSION = "2026.08.24"
+    const val WEB_VERSION = "2026.10.16"
+
+    /** 迁移已发布的旧默认协议版本；其它手动配置的版本保持原样。 */
+    fun normalizeWebVersion(value: String): String =
+        if (value.trim() == "2026.08.24") WEB_VERSION else value.trim()
 }
 
 /** 网络配置单独持久化；登录域名留空时跟随 API。 */

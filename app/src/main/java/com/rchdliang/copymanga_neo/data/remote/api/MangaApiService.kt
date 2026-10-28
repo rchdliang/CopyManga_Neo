@@ -316,7 +316,7 @@ interface MangaApiService {
      * @param password Base64编码的(原始密码-盐)
      * @param salt 随机4位盐
      * @param source 固定值 freeSite
-     * @param version 固定值 2026.08.24
+     * @param version 当前 Web 网络配置的协议版本
      * @param platform 固定值 1
      */
     @FormUrlEncoded

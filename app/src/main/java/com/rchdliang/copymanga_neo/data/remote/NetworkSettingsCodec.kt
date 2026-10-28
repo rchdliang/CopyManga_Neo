@@ -58,7 +58,8 @@ internal object NetworkSettingsCodec {
             wwwHost = host(value.wwwHost),
             shareHosts = value.shareHosts.take(20).map(::host).distinct(),
             loginHost = value.loginHost.takeIf { it.isNotBlank() }?.let(::host).orEmpty(),
-            version = value.version.trim(), routes = routes, fixedHost = fixed,
+            version = com.rchdliang.copymanga_neo.domain.model.NetworkDefaults.normalizeWebVersion(value.version),
+            routes = routes, fixedHost = fixed,
             proxyAddress = value.proxyAddress.trim())
     }
 

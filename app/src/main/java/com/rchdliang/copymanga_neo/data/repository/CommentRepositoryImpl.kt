@@ -43,8 +43,7 @@ class CommentRepositoryImpl @Inject constructor(
     private val gson = Gson()
 
     override fun supportsDeletion(target: CommentTarget): Boolean =
-        networkSettings.settings.value.requestMode == RequestMode.OFFICIAL_APP &&
-                target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
+        target.kind in setOf(CommentKind.COMIC, CommentKind.CHAPTER)
 
     override suspend fun deleteComment(target: CommentTarget, comment: MangaComment): Result<Unit> = result {
         require(supportsDeletion(target)) { "当前模式不支持删除此类评论" }
@@ -52,7 +51,6 @@ class CommentRepositoryImpl @Inject constructor(
         val authorId = comment.userId?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("缺少作者信息，请刷新评论")
         val mode = networkSettings.settings.value.requestMode
-        check(mode == RequestMode.OFFICIAL_APP) { "请求模式已改变，请刷新评论" }
         val generation = auth.getAuthGeneration()
         val networkGeneration = networkSettings.generation
         val token = auth.getTokenSync()?.takeIf { it.isNotBlank() }
@@ -67,10 +65,13 @@ class CommentRepositoryImpl @Inject constructor(
         requireCurrent()
         checkResponse(member.code(), member.body()?.code, member.body()?.message)
         check(member.body()?.results?.userId?.takeIf { it.isNotBlank() } == authorId) { "只能删除自己的评论" }
-        val headers = CommentApiService.postHeaders(true)
+        val headers = CommentApiService.postHeaders(mode == RequestMode.OFFICIAL_APP)
         val response = when (target.kind) {
             CommentKind.COMIC -> api.deleteComicComment(target.id, comment.id, "Token $token", headers, mode)
-            CommentKind.CHAPTER -> api.deleteChapterComment(target.id, comment.id, "Token $token", headers, mode)
+            CommentKind.CHAPTER -> api.deleteChapterComment(
+                target.id, comment.id, "Token $token", headers, mode,
+                update = true.takeIf { mode == RequestMode.WEB }
+            )
             CommentKind.NOVEL -> error("当前不支持删除小说评论")
         }
         if (response.code() == 401 || response.body()?.code == 401) {
@@ -293,12 +294,12 @@ class CommentRepositoryImpl @Inject constructor(
                 replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
                 offset,
                 if (appMode) limit.coerceAtMost(10) else limit,
-                headers = headers
+                headers = headers,
+                update = true.takeIf { !appMode && !replyId.isNullOrBlank() }
             )
 
             CommentKind.CHAPTER -> api.chapterComments(
-                target.id, offset, limit = if (appMode) 20 else 30, headers = headers,
-                view = if (appMode) "list" else null
+                target.id, offset, limit = 20, headers = headers, view = "list"
             )
         }
         check(networkSettings.generation == generation) { "网络设置已更改，请刷新重试" }
@@ -359,7 +360,7 @@ class CommentRepositoryImpl @Inject constructor(
             CommentKind.COMIC -> api.postComicComment(
                 target.id,
                 content.trim(),
-                replyId?.takeIf { it.isNotBlank() } ?: "".takeIf { appMode },
+                replyId.orEmpty(),
                 "Token $token",
                 headers = headers
             )
