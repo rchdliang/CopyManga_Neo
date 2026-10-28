@@ -246,20 +246,7 @@ fun CopyMangaApp(
                 SideEffect { repositories.startupTrace.palette("shell", colors.primary.value, colors.surface.value) }
                 AppToastHost {
                     updateState.update?.let { release ->
-                        val uri = androidx.compose.ui.platform.LocalUriHandler.current
-                        val updateToast = LocalToastHost.current
-                        androidx.compose.material3.AlertDialog(
-                            onDismissRequest = updateModel::dismissUpdate,
-                            title = { Text("发现新版本", color = MaterialTheme.colorScheme.onSurface) },
-                            text = { Text("最新版本：${release.version}", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            confirmButton = { androidx.compose.material3.TextButton(onClick = {
-                                runCatching { uri.openUri(release.pageUrl) }.onFailure { updateToast.showToast("无法打开浏览器") }
-                                updateModel.dismissUpdate()
-                            }) { Text("查看发布页", color = MaterialTheme.colorScheme.primary) } },
-                            dismissButton = { androidx.compose.material3.TextButton(onClick = updateModel::dismissUpdate) {
-                                Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } }
-                        )
+                        AppUpdateDialog(release, updateModel::dismissUpdate)
                     }
                     val toast = LocalToastHost.current
                     LaunchedEffect(platforms.ui) {

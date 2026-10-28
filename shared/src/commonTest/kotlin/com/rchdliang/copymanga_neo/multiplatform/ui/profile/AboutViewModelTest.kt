@@ -15,11 +15,22 @@ class AboutViewModelTest {
         override suspend fun latestRelease() = block()
     })
     @Test fun newerReleaseOffersItsPage() {
-        val release = AppRelease("v0.10.4", "0.10.4", "https://github.com/rchdliang/CopyManga_Neo/releases/tag/v0.10.4")
+        val release = AppRelease("v0.10.4", "0.10.4", "https://github.com/rchdliang/CopyManga_Neo/releases/tag/v0.10.4", "修复问题\n优化阅读")
         val model = model { Result.success(release) }
         model.checkForUpdate("0.10.3")
         assertEquals(release, model.uiState.value.update)
         assertFalse(model.uiState.value.checking)
+    }
+    @Test fun automaticCheckPreservesNotesAndDoesNotRepeatAfterDismissal() {
+        val release = AppRelease("v0.10.4", "0.10.4", "page", "更新说明\n第二行")
+        var calls = 0
+        val model = model { calls++; Result.success(release) }
+        model.checkAutomatically("0.10.3", enabled = true)
+        assertEquals(release, model.uiState.value.update)
+        model.dismissUpdate()
+        model.checkAutomatically("0.10.3", enabled = true)
+        assertNull(model.uiState.value.update)
+        assertEquals(1, calls)
     }
     @Test fun inaccessiblePublicReleaseHasAnExplicitMessage() {
         val failure = PublicReleaseUnavailableException()

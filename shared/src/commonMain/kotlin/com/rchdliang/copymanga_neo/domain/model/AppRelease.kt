@@ -1,6 +1,6 @@
 package com.rchdliang.copymanga_neo.domain.model
 
-data class AppRelease(val tag: String, val version: String, val pageUrl: String)
+data class AppRelease(val tag: String, val version: String, val pageUrl: String, val releaseNotes: String = "")
 
 object AppVersion {
     fun isNewer(latest: String, current: String): Boolean {

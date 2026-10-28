@@ -4,14 +4,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.repository.ProjectLinks
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.AppUpdateDialog
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -90,26 +89,7 @@ internal fun AboutPage(
             onClick = { libraries = true })
     }
     state.update?.let { release ->
-        AlertDialog(
-            onDismissRequest = onDismissUpdate,
-            title = { Text("发现新版本", color = MaterialTheme.colorScheme.onSurface) },
-            text = {
-                Text(
-                    "最新版本：${release.version}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { open(release.pageUrl); onDismissUpdate() }) {
-                    Text("查看发布页", color = MaterialTheme.colorScheme.primary)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismissUpdate) {
-                    Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
+        AppUpdateDialog(release, onDismissUpdate)
     }
 }
 
