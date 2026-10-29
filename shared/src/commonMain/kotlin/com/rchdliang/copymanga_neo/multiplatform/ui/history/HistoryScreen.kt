@@ -16,6 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.outlined.History
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -142,17 +146,34 @@ fun HistoryContent(
                     LoadingIndicator(Modifier.align(Alignment.Center))
                 }
 
-                !uiState.isLoggedIn -> HistoryMessage(
-                    "登录后查看云端浏览记录",
-                    "前往登录",
-                    onLoginClick
-                )
+                !uiState.isLoggedIn -> Box(
+                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                ) {
+                    EmptyContent(
+                        icon = Icons.AutoMirrored.Filled.Login,
+                        title = "登录后查看云端浏览记录",
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    ) {
+                        FilledTonalButton(onClick = onLoginClick) {
+                            Text("前往登录", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
+                }
 
                 uiState.error != null && uiState.items.isEmpty() -> {
                     HistoryMessage(uiState.error, "重试", onRefresh)
                 }
 
-                uiState.items.isEmpty() -> HistoryMessage("暂无云端漫画浏览记录")
+                uiState.items.isEmpty() -> Box(
+                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                ) {
+                    EmptyContent(
+                        icon = Icons.Outlined.History,
+                        title = "暂无云端漫画浏览记录",
+                        description = "阅读漫画后，可以在这里找回浏览过的作品。",
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                }
                 else -> {
                     LazyColumn(
                         modifier = Modifier

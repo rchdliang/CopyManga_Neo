@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -273,9 +274,10 @@ internal fun ColumnScope.NovelReaderAnnotations(
             .fillMaxWidth(), contentPadding = PaddingValues(bottom = 12.dp)
     ) {
         if (annotations.isEmpty()) item {
-            Text(
-                "还没有标注。长按正文选中文字，然后点击“标注”。", Modifier.padding(24.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            EmptyContent(
+                icon = Icons.Outlined.EditNote,
+                title = "还没有标注",
+                description = "长按正文选中文字，然后点击“标注”。"
             )
         }
         itemsIndexed(annotations, key = { _, annotation -> annotation.id }) { _, annotation ->

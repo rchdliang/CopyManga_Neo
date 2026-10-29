@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.List
@@ -339,9 +341,10 @@ fun ReaderBookmarksDialog(
         onDismissRequest = onDismiss,
         title = { Text("本漫画的书签", color = MaterialTheme.colorScheme.onSurface) },
         text = {
-            if (bookmarks.isEmpty()) Text(
-                "还没有书签，点击顶栏书签图标收藏当前页。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (bookmarks.isEmpty()) EmptyContent(
+                icon = Icons.Outlined.BookmarkBorder,
+                title = "还没有书签",
+                description = "点击顶栏书签图标收藏当前页。"
             )
             else LazyColumn(Modifier.heightIn(max = 440.dp)) {
                 items(bookmarks, key = { "${it.chapterUuid}:${it.page}" }) { mark ->

@@ -40,6 +40,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -664,9 +666,9 @@ internal fun CommentsContent(
                                                 }
                                             }
 
-                                            state.feed.items.isEmpty() -> Text(
-                                                if (state.parent == null) "还没有评论" else "暂无可见回复",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            state.feed.items.isEmpty() -> EmptyContent(
+                                                icon = Icons.Outlined.ChatBubbleOutline,
+                                                title = if (state.parent == null) "还没有评论" else "暂无可见回复"
                                             )
 
                                         }

@@ -35,6 +35,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -1144,9 +1146,9 @@ private fun HomeNovelSection(
                 }
             }
 
-            state.error == null -> Text(
-                "暂无轻小说",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            state.error == null -> EmptyContent(
+                icon = Icons.AutoMirrored.Outlined.MenuBook,
+                title = "暂无轻小说"
             )
         }
         if (state.error != null) {

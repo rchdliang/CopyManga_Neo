@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -296,9 +297,10 @@ internal fun ColumnScope.NovelReaderBookmarks(
             .fillMaxWidth()
     ) {
         if (bookmarks.isEmpty()) item {
-            Text(
-                "暂无书签。阅读时点“添加书签”保存位置。",
-                Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant
+            EmptyContent(
+                icon = Icons.Outlined.BookmarkBorder,
+                title = "还没有书签",
+                description = "阅读时点“添加书签”保存位置。"
             )
         }
         items(

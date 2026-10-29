@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SearchOff
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
@@ -281,11 +283,10 @@ fun ComicExploreContent(
                     }
                     if (!state.isLoading && state.error == null && state.comics.isEmpty() && state.topics.isEmpty()) {
                         item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                "暂无内容", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp)
+                            EmptyContent(
+                                icon = Icons.Outlined.SearchOff,
+                                title = "暂无内容",
+                                description = "试试其他分类或筛选条件。"
                             )
                         }
                     }

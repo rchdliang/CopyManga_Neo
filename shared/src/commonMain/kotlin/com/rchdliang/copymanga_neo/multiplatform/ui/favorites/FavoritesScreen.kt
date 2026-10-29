@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -224,9 +226,15 @@ fun FavoritesContent(
                 }
 
                 isEmpty -> {
-                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("还没有收藏", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = onDiscover) { Text("去发现作品") }
+                    EmptyContent(
+                        icon = Icons.Outlined.FavoriteBorder,
+                        title = "还没有收藏",
+                        description = if (showingNovels) "收藏喜欢的轻小说，就能在这里继续阅读。" else "收藏喜欢的漫画，就能在这里继续阅读。",
+                        modifier = Modifier.align(Alignment.Center)
+                    ) {
+                        FilledTonalButton(onClick = onDiscover) {
+                            Text("去发现作品", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
                     }
                 }
 

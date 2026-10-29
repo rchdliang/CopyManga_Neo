@@ -19,6 +19,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.SearchOff
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -360,12 +364,20 @@ private fun NovelDiscovery(
                             .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (state.busy) LoadingIndicator()
-                        Text(
-                            if (state.busy) "正在加载轻小说…" else if (state.error != null) "作品暂时无法加载" else "没有找到作品",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (!state.busy && state.error == null) {
+                            EmptyContent(
+                                icon = Icons.Outlined.SearchOff,
+                                title = "没有找到作品",
+                                description = "试试其他关键词或筛选条件。"
+                            )
+                        } else {
+                            if (state.busy) LoadingIndicator()
+                            Text(
+                                if (state.busy) "正在加载轻小说…" else "作品暂时无法加载",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 items(state.books, key = { it.path }) { book ->
@@ -642,9 +654,9 @@ private fun NovelDetailContent(
                         }
                     } else if (volumes.isEmpty()) {
                         item(key = "volumes_empty", span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                "暂时没有可阅读的分卷",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            EmptyContent(
+                                icon = Icons.AutoMirrored.Outlined.MenuBook,
+                                title = "暂时没有可阅读的分卷"
                             )
                         }
                     }

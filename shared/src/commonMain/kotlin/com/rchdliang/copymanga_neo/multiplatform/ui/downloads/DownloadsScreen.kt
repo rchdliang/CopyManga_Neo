@@ -24,7 +24,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
@@ -34,6 +37,7 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -57,6 +61,7 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadedComicInfo
 import com.rchdliang.copymanga_neo.domain.model.comicDownloadKey
 import com.rchdliang.copymanga_neo.domain.model.displayBookTitle
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicCard
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.NovelSharedTransitionProvider
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.novelTransitionPath
@@ -157,6 +162,26 @@ private fun DownloadsContent(
     val gridSpacing = if (isWide) 16.dp else 12.dp
     val cardMinWidth = if (isWide) 184.dp else 168.dp
     val bottomPadding = if (uiState.isSelectionMode) 104.dp else 24.dp
+
+    if (!hasActive && !hasDownloaded && !uiState.isLoading && uiState.loadError == null) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                Modifier.widthIn(max = 1120.dp).fillMaxSize().padding(screenPadding)
+            ) {
+                DownloadsSectionHeader(title = "已下载", countText = "0 部")
+                Box(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyDownloadSection(
+                        onDiscover = onDiscover,
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    )
+                }
+            }
+        }
+        return
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -333,9 +358,8 @@ private fun DownloadsContent(
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "downloaded_empty") {
-                    if (!uiState.isLoading && uiState.loadError == null) Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        EmptyDownloadSection(text = "暂无下载")
-                        androidx.compose.material3.TextButton(onClick = onDiscover) { Text("去找作品") }
+                    if (!uiState.isLoading && uiState.loadError == null) {
+                        EmptyDownloadSection(onDiscover = onDiscover)
                     }
                 }
             }
@@ -421,20 +445,18 @@ private fun DownloadsSectionHeader(
 
 @Composable
 private fun EmptyDownloadSection(
-    text: String,
+    onDiscover: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.large
+    EmptyContent(
+        icon = Icons.Outlined.Download,
+        title = "还没有下载的作品",
+        description = "在作品详情页下载漫画章节或小说分卷，即可离线阅读。",
+        modifier = modifier
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(20.dp)
-        )
+        FilledTonalButton(onClick = onDiscover) {
+            Text("去找作品", color = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
     }
 }
 
@@ -500,6 +522,27 @@ private fun DownloadsScreenPreview() {
     CopyManga_NeoTheme {
         DownloadsContent(
             uiState = previewDownloadsUiState(),
+            onComicClick = {},
+            onExitSelectionMode = {},
+            onSelectAll = {},
+            onInvertSelection = {},
+            onPause = {},
+            onResume = {},
+            onCancel = {},
+            onToggleSelection = {},
+            onEnterSelectionMode = {},
+            onDeleteSelected = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "下载 - 空状态手机", widthDp = 411, heightDp = 891)
+@Preview(showBackground = true, name = "下载 - 空状态桌面", widthDp = 1280, heightDp = 800)
+@Composable
+private fun DownloadsEmptyPreview() {
+    CopyManga_NeoTheme(dynamicColor = false) {
+        DownloadsContent(
+            uiState = DownloadsUiState(isLoading = false),
             onComicClick = {},
             onExitSelectionMode = {},
             onSelectAll = {},
