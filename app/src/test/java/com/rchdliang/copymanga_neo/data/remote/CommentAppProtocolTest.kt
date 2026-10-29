@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.rchdliang.copymanga_neo.data.remote.api.CommentApiService
 import com.rchdliang.copymanga_neo.data.remote.dto.CommentResponseDto
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
+import com.rchdliang.copymanga_neo.domain.model.AppCredentialIdentity
 import com.rchdliang.copymanga_neo.domain.model.NetworkSettings
 import com.rchdliang.copymanga_neo.domain.model.OfficialAppSettings
 import com.rchdliang.copymanga_neo.domain.model.RequestMode
@@ -24,7 +25,7 @@ import java.net.URLDecoder
 class CommentAppProtocolTest {
     private val secret = "synthetic-comment-test-secret"
     private val profile = OfficialAppSettings(
-        version = "3.1.0", versionCode = "84", pseudoId = "synthetic-pseudo",
+        pseudoId = "synthetic-pseudo",
         umString = "synthetic-um", device = "synthetic-device",
         deviceInfo = "synthetic-model", buildTime = "2025.05.22"
     )
@@ -34,7 +35,7 @@ class CommentAppProtocolTest {
         fun close() { http.dispatcher.executorService.shutdown(); http.connectionPool.evictAll() }
     }
     /** 末端拦截器直接返回本地响应，测试不会访问真实服务或举报评论。 */
-    private fun harness(mode: RequestMode, response: String = success): Harness {
+    private fun harness(mode: RequestMode, response: String = success, appProfile: OfficialAppSettings = profile): Harness {
         val requests = mutableListOf<Request>()
         val official = OfficialAppInterceptor({ it }, { "2026-10-28 12:00:00.000Z" }, { secret })
         val http = OkHttpClient.Builder()
@@ -43,7 +44,7 @@ class CommentAppProtocolTest {
                 val selected = request.tag(RequestMode::class.java) ?: mode
                 chain.proceed(request.newBuilder().tag(NetworkRequestContext::class.java,
                     NetworkRequestContext(0, true, false, request.url.host,
-                        NetworkSettings(requestMode = selected, officialApp = profile))
+                        NetworkSettings(requestMode = selected, officialApp = appProfile))
                 ).build())
             }
             .addInterceptor(official)
@@ -91,7 +92,10 @@ class CommentAppProtocolTest {
                     assertEquals(if(app)null else "true", fields["_update"])
                     assertEquals(if(app)secret else null, fields["tapString"])
                     assertEquals(if(app)"Token synthetic" else null, fields["authorization"])
-                    if(app) assertNotNull(request.header("X-auth-signature"))
+                    if(app) {
+                        assertNotNull(request.header("X-auth-signature"))
+                        assertAppVersion(request)
+                    }
                     else assertNull(request.header("X-auth-signature"))
                 }
                 assertEquals(3, h.requests.size)
@@ -176,6 +180,46 @@ class CommentAppProtocolTest {
         assertEquals("custom-version", NetworkSettingsCodec.decode(
             NetworkSettingsCodec.encode(original.copy(version = "custom-version"))
         ).version)
+    }
+
+    private fun assertAppVersion(request: Request) {
+        assertEquals("3.1.0", request.header("version"))
+        assertEquals("84", request.header("versioncode"))
+        assertEquals("COPY/3.1.0", request.header("User-Agent"))
+        assertEquals("com.copymanga.app-3.1.0", request.header("referer"))
+        val fields = form(request)
+        assertEquals("3.1.0", fields["version"])
+        assertEquals("84", fields["versionCode"])
+        assertEquals("COPY/3.1.0", fields["userAgent"])
+        assertEquals("com.copymanga.app-3.1.0", fields["referer"])
+    }
+
+    @Test fun savedLegacyAppVersionAndImportedIdentityUseNewWireVersion() = runBlocking {
+        val legacy = profile.copy(version = "3.0.9", versionCode = "83")
+        val saved = NetworkSettingsCodec.decode(NetworkSettingsCodec.encode(NetworkSettings(officialApp = legacy)))
+        assertEquals(legacy.copy(version = "3.1.0", versionCode = "84"), saved.officialApp)
+        val imported = AppCredentialIdentity(legacy.version, legacy.versionCode, legacy.pseudoId,
+            legacy.umString, legacy.device, legacy.deviceInfo, legacy.buildTime)
+        for (app in listOf(saved.officialApp, imported.applyTo(OfficialAppSettings()))) {
+            val h = harness(RequestMode.OFFICIAL_APP, appProfile = app)
+            try {
+                h.api.postChapterComment("chapter", "synthetic text", "Token synthetic",
+                    headers = CommentApiService.postHeaders(true))
+                assertAppVersion(h.requests.single())
+                assertEquals(legacy.pseudoId, h.requests.single().header("pseudoid"))
+            } finally { h.close() }
+        }
+    }
+
+    @Test fun customAppVersionPairsSurviveRestoreAndCredentialImport() {
+        for ((version, code) in listOf("3.0.9" to "99", "custom" to "83", "3.1.0" to "84")) {
+            val app = profile.copy(version = version, versionCode = code)
+            assertEquals(app, NetworkSettingsCodec.decode(
+                NetworkSettingsCodec.encode(NetworkSettings(officialApp = app))).officialApp)
+            val identity = AppCredentialIdentity(version, code, app.pseudoId, app.umString,
+                app.device, app.deviceInfo, app.buildTime)
+            assertEquals(app, identity.applyTo(OfficialAppSettings()))
+        }
     }
 
     @Test fun webChapterPostContainsOnlyCapturedBusinessFields() = runBlocking {

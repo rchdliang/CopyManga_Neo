@@ -44,7 +44,7 @@ internal object NetworkSettingsCodec {
         if (value.proxyMode == ProxyMode.MANUAL) proxy(value.proxyAddress)
         require(value.selection != NetworkSelection.ROUTE || value.routeIndex in routes.indices) { "请先获取并选择线路" }
         require(value.selection != NetworkSelection.FIXED || fixed in routes.flatten()) { "请选择已发现的节点" }
-        val app = value.officialApp
+        val app = value.officialApp.migrateLegacyVersion()
         require(app.version.matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "App 请求版本格式无效" }
         require(
             app.versionCode.toIntOrNull()

@@ -25,13 +25,14 @@ class NetworkSettingsStore internal constructor(
 
     private val state = MutableStateFlow(restore())
 
-    /** 初次启动即保存本机生成的标识；旧配置的空身份字段也补为实际值。 */
+    /** 持久化迁移后的版本与本机标识；旧配置的空身份字段也补为实际值。 */
     private fun restore(): NetworkSettings {
         val raw = prefs.getString("current", null)
         val saved = NetworkSettingsCodec.decode(raw)
         val resolved = saved.copy(officialApp = identity.resolve(saved.officialApp))
-        if (raw == null || resolved != saved) {
-            if (!prefs.edit().putString("current", NetworkSettingsCodec.encode(resolved))
+        val encoded = NetworkSettingsCodec.encode(resolved)
+        if (raw != encoded) {
+            if (!prefs.edit().putString("current", encoded)
                     .commit()
             ) {
                 throw IOException("无法保存网络配置")
