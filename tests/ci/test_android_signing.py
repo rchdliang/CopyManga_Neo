@@ -1,6 +1,7 @@
 """Secret-free signing preparation and workflow regression checks."""
 import base64
 import importlib.util
+import os
 from pathlib import Path
 import stat
 import tempfile
@@ -27,9 +28,11 @@ class SigningPreparationTest(unittest.TestCase):
         key = self.root / "android-test-signing/release-keystore.jks"
         props = self.root / "workspace/keystore.properties"
         self.assertEqual(key.read_bytes(), b"synthetic non-key bytes")
-        for path in (key, props):
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        lines = props.read_text().splitlines()
+        # Windows 没有 POSIX 模式位；Linux CI 仍严格验证私钥文件权限。
+        if os.name != "nt":
+            for path in (key, props):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        lines = props.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 4)
         self.assertIn("storePassword=" + signing.java_property(self.env["ANDROID_KEYSTORE_PASSWORD"]), lines)
         self.assertEqual(signing.java_property("😀"), r"\ud83d\ude00")
@@ -53,16 +56,16 @@ class SigningPreparationTest(unittest.TestCase):
         self.assertEqual(props.read_text(), "existing")
 
     def test_ci_requires_opt_in_and_cleanup_before_upload(self):
-        workflow = (ROOT / ".github/workflows/multiplatform-manual.yml").read_text()
+        workflow = (ROOT / ".github/workflows/multiplatform-manual.yml").read_text(encoding="utf-8")
         android = workflow.split("jobs:\n", 1)[1].split("  android:\n", 1)[1].split("\n  windows:", 1)[0]
         self.assertIn("-PuseReleaseSigningForTest=true --no-configuration-cache", android)
         self.assertIn("if: ${{ always() }}", android.split("Remove ephemeral signing material", 1)[1])
         self.assertLess(android.index("Remove ephemeral signing material"), android.index("Upload android-debug-apk"))
-        release = (ROOT / ".github/workflows/android-ci-release.yml").read_text()
+        release = (ROOT / ".github/workflows/android-ci-release.yml").read_text(encoding="utf-8")
         for name in signing.REQUIRED:
             self.assertIn("secrets." + name, release)
             self.assertIn("secrets." + name, android)
-        build = (ROOT / "app/build.gradle.kts").read_text()
+        build = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         self.assertIn('applicationId = "com.rchdliang.copymanga_neo"', build)
         self.assertNotIn('applicationIdSuffix', build)
         self.assertNotIn('versionNameSuffix', build)

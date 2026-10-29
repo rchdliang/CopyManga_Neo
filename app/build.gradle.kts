@@ -63,17 +63,17 @@ android {
         if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
     )
     namespace = "com.rchdliang.copymanga_neo"
-    compileSdk = 37
-    buildToolsVersion = "37.0.0"
+    compileSdk = libs.versions.androidCompileSdk.get().toInt()
+    buildToolsVersion = libs.versions.androidBuildTools.get()
     ndkVersion = libs.versions.ndk.get()
     externalNativeBuild {
-        cmake { path = rootProject.file("native/reader-restore/CMakeLists.txt"); version = "3.22.1" }
+        cmake { path = rootProject.file("native/reader-restore/CMakeLists.txt"); version = libs.versions.cmake.get() }
     }
 
     defaultConfig {
         applicationId = "com.rchdliang.copymanga_neo"
-        minSdk = 31
-        targetSdk = 37
+        minSdk = libs.versions.androidMinSdk.get().toInt()
+        targetSdk = libs.versions.androidTargetSdk.get().toInt()
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = rootProject.extra["copyMangaVersionCode"] as Int

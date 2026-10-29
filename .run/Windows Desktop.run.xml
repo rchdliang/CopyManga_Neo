@@ -3,13 +3,13 @@
     <ExternalSystemSettings>
       <option name="externalProjectPath" value="$PROJECT_DIR$" />
       <option name="externalSystemIdString" value="GRADLE" />
-      <option name="scriptParameters" value="-PenableAndroid=false --no-configuration-cache --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process -Dorg.gradle.jvmargs=-Xmx1536m" />
+      <option name="scriptParameters" value="-PenableAndroid=false" />
       <option name="taskDescriptions">
         <list />
       </option>
       <option name="taskNames">
         <list>
-          <option value=":desktopApp:runGraalvmNativeDistributable" />
+          <option value=":desktopApp:run" />
         </list>
       </option>
     </ExternalSystemSettings>

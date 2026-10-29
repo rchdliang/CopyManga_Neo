@@ -29,6 +29,7 @@ reasonix.toml
 # Machine-specific development tools and migration reports
 /toolchain/
 .kotlin/
+__pycache__/
 
 # Keep only durable build and architecture documentation in the repository.
 /docs/*

@@ -2,9 +2,9 @@ import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
 plugins {
-    kotlin("jvm")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.nucleus)
 }
 
@@ -18,9 +18,9 @@ kotlin {
 dependencies {
     implementation(project(":shared"))
     implementation(libs.compose.multiplatform.windows.x64)
-    implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
-    implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+    implementation(libs.compose.multiplatform.material3)
+    implementation(libs.multiplatform.lifecycle.viewmodel)
+    implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.nucleus.application)
     implementation(libs.nucleus.window.tao)
     implementation(libs.nucleus.taskbar.tao)
@@ -40,6 +40,8 @@ nucleus.application {
         buildArgs.addAll("-J-Xmx" + providers.gradleProperty("nativeBuildHeap").getOrElse("8g"), "--parallelism=2", "--enable-native-access=ALL-UNNAMED")
     }
     nativeDistributions {
+        // JVM 分发包保留动态加载的字符集和桌面运行所需模块。
+        modules("java.instrument", "java.management", "jdk.unsupported", "jdk.charsets")
         packageName = "CopyMangaNeo"
         packageVersion = rootProject.extra["copyMangaVersionName"] as String
         description = "CopyManga Neo multiplatform client"
@@ -52,21 +54,11 @@ nucleus.application {
     }
 }
 
-// 常用入口统一到 Native Image；JVM 对照版本必须显式选择 desktopRuntime=jvm。
-tasks.matching { it.name in setOf("run", "runDistributable", "createDistributable",
-    "runRelease", "runReleaseDistributable", "createReleaseDistributable",
-    "packageDistributionForCurrentOS", "packageReleaseDistributionForCurrentOS") }.configureEach {
-    val nativeTask = if (name.startsWith("create") || name.startsWith("package")) "createGraalvmNativeDistributable"
-        else "runGraalvmNativeDistributable"
-    enabled = false // 保留依赖入口，禁用插件注册的 JVM 执行动作。
-    setActions(emptyList())
-    setDependsOn(listOf(nativeTask))
-    description = "Default Windows Native Image entry point: $nativeTask"
+// 保留插件的 JVM 开发/分发任务；原生编译只由 Graalvm 专用任务或安装包入口触发。
+// 两种运行方式使用同一个 NativeMainKt 与 Nucleus Tao 窗口，无需切换项目模型。
+tasks.matching { it.name == "run" }.configureEach {
+    description = "Run the current Windows desktop app on the JVM (no Native Image build)"
 }
-tasks.matching { it.name in setOf("createRuntimeImage", "createReleaseRuntimeImage") }.configureEach {
-    enabled = false
-}
-tasks.named("assemble") { dependsOn("createGraalvmNativeDistributable") }
 tasks.register<Exec>("packageInnoSetup") {
     group = "distribution"
     description = "Build the Windows x64 Native Image installer"

@@ -5,9 +5,9 @@ import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
 
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
-    kotlin("jvm")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
 }
 // Explicit portable-JAR target; native packaging still requires a matching host.
 val portableDesktopTarget = providers.gradleProperty("copymanga.desktopTarget").orNull
@@ -23,9 +23,9 @@ dependencies {
                 "windows-arm64" -> libs.compose.multiplatform.windows.arm64.get()
                 else -> error("copymanga.desktopTarget must be windows-x64 or windows-arm64")
             })
-    implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
-    implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
+    implementation(libs.compose.multiplatform.material3)
+    implementation(libs.multiplatform.lifecycle.viewmodel)
+    implementation(libs.kotlinx.coroutines.swing)
 }
 compose.desktop {
     application {

@@ -5,6 +5,11 @@ nucleus = "2.5.18"
 nucleusTray = "2.1.0"
 graalvm = "25.0.1"
 agp = "9.4.1"
+androidCompileSdk = "37"
+androidTargetSdk = "37"
+androidMinSdk = "31"
+androidBuildTools = "37.0.0"
+cmake = "3.22.1"
 ndk = "30.0.16248370"
 vulkanHeaders = "1.3.296"
 glslang = "15.1.0"
@@ -32,8 +37,40 @@ materialIconsExtended = "1.7.8"
 composeBom = "2026.09.00"
 material3 = "1.5.0-beta01"
 kotlinxCollectionsImmutable = "0.5.2"
+composeMaterial3 = "1.12.0-alpha03"
+composeMaterialIconsExtended = "1.7.3"
+multiplatformNavigation = "2.10.0-beta01"
+multiplatformNavigationEvent = "1.1.0"
+androidxNavigationEvent = "1.1.1"
+datetime = "0.8.0"
+ktor = "3.6.0"
+exifInterface = "1.4.2"
+jna = "5.19.1"
 
 [libraries]
+compose-multiplatform-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "composeMaterial3" }
+compose-multiplatform-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "composeMaterialIconsExtended" }
+multiplatform-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "multiplatformNavigation" }
+multiplatform-navigationevent-compose = { module = "org.jetbrains.androidx.navigationevent:navigationevent-compose", version.ref = "multiplatformNavigationEvent" }
+androidx-navigationevent = { module = "androidx.navigationevent:navigationevent", version.ref = "androidxNavigationEvent" }
+multiplatform-lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel", version.ref = "lifecycle" }
+multiplatform-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+multiplatform-lifecycle-runtime-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+multiplatform-lifecycle-viewmodel-savedstate = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-savedstate", version.ref = "lifecycle" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-encoding = { module = "io.ktor:ktor-client-encoding", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
+ktor-client-js = { module = "io.ktor:ktor-client-js", version.ref = "ktor" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil3" }
+coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil3" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifInterface" }
+jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 compose-multiplatform-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
 compose-multiplatform-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
 compose-multiplatform-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
@@ -95,6 +132,7 @@ compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMu
 compose-hot-reload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
 nucleus = { id = "dev.nucleusframework", version.ref = "nucleus" }
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

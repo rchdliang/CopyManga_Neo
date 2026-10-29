@@ -50,10 +50,9 @@ jobs:
           cache: gradle
       - name: Install Android SDK packages
         run: |
-          ndk_version=$(sed -n 's/^ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
-          test -n "$ndk_version"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            'platforms;android-37.0' 'build-tools;37.0.0' 'cmake;3.22.1' "ndk;$ndk_version"
+          mapfile -t sdk_packages < <(python3 .github/scripts/android-sdk-packages.py)
+          test "${#sdk_packages[@]}" -eq 4
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "${sdk_packages[@]}"
       - name: Check signing and packaged configuration helpers
         run: |
           python3 -m unittest discover -s tests/ci -p 'test_android_signing.py'
@@ -77,8 +76,9 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: |
           python3 .github/scripts/verify-app-config.py android 'app/build/outputs/apk/release/*.apk'
+          build_tools_version=$(python3 .github/scripts/android-sdk-packages.py --build-tools-version)
           for apk in app/build/outputs/apk/release/*.apk; do
-            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+            "$ANDROID_HOME/build-tools/$build_tools_version/apksigner" verify "$apk"
             test "$("$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest debuggable "$apk")" = false
           done
       - name: Remove ephemeral signing material

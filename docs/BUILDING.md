@@ -5,7 +5,8 @@
 ## 环境准备
 
 - 使用完整 JDK 21 和仓库自带的 Gradle Wrapper。Gradle 版本以 [wrapper 配置](../gradle/wrapper/gradle-wrapper.properties) 为准；依赖版本以 [版本目录](../gradle/libs.versions.toml) 和各模块构建脚本为准。
-- Android SDK 平台与 Build Tools 版本以 [app](../app/build.gradle.kts) 和 [shared](../shared/build.gradle.kts) 配置为准。在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。
+- Android SDK、Build Tools、NDK、CMake 与应用依赖版本统一在 [版本目录](../gradle/libs.versions.toml) 中维护，app/shared 引用同一配置。AndroidX 与 Compose Multiplatform 使用各自的库坐标及版本，不强行合并两套 Material3/Navigation。Foojay 是 settings 阶段插件，其版本在 settings.gradle.kts 中声明。
+- 在本地 `local.properties` 设置 `sdk.dir`，或设置 `ANDROID_HOME`。CMP CI 通过 `python3 .github/scripts/android-sdk-packages.py` 读取同一版本目录，安装 SDK 平台、Build Tools、CMake 和 NDK；该脚本需要 Python 3.11+。
 - 桌面安装包使用对应操作系统及架构的 JDK；Windows EXE 安装向导需要 Inno Setup 6.5+，Linux DEB/RPM 需要系统打包工具。Windows 编译器可放入 PATH，也可通过环境变量 `ISCC` 指定 `ISCC.exe` 完整路径；标准的 Inno Setup 6 安装目录会自动检测。
 - CMP Android、Windows、Linux 的 Vulkan 画质修复需要 Python 3、CMake 和宿主 C++ 编译器；Windows 使用 Visual Studio C++ Build Tools，Linux 使用 GCC/Clang。Android NDK 版本来自版本目录，CMake 版本以应用构建脚本为准，可由已接受许可的 SDK 管理器安装。模型随包分发，首次构建需下载并编译固定版本的 glslang。Windows Native Image 自身的工具链要求仍按下文执行。
 - iOS 构建需要 macOS 和 Xcode；直接安装需要签名。未签名设备 IPA 可交给 SideStore / AltStore 使用用户自己的账号重签名。
@@ -68,7 +69,25 @@ CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满�
 
 ## 桌面
 
-Windows x64 默认使用 Nucleus Tao 窗口与 GraalVM Native Image。在 IntelliJ IDEA / Android Studio 同步项目后，选择 **Windows Desktop**，点击 ▶ Run；共享配置执行 `:desktopApp:runGraalvmNativeDistributable`，首次需要原生编译，后续复用未变化的产物。命令行的 `:desktopApp:run`、`:desktopApp:createDistributable` 和 `:desktopApp:assemble` 也默认走原生构建。
+Windows x64 默认使用 Nucleus Tao 窗口，日常验证直接在 JVM 上运行，发布时再编译 GraalVM Native Image。两者使用同一个 `NativeMainKt` 入口、窗口/托盘集成和共享业务代码；文件夹名 `src/native` 不表示只能生成原生 EXE。
+
+在 IntelliJ IDEA / Android Studio 同步项目后，选择 **Windows Desktop**，点击 ▶ Run，执行 `:desktopApp:run`。它只编译变化的代码和准备资源，不生成 Native Image 或安装包。需要验证原生版时选择 **Windows Desktop Native**，执行 `:desktopApp:runGraalvmNativeDistributable`。
+
+| 目的 | 任务 |
+| --- | --- |
+| JVM 快速运行当前 Windows 界面 | `:desktopApp:run` |
+| 仅编译/组装代码，或附带本模块检查 | `:desktopApp:assemble` / `:desktopApp:build` |
+| JVM 热重载 | `:desktopApp:hotRun` |
+| 包含 Java 运行时的 JVM 应用目录 | `:desktopApp:createDistributable` |
+| 运行 JVM 应用目录 | `:desktopApp:runDistributable` |
+| JVM 便携 EXE | `:desktopApp:packagePortable` |
+| 原生应用目录 / 运行原生目录 | `:desktopApp:createGraalvmNativeDistributable` / `:desktopApp:runGraalvmNativeDistributable` |
+| 原生便携 EXE | `:desktopApp:packageGraalvmPortable` |
+| 原生安装向导 | `:desktopApp:packageInnoSetup` |
+
+`runRelease`、`createReleaseDistributable`、`packageReleasePortable` 等保留插件的 JVM Release 流程，不再重定向到普通原生任务。`createRuntimeImage` 也恢复为 JVM 分发包准备精简运行时。`desktopApp:test` 只运行该模块自己的测试；共享业务测试需执行 `:shared:desktopTest`。
+
+热重载需要 JetBrains Runtime（JBR），普通 JVM 运行只需要 JDK。settings 中的 Foojay 工具链解析器允许 Gradle 按需下载 JBR，首次热重载可能需要联网下载；不影响普通 `run`。热重载不能替代原生版的反射、JNI 和打包验收。
 
 Gradle / Kotlin 编译仍需要 JDK 21；Native Image 使用版本目录固定的 GraalVM Community，由 Nucleus 自动下载，也可用 `GRAALVM_HOME` 指向匹配工具链。Windows 还需要 Visual Studio C++ Build Tools 与 Windows SDK。建议为原生编译预留 8 GiB 堆（`-PnativeBuildHeap=8g`），并限制 Gradle 堆和构建并发。运行交付的 EXE 无需安装 Java，但必须保留同目录的 DLL、bin 和 lib 文件。
 
@@ -77,7 +96,7 @@ Gradle / Kotlin 编译仍需要 JDK 21；Native Image 使用版本目录固定�
 ./gradlew :desktopApp:run -PenableAndroid=false
 ```
 
-`-PenableAndroid=false` 排除 Android 应用模块，适用于桌面、浏览器及独立 iOS 构建。Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`，输出位于 `desktopApp/build/compose/binaries`。
+`-PenableAndroid=false` 只排除 Android 应用模块 `:app`，适用于桌面、浏览器及独立 iOS 构建；`shared` 仍声明 Android 目标。该参数仅接受 `true` / `false`，默认 `true`。Linux 使用 `:desktopApp:packageDeb`、`:desktopApp:packageRpm`，输出位于 `desktopApp/build/compose/binaries`。
 
 Windows x64 原生安装包在 Windows x64 上构建：
 
@@ -87,7 +106,9 @@ Windows x64 原生安装包在 Windows x64 上构建：
 
 任务先生成 `desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo` 原生应用目录，再编译 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss)。输出为 `desktopApp/build/installer/CopyMangaNeo-<完整版本>-windows-x64-setup.exe` 和 SHA-256 文件。CI 的 Windows 任务使用相同原生路径，并运行产物核对协议配置。原生版沿用 `%LOCALAPPDATA%\CopyMangaNeo`、DPAPI 凭据和实例锁；测试独立资料时传入 `-Dcopymanga.dataDir=<目录>`。
 
-Linux 和 Windows ARM64 仍使用原有 JVM 构建，尚未迁移或验收 Native Image。Windows x64 如需对照或诊断，显式添加 `-PdesktopRuntime=jvm` 使用 `desktopApp/build-jvm.gradle.kts`；此时产物仍在 `compose/binaries/main/app`。切换运行时后重新同步 IDE，避免混用运行配置。
+Linux 和 Windows ARM64 仍使用原有 JVM 构建，尚未迁移或验收 Native Image。Windows x64 的快速运行不需要添加 `-PdesktopRuntime=jvm`：这个参数会选择 `desktopApp/build-jvm.gradle.kts` 和旧的 `MainKt` 窗口入口，仅保留给旧版对照、跨平台及便携 JAR 构建。切换这套构建脚本后应重新同步 IDE。
+
+JVM 应用目录位于 `compose/binaries/main/app`，原生应用目录位于 `compose/binaries/main/graalvm-app`。重新打包前退出从相应构建目录启动的应用，否则 Windows 可能锁住 EXE、DLL 或 `icudtl.dat`，导致复制失败。日常使用 JVM `run` 可避免占用原生分发目录。两种运行方式默认共用用户资料和实例锁；已有实例运行时，新启动会请求打开已有窗口。
 
 安装向导提供简体中文／英文，允许选择目录，默认安装到当前用户的 `%LOCALAPPDATA%\Programs\CopyMangaNeo`，创建开始菜单入口；桌面快捷方式可选，完成页默认勾选「运行 CopyManga Neo」，静默安装不启动应用。安装程序使用 `desktopApp/icons/copymanga-neo.ico`，快捷方式与卸载入口使用应用 EXE 图标。简体中文资源固定来自 [Inno Setup is-6_7_1](https://github.com/jrsoftware/issrc/blob/is-6_7_1/Files/Languages/Unofficial/ChineseSimplified.isl)，保留译者声明。
 

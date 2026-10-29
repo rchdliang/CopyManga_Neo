@@ -10,11 +10,11 @@ import java.util.Properties
 import org.gradle.work.DisableCachingByDefault
 
 plugins {
-    kotlin("multiplatform")
-    kotlin("plugin.serialization")
-    id("org.jetbrains.compose")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.android.kotlin.multiplatform.library")
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
 }
 
 // Explicit portable-JAR target; native packaging still requires a matching host.
@@ -95,9 +95,9 @@ kotlin {
     compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
     android {
         namespace = "com.rchdliang.copymanga_neo.shared"
-        compileSdk = 37
-        buildToolsVersion = "37.0.0"
-        minSdk = 31
+        compileSdk = libs.versions.androidCompileSdk.get().toInt()
+        buildToolsVersion = libs.versions.androidBuildTools.get()
+        minSdk = libs.versions.androidMinSdk.get().toInt()
         androidResources { enable = true }
         withHostTest {}
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
@@ -117,44 +117,44 @@ kotlin {
         named("desktopMain") { kotlin.srcDir(generateOfficialAppConfig.flatMap { it.outputDirectory }) }
         commonMain.dependencies {
             // Production shared NavHost; platform inputs use the standalone dispatcher bridge.
-            implementation("org.jetbrains.androidx.navigation:navigation-compose:2.10.0-beta01")
+            implementation(libs.multiplatform.navigation.compose)
             // NavHost exposes these only at runtime; the input bridge imports their public APIs.
-            implementation("org.jetbrains.androidx.navigationevent:navigationevent-compose:1.1.0")
-            implementation("androidx.navigationevent:navigationevent:1.1.1")
+            implementation(libs.multiplatform.navigationevent.compose)
+            implementation(libs.androidx.navigationevent)
             implementation(libs.compose.multiplatform.runtime)
             implementation(libs.compose.multiplatform.foundation)
             implementation(libs.compose.multiplatform.ui)
             implementation(libs.compose.multiplatform.resources)
             implementation(libs.compose.multiplatform.ui.tooling.preview)
-            implementation("org.jetbrains.compose.material3:material3:1.12.0-alpha03")
-            implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
-            implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-            implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-            implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.5.2")
-            implementation("io.ktor:ktor-client-core:3.6.0")
-            implementation("io.ktor:ktor-client-encoding:3.6.0")
-            implementation("io.coil-kt.coil3:coil-compose:3.6.3")
-            implementation("io.coil-kt.coil3:coil-network-ktor3:3.6.3")
+            implementation(libs.compose.multiplatform.material3)
+            implementation(libs.compose.multiplatform.material.icons.extended)
+            implementation(libs.multiplatform.lifecycle.viewmodel.compose)
+            implementation(libs.multiplatform.lifecycle.runtime.compose)
+            implementation(libs.multiplatform.lifecycle.viewmodel.savedstate)
+            implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.encoding)
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor3)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
-            implementation("io.ktor:ktor-client-mock:3.6.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+            implementation(libs.ktor.client.mock)
+            implementation(libs.kotlinx.coroutines.test)
         }
         getByName("androidMain").kotlin.srcDir("src/jvmMain/kotlin")
         getByName("desktopMain").kotlin.srcDir("src/jvmMain/kotlin")
         androidMain.dependencies {
-            implementation("androidx.exifinterface:exifinterface:1.4.2")
+            implementation(libs.androidx.exifinterface)
             // Compile shared Android UI against the same Material3 ABI packaged by :app.
             // CMP's transitive alpha22 has experimental methods removed in beta01 (ToggleButton).
             implementation(libs.androidx.compose.material3)
-            implementation("io.ktor:ktor-client-okhttp:3.6.0")
+            implementation(libs.ktor.client.okhttp)
             implementation(libs.okhttp)
-            implementation("androidx.core:core-ktx:1.19.1")
+            implementation(libs.androidx.core.ktx)
         }
         getByName("desktopMain").dependencies {
             implementation(when (portableDesktopTarget) {
@@ -163,17 +163,17 @@ kotlin {
                 "windows-arm64" -> libs.compose.multiplatform.windows.arm64.get()
                 else -> error("copymanga.desktopTarget must be windows-x64 or windows-arm64")
             })
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.11.0")
-            implementation("io.ktor:ktor-client-cio:3.6.0")
-            implementation("net.java.dev.jna:jna:5.19.1")
+            implementation(libs.kotlinx.coroutines.swing)
+            implementation(libs.ktor.client.cio)
+            implementation(libs.jna)
         }
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreDesktopDirectory"] as File)
         getByName("desktopTest").dependencies {
             implementation(libs.compose.multiplatform.ui.test)
         }
-        iosMain.dependencies { implementation("io.ktor:ktor-client-darwin:3.6.0") }
-        wasmJsMain.dependencies { implementation("io.ktor:ktor-client-js:3.6.0") }
+        iosMain.dependencies { implementation(libs.ktor.client.darwin) }
+        wasmJsMain.dependencies { implementation(libs.ktor.client.js) }
     }
 }
 
@@ -188,7 +188,7 @@ compose.resources {
     publicResClass = true
 }
 
-// Keep native test extraction in the build directory, including read-only-home CI workers.
+// 桌面资源由这两个任务生成，资源处理必须先等待生成完成。
 tasks.matching { it.name == "desktopProcessResources" }.configureEach {
     dependsOn(rootProject.tasks.named("prepareReaderRestoreModels"))
     if (rootProject.extra["readerRestoreDesktopSupported"] as Boolean) dependsOn(rootProject.tasks.named("prepareReaderRestoreDesktop"))

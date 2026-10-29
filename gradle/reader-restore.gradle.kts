@@ -12,6 +12,7 @@ val restoreDesktopTarget = providers.gradleProperty("copymanga.desktopTarget").g
 val restoreDesktopOutput = rootProject.layout.buildDirectory.dir("reader-restore/$restoreDesktopTarget-resources")
 val restorePython = providers.environmentVariable("PYTHON").getOrElse(if (restoreHostOs == "windows") "python" else "python3")
 val restorePrebuilt = providers.gradleProperty("readerRestoreNativeLibrary").orNull
+val restoreGlslang = providers.environmentVariable("RESTORE_GLSLANG").orNull?.takeIf { it.isNotBlank() }
 
 extra["readerRestoreModelsDirectory"] = restoreModelsOutput.get().asFile
 extra["readerRestoreDesktopDirectory"] = restoreDesktopOutput.get().asFile
@@ -26,6 +27,9 @@ tasks.register<Exec>("prepareReaderRestoreModels") {
         include("LICENSE.md", "LICENSES/*.txt", "NOTICE.txt")
     })
     inputs.files(restoreRoot.file("native/reader-restore/compile_models.py"), restoreRoot.file("native/reader-restore/prepare_models.py"), restoreRoot.file("gradle/libs.versions.toml"))
+    // 自定义编译器变化时重新生成模型，避免误用上一次工具链的输出。
+    inputs.property("compilerOverride", restoreGlslang.orEmpty())
+    restoreGlslang?.let { inputs.file(it) }
     outputs.dir(restoreModelsOutput)
     commandLine(restorePython, restoreRoot.file("native/reader-restore/prepare_models.py").asFile.absolutePath,
         "--root", restoreRoot.asFile.absolutePath, "--output", restoreModelsOutput.get().asFile.absolutePath)

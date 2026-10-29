@@ -18,7 +18,7 @@ plugins {
     alias(libs.plugins.compose.multiplatform) apply false
     // 覆盖 Compose 自动带入的 1.2.0，使用已修复 Gradle 9.8 弃用 API 的版本。
     alias(libs.plugins.compose.hot.reload) apply false
-    id("com.android.kotlin.multiplatform.library") version "9.4.1" apply false
+    alias(libs.plugins.android.kotlin.multiplatform.library) apply false
 }
 
 
