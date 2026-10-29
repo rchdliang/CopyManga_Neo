@@ -29,7 +29,7 @@ class PortableCloudReadingSyncTest {
     private fun entry(path: String = "book", read: String = "24", latest: String = "25", id: Long = 1) =
         BrowseHistoryItem(id, "漫画", path, "cover", listOf(Author("作者", "author")), read, "$read 话", latest, "第 $latest 话")
 
-    @Test fun firstLoginImportsEveryPageWithoutInventingCatchUpOrCompletion() = runTest {
+    @Test fun firstLoginOnlyDefaultsToCaughtUpWhenCloudChapterIsLatest() = runTest {
         val f = Fixture(backgroundScope)
         f.manga.history = { offset -> Result.success(if (offset == 0) BrowseHistoryPage(listOf(entry()), 20)
             else BrowseHistoryPage(listOf(entry("second", "5", "5", 2)), null)) }
@@ -48,7 +48,7 @@ class PortableCloudReadingSyncTest {
         assertFalse(f.progress.progress.value.records.getValue("book").pendingSync)
         val tracked = f.shelf.snapshot.value.books(f.sessions.getReadingSessionSync(), "comic")
         assertEquals(ShelfReadingStatus.READING, tracked.getValue("book").status)
-        assertEquals(ShelfReadingStatus.READING, tracked.getValue("second").status)
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, tracked.getValue("second").status)
         assertFalse(tracked.getValue("book").assumedFromCloud)
         assertNull(tracked.getValue("book").caughtUpChapter)
         assertEquals(0, f.manga.calls) // Importing must not report a fake read to the server.
@@ -243,8 +243,8 @@ class PortableCloudReadingSyncTest {
         f.manga.history = { Result.success(BrowseHistoryPage(listOf(entry(read = "106", latest = "106")), null)) }
         f.sync.retry(); runCurrent()
         assertEquals("106", tracked().chapter)
-        assertEquals(ShelfReadingStatus.READING, tracked().status)
-        assertEquals("100", tracked().caughtUpChapter)
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, tracked().status)
+        assertEquals("106", tracked().caughtUpChapter)
     }
 
     @Test fun missingLatestChapterNeverClaimsCaughtUp() = runTest {
@@ -316,18 +316,59 @@ class PortableCloudReadingSyncTest {
         assertEquals(ShelfReadingStatus.CAUGHT_UP, tracked().status)
     }
 
-    @Test fun matchingCloudChapterRestoresRealCompletionButNeverInventsIt() = runTest {
+    @Test fun matchingCloudLatestDefaultsShelfCompletionWithoutInventingPrecisePosition() = runTest {
         val f = Fixture(backgroundScope)
         f.login(); runCurrent()
         f.catalog = listOf(ShelfChapter("300", "第300话", latest = true))
         f.manga.history = { Result.success(BrowseHistoryPage(listOf(entry(read = "300", latest = "300")), null)) }
         f.sync.start(); runCurrent()
         fun tracked() = f.shelf.snapshot.value.books(f.sessions.getReadingSessionSync(), "comic").getValue("book")
-        assertEquals(ShelfReadingStatus.READING, tracked().status)
-        assertFalse(tracked().completed)
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, tracked().status)
+        assertTrue(tracked().completed)
+        assertFalse(f.local.latest("user:a", "comic", "book")!!.completed)
+        assertFalse(f.local.latest("user:a", "comic", "book")!!.atChapterEnd)
         f.local.record(LocalReadingRecord("user:a", "comic", "book", "300", "第300话", page = 13, completed = true))
         f.local.flush().getOrThrow(); runCurrent()
         assertTrue(tracked().completed)
         assertEquals(ShelfReadingStatus.CAUGHT_UP, tracked().status)
+    }
+
+    @Test fun cloudLatestDefaultSurvivesRestartAndReceivesFutureUpdates() = runTest {
+        val f = Fixture(backgroundScope)
+        // 目录暂时不可用也能按云端明确的最新章显示，且保留下一次核对资格。
+        f.manga.history = { Result.success(BrowseHistoryPage(listOf(entry(read = "300", latest = "300")), null)) }
+        f.login(); f.sync.start(); runCurrent()
+        val current = f.shelf.snapshot.value.books(f.sessions.getReadingSessionSync(), "comic").getValue("book")
+        assertEquals(ShelfReadingStatus.CAUGHT_UP, current.status)
+        assertEquals("300", current.caughtUpChapter)
+        assertTrue(current.cloudCatchUpNeedsCatalog)
+        assertEquals(0, f.manga.calls)
+        val restored = Fixture(backgroundScope, Documents().also { it.values.putAll(f.documents.values) })
+        restored.catalog = listOf(ShelfChapter("299", "299"), ShelfChapter("300", "300"),
+            ShelfChapter("301", "301", latest = true))
+        restored.manga.history = { Result.success(BrowseHistoryPage(listOf(entry(read = "300", latest = "301")), null)) }
+        restored.login(); restored.sync.start(); runCurrent()
+        val updated = restored.shelf.snapshot.value.books(restored.sessions.getReadingSessionSync(), "comic").getValue("book")
+        assertEquals(ShelfReadingStatus.UPDATED, updated.status)
+        assertEquals("300", updated.caughtUpChapter)
+        assertFalse(updated.cloudCatchUpNeedsCatalog)
+        assertEquals(ShelfReadingStatus.UPDATED, updated.read("299", "299", false, 2).status)
+        assertEquals(ShelfReadingStatus.READING, updated.read("301", "301", false, 3).status)
+    }
+
+    @Test fun localUnfinishedLatestChapterKeepsItsPreciseProgress() = runTest {
+        val f = Fixture(backgroundScope)
+        f.login(); runCurrent()
+        val record = LocalReadingRecord("user:a", "comic", "book", "300", "300", page = 4)
+        f.local.record(record); f.local.flush().getOrThrow()
+        f.shelf.record(f.sessions.getReadingSessionSync(), record); runCurrent()
+        f.catalog = listOf(ShelfChapter("300", "300", latest = true))
+        f.manga.history = { Result.success(BrowseHistoryPage(listOf(entry(read = "300", latest = "300")), null)) }
+        f.sync.start(); runCurrent()
+        val tracked = f.shelf.snapshot.value.books(f.sessions.getReadingSessionSync(), "comic").getValue("book")
+        assertEquals(ShelfReadingStatus.READING, tracked.status)
+        assertFalse(tracked.completed)
+        assertNull(tracked.caughtUpChapter)
+        assertEquals(4, f.local.latest("user:a", "comic", "book")!!.page)
     }
 }

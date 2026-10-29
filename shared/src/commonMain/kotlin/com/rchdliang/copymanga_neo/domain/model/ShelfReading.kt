@@ -16,7 +16,7 @@ data class ShelfReadingKey(
 
 data class ShelfChapter(val id: String, val name: String, val group: String = "", val latest: Boolean = false)
 
-/** 续读位置、追更资格与本轮提醒分别保存；云端章节位置不代表读完或曾经追平。 */
+/** 续读位置、追更资格与本轮提醒分别保存；仅云端明确读到最新章时默认追平。 */
 @Serializable
 data class ShelfReadingRecord(
     val key: ShelfReadingKey,
@@ -35,7 +35,9 @@ data class ShelfReadingRecord(
     // 保留离线期间实际读过的章节，联网后再判定是否已开始追平基线之后的新内容。
     val startedSinceCaughtUp: Set<String> = emptySet(),
     /** 已确认这一轮提醒时的目录；回读其中章节不会消除下一轮提醒。 */
-    val knownWhenAcknowledged: Set<String> = emptySet()
+    val knownWhenAcknowledged: Set<String> = emptySet(),
+    /** 云端最新章建立的基线尚待完整目录补齐；不等同于本机逐页阅读证据。 */
+    val cloudCatchUpNeedsCatalog: Boolean = false
 ) {
     val status: ShelfReadingStatus get() {
         val latest = latestChapterId.ifBlank { catalog.lastOrNull().orEmpty() }
@@ -66,14 +68,21 @@ data class ShelfReadingRecord(
         // 删除、重编号或换目录不能用“不相等”推断新增。
         val frontier = catalog.indexOf(caughtUpChapter)
         val newFrontier = ids.indexOf(caughtUpChapter)
+        if (cloudCatchUpNeedsCatalog && newFrontier >= 0) {
+            next = next.copy(knownWhenCaughtUp = ids.take(newFrontier + 1).toSet(),
+                cloudCatchUpNeedsCatalog = false)
+        }
         if (caughtUpChapter != null && !assumedFromCloud && (newFrontier < 0 ||
-                explicitLatest == null && (frontier < 0 || catalog.take(frontier + 1) != ids.take(newFrontier + 1)))) {
-            next = next.copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet(), knownWhenAcknowledged = emptySet())
+                !cloudCatchUpNeedsCatalog && explicitLatest == null &&
+                    (frontier < 0 || catalog.take(frontier + 1) != ids.take(newFrontier + 1)))) {
+            next = next.copy(caughtUpChapter = null, startedSinceCaughtUp = emptySet(), knownWhenAcknowledged = emptySet(),
+                cloudCatchUpNeedsCatalog = false)
         }
         next = next.consumeStartedUpdate()
         return if (next.completed && next.chapter == latest.id) {
             next.copy(caughtUpChapter = next.chapter, startedSinceCaughtUp = emptySet(),
-                knownWhenCaughtUp = ids.toSet(), assumedFromCloud = false, knownWhenAcknowledged = emptySet())
+                knownWhenCaughtUp = ids.toSet(), assumedFromCloud = false, knownWhenAcknowledged = emptySet(),
+                cloudCatchUpNeedsCatalog = false)
         } else next
     }
 

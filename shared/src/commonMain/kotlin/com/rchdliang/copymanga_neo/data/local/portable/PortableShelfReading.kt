@@ -141,7 +141,7 @@ class PortableShelfReading(
         maxOf(it.clearedOwners[key.owner] ?: -1, it.deletedBooks[key.bookKey] ?: -1)
     }
 
-    /** 合并已被统一进度仓库接受的云端章节，不推定完成或追平。 */
+    /** 合并云端章节；没有本机精确位置且云端明确读到最新章时，默认完成并建立追更基线。 */
     suspend fun importCloudHistory(session: LocalReadingSession, items: List<BrowseHistoryItem>,
         eligible: (BrowseHistoryItem) -> Boolean): Result<Unit> = operations.withLock {
         document.update { state ->
@@ -167,6 +167,15 @@ class PortableShelfReading(
                 } else {
                     next = next.copy(chapterName = name.ifBlank { old.chapterName },
                         completed = old.completed || precise?.completed == true)
+                }
+                // 最新章必须由本次云端响应明确提供，不能用缺失字段或旧缓存推定。
+                // 本机有未读完的精确位置时仍以实际进度为准。
+                if (precise == null && item.latestChapterId == chapter &&
+                    (next.caughtUpChapter != chapter || !next.completed)) {
+                    next = next.copy(completed = true, caughtUpChapter = chapter,
+                        knownWhenCaughtUp = setOf(chapter), assumedFromCloud = false,
+                        startedSinceCaughtUp = emptySet(), knownWhenAcknowledged = emptySet(),
+                        cloudCatchUpNeedsCatalog = true)
                 }
                 records.entries.removeAll { it.value.key.bookKey == key.bookKey }
                 records[next.key.id] = next
