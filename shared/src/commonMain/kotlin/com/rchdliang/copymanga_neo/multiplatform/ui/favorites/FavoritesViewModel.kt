@@ -4,6 +4,8 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
+import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
+import kotlinx.coroutines.CompletableDeferred
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ShelfReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ShelfReadingStatus
@@ -45,6 +47,7 @@ data class FavoritesUiState(
     val selectedIds: Set<Int> = emptySet(),
     val isDeleting: Boolean = false,
     val selectedKind: FavoritesKind = FavoritesKind.COMIC,
+    val sort: FavoritesSort = FavoritesSort.ADDED,
     val novels: List<NovelShelfEntry> = emptyList(),
     val novelsLoading: Boolean = false,
     val novelsLoadingMore: Boolean = false,
@@ -109,6 +112,9 @@ class FavoritesViewModel constructor(
     private var hasResumedMainScreen = false
     private var kindSelectedByUser = false
     private val kindWrites = Channel<FavoritesKind>(Channel.CONFLATED)
+    private val sortWrites = Channel<FavoritesSort>(Channel.CONFLATED)
+    private val sortReady = CompletableDeferred<Unit>()
+    private var sortSelectedByUser = false
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         UiLog.e("FavoritesViewModel", "Unhandled coroutine exception", throwable)
@@ -141,6 +147,24 @@ class FavoritesViewModel constructor(
     private var started = false
     init {
         viewModelScope.launch {
+            appSettings.getFavoritesSort().fold(
+                onSuccess = { sort ->
+                    if (!sortSelectedByUser) _uiState.update { it.copy(sort = sort) }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    UiLog.w("FavoritesViewModel", "读取书架排序失败", error)
+                }
+            )
+            sortReady.complete(Unit)
+            for (sort in sortWrites) {
+                appSettings.setFavoritesSort(sort).onFailure { error ->
+                    if (error is CancellationException) throw error
+                    _uiState.update { it.copy(toastMessage = "书架排序保存失败") }
+                }
+            }
+        }
+        viewModelScope.launch {
             appSettings.getFavoritesNovelSelected().fold(
                 onSuccess = { selected ->
                     if (!kindSelectedByUser) _uiState.update {
@@ -167,6 +191,7 @@ class FavoritesViewModel constructor(
         if (started) return
         started = true
         viewModelScope.launch(exceptionHandler) {
+            sortReady.await()
             userRepository.isAuthCacheReady().first { it }
             userRepository.sessionChanges().collect {
                 val loggedIn = userRepository.isLoggedInSync()
@@ -177,7 +202,8 @@ class FavoritesViewModel constructor(
                 novelOffset = 0
                 novelsLoaded = false
                 _uiState.value = FavoritesUiState(
-                    isLoggedIn = loggedIn, isLoading = loggedIn, selectedKind = _uiState.value.selectedKind
+                    isLoggedIn = loggedIn, isLoading = loggedIn, selectedKind = _uiState.value.selectedKind,
+                    sort = _uiState.value.sort
                 )
                 if (loggedIn) {
                     refreshFavorites(showError = false)
@@ -210,6 +236,32 @@ class FavoritesViewModel constructor(
         else loadFavorites()
     }
 
+    /** 切换排序后重置两类书架，取消旧请求，防止不同顺序的分页混合。 */
+    fun selectSort(sort: FavoritesSort) {
+        val state = _uiState.value
+        if (state.isDeleting || state.sort == sort) return
+        sortSelectedByUser = true
+        sortWrites.trySend(sort)
+        loadJob?.cancel()
+        novelLoadJob?.cancel()
+        loadJob = null
+        novelLoadJob = null
+        novelOffset = 0
+        novelsLoaded = false
+        _uiState.update {
+            it.copy(
+                sort = sort, favorites = emptyList(), novels = emptyList(),
+                isSelectionMode = false, selectedIds = emptySet(),
+                isLoading = false, novelsLoading = false, novelsLoadingMore = false,
+                novelsHaveMore = false, error = null, novelsError = null, novelLoadMoreError = null
+            )
+        }
+        if (started) {
+            loadFavorites()
+            loadNovels()
+        }
+    }
+
     fun loadMoreNovels() {
         val state = _uiState.value
         if (state.novelsHaveMore && state.novelLoadMoreError == null) loadNovels(append = true)
@@ -223,6 +275,7 @@ class FavoritesViewModel constructor(
     /** 顺序读取所有分页以统计完整角标；保留已显示作品，追加失败只重试失败页。 */
     private fun loadNovels(append: Boolean = false) {
         if (!_uiState.value.isLoggedIn || _uiState.value.isDeleting || novelLoadJob?.isActive == true) return
+        val sort = _uiState.value.sort
         _uiState.update {
             it.copy(
                 novelsLoading = !append, novelsLoadingMore = append,
@@ -234,7 +287,7 @@ class FavoritesViewModel constructor(
             var appending = append
             var requestedOffset = if (append) novelOffset else 0
             do {
-                val result = novelShelf.list(requestedOffset)
+                val result = novelShelf.list(requestedOffset, sort)
                 currentCoroutineContext().ensureActive()
                 val page = result.getOrElse { error ->
                     if (error is CancellationException) throw error
@@ -278,6 +331,7 @@ class FavoritesViewModel constructor(
 
     private fun refreshFavorites(showError: Boolean) {
         if (!_uiState.value.isLoggedIn || loadJob?.isActive == true) return
+        val sort = _uiState.value.sort
 
         loadJob = viewModelScope.launch(exceptionHandler) {
             val session = sessions.getReadingSessionSync()
@@ -285,7 +339,7 @@ class FavoritesViewModel constructor(
             val requestVersion = readingProgress.requestVersion()
             readingProgress.retryPending()
             _uiState.update { it.copy(isLoading = true, error = null) }
-            val result = withContext(Dispatchers.Default) { mangaRepository.getFavoriteComics() }
+            val result = withContext(Dispatchers.Default) { mangaRepository.getFavoriteComics(sort) }
             currentCoroutineContext().ensureActive()
             result.fold(
                 onSuccess = { favorites ->

@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.domain.repository
 import com.rchdliang.copymanga_neo.domain.model.AppSettings
 import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import com.rchdliang.copymanga_neo.domain.model.HomeRankPreferences
+import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
 import kotlinx.coroutines.flow.Flow
 
 interface AppSettingsRepository {
@@ -27,5 +28,7 @@ interface AppSettingsRepository {
     suspend fun setSearchCompactLayout(keywordSearch: Boolean, compact: Boolean): Result<Unit>
     suspend fun getFavoritesNovelSelected(): Result<Boolean>
     suspend fun setFavoritesNovelSelected(selected: Boolean): Result<Unit>
+    suspend fun getFavoritesSort(): Result<FavoritesSort>
+    suspend fun setFavoritesSort(sort: FavoritesSort): Result<Unit>
     suspend fun resetDefaults(): Result<Unit>
 }

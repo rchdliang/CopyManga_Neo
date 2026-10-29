@@ -33,6 +33,13 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -50,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -111,6 +119,7 @@ fun FavoritesScreen(
         onDiscover = onDiscover,
         onRefresh = viewModel::refreshSelectedShelf,
         onKindSelected = viewModel::selectKind,
+        onSortSelected = viewModel::selectSort,
         onNovelClick = onNovelClick,
         onMoreNovels = viewModel::loadMoreNovels,
         onRetryMoreNovels = viewModel::retryMoreNovels,
@@ -144,7 +153,8 @@ fun FavoritesContent(
     onDiscover: () -> Unit = {},
     onNovelClick: (String) -> Unit = {},
     onMoreNovels: () -> Unit = {},
-    onRetryMoreNovels: () -> Unit = {}
+    onRetryMoreNovels: () -> Unit = {},
+    onSortSelected: (FavoritesSort) -> Unit = {}
 ) {
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(uiState.favorites.map { it.comic.pathWord })
     val pullToRefreshState = rememberPullToRefreshState()
@@ -153,8 +163,9 @@ fun FavoritesContent(
     val isLoading = if (showingNovels) uiState.novelsLoading else uiState.isLoading
     val error = if (showingNovels) uiState.novelsError else uiState.error
     val isEmpty = if (showingNovels) uiState.novels.isEmpty() else uiState.favorites.isEmpty()
-    val comicGrid = rememberLazyGridState()
-    val novelGrid = rememberLazyGridState()
+    // 未显示的标签没有布局，直接按排序重建状态，避免等待隐藏列表滚动。
+    val comicGrid = key(uiState.sort) { rememberLazyGridState() }
+    val novelGrid = key(uiState.sort) { rememberLazyGridState() }
     GridLoadMoreEffect(
         novelGrid,
         showingNovels && uiState.isLoggedIn && uiState.novelsHaveMore &&
@@ -191,6 +202,11 @@ fun FavoritesContent(
                         }
                     }
                 )
+            }
+        }
+        if (uiState.isLoggedIn) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                FavoritesSortControl(uiState.sort, !uiState.isDeleting, onSortSelected)
             }
         }
         PullToRefreshBox(
@@ -376,6 +392,55 @@ fun FavoritesContent(
             }
         }
     }
+}
+
+@Composable
+internal fun FavoritesSortControl(sort: FavoritesSort, enabled: Boolean, onSortSelected: (FavoritesSort) -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val direction = if (sort.descending) "降序" else "升序"
+    val controlColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                TextButton(
+                    onClick = { menuExpanded = true }, enabled = enabled, colors = controlColors,
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.semantics { contentDescription = "排序方式"; stateDescription = sort.label }
+                ) {
+                    Text(sort.label, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Default.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(
+                    expanded = menuExpanded && enabled && LocalRouteActive.current,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    listOf(FavoritesSort.ADDED, FavoritesSort.UPDATED, FavoritesSort.READ).forEach { field ->
+                        val choice = field.withDescending(sort.descending)
+                        DropdownMenuItem(
+                            text = { Text(field.label, color = MaterialTheme.colorScheme.onSurface) },
+                            modifier = Modifier.semantics { stateDescription = if (choice == sort) "已选中" else "未选中" },
+                            trailingIcon = { if (choice == sort) Icon(Icons.Default.Check, contentDescription = null) },
+                            onClick = { menuExpanded = false; onSortSelected(choice) }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = { onSortSelected(sort.withDescending(!sort.descending)) },
+                enabled = enabled, colors = controlColors,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.semantics {
+                    contentDescription = if (sort.descending) "切换为升序" else "切换为降序"
+                    stateDescription = direction
+                }
+            ) {
+                Icon(if (sort.descending) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+                    contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(direction, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+            }
+        }
 }
 
 @Composable

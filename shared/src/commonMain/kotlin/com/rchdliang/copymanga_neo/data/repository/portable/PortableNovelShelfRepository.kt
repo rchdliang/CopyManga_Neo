@@ -19,9 +19,9 @@ class PortableNovelShelfRepository(private val client:CopyMangaClient):NovelShel
         check(s);val response=api.novelQuery(path,"Token ${s.session().token}",requestMode=s.settings.requestMode);authentication(s,response.code());val body=response.body()?:error("书架状态读取失败")
         check(s);val status=body.results?:error("书架状态缺少数据");require(status.isLogin){"登录已过期，请重新登录"};return status.collect!=null
     }
-    override suspend fun list(offset:Int):Result<NovelShelfPage> = result {
+    override suspend fun list(offset:Int, sort:FavoritesSort):Result<NovelShelfPage> = result {
         require(offset>=0);val s=session();val app=s.settings.requestMode==RequestMode.OFFICIAL_APP
-        val response=api.novelFavorites("Token ${s.session().token}",offset,limit=if(app)20 else 21,update=if(app)null else true,requestMode=s.settings.requestMode)
+        val response=api.novelFavorites("Token ${s.session().token}",offset,limit=if(app)20 else 21,ordering=sort.ordering,update=if(app)null else true,requestMode=s.settings.requestMode)
         authentication(s,response.code());check(s);val body=response.body()?:error("小说书架加载失败")
         PortableNovelJson.shelfPage(requireNotNull(body["results"] as? JsonObject){"小说书架缺少数据"},offset)
     }

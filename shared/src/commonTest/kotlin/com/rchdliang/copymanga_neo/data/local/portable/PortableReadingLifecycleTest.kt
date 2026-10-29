@@ -74,7 +74,7 @@ class PortableReadingLifecycleTest {
         override suspend fun searchComics(query: String, page: Int, queryType: QueryType?): Nothing = error("unused")
         override suspend fun getRecComics(limit: Int, offset: Int): Nothing = error("unused")
         override suspend fun getThemeComics(theme: String, offset: Int): Nothing = error("unused")
-        override suspend fun getFavoriteComics(): Nothing = error("unused")
+        override suspend fun getFavoriteComics(sort: com.rchdliang.copymanga_neo.domain.model.FavoritesSort): Nothing = error("unused")
         override suspend fun getBrowseHistory(offset: Int): Result<BrowseHistoryPage> { historyOffsets += offset; return history(offset) }
         override suspend fun addFavorite(comicId: String): Nothing = error("unused")
         override suspend fun removeFavorite(collectId: Int): Nothing = error("unused")

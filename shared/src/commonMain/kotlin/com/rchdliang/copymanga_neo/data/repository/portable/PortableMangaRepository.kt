@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.data.repository.portable
 
 import com.rchdliang.copymanga_neo.data.remote.portable.api.MangaApiService
+import com.rchdliang.copymanga_neo.data.remote.portable.api.OrderType
+import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
 import com.rchdliang.copymanga_neo.data.remote.portable.dto.ChapterListResult
 import com.rchdliang.copymanga_neo.data.remote.portable.util.ChapterCatalogDecryptor
 import com.rchdliang.copymanga_neo.data.remote.portable.util.ChapterDecryptor
@@ -467,7 +469,7 @@ class PortableMangaRepository(
         }
     }
 
-    override suspend fun getFavoriteComics(): Result<List<FavoriteItem>> {
+    override suspend fun getFavoriteComics(sort: FavoritesSort): Result<List<FavoriteItem>> {
         return try {
             val generation = networkSettings.generation
             val favorites = linkedMapOf<String, FavoriteItem>()
@@ -475,7 +477,8 @@ class PortableMangaRepository(
             while (true) {
                 client.state.requireCurrent(generation)
                 val response = apiService.getFavoriteComics(
-                    offset = offset, limit = if (usesOfficialApp()) 18 else 21
+                    offset = offset, limit = if (usesOfficialApp()) 18 else 21,
+                    order = OrderType.entries.first { it.value == sort.ordering }
                 )
                 val body = response.body()
                 if (!response.isSuccessful || body?.code != 200) {

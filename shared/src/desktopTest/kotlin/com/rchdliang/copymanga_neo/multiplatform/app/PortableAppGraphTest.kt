@@ -133,7 +133,13 @@ class PortableAppGraphTest {
         val calls = AtomicInteger()
         val requested = CompletableDeferred<Unit>()
         val novelOffsets = mutableListOf<Int>()
+        graph.repositories.appSettings.setFavoritesSort(FavoritesSort.UPDATED).getOrThrow()
+        val novelSorts = mutableListOf<FavoritesSort>()
+        val comicSorts = java.util.Collections.synchronizedList(mutableListOf<FavoritesSort>())
         var failSecondPage = true
+        val oldPageWaiting = CompletableDeferred<Unit>()
+        val releaseOldPage = CompletableDeferred<Unit>()
+        var delayOldPage = false
         val readingSession = graph.repositories.sessions.getReadingSessionSync()!!
         val localRecords = MutableStateFlow(LocalReadingSnapshot(records = listOf(
             LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
@@ -145,8 +151,14 @@ class PortableAppGraphTest {
             override val snapshot = localRecords
         }
         val novelShelf = object : com.rchdliang.copymanga_neo.domain.repository.NovelShelfRepository by graph.repositories.novelShelf {
-            override suspend fun list(offset: Int): Result<NovelShelfPage> {
+            override suspend fun list(offset: Int, sort: FavoritesSort): Result<NovelShelfPage> {
                 novelOffsets += offset
+                novelSorts += sort
+                if (delayOldPage && sort == FavoritesSort.UPDATED && offset == 1) {
+                    oldPageWaiting.complete(Unit)
+                    // 模拟底层请求忽略取消，仍然返回旧排序的分页。
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { releaseOldPage.await() }
+                }
                 if (offset == 1 && failSecondPage) return Result.failure(Exception("offline"))
                 // The shelf API uses last_chapter_id for the latest novel volume too.
                 val json = kotlinx.serialization.json.Json.parseToJsonElement("""
@@ -160,7 +172,8 @@ class PortableAppGraphTest {
             override fun isLoggedInSync() = true
         }
         val manga = object : MangaRepository by graph.repositories.manga {
-            override suspend fun getFavoriteComics(): Result<List<FavoriteItem>> {
+            override suspend fun getFavoriteComics(sort: FavoritesSort): Result<List<FavoriteItem>> {
+                comicSorts += sort
                 calls.incrementAndGet(); requested.complete(Unit)
                 return Result.success(listOf(FavoriteItem(1, null, null, null, FavoriteComic(
                     "comic", true, "Comic", "comic", null, null, null, 0, null, null,
@@ -206,7 +219,36 @@ class PortableAppGraphTest {
             model.selectKind(com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.NOVEL)
             runCurrent()
             assertTrue(graph.repositories.appSettings.getFavoritesNovelSelected().getOrThrow())
+            assertEquals(listOf(FavoritesSort.UPDATED), comicSorts.toList())
+            assertTrue(novelSorts.all { it == FavoritesSort.UPDATED })
+            model.enterSelectionMode(1)
+            model.selectSort(FavoritesSort.READ)
+            runCurrent()
+            model.uiState.first { !it.isLoading && it.favorites.isNotEmpty() }
+            assertEquals(FavoritesSort.READ, model.uiState.value.sort)
+            assertFalse(model.uiState.value.isSelectionMode)
+            assertTrue(model.uiState.value.selectedIds.isEmpty())
+            assertEquals(listOf(0, 1, 1, 2, 0, 1, 2), novelOffsets)
+            assertEquals(List(3) { FavoritesSort.READ }, novelSorts.takeLast(3))
+            assertEquals(listOf(FavoritesSort.UPDATED, FavoritesSort.READ), comicSorts.toList())
+            assertEquals(FavoritesSort.READ, graph.repositories.appSettings.getFavoritesSort().getOrThrow())
+            delayOldPage = true
+            model.selectSort(FavoritesSort.UPDATED)
+            runCurrent()
+            oldPageWaiting.await()
+            model.selectSort(FavoritesSort.ADDED)
+            runCurrent()
+            model.uiState.first { !it.isLoading && it.favorites.isNotEmpty() }
+            val requestsBeforeOldResponse = novelOffsets.size
+            releaseOldPage.complete(Unit)
+            runCurrent()
+            assertEquals(requestsBeforeOldResponse, novelOffsets.size)
+            assertEquals(List(3) { FavoritesSort.ADDED }, novelSorts.takeLast(3))
+            assertEquals(FavoritesSort.ADDED, model.uiState.value.sort)
+            assertEquals(3, model.uiState.value.novels.size)
+            assertFalse(model.uiState.value.novelsHaveMore)
         } finally {
+            releaseOldPage.complete(Unit)
             model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
             root.toFile().deleteRecursively()
         }

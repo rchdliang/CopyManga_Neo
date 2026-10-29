@@ -19,6 +19,7 @@ internal data class AppPreferenceDocument(
     val compactSearch: Boolean = false,
     val compactDiscovery: Boolean = false,
     val favoritesNovelSelected: Boolean = false,
+    val favoritesOrdering: String = FavoritesSort.ADDED.ordering,
     val chineseDefaultInitialized: Boolean = false
 )
 
@@ -76,6 +77,12 @@ class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRep
     }
     override suspend fun setFavoritesNovelSelected(selected: Boolean) = document.update {
         it.copy(favoritesNovelSelected = selected)
+    }
+    override suspend fun getFavoritesSort(): Result<FavoritesSort> = document.ensureLoaded().map {
+        FavoritesSort.fromOrdering(document.state.value.favoritesOrdering)
+    }
+    override suspend fun setFavoritesSort(sort: FavoritesSort) = document.update {
+        it.copy(favoritesOrdering = sort.ordering)
     }
     override suspend fun resetDefaults() = document.update { AppPreferenceDocument(chineseDefaultInitialized = true) }
 }

@@ -50,7 +50,7 @@ class DownloadManagerTest {
         override suspend fun searchComics(query: String, page: Int, queryType: QueryType?): Nothing = error("unused")
         override suspend fun getRecComics(limit: Int, offset: Int): Nothing = error("unused")
         override suspend fun getThemeComics(theme: String, offset: Int): Nothing = error("unused")
-        override suspend fun getFavoriteComics(): Nothing = error("unused")
+        override suspend fun getFavoriteComics(sort: com.rchdliang.copymanga_neo.domain.model.FavoritesSort): Nothing = error("unused")
         override suspend fun getBrowseHistory(offset: Int): Nothing = error("unused")
         override suspend fun clearBrowseHistory(): Nothing = error("unused")
         override suspend fun queryComicStatus(pathWord: String): Nothing = error("unused")

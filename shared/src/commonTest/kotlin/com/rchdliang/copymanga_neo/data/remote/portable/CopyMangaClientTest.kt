@@ -17,6 +17,38 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class CopyMangaClientTest {
+    @Test fun shelfSortReachesBothEndpointsAndEveryPageInBothRequestModes() = runTest {
+        for (app in listOf(false, true)) for (sort in FavoritesSort.entries) {
+            val requests = mutableListOf<Pair<String, Int>>()
+            val engine = MockEngine { request ->
+                val path = request.url.encodedPath
+                val offset = request.url.parameters["offset"]!!.toInt()
+                requests += path to offset
+                assertEquals(sort.ordering, request.url.parameters["ordering"])
+                assertEquals(if (app) "3" else null, request.url.parameters["platform"])
+                assertEquals(if (app) null else "true", request.url.parameters["_update"])
+                val novel = path.endsWith("/books")
+                val limit = if (app) { if (novel) 20 else 18 } else 21
+                assertEquals(limit.toString(), request.url.parameters["limit"])
+                val row = if (novel) """{"uuid":1,"book":{"path_word":"novel","name":"Novel"}}"""
+                    else """{"uuid":1,"comic":{"uuid":"comic","name":"Comic","path_word":"comic","status":0,"last_chapter_id":"chapter","last_chapter_name":"Chapter"}}"""
+                respond("""{"code":200,"results":{"offset":$offset,"limit":$limit,"total":${limit + 1},"list":[${row.replace("\"uuid\":1", "\"uuid\":${offset + 1}").replace("\"path_word\":\"comic\"", "\"path_word\":\"comic-$offset\"")}]}}""",
+                    headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            }
+            val client = CopyMangaClient(HttpClient(engine), state(app, "synthetic-token"), identity = identity)
+            try {
+                assertEquals(2, PortableMangaRepository(client).getFavoriteComics(sort).getOrThrow().size)
+                val novels = PortableNovelShelfRepository(client)
+                val first = novels.list(0, sort).getOrThrow()
+                novels.list(first.nextOffset, sort).getOrThrow()
+                assertEquals(listOf("/api/v3/member/collect/comics" to 0,
+                    "/api/v3/member/collect/comics" to if (app) 18 else 21,
+                    "/api/v3/member/collect/books" to 0,
+                    "/api/v3/member/collect/books" to 1), requests)
+            } finally { client.close() }
+        }
+    }
+
     private val identity=object:PortableOfficialIdentity {
         override val tapString="test-only-not-a-production-secret"
         override val loginDate="2026-10-14 12:00:00.000Z"

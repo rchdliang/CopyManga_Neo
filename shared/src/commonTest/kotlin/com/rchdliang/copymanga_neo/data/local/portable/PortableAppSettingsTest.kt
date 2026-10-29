@@ -8,6 +8,23 @@ import kotlin.test.assertFalse
 import kotlinx.coroutines.flow.first
 
 class PortableAppSettingsTest {
+    @Test fun bookshelfSortSurvivesRestartAndFallsBackForMissingOrUnknownValues() = runTest {
+        val documents = Documents()
+        for (stored in listOf("{}", """{"favoritesOrdering":"unknown"}""")) {
+            documents.values["app-settings.json"] = stored
+            assertEquals(com.rchdliang.copymanga_neo.domain.model.FavoritesSort.ADDED,
+                PortableAppSettings(documents).getFavoritesSort().getOrThrow())
+        }
+        val settings = PortableAppSettings(documents)
+        for (sort in com.rchdliang.copymanga_neo.domain.model.FavoritesSort.entries) {
+            settings.setFavoritesSort(sort).getOrThrow()
+            assertEquals(sort, PortableAppSettings(documents).getFavoritesSort().getOrThrow())
+        }
+        settings.resetDefaults().getOrThrow()
+        assertEquals(com.rchdliang.copymanga_neo.domain.model.FavoritesSort.ADDED,
+            PortableAppSettings(documents).getFavoritesSort().getOrThrow())
+    }
+
     @Test fun bookshelfTabSurvivesRestartAndDefaultsToComicsForExistingSettings() = runTest {
         val documents = Documents()
         documents.values["app-settings.json"] = "{}"

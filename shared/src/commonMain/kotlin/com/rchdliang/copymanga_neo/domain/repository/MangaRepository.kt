@@ -1,4 +1,5 @@
 package com.rchdliang.copymanga_neo.domain.repository
+import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
 
 import com.rchdliang.copymanga_neo.domain.model.BrowseHistoryPage
 import com.rchdliang.copymanga_neo.domain.model.CachedComicThemes
@@ -115,7 +116,7 @@ interface MangaRepository {
     /**
      * 分页获取完整书架，供列表和更新角标共用。
      */
-    suspend fun getFavoriteComics(): Result<List<FavoriteItem>>
+    suspend fun getFavoriteComics(sort: FavoritesSort = FavoritesSort.ADDED): Result<List<FavoriteItem>>
 
     /** 获取一页云端浏览记录。 */
     suspend fun getBrowseHistory(offset: Int = 0): Result<BrowseHistoryPage>
