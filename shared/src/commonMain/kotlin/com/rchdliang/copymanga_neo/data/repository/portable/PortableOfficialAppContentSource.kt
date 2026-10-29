@@ -39,7 +39,7 @@ internal class PortableOfficialAppContentSource(private val client:CopyMangaClie
         client.state.requireCurrent(generation);ChapterCatalog(groups,chapters)
     }
     suspend fun chapter(pathWord:String,uuid:String):Result<ChapterContent> = capture {
-        parseChapter(api.getOfficialChapter(pathWord,uuid).body()?.results?:error("App 章节结果为空"),uuid)
+        parseChapter(api.getOfficialChapterContent(pathWord,uuid).body()?.results?:error("App 章节结果为空"),uuid)
     }
     suspend fun download(pathWord:String,uuid:String,bound:CopyMangaClient):Result<ChapterContent> = capture {
         val api=MangaApiService(bound)
@@ -60,7 +60,8 @@ internal class PortableOfficialAppContentSource(private val client:CopyMangaClie
                 }
             }
             suspend fun readingContent():ChapterContent {
-                val value=api.getOfficialChapter(pathWord,uuid,headers=CopyMangaNetworkConfig.noAuthApiHeaders(),authorization="Token $token")
+                // 下载额度耗尽后仍以游客获取完整内容，不能把后台下载写成账号阅读记录。
+                val value=api.getOfficialChapterContent(pathWord,uuid)
                 client.state.requireCurrent(generation)
                 val content=parseChapter(value.body()?.results?:error("阅读章节结果为空"),uuid)
                 downloadContents[key]=content;return content

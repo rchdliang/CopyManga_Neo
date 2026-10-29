@@ -95,12 +95,11 @@ class MangaApiService(private val client: CopyMangaClient, private val www: Bool
         headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders()
     ): PortableResponse<SearchResponse> = client.call(ApiRequest(path = "/api/v3/comics", method = "GET", query = listOfNotNull("free_type" to freeType.toString(), "top" to top, "offset" to offset.toString(), "limit" to limit.toString(), "ordering" to ordering), form = null, headers = headers, www = www, mode = null, appIdentity = null), serializer<SearchResponse>())
 
-    suspend fun getOfficialChapter(
+    /** App 游客请求可返回完整章节；内容加载与预载不得携带账号，阅读上报使用 getTrialContent。 */
+    suspend fun getOfficialChapterContent(
         pathWord: String,
-        chapterUuid: String,
-        headers: Map<String, String> = CopyMangaNetworkConfig.apiHeaders(),
-        authorization: String? = null
-    ): PortableResponse<OfficialChapterResponse> = client.call(ApiRequest(path = "/api/v3/comic/${pathWord.encodeURLPathPart()}/chapter2/${chapterUuid.encodeURLPathPart()}", method = "GET", query = emptyList(), form = null, headers = headers + listOfNotNull(authorization?.let { "Authorization" to it }).toMap(), www = www, mode = null, appIdentity = null), serializer<OfficialChapterResponse>())
+        chapterUuid: String
+    ): PortableResponse<OfficialChapterResponse> = client.call(ApiRequest(path = "/api/v3/comic/${pathWord.encodeURLPathPart()}/chapter2/${chapterUuid.encodeURLPathPart()}", method = "GET", query = emptyList(), form = null, headers = CopyMangaNetworkConfig.noAuthApiHeaders() + ("Authorization" to "Token"), www = www, mode = null, appIdentity = null), serializer<OfficialChapterResponse>())
 
     suspend fun getHomeComics(
         timestamp: Long = Clock.System.now().toEpochMilliseconds(),
