@@ -54,15 +54,16 @@ internal fun ReaderInlineDesignContent(quality: Boolean, dark: Boolean = false) 
 @Preview(name = "画质增强-宽屏深色", widthDp = 560, heightDp = 800, showBackground = true)
 @Composable private fun ReaderInlineQualityDarkPreview() = ReaderInlineDesignContent(true, true)
 
-@Preview(name = "AI反馈-实际显示状态", widthDp = 390, heightDp = 420, showBackground = true)
-@Composable private fun ReaderAiDisplayStatusPreview() = ReaderAiDisplayStates()
-@Composable internal fun ReaderAiDisplayStates() {
+@Preview(name = "阅读器-悬浮页码", widthDp = 390, heightDp = 420, showBackground = true)
+@Composable private fun ReaderRestingOverlayPreview() = ReaderRestingOverlayContent()
+@Composable internal fun ReaderRestingOverlayContent() {
     CopyManga_NeoTheme(darkTheme = true) {
         Surface(color = androidx.compose.ui.graphics.Color(0xFF575454)) {
-            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                for (label in listOf("等待修复", "画质修复中", "画质修复已应用", "修复未应用")) {
-                    ReaderRestingOverlay("示例章节", "7 / 24", aiStatus = label)
-                }
+            Box(Modifier.fillMaxSize()) {
+                ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(androidx.compose.ui.Alignment.TopCenter),
+                    pages = readerRestingPageLabel("7", 24))
+                ReaderRestingOverlay("示例章节",
+                    Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
             }
         }
     }

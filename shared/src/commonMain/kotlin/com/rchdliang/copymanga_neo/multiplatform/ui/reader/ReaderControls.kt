@@ -123,7 +123,7 @@ fun ReaderBottomBar(
     onPrevious: () -> Unit, onNext: () -> Unit, onCatalog: () -> Unit,
     onBookmarks: () -> Unit, onComments: () -> Unit, commentsEnabled: Boolean,
     commentCount: Int?,
-    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier, visiblePageLabel: String? = null, enhancementLabel: String? = null
+    autoRunning: Boolean, onAuto: () -> Unit, modifier: Modifier = Modifier, visiblePageLabel: String? = null
 ) {
     val haptic = LocalHapticFeedback.current
     Surface(
@@ -137,8 +137,6 @@ fun ReaderBottomBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            enhancementLabel?.let { Text(it, style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Row(
                 Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -147,6 +145,8 @@ fun ReaderBottomBar(
                     visiblePageLabel ?: (sliderValue.roundToInt() + 1).coerceAtMost(totalPages).toString(),
                     modifier = Modifier.widthIn(min = 28.dp),
                     color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    softWrap = false,
                     style = MaterialTheme.typography.labelLarge.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Ltr)
                 )
                 Slider(
@@ -162,11 +162,13 @@ fun ReaderBottomBar(
                         onSliderValueChange(page.toFloat())
                     }, onValueChangeFinished = onSliderValueChangeFinished
                 )
-                if (visiblePageLabel == null) Text(
+                Text(
                     totalPages.toString(),
                     modifier = Modifier.widthIn(min = 28.dp),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    softWrap = false,
                     textAlign = androidx.compose.ui.text.style.TextAlign.End
                 )
             }
@@ -313,7 +315,7 @@ fun ReaderCatalogDialog(
                     items(state.chapters, key = { it.uuid }) { chapter ->
                         TextButton(onClick = { onSelect(chapter.uuid) }) {
                             Text(
-                                chapter.name,
+                                metadataText(chapter.name),
                                 color = if (chapter.uuid == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -367,5 +369,5 @@ fun ReaderBookmarksDialog(
         })
 }
 
-internal fun readerPageRangeLabel(rawPages: List<Int>, total: Int): String? = if (rawPages.isEmpty()) null else
-    "${rawPages.minOrNull()}" + (if (rawPages.size > 1) "–${rawPages.maxOrNull()}" else "") + " / $total"
+internal fun readerPageRangeLabel(rawPages: List<Int>): String? = if (rawPages.isEmpty()) null else
+    "${rawPages.minOrNull()}" + (if (rawPages.size > 1) "–${rawPages.maxOrNull()}" else "")

@@ -482,13 +482,6 @@ fun ReaderSuccessContent(
     androidx.compose.runtime.SideEffect { restoreStatuses.keys.toList().filter { it !in retainedPageKeys }.forEach { restoreStatuses.remove(it) } }
     val activeRestoreStatuses = activeSharpenKeys.mapNotNull { restoreStatuses[it] }
     val restoreStatusText = activeRestoreStatuses.map { it.text }.distinct().joinToString("\n").takeIf { it.isNotEmpty() }
-    val restoreLabel = if (effectiveRestoreSelection.mode == ReaderRestoreMode.OFF) null else when {
-        activeRestoreStatuses.any { it.stage == ReaderRestoreStage.PROCESSING } -> "画质修复中"
-        activeRestoreStatuses.any { it.stage == ReaderRestoreStage.UNAVAILABLE } -> "修复未应用"
-        activeRestoreStatuses.size == activeSharpenKeys.size && activeRestoreStatuses.isNotEmpty() &&
-            activeRestoreStatuses.all { it.stage == ReaderRestoreStage.READY } -> "画质修复已应用"
-        else -> "等待修复"
-    }
     val displayedSharpness = if (effectiveRestoreSelection.mode != ReaderRestoreMode.OFF) 0f else sharpness
     fun beginQualityAdjustment() {
         val current = page?.takeIf { it.source != null } ?: return
@@ -895,6 +888,14 @@ fun ReaderSuccessContent(
             .fillMaxSize()
             .background(Color.Black)
             .onSizeChanged { viewportSize = it }
+            .readerContextClick(
+                enabled = routeActive && !externalModalVisible && !showSettings && !qualityAdjustment.active &&
+                    !showImageMenu && !showBookmarks && !showCatalog && !restoring
+            ) {
+                automatic = false
+                keyboardScrollJob?.cancel()
+                showSettings = true
+            }
             .focusRequester(focus)
             .readerSpreadKeyboard(
                 enabled = !isContinuous,
@@ -1005,14 +1006,19 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && !qualityAdjustment.active && page?.source != null) ReaderRestingOverlay(
-            page.chapterName,
-            if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
-                    val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
-                    "${visible.first()}–${visible.last()}/${page.imageCount}"
-                } else "${page.page + 1}/${page.imageCount}",
-            Modifier.align(Alignment.BottomCenter), aiStatus = restoreLabel
-        )
+        if (!showControls && !qualityAdjustment.active && page?.source != null) {
+            val pageLabel = if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
+                val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
+                readerRestingPageLabel("${visible.first()}–${visible.last()}", page.imageCount)
+            } else readerRestingPageLabel("${page.page + 1}", page.imageCount)
+            if (routeActive && reportingState.isAtLeast(Lifecycle.State.RESUMED)) {
+                ReaderDeviceStatusOverlay(services?.platform, pageLabel, Modifier.align(Alignment.TopCenter))
+            }
+            ReaderRestingOverlay(
+                page.chapterName,
+                Modifier.align(Alignment.BottomCenter)
+            )
+        }
         AnimatedVisibility(
             showControls && !qualityAdjustment.active && page != null,
             enter = fadeIn(),
@@ -1021,11 +1027,10 @@ fun ReaderSuccessContent(
         ) {
             ReaderBottomBar(
                 page?.imageCount ?: 0, sliderPreview,
-                visiblePageLabel = if (dragging) "跳至第 ${sliderPreview.roundToInt() + 1} 页" else if (!isContinuous) {
+                visiblePageLabel = if (dragging) null else if (!isContinuous) {
                     val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
-                    readerPageRangeLabel(raw, page?.imageCount ?: 0)
+                    readerPageRangeLabel(raw)
                 } else null,
-                enhancementLabel = restoreLabel,
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false

@@ -6,7 +6,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.test.assertEquals
@@ -52,10 +54,49 @@ class ReaderInlineDesignUiTest {
         onNodeWithTag("reader-option-页面布局-双页").assertDoesNotExist()
         assertEquals("单页",selected)
     }
-    @Test fun actualDisplayStatusUsesOutlinedOverlayWithoutScrim() = runSkikoComposeUiTest(size=Size(390f,420f)) {
-        setContent { ReaderAiDisplayStates() }
-        onNodeWithText("画质修复已应用").assertExists()
-        capture("actual-display-states")
+    @Test fun restingOverlayShowsChapterAndPagesWithoutRepairStatus() = runSkikoComposeUiTest(size=Size(390f,420f)) {
+        setContent { ReaderRestingOverlayContent() }
+        onNodeWithText("示例章节").assertExists()
+        onNodeWithText("7 / 24").assertExists()
+        onNodeWithText("09:41").assertIsDisplayed()
+        onNodeWithText("85%").assertIsDisplayed()
+        val time = onNodeWithText("09:41").fetchSemanticsNode().boundsInRoot
+        val battery = onNodeWithText("85%").fetchSemanticsNode().boundsInRoot
+        val pages = onNodeWithText("7 / 24").fetchSemanticsNode().boundsInRoot
+        kotlin.test.assertTrue(time.right < battery.left)
+        kotlin.test.assertTrue(kotlin.math.abs(time.center.y - battery.center.y) < 1f)
+        onNodeWithContentDescription("电池电量").assertIsDisplayed()
+        kotlin.test.assertTrue(kotlin.math.abs(time.center.y - pages.center.y) < 1f)
+        val root = onRoot().fetchSemanticsNode().boundsInRoot
+        kotlin.test.assertTrue(kotlin.math.abs(root.center.x - pages.center.x) < 1f)
+        kotlin.test.assertTrue(pages.bottom < onNodeWithText("示例章节").fetchSemanticsNode().boundsInRoot.top)
+        onNodeWithText("画质修复已应用").assertDoesNotExist()
+        capture("resting-overlay")
+    }
+    @Test fun missingBatteryDoesNotDisplayAPercentage() = runSkikoComposeUiTest(size=Size(390f,100f)) {
+        setContent { MaterialTheme { ReaderStatusOverlay("00:05", ReaderBatteryStatus()) } }
+        onNodeWithText("00:05").assertIsDisplayed()
+        onNodeWithContentDescription("电池状态未知").assertIsDisplayed()
+        onAllNodes(hasText("%", substring = true)).assertCountEquals(0)
+    }
+    @Test fun batteryIconVariantsRemainVisibleAcrossReaderBackgrounds() = runSkikoComposeUiTest(size=Size(780f,180f)) {
+        val batteries = listOf(0, 15, 29, 43, 58, 72, 86, 100).map { ReaderBatteryStatus(it) } +
+            listOf(ReaderBatteryStatus(52, charging = true), ReaderBatteryStatus())
+        setContent {
+            MaterialTheme {
+                Column {
+                    for (background in listOf(Color.Black, Color.Gray, Color.White)) {
+                        Row(Modifier.fillMaxWidth().background(background).padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            batteries.forEach { ReaderBatteryIndicator(it) }
+                        }
+                    }
+                }
+            }
+        }
+        onAllNodesWithContentDescription("电池正在充电").assertCountEquals(3)
+        onAllNodesWithContentDescription("电池状态未知").assertCountEquals(3)
+        capture("battery-icon-variants")
     }
     private fun ComposeUiTest.capture(name: String) {
         val pixels = onRoot().captureToImage().toPixelMap()

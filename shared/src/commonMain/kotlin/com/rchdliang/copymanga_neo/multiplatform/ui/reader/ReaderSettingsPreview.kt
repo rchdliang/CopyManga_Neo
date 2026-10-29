@@ -77,14 +77,20 @@ private fun ReaderDisplayPreviewContent() {
 @Preview(name = "阅读器-描边文字-白底", showBackground = true, widthDp = 390, heightDp = 180)
 @Composable private fun ReaderOverlayWhitePreview() {
     CopyManga_NeoTheme {
-        Box(Modifier.fillMaxSize().background(Color.White)) { ReaderRestingOverlay("预览章节", "2–3 / 24", Modifier.align(Alignment.BottomCenter)) }
+        Box(Modifier.fillMaxSize().background(Color.White)) {
+            ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(Alignment.TopCenter), pages = "2–3 / 24")
+            ReaderRestingOverlay("预览章节", Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 
 @Preview(name = "阅读器-描边文字-黑底", showBackground = true, widthDp = 700, heightDp = 180)
 @Composable private fun ReaderOverlayBlackPreview() {
     CopyManga_NeoTheme(darkTheme = true) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) { ReaderRestingOverlay("预览章节", "2–3 / 24", Modifier.align(Alignment.BottomCenter)) }
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(Alignment.TopCenter), pages = "2–3 / 24")
+            ReaderRestingOverlay("预览章节", Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 

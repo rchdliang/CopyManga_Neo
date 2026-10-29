@@ -78,6 +78,7 @@ class DesktopPlatformHost(
     override val notificationSettingsUnavailableReason: String?
         get() = desktopNotificationSettingsUnavailableReason(
             System.getProperty("os.name"), GraphicsEnvironment.isHeadless())
+    override fun batteryStatuses() = desktopReaderBatteryStatuses()
     private val pendingToasts = Channel<String>(Channel.BUFFERED)
     override val toastMessages = pendingToasts.receiveAsFlow()
     private val mutableWarnings = MutableStateFlow<List<String>>(emptyList())

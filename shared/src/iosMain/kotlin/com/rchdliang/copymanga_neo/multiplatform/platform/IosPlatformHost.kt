@@ -46,6 +46,7 @@ class IosPlatformHost(
     ProfilePlatform, DownloadNotificationPlatform, AutoCloseable {
     override val notificationSettingsUnavailableReason: String? = null
     override val backDispatcher = UiBackDispatcher()
+    override fun batteryStatuses() = iosReaderBatteryStatuses()
     private val warnings = MutableStateFlow<List<String>>(emptyList())
     val capabilityWarnings: StateFlow<List<String>> = warnings
     private val securityScopedUrls = mutableListOf<NSURL>()

@@ -37,6 +37,7 @@ class BrowserPlatformHost : UiPlatform, ReaderPlatform, NovelReaderPlatform, Com
     override val notificationSettingsUnavailableReason: String?
         get() = if (browserNotificationsSupported()) null else "此浏览器不支持下载通知"
     override val backDispatcher = UiBackDispatcher()
+    override fun batteryStatuses() = browserReaderBatteryStatuses()
     @Composable override fun ExternalUiThemeEffect(colors: ColorScheme) {
         val palette = listOf(colors.surfaceContainerHigh, colors.onSurface, colors.primary, colors.onPrimary, colors.outlineVariant)
             .joinToString(",") { "#" + it.toArgb().toUInt().toString(16).padStart(8, '0').takeLast(6) }

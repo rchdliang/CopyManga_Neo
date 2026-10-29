@@ -106,7 +106,10 @@ class ReaderSurfaceUiTest {
                         drawRect(Color(0xff239dc0),topLeft=Offset(size.width/2,0f),size=Size(size.width/2,size.height))
                     }
                     if(expanded) ReaderBottomBar(24,2f,{},{},{},{},{},{},{},true,null,false,{},Modifier.align(Alignment.BottomCenter))
-                    else ReaderRestingOverlay("连续测试图 · Chapter 12","2–3 / 24",Modifier.align(Alignment.BottomCenter))
+                    else {
+                        ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(Alignment.TopCenter), pages = "2–3 / 24")
+                        ReaderRestingOverlay("连续测试图 · Chapter 12", Modifier.align(Alignment.BottomCenter))
+                    }
                 }
             }
         }

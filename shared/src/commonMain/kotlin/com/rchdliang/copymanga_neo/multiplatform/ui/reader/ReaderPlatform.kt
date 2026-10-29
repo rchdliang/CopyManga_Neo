@@ -8,6 +8,10 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsViewModel
 
 /** Reader OS effects are scoped and restored by each host when the reader leaves composition. */
 interface ReaderPlatform {
+    /** 仅在阅读状态栏可见时订阅，包含电量与实际充电状态。 */
+    fun batteryStatuses(): kotlinx.coroutines.flow.Flow<ReaderBatteryStatus> =
+        kotlinx.coroutines.flow.flowOf(ReaderBatteryStatus())
+
     /** 仅由需要修正图片采样的平台启用，其他平台保持原图片链路。 */
     val imageQuality: ReaderImageQuality? get() = null
 
