@@ -900,7 +900,7 @@ fun ReaderSuccessContent(
                 enabled = !isContinuous,
                 blocked = showSettings || qualityAdjustment.active || showImageMenu || showBookmarks || showCatalog || restoring || !routeActive || externalModalVisible,
                 rtl = dir == ReadingDirection.RIGHT_TO_LEFT, zoom = activeZoom,
-                onInteraction = { automatic = false }, onForward = ::forward, onBackward = ::backward
+                onInteraction = { automatic = false }, onForward = { forward() }, onBackward = { backward() }
             )
             .readerKeyboardNavigation(
                 enabled = isContinuous && services?.platform is DesktopReaderKeyboard,
@@ -953,8 +953,10 @@ fun ReaderSuccessContent(
             pagerState = pager,
             listState = list,
             continuousNestedScrollConnection = nested,
-            onForward = ::forward,
-            onBackward = ::backward,
+            // Local function references compare equal even when their captured page window changes.
+            // Lambdas let rememberUpdatedState in the gesture modifiers receive the new window.
+            onForward = { forward() },
+            onBackward = { backward() },
             onShowMenu = { if (!qualityAdjustment.active) showControls = !showControls },
             onImageLongPress = { selected ->
                 qualityAdjustment.finish()

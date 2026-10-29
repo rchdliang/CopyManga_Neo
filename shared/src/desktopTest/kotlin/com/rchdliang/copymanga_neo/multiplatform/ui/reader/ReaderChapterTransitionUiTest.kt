@@ -32,6 +32,66 @@ import javax.imageio.ImageIO
 /** 真实阅读器组合与布局，假章节/图片；严禁网络复现限流。 */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
 class ReaderChapterTransitionUiTest {
+    @Test fun firstWheelAtLatestChapterStartUsesPrependedWindow() =
+        wheelUsesPrependedWindowAndUpdatedLayout(warmUpWheel = false)
+
+    @Test fun activeWheelUsesPrependedWindowAndUpdatedLayout() =
+        wheelUsesPrependedWindowAndUpdatedLayout(warmUpWheel = true)
+
+    @OptIn(ExperimentalTestApi::class)
+    private fun wheelUsesPrependedWindowAndUpdatedLayout(warmUpWheel: Boolean) = runSkikoComposeUiTest(size = Size(1100f, 700f)) {
+        val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }
+        fun chapter(n: Int) = ReaderSessionChapter("$n", "default", ChapterContent(
+            (0..5).map { "fixture-$n-$it" }, if (n == 2) "1" else null,
+            if (n == 1) "2" else null, "Chapter $n"))
+        var chapters by mutableStateOf(listOf(chapter(2)))
+        var layout by mutableStateOf("SINGLE")
+        val pending = mutableStateOf<Int?>(0)
+        val reports = mutableListOf<Pair<String, Int>>()
+        var previousCalls = 0
+        var nextCalls = 0
+        try {
+            setContent { CompositionLocalProvider(LocalLifecycleOwner provides owner, LocalInspectionMode provides true) {
+                CopyManga_NeoTheme {
+                    ReaderSuccessContent(images = chapters.last().content.imageUrls, chapterName = "Fixture",
+                        readingDirection = "RIGHT_TO_LEFT", pageScale = "FIT_SCREEN", screenOrientation = "SYSTEM_DEFAULT",
+                        onPrevChapter = { previousCalls++ }, onNextChapter = { nextCalls++ },
+                        hasPrevChapter = true, hasNextChapter = false,
+                        onRefresh = {}, onReadingDirectionChange = {}, onPageScaleChange = {}, onScreenOrientationChange = {},
+                        pendingInitialPage = pending, sessionChapters = chapters, activeChapterUuid = "2",
+                        tools = ReaderToolsSettings(pageLayout = layout, continuousChapters = true, inlineComments = false),
+                        modifier = Modifier.testTag("reader"),
+                        onPosition = { id, page, _, _ -> reports += id to page })
+                }
+            } }
+            waitForIdle()
+            assertEquals("2" to 0, reports.last())
+            // Cover prefetch completing both before the first wheel event and with an active handler.
+            val startPage = if (warmUpWheel) 1 else 0
+            if (warmUpWheel) {
+                onNodeWithTag("reader").performMouseInput { scroll(1f) }
+                waitForIdle()
+            }
+            assertEquals("2" to startPage, reports.last())
+            runOnIdle { chapters = listOf(chapter(1)) + chapters }
+            waitForIdle()
+            assertEquals("2" to startPage, reports.last())
+            onNodeWithTag("reader").performMouseInput { advanceEventTime(400); scroll(1f) }
+            waitForIdle()
+            assertEquals("2" to startPage + 1, reports.last())
+            onNodeWithTag("reader").performMouseInput { advanceEventTime(400); scroll(-1f) }
+            waitForIdle()
+            assertEquals("2" to startPage, reports.last())
+            runOnIdle { layout = "DOUBLE" }
+            waitForIdle()
+            onNodeWithTag("reader").performMouseInput { advanceEventTime(400); scroll(1f) }
+            waitForIdle()
+            assertEquals("2" to if (warmUpWheel) 3 else 1, reports.last())
+            assertEquals(0, previousCalls)
+            assertEquals(0, nextCalls)
+        } finally { owner.destroy() }
+    }
+
     @OptIn(ExperimentalTestApi::class)
     @Test fun appendedChapterDuringAutoSpreadAnimationDoesNotJumpBack() = runSkikoComposeUiTest(size = Size(1100f, 700f)) {
         val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }

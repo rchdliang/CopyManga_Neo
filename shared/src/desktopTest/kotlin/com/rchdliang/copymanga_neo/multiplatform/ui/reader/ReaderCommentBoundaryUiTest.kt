@@ -42,6 +42,30 @@ import kotlin.test.*
 /** 完整 ReaderScreen + 评论组件 + ReaderViewModel；仅假仓库和临时数据，禁止外网。 */
 @OptIn(ExperimentalTestApi::class)
 class ReaderCommentBoundaryUiTest {
+    @Test fun throttledInlineCommentsDoNotReloadWhenReturningToTheSpread() =
+        runSkikoComposeUiTest(size = Size(1100f, 734f)) {
+            val fixture = Fixture("RIGHT_TO_LEFT", missingNext = true, failComments = true)
+            try {
+                mount(fixture)
+                waitUntil(timeoutMillis = 10_000) { fixture.success() != null }
+                swipeForward("RIGHT_TO_LEFT")
+                waitUntil(timeoutMillis = 5_000) {
+                    fixture.comments.inline("2").uiState.value.feed.error != null
+                }
+                repeat(3) {
+                    onNodeWithTag("reader").performTouchInput {
+                        swipe(Offset(800f, 350f), Offset(300f, 350f), 300)
+                    }
+                    waitForIdle()
+                    onNodeWithText("14–15/15").assertIsDisplayed()
+                    swipeForward("RIGHT_TO_LEFT")
+                    onNodeWithText("Request was throttled", substring = true).assertIsDisplayed()
+                }
+                assertEquals(1, fixture.commentCalls.count { it == "2" })
+                assertEquals(0, fixture.unexpectedHttpCalls)
+            } finally { runOnUiThread { fixture.close() } }
+        }
+
     @Test fun missingNextMetadataKeepsCommentsAtTheBoundaryWithoutInventingRequests() =
         runSkikoComposeUiTest(size = Size(1100f, 734f)) {
             val fixture = Fixture("RIGHT_TO_LEFT", missingNext = true)
@@ -165,7 +189,7 @@ class ReaderCommentBoundaryUiTest {
     }
 
     private class Fixture(direction: String, var failNext: Boolean = false, val actualImages: Boolean = false,
-                          val missingNext: Boolean = false) {
+                          val missingNext: Boolean = false, val failComments: Boolean = false) {
         private val root = Files.createTempDirectory("reader-comment-boundary-")
         private val images = (0..14).map { page ->
             if (!actualImages) "fixture-$page" else {
@@ -229,6 +253,7 @@ class ReaderCommentBoundaryUiTest {
         private val repository = object : CommentRepository by r.comments {
             override suspend fun getComments(target: CommentTarget, offset: Int, replyId: String?): Result<CommentPage> {
                 commentCalls += target.id
+                if (failComments) return Result.failure(RiskControlException("Request was throttled"))
                 return Result.success(CommentPage(emptyList(), 0, null))
             }
             override suspend fun getDownloadedChapterComments(uuid: String) =
