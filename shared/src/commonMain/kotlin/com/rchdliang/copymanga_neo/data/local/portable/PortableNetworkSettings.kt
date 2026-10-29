@@ -45,7 +45,7 @@ object PortableNetworkValidation {
         }
         require(value.selection != NetworkSelection.ROUTE || value.routeIndex in routes.indices) { "请先获取并选择线路" }
         require(value.selection != NetworkSelection.FIXED || fixed in routes.flatten()) { "请选择已发现的节点" }
-        val app = value.officialApp
+        val app = value.officialApp.migrateLegacyVersion()
         require(app.version.matches(Regex("[A-Za-z0-9._-]{1,64}"))) { "App 请求版本格式无效" }
         require((app.versionCode.toIntOrNull() ?: 0) > 0) { "版本号须为大于 0 的整数" }
         listOf(app.pseudoId, app.umString, app.device, app.deviceInfo, app.buildTime).forEach { field ->

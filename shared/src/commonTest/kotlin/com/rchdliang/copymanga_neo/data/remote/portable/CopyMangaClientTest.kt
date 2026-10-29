@@ -177,7 +177,10 @@ class CopyMangaClientTest {
         val events=mutableListOf<NetworkDiagnostic>()
         val engine=MockEngine { request ->
             assertEquals("api.copy202601.com",request.url.host);assertEquals("3",request.url.parameters["platform"])
-            assertEquals("COPY/3.0.9",request.headers["User-Agent"])
+            assertEquals("COPY/3.1.0",request.headers["User-Agent"])
+            assertEquals("3.1.0",request.headers["version"])
+            assertEquals("84",request.headers["versioncode"])
+            assertEquals("com.copymanga.app-3.1.0",request.headers["referer"])
             assertNull(request.url.parameters["_update"]);assertNull(request.headers["Origin"])
             assertEquals("Token token-for-test",request.headers["Authorization"])
             val timestamp=requireNotNull(request.headers["X-auth-timestamp"])
@@ -186,6 +189,10 @@ class CopyMangaClientTest {
             val form=parseQueryString(body)
             assertEquals(listOf("10","20"),form.getAll("ids"));assertEquals(identity.tapString,form["tapString"])
             assertEquals("Token token-for-test",form["authorization"])
+            assertEquals("3.1.0",form["version"])
+            assertEquals("84",form["versionCode"])
+            assertEquals("COPY/3.1.0",form["userAgent"])
+            assertEquals("com.copymanga.app-3.1.0",form["referer"])
             respond("""{"code":200,"results":[10,20]}""",headers=headersOf(HttpHeaders.ContentType,"application/json"))
         }
         val client=CopyMangaClient(HttpClient(engine),state(true,"token-for-test"),identity=identity,nowMillis={1234000},diagnostics=events::add)
@@ -193,6 +200,31 @@ class CopyMangaClientTest {
         assertEquals(listOf("request","response"),events.map{it.phase})
         assertFalse(events.toString().contains("token-for-test"));assertFalse(events.toString().contains(identity.tapString));client.close()
     }
+    @Test fun importedLegacyIdentityCannotRestoreOldRequestVersion() = runTest {
+        var calls = 0
+        val imported = AppCredentialIdentity("3.0.9", "83", "synthetic-pseudo", "synthetic-um",
+            "synthetic-device", "synthetic-info", "2025.05.22")
+        val engine = MockEngine { request ->
+            calls++
+            assertEquals("3.1.0", request.headers["version"])
+            assertEquals("84", request.headers["versioncode"])
+            assertEquals("COPY/3.1.0", request.headers["User-Agent"])
+            assertEquals("com.copymanga.app-3.1.0", request.headers["referer"])
+            val form = parseQueryString((request.body as OutgoingContent.ByteArrayContent).bytes().decodeToString())
+            assertEquals("3.1.0", form["version"])
+            assertEquals("84", form["versionCode"])
+            assertEquals("COPY/3.1.0", form["userAgent"])
+            assertEquals("com.copymanga.app-3.1.0", form["referer"])
+            respond("""{"code":200,"results":null}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val client = CopyMangaClient(HttpClient(engine), state(true, "synthetic-token"), identity = identity)
+        try {
+            client.raw(ApiRequest("/api/v3/member/roast", method = "POST",
+                form = listOf("chapter_id" to "synthetic", "roast" to "synthetic"), appIdentity = imported))
+            assertEquals(1, calls)
+        } finally { client.close() }
+    }
+
     @Test fun officialEmptyReadNeverFallsBackToWeb()=runTest {
         var calls=0;val engine=MockEngine{calls++;respond("""{"code":200,"results":null}""")}
         val client=CopyMangaClient(HttpClient(engine),state(true),identity=identity)
