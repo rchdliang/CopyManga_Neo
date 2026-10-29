@@ -6,6 +6,8 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDia
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -166,6 +168,7 @@ fun FavoritesContent(
     // 未显示的标签没有布局，直接按排序重建状态，避免等待隐藏列表滚动。
     val comicGrid = key(uiState.sort) { rememberLazyGridState() }
     val novelGrid = key(uiState.sort) { rememberLazyGridState() }
+    val activeGrid = if (showingNovels) novelGrid else comicGrid
     GridLoadMoreEffect(
         novelGrid,
         showingNovels && uiState.isLoggedIn && uiState.novelsHaveMore &&
@@ -257,7 +260,7 @@ fun FavoritesContent(
                 else -> {
                     Box(modifier = Modifier.fillMaxSize()) {
                         LazyVerticalGrid(
-                            state = if (showingNovels) novelGrid else comicGrid,
+                            state = activeGrid,
                             columns = GridCells.Adaptive(120.dp),
                             contentPadding = PaddingValues(
                                 start = 8.dp,
@@ -268,6 +271,7 @@ fun FavoritesContent(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
+                                .mouseDragScroll(activeGrid, Orientation.Vertical)
                         ) {
                             if (error != null) item(
                                 span = { GridItemSpan(maxLineSpan) },

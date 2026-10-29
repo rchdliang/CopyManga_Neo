@@ -6,6 +6,8 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDia
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.Orientation
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -164,6 +166,7 @@ private fun DownloadsContent(
     val bottomPadding = if (uiState.isSelectionMode) 104.dp else 24.dp
 
     if (!hasActive && !hasDownloaded && !uiState.isLoading && uiState.loadError == null) {
+        val emptyScroll = rememberScrollState()
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 1120.dp).fillMaxSize().padding(screenPadding)
@@ -175,7 +178,8 @@ private fun DownloadsContent(
                 ) {
                     EmptyDownloadSection(
                         onDiscover = onDiscover,
-                        modifier = Modifier.verticalScroll(rememberScrollState())
+                        modifier = Modifier.verticalScroll(emptyScroll)
+                            .mouseDragScroll(emptyScroll, Orientation.Vertical)
                     )
                 }
             }
@@ -196,7 +200,8 @@ private fun DownloadsContent(
             columns = GridCells.Adaptive(cardMinWidth),
             modifier = Modifier
                 .widthIn(max = 1120.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .mouseDragScroll(gridState, Orientation.Vertical),
             contentPadding = PaddingValues(
                 start = screenPadding,
                 end = screenPadding,

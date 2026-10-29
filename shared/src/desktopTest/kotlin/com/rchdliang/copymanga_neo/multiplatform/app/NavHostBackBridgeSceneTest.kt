@@ -3,6 +3,10 @@ package com.rchdliang.copymanga_neo.multiplatform.app
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import com.rchdliang.copymanga_neo.multiplatform.platform.DesktopEscapeKeyHandler
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -33,7 +37,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** Offscreen framework integration only: no application host, repositories or native gestures. */
-@OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 class NavHostBackBridgeSceneTest {
     @Test fun frameworkSeekingKeepsCancelAndNestedBackOwnership() = runTest(timeout = 30.seconds) {
         // Lifecycle's desktop main-thread checker synchronously runBlocking(Main.immediate).
@@ -117,7 +121,13 @@ class NavHostBackBridgeSceneTest {
 
             nav.navigate("probe/detail")
             settle("ordinary detail")
-            assertTrue(back.dispatchBack(), "Non-predictive desktop/browser back uses the same framework input")
+            val escape = DesktopEscapeKeyHandler()
+            for (type in listOf(KeyEventType.KeyDown, KeyEventType.KeyUp)) {
+                val event = KeyEvent(Key.Escape, type)
+                escape.observe(event)
+                assertTrue(raster.sendKeyEvent(event) || escape.handle(event, back::dispatchBack),
+                    "Esc 应在无页面焦点时通过同一个框架返回入口")
+            }
             settle("ordinary back")
             assertEquals("probe/main", nav.currentDestination?.route)
 

@@ -4,6 +4,9 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -319,6 +322,7 @@ internal fun ProfileMainPage(
     avatarViewModel: ProfileAvatarViewModel? = null
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+    val pageScroll = rememberLazyListState()
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
@@ -338,7 +342,9 @@ internal fun ProfileMainPage(
                 Modifier
                     .widthIn(max = 1040.dp)
                     .fillMaxSize()
-                    .align(Alignment.TopCenter),
+                    .align(Alignment.TopCenter)
+                    .mouseDragScroll(pageScroll, Orientation.Vertical),
+                state = pageScroll,
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {

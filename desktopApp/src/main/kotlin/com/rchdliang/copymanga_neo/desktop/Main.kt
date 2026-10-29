@@ -112,6 +112,8 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             }
         }
         val windowState = rememberWindowState(width = 1200.dp, height = 820.dp)
+        val backDispatcher = remember { com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackDispatcher() }
+        val escapeKeys = remember { DesktopEscapeKeyHandler() }
         var restoreMaximized by remember { mutableStateOf(false) }
         var fullscreenKeyPressed by remember { mutableStateOf(false) }
         var placementBeforeFullscreen by remember { mutableStateOf(WindowPlacement.Floating) }
@@ -133,6 +135,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
             state = windowState,
             visible = phase.visible,
             onPreviewKeyEvent = fullscreenKey@ { event ->
+                if (phase.showApplication) escapeKeys.observe(event)
                 if (phase.showApplication && event.key == Key.F11 &&
                     !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) {
                     when (event.type) {
@@ -158,9 +161,13 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                 }
                 false
             },
+            onKeyEvent = { event ->
+                phase.showApplication && escapeKeys.handle(event, backDispatcher::dispatchBack)
+            },
             // Removing the app is phase one; persistence runs only after that disposal commit.
             onCloseRequest = { if (!phase.flushing) phase = desktopCloseRequest(activeTransfers()) }
         ) {
+            escapeKeys.WindowNavigationEffect()
             LaunchedEffect(window, appIcons) {
                 // Supply native sizes for title bar, taskbar and Alt+Tab instead of one rescaled bitmap.
                 window.iconImages = appIcons.variants
@@ -176,7 +183,6 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                     windowState.placement = WindowPlacement.Maximized
                 }
             }
-            val escapeKeys = remember { DesktopEscapeKeyHandler() }
             val focused = LocalWindowInfo.current.isWindowFocused
             LaunchedEffect(focused, phase.showApplication) {
                 if (!focused || !phase.showApplication) {
@@ -185,7 +191,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                 }
             }
             val host = remember(window, windowState) {
-                DesktopPlatformHost(window, ComposeDesktopWindowPolicy(windowState))
+                DesktopPlatformHost(window, ComposeDesktopWindowPolicy(windowState), backDispatcher = backDispatcher)
             }
             val warnings by host.capabilityWarnings.collectAsState()
             var dismissedWarnings by remember { mutableStateOf(setOf<String>()) }
@@ -295,24 +301,7 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                 }
             }
             PortableHostTheme(graph?.repositories?.appSettings, initialThemeMode = startupThemeMode) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onPreviewKeyEvent { event ->
-                    if (phase.showApplication && event.key == Key.Escape) escapeKeys.observe(when (event.type) {
-                        KeyEventType.KeyDown -> DesktopEscapeEvent.DOWN
-                        KeyEventType.KeyUp -> DesktopEscapeEvent.UP
-                        else -> DesktopEscapeEvent.OTHER
-                    })
-                    false // Children always get first refusal; this only records physical press ownership.
-                }.onKeyEvent { event ->
-                    if (!phase.showApplication || event.key != Key.Escape) false
-                    else escapeKeys.handle(
-                        event = when (event.type) {
-                            KeyEventType.KeyDown -> DesktopEscapeEvent.DOWN
-                            KeyEventType.KeyUp -> DesktopEscapeEvent.UP
-                            else -> DesktopEscapeEvent.OTHER
-                        },
-                        modified = event.isCtrlPressed || event.isAltPressed || event.isMetaPressed || event.isShiftPressed,
-                        dispatchBack = host.backDispatcher::dispatchBack)
-                }) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     val ready = graph
                     if (phase.flushing) Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); Text("正在保存阅读记录…")

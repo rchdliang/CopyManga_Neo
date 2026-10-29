@@ -66,6 +66,7 @@ class DesktopPlatformHost(
     private val nativeWindowHandle: (() -> Long)? = null,
     private val nativeUiDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Swing,
     private val nativeFileDialogs: Boolean = false,
+    override val backDispatcher: UiBackDispatcher = UiBackDispatcher(),
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
@@ -77,7 +78,6 @@ class DesktopPlatformHost(
     override val notificationSettingsUnavailableReason: String?
         get() = desktopNotificationSettingsUnavailableReason(
             System.getProperty("os.name"), GraphicsEnvironment.isHeadless())
-    override val backDispatcher = UiBackDispatcher()
     private val pendingToasts = Channel<String>(Channel.BUFFERED)
     override val toastMessages = pendingToasts.receiveAsFlow()
     private val mutableWarnings = MutableStateFlow<List<String>>(emptyList())
