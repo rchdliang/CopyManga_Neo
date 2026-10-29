@@ -137,9 +137,12 @@ class PortableAppGraphTest {
         val novelSorts = mutableListOf<FavoritesSort>()
         val comicSorts = java.util.Collections.synchronizedList(mutableListOf<FavoritesSort>())
         var failSecondPage = true
-        val oldPageWaiting = CompletableDeferred<Unit>()
-        val releaseOldPage = CompletableDeferred<Unit>()
+        var oldPageWaiting = CompletableDeferred<Unit>()
+        var releaseOldPage = CompletableDeferred<Unit>()
         var delayOldPage = false
+        var delayComicReply = false
+        val comicReplyWaiting = CompletableDeferred<Unit>()
+        val releaseComicReply = CompletableDeferred<Unit>()
         val readingSession = graph.repositories.sessions.getReadingSessionSync()!!
         val localRecords = MutableStateFlow(LocalReadingSnapshot(records = listOf(
             LocalReadingRecord(readingSession.owner!!, "novel", "novel-1", "old", "Old", group = readingSession.mode.name, updatedAt = 1),
@@ -175,10 +178,16 @@ class PortableAppGraphTest {
             override suspend fun getFavoriteComics(sort: FavoritesSort): Result<List<FavoriteItem>> {
                 comicSorts += sort
                 calls.incrementAndGet(); requested.complete(Unit)
-                return Result.success(listOf(FavoriteItem(1, null, null, null, FavoriteComic(
+                if (delayComicReply) {
+                    comicReplyWaiting.complete(Unit)
+                    releaseComicReply.await()
+                }
+                return Result.success(FavoriteItem(1, null, null, null, FavoriteComic(
                     "comic", true, "Comic", "comic", null, null, null, 0, null, null,
                     "latest", "Latest", BrowseInfo("comic", "comic", "old", "Old")
-                ))))
+                )).let { first -> listOf(first, first.copy(uuid = 2, comic = first.comic.copy(pathWord = "comic-2")),
+                    first.copy(uuid = 3, comic = first.comic.copy(pathWord = "comic-3"))) }
+                    .let { if (sort.descending) it else it.reversed() })
             }
         }
         val model = com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesViewModel(
@@ -199,10 +208,25 @@ class PortableAppGraphTest {
             assertEquals(0, model.uiState.value.updatedComicCount)
             assertEquals(0, model.uiState.value.updatedCount)
             assertNotNull(model.uiState.value.novelLoadMoreError)
+            model.selectSort(FavoritesSort.UPDATED_ASC)
+            runCurrent()
+            assertEquals(1, calls.get())
+            assertEquals(listOf(0, 1), novelOffsets)
+            assertNotNull(model.uiState.value.novelLoadMoreError)
             failSecondPage = false
             model.retryMoreNovels(); runCurrent()
             assertEquals(listOf(0, 1, 1, 2), novelOffsets)
             assertEquals(3, model.uiState.value.novels.size)
+            assertEquals(listOf(3, 2, 1), model.uiState.value.novels.map { it.collectId })
+            assertEquals(listOf(3, 2, 1), model.uiState.value.favorites.map { it.uuid })
+            model.selectSort(FavoritesSort.UPDATED)
+            runCurrent()
+            assertEquals(listOf(1, 2, 3), model.uiState.value.novels.map { it.collectId })
+            assertEquals(listOf(1, 2, 3), model.uiState.value.favorites.map { it.uuid })
+            assertEquals(1, calls.get())
+            assertEquals(listOf(0, 1, 1, 2), novelOffsets)
+            assertFalse(model.uiState.value.isLoading)
+            assertFalse(model.uiState.value.novelsLoading)
             assertEquals(0, model.uiState.value.updatedNovelCount) // Legacy positions do not prove a past catch-up.
             assertEquals("Latest", model.uiState.value.novelReadingProgress["novel-1"]?.name)
             assertEquals("old", model.uiState.value.novelReadingProgress["novel-2"]?.chapter)
@@ -232,6 +256,15 @@ class PortableAppGraphTest {
             assertEquals(List(3) { FavoritesSort.READ }, novelSorts.takeLast(3))
             assertEquals(listOf(FavoritesSort.UPDATED, FavoritesSort.READ), comicSorts.toList())
             assertEquals(FavoritesSort.READ, graph.repositories.appSettings.getFavoritesSort().getOrThrow())
+            val completeComicRequests = calls.get()
+            val completeNovelRequests = novelOffsets.size
+            model.selectSort(FavoritesSort.READ_ASC)
+            runCurrent()
+            assertEquals(listOf(3, 2, 1), model.uiState.value.favorites.map { it.uuid })
+            assertEquals(listOf(3, 2, 1), model.uiState.value.novels.map { it.collectId })
+            assertEquals(completeComicRequests, calls.get())
+            assertEquals(completeNovelRequests, novelOffsets.size)
+            assertEquals(FavoritesSort.READ_ASC, graph.repositories.appSettings.getFavoritesSort().getOrThrow())
             delayOldPage = true
             model.selectSort(FavoritesSort.UPDATED)
             runCurrent()
@@ -247,8 +280,39 @@ class PortableAppGraphTest {
             assertEquals(FavoritesSort.ADDED, model.uiState.value.sort)
             assertEquals(3, model.uiState.value.novels.size)
             assertFalse(model.uiState.value.novelsHaveMore)
+            oldPageWaiting = CompletableDeferred()
+            releaseOldPage = CompletableDeferred()
+            model.selectSort(FavoritesSort.UPDATED)
+            runCurrent()
+            oldPageWaiting.await()
+            model.uiState.first { !it.isLoading }
+            val pendingComicRequests = calls.get()
+            val pendingNovelRequests = novelOffsets.size
+            model.selectSort(FavoritesSort.UPDATED_ASC)
+            runCurrent()
+            assertEquals(pendingComicRequests, calls.get())
+            assertEquals(pendingNovelRequests, novelOffsets.size)
+            assertEquals(listOf(1), model.uiState.value.novels.map { it.collectId })
+            releaseOldPage.complete(Unit)
+            runCurrent()
+            assertEquals(listOf(3, 2, 1), model.uiState.value.novels.map { it.collectId })
+            assertFalse(model.uiState.value.novelsHaveMore)
+            assertEquals(FavoritesSort.UPDATED, novelSorts.last())
+            delayComicReply = true
+            model.loadFavorites()
+            runCurrent()
+            comicReplyWaiting.await()
+            val requestsDuringRefresh = calls.get()
+            model.selectSort(FavoritesSort.UPDATED)
+            runCurrent()
+            assertEquals(listOf(1, 2, 3), model.uiState.value.favorites.map { it.uuid })
+            assertEquals(requestsDuringRefresh, calls.get())
+            releaseComicReply.complete(Unit)
+            model.uiState.first { !it.isLoading }
+            assertEquals(listOf(1, 2, 3), model.uiState.value.favorites.map { it.uuid })
         } finally {
             releaseOldPage.complete(Unit)
+            releaseComicReply.complete(Unit)
             model.viewModelScope.cancel(); graph.shutdown(); Dispatchers.resetMain()
             root.toFile().deleteRecursively()
         }

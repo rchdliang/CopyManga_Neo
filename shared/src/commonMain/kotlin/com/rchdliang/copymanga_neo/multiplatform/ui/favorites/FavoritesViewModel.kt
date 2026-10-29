@@ -108,6 +108,8 @@ class FavoritesViewModel constructor(
     private var deleteJob: Job? = null
     private var novelLoadJob: Job? = null
     private var novelOffset = 0
+    // 后续页和失败重试沿用首个请求的方向，显示方向可以独立切换。
+    private var novelPaginationSort = FavoritesSort.ADDED
     private var novelsLoaded = false
     private var hasResumedMainScreen = false
     private var kindSelectedByUser = false
@@ -236,12 +238,21 @@ class FavoritesViewModel constructor(
         else loadFavorites()
     }
 
-    /** 切换排序后重置两类书架，取消旧请求，防止不同顺序的分页混合。 */
+    /** 同一字段只反转本地列表；切换字段才重新请求云端顺序。 */
     fun selectSort(sort: FavoritesSort) {
         val state = _uiState.value
         if (state.isDeleting || state.sort == sort) return
         sortSelectedByUser = true
         sortWrites.trySend(sort)
+        if (state.sort.withDescending(sort.descending) == sort) {
+            _uiState.update {
+                it.copy(
+                    sort = sort, favorites = it.favorites.reversed(), novels = it.novels.reversed(),
+                    isSelectionMode = false, selectedIds = emptySet()
+                )
+            }
+            return
+        }
         loadJob?.cancel()
         novelLoadJob?.cancel()
         loadJob = null
@@ -275,7 +286,8 @@ class FavoritesViewModel constructor(
     /** 顺序读取所有分页以统计完整角标；保留已显示作品，追加失败只重试失败页。 */
     private fun loadNovels(append: Boolean = false) {
         if (!_uiState.value.isLoggedIn || _uiState.value.isDeleting || novelLoadJob?.isActive == true) return
-        val sort = _uiState.value.sort
+        if (!append) novelPaginationSort = _uiState.value.sort
+        val sort = novelPaginationSort
         _uiState.update {
             it.copy(
                 novelsLoading = !append, novelsLoadingMore = append,
@@ -306,9 +318,11 @@ class FavoritesViewModel constructor(
                 novelsLoaded = true
                 val hasMore = page.hasMore && page.nextOffset > requestedOffset
                 _uiState.update {
+                    val reversed = it.sort.descending != sort.descending
+                    val entries = if (reversed) page.entries.reversed() else page.entries
                     it.copy(
                         novelsLoading = false, novelsLoadingMore = hasMore,
-                        novels = (if (appending) it.novels + page.entries else page.entries)
+                        novels = (if (!appending) entries else if (reversed) entries + it.novels else it.novels + entries)
                             .distinctBy { entry -> entry.collectId },
                         novelsHaveMore = hasMore
                     )
@@ -353,7 +367,7 @@ class FavoritesViewModel constructor(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            favorites = favorites,
+                            favorites = if (it.sort.descending == sort.descending) favorites else favorites.reversed(),
                             // 空收藏不是错误，不设置 error 以避免显示重试按钮
                             error = null
                         )
