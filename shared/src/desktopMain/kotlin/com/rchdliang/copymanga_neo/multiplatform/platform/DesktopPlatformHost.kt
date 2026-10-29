@@ -118,6 +118,10 @@ class DesktopPlatformHost(
         DateTimeFormatter.ofPattern("yyyy-MM-dd", locale).withZone(zone)
             .format(Instant.ofEpochMilli(epochMilliseconds))
     override fun formatLineHeight(value: Float): String = String.format(locale, "%.2f 倍", value)
+    override val supportsSystemFonts = true
+    override suspend fun systemFonts() = com.rchdliang.copymanga_neo.multiplatform.ui.novel.DesktopNovelFonts.list()
+    override fun systemFontFamily(id: String, weight: Int) =
+        com.rchdliang.copymanga_neo.multiplatform.ui.novel.DesktopNovelFonts.family(id, weight)
     override fun formatFileSize(bytes: Long): String {
         val units = listOf("B", "KB", "MB", "GB", "TB")
         var value = bytes.coerceAtLeast(0).toDouble()

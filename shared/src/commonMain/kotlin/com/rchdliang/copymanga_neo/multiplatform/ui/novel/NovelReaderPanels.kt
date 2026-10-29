@@ -103,13 +103,20 @@ internal fun ColumnScope.NovelReaderSettings(
                     }
                     NovelChoices(
                         "字体",
-                        preferences.font,
+                        preferences.font.takeIf { preferences.systemFont == null }.orEmpty(),
                         listOf("SYSTEM" to "系统", "SERIF" to "衬线", "SANS" to "无衬线")
                     ) {
-                        onPreferences(preferences.copy(font = it))
+                        onPreferences(preferences.copy(font = it, systemFont = null))
+                    }
+                    NovelSystemFontSetting(preferences, onPreferences)
+                    NovelSettingsSlider(
+                        "字重", preferences.fontWeight.toString(),
+                        preferences.fontWeight.toFloat(), 100f..900f, steps = 0
+                    ) {
+                        onPreferences(preferences.copy(fontWeight = it.roundToInt(), bold = false))
                     }
                     Text(
-                        "故事在每一次翻页后继续。找到舒服的字号与行距，慢慢读下去。",
+                        "\"The quick brown FOX jumps over the lazy dog\"是1个著名的英语全字母句，用于测试字体和字号。\n\n你问我なぜ说得这么奇怪？\n因为我在测试，o0O1il|丨ilILiL~",
                         style = novelTextStyle(preferences),
                         color = MaterialTheme.colorScheme.onSurface
                     )

@@ -30,7 +30,7 @@ class UserDataBackupTest {
         )
         assertTrue(annotations.save(note).isSuccess)
         PortableNovelPreferences(source).apply {
-            initialize(); update(NovelReaderPreferences(fontSize = 24f))
+            initialize(); update(NovelReaderPreferences(fontSize = 24f, systemFont = "desktop:JetBrains Mono", fontWeight = 553))
             setIllustrationBlur("book", true)
         }
         source.values["network-settings.json"] = "must not be exported"
@@ -51,6 +51,8 @@ class UserDataBackupTest {
         val prefs = PortableNovelPreferences(target)
         assertTrue(prefs.initialize().isSuccess)
         assertEquals(24f, prefs.settings.first().fontSize)
+        assertEquals("desktop:JetBrains Mono", prefs.settings.first().systemFont)
+        assertEquals(553, prefs.settings.first().fontWeight)
         assertEquals("keep identity", target.values["network-settings.json"])
         assertEquals("keep downloads", target.values["download-records"])
     }

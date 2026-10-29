@@ -192,7 +192,7 @@ fun BookDetailHeader(
             }
             BookDetailInfoRow(Icons.Default.Pending, "状态") {
                 Text(
-                    status.ifBlank { "状态信息暂缺" }, style = MaterialTheme.typography.bodyMedium,
+                    metadataText(status.ifBlank { "状态信息暂缺" }), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

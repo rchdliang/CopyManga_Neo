@@ -121,4 +121,22 @@ class NovelReaderDocumentTest {
         assertEquals("SCROLL", settings.mode)
         assertEquals("AUTO", settings.columns)
     }
+
+    @Test
+    fun legacyReaderSettingsKeepDefaultFontAndWeight() {
+        val settings = kotlinx.serialization.json.Json.decodeFromString<NovelReaderPreferences>("""{"font":"SERIF","fontSize":20.0}""")
+        assertEquals("SERIF", settings.font)
+        assertEquals(null, settings.systemFont)
+        assertEquals(false, settings.bold)
+        assertEquals(400, settings.fontWeight)
+    }
+
+    @Test
+    fun oldBoldSettingsMigrateWithoutOverridingExplicitWeights() {
+        val json = kotlinx.serialization.json.Json
+        assertEquals(700, json.decodeFromString<NovelReaderPreferences>("""{"bold":true}""").normalized().fontWeight)
+        assertEquals(553, json.decodeFromString<NovelReaderPreferences>("""{"bold":true,"fontWeight":553}""").normalized().fontWeight)
+        assertEquals(100, NovelReaderPreferences(fontWeight = -1).normalized().fontWeight)
+        assertEquals(900, NovelReaderPreferences(fontWeight = 1001).normalized().fontWeight)
+    }
 }

@@ -35,6 +35,10 @@ class AndroidNovelReaderPlatform(private val context: Context) : NovelReaderPlat
     override fun formatLineHeight(value: Float): String =
         String.format(context.resources.configuration.locales[0] ?: Locale.getDefault(), "%.2f 倍", value)
 
+    override val supportsSystemFonts = true
+    override suspend fun systemFonts() = AndroidNovelFonts.list()
+    override fun systemFontFamily(id: String, weight: Int) = AndroidNovelFonts.family(id, weight)
+
     @Composable
     override fun ReaderWindow(keepScreenOn: Boolean, controlsVisible: Boolean, lightBars: Boolean) {
         val activity = context.novelActivity()

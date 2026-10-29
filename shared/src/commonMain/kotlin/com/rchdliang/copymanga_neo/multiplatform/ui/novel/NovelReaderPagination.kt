@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -42,11 +43,20 @@ internal fun novelFont(value: String): FontFamily = when (value) {
     else -> FontFamily.Default
 }
 
-internal fun novelTextStyle(preferences: NovelReaderPreferences) = TextStyle(
-    fontFamily = novelFont(preferences.font),
-    fontSize = preferences.fontSize.sp,
-    lineHeight = (preferences.fontSize * preferences.lineHeight).sp
-)
+@Composable
+internal fun novelTextStyle(preferences: NovelReaderPreferences): TextStyle {
+    val platform = LocalNovelReaderPlatform.current
+    val weight = preferences.fontWeight.coerceIn(100, 900)
+    val family = remember(platform, preferences.systemFont, weight) {
+        preferences.systemFont?.let { platform?.systemFontFamily(it, weight) }
+    }
+    return TextStyle(
+        fontFamily = family ?: novelFont(preferences.font),
+        fontWeight = FontWeight(weight),
+        fontSize = preferences.fontSize.sp,
+        lineHeight = (preferences.fontSize * preferences.lineHeight).sp
+    )
+}
 
 internal data class NovelPagination(
     val pages: List<NovelReaderPage> = emptyList(),
@@ -64,12 +74,12 @@ internal fun rememberNovelPagination(
     val density = LocalDensity.current
     val resolver = LocalFontFamilyResolver.current
     val direction = LocalLayoutDirection.current
+    val style = novelTextStyle(preferences)
     val measurer =
-        remember(document, preferences, widthPx, heightPx, density, resolver, direction) {
+        remember(document, preferences, style, widthPx, heightPx, density, resolver, direction) {
             TextMeasurer(resolver, density, direction, cacheSize = 0)
         }
     val spacing = with(density) { preferences.paragraphSpacing.dp.roundToPx() }
-    val style = novelTextStyle(preferences)
     val preview = LocalInspectionMode.current
     var result by remember(measurer) {
         mutableStateOf(

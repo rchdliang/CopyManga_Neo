@@ -56,8 +56,10 @@ val enableStartupProbes = providers.gradleProperty("enableStartupProbes")
 
 
 android {
-    sourceSets.getByName("main").assets.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
-    sourceSets.getByName("main").kotlin.srcDir(
+    sourceSets.getByName("main").assets.directories.add(
+        (rootProject.extra["readerRestoreModelsDirectory"] as File).absolutePath
+    )
+    sourceSets.getByName("main").kotlin.directories.add(
         if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
     )
     namespace = "com.rchdliang.copymanga_neo"
