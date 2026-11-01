@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.collect
 import java.nio.file.Path
 import dev.nucleusframework.application.*
 import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.FilterQuality
@@ -323,74 +324,80 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                 }
             }
             PortableHostTheme(graph?.repositories?.appSettings, initialThemeMode = startupThemeMode) {
-                val titleStyle = LocalTitleBarStyle.current
-                TitleBar(style = titleStyle.copy(colors = titleStyle.colors.copy(
-                    background = MaterialTheme.colorScheme.surfaceContainer,
-                    inactiveBackground = MaterialTheme.colorScheme.surfaceContainer,
-                    content = MaterialTheme.colorScheme.onSurface,
-                    controlButtonIconColor = MaterialTheme.colorScheme.onSurface,
-                ))) {
-                    Row(
-                        modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Image(
-                            painter = rememberTitleBarIcon(),
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text("CopyManga Neo",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleSmall)
-                    }
-                }
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                    val ready = graph
-                    if (phase.flushing) StartupSurface() else if (phase == DesktopWindowPhase.BACKGROUND) {
-                        // Deliberately dispose reading effects while retaining window, graph and saveables.
-                    } else if (ready != null) appState.SaveableStateProvider("application") {
-                        com.rchdliang.copymanga_neo.multiplatform.platform.DesktopUriHandlerProvider {
-                            CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
-                                openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                // 全屏时移除标题栏，并由窗口布局同步清除顶部占位和原生标题栏命中区域。
+                WindowScaffold(titleBar = if (windowState.placement == WindowPlacement.Fullscreen) null else {
+                    {
+                        val titleStyle = LocalTitleBarStyle.current
+                        TitleBar(style = titleStyle.copy(colors = titleStyle.colors.copy(
+                            background = MaterialTheme.colorScheme.surfaceContainer,
+                            inactiveBackground = MaterialTheme.colorScheme.surfaceContainer,
+                            content = MaterialTheme.colorScheme.onSurface,
+                            controlButtonIconColor = MaterialTheme.colorScheme.onSurface,
+                        ))) {
+                            Row(
+                                modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Image(
+                                    painter = rememberTitleBarIcon(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Text("CopyManga Neo",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleSmall)
+                            }
                         }
-                    } else StartupSurface(error) { attempt++ }
-                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
-                    if (phase == DesktopWindowPhase.CONFIRM_CLOSE) AlertDialog(
-                        onDismissRequest = { phase = DesktopWindowPhase.OPEN },
-                        title = { NativeText("下载或导出仍在进行") },
-                        text = { NativeText(if (trayStatus == DesktopNotificationStatus.Available)
-                            "可以继续在系统托盘中运行，稍后通过托盘打开或退出应用。退出会停止传输，下载队列会保留。"
-                            else "系统托盘暂不可用，可以最小化窗口继续传输。退出会停止传输，下载队列会保留。") },
-                        confirmButton = { TextButton(onClick = {
-                            // Read current availability again; never create an unrecoverable hidden window.
-                            if (trayStatus == DesktopNotificationStatus.Available) phase = DesktopWindowPhase.FLUSH_BACKGROUND
-                            else { phase = DesktopWindowPhase.OPEN; windowState.isMinimized = true }
-                        }) { NativeText(if (trayStatus == DesktopNotificationStatus.Available) "后台继续" else "最小化继续") } },
-                        dismissButton = { Row {
-                            TextButton(onClick = { phase = DesktopWindowPhase.OPEN }) { NativeText("返回") }
-                            TextButton(onClick = { phase = DesktopWindowPhase.FLUSH_QUIT }) { NativeText("停止并退出") }
-                        } }
-                    )
-                    if (phase.showApplication && ready != null && error != null) AlertDialog(
-                        onDismissRequest = { error = null; failedQuit = false },
-                        title = { NativeText(if (failedQuit) "阅读记录未能保存" else "窗口保持打开") },
-                        text = { NativeText(error.orEmpty() + if (failedQuit)
-                            "\n可以重新读取原文件并重试保存，或明确选择不保存退出。后者可能丢失本次尚未保存的阅读进度；不会删除原有书库文件。" else "") },
-                        confirmButton = { TextButton(onClick = { error = null; failedQuit = false }) { NativeText("返回应用") } },
-                        dismissButton = { if (failedQuit) Column {
-                            TextButton(onClick = {
-                                error = null
-                                quitRecovery = DesktopQuitRecovery.RETRY_READ_AND_SAVE
-                                phase = DesktopWindowPhase.FLUSH_QUIT
-                            }) { NativeText("重试保存并退出") }
-                            TextButton(onClick = {
-                                error = null
-                                quitRecovery = DesktopQuitRecovery.QUIT_WITHOUT_SAVING
-                                phase = DesktopWindowPhase.FLUSH_QUIT
-                            }) { NativeText("不保存本次阅读进度并退出") }
-                        } }
-                    )
+                    }
+                }) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        val ready = graph
+                        if (phase.flushing) StartupSurface() else if (phase == DesktopWindowPhase.BACKGROUND) {
+                            // Deliberately dispose reading effects while retaining window, graph and saveables.
+                        } else if (ready != null) appState.SaveableStateProvider("application") {
+                            com.rchdliang.copymanga_neo.multiplatform.platform.DesktopUriHandlerProvider {
+                                CopyMangaApp(ready.repositories, remember(ready, host) { ready.platforms(host) }, owner,
+                                    openDownloads = openDownloads, onDownloadsOpened = { openDownloads = false })
+                            }
+                        } else StartupSurface(error) { attempt++ }
+                        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+                        if (phase == DesktopWindowPhase.CONFIRM_CLOSE) AlertDialog(
+                            onDismissRequest = { phase = DesktopWindowPhase.OPEN },
+                            title = { NativeText("下载或导出仍在进行") },
+                            text = { NativeText(if (trayStatus == DesktopNotificationStatus.Available)
+                                "可以继续在系统托盘中运行，稍后通过托盘打开或退出应用。退出会停止传输，下载队列会保留。"
+                                else "系统托盘暂不可用，可以最小化窗口继续传输。退出会停止传输，下载队列会保留。") },
+                            confirmButton = { TextButton(onClick = {
+                                // Read current availability again; never create an unrecoverable hidden window.
+                                if (trayStatus == DesktopNotificationStatus.Available) phase = DesktopWindowPhase.FLUSH_BACKGROUND
+                                else { phase = DesktopWindowPhase.OPEN; windowState.isMinimized = true }
+                            }) { NativeText(if (trayStatus == DesktopNotificationStatus.Available) "后台继续" else "最小化继续") } },
+                            dismissButton = { Row {
+                                TextButton(onClick = { phase = DesktopWindowPhase.OPEN }) { NativeText("返回") }
+                                TextButton(onClick = { phase = DesktopWindowPhase.FLUSH_QUIT }) { NativeText("停止并退出") }
+                            } }
+                        )
+                        if (phase.showApplication && ready != null && error != null) AlertDialog(
+                            onDismissRequest = { error = null; failedQuit = false },
+                            title = { NativeText(if (failedQuit) "阅读记录未能保存" else "窗口保持打开") },
+                            text = { NativeText(error.orEmpty() + if (failedQuit)
+                                "\n可以重新读取原文件并重试保存，或明确选择不保存退出。后者可能丢失本次尚未保存的阅读进度；不会删除原有书库文件。" else "") },
+                            confirmButton = { TextButton(onClick = { error = null; failedQuit = false }) { NativeText("返回应用") } },
+                            dismissButton = { if (failedQuit) Column {
+                                TextButton(onClick = {
+                                    error = null
+                                    quitRecovery = DesktopQuitRecovery.RETRY_READ_AND_SAVE
+                                    phase = DesktopWindowPhase.FLUSH_QUIT
+                                }) { NativeText("重试保存并退出") }
+                                TextButton(onClick = {
+                                    error = null
+                                    quitRecovery = DesktopQuitRecovery.QUIT_WITHOUT_SAVING
+                                    phase = DesktopWindowPhase.FLUSH_QUIT
+                                }) { NativeText("不保存本次阅读进度并退出") }
+                            } }
+                        )
+                    }
                 }
             }
         }
