@@ -150,7 +150,7 @@ internal fun CommentsPanel(
     onFeedChanged: (CommentFeed) -> Unit = {},
     onClosed: () -> Unit = {},
     // 由嵌入宿主协调翻页与评论滚动；弹层默认不接管任何手势。
-    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean, endLoaded: Boolean) -> Modifier = { _, _, _ -> Modifier }
+    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean) -> Modifier = { _, _ -> Modifier }
 ) {
     var columnCount by remember { mutableIntStateOf(1) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -295,8 +295,7 @@ internal fun CommentsPanel(
             onDelete = viewModel::delete,
             modifier = modifier.then(navigationModifier(
                 listState,
-                composerOpen || state.reportTarget != null || state.posting || state.reporting || state.deleting || confirmDiscard,
-                state.target == target && !state.feed.loading && state.feed.nextOffset == null
+                composerOpen || state.reportTarget != null || state.posting || state.reporting || state.deleting || confirmDiscard
             )),
             embedded = embedded,
             onColumnCountChange = { columnCount = it },
@@ -355,6 +354,8 @@ private fun CommentsHost(
     )
 }
 
+internal val EMBEDDED_COMMENT_MAX_WIDTH = 1040.dp
+
 /** 纯界面组件：运行时与静态 Preview 共用，不创建 ViewModel 或发起网络请求。 */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -408,7 +409,7 @@ internal fun CommentsContent(
             if (embedded || fullChapterPanel) Alignment.BottomCenter else if (wide) Alignment.BottomEnd else Alignment.BottomCenter
         val panelModifier = if (embedded) {
             Modifier
-                .widthIn(max = 1040.dp)
+                .widthIn(max = EMBEDDED_COMMENT_MAX_WIDTH)
                 .fillMaxSize()
         } else if (fullChapterPanel) {
             Modifier

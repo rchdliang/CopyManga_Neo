@@ -1,8 +1,9 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,6 +16,7 @@ import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentFeed
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsPanel
 import com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentsViewModel
+import com.rchdliang.copymanga_neo.multiplatform.ui.comments.EMBEDDED_COMMENT_MAX_WIDTH
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
@@ -56,7 +58,8 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
         }
         // 展开工具栏、重组及返回评论页都不是重试；失败仅由明确刷新操作恢复。
         if (job?.isActive == true || state.value.closed || (!refresh && state.value.error != null) ||
-            (!more && !refresh && state.value.page != null)) return
+            (!more && !refresh && state.value.page != null)
+        ) return
         val old = state.value.page
         val offset = if (more) old?.nextOffset ?: return else 0
         state.value = state.value.copy(loading = true, error = null)
@@ -115,21 +118,24 @@ fun ReaderChapterComments(
             commentsViewModel.load(refresh = true)
         }
     }
-    CommentsPanel(
-        target = CommentTarget(CommentKind.CHAPTER, page.chapterUuid),
-        title = page.chapterName,
-        comicPathWord = comicPathWord,
-        onDismiss = onShowControls,
-        viewModel = commentsViewModel,
-        embedded = true,
-        modifier = modifier,
-        onFeedChanged = { viewModel.updateFeed(page.chapterUuid, it) },
-        onClosed = onClosed,
-        navigationModifier = { list, blocked, endLoaded ->
-            if (paged) Modifier
-                .readerCommentMouseNavigation(list, rtl, blocked, endLoaded, onForward, onBackward)
-                .padding(horizontal = READER_COMMENT_EDGE_WIDTH)
-            else Modifier
-        }
-    )
+    BoxWithConstraints(modifier) {
+        val edgeWidth = maxOf(READER_COMMENT_EDGE_WIDTH, (maxWidth - EMBEDDED_COMMENT_MAX_WIDTH) / 2)
+        CommentsPanel(
+            target = CommentTarget(CommentKind.CHAPTER, page.chapterUuid),
+            title = page.chapterName,
+            comicPathWord = comicPathWord,
+            onDismiss = onShowControls,
+            viewModel = commentsViewModel,
+            embedded = true,
+            modifier = Modifier,
+            onFeedChanged = { viewModel.updateFeed(page.chapterUuid, it) },
+            onClosed = onClosed,
+            navigationModifier = { list, blocked ->
+                if (paged) Modifier
+                    .readerCommentMouseNavigation(list, rtl, blocked, onForward, onBackward, edgeWidth)
+                    .padding(horizontal = READER_COMMENT_EDGE_WIDTH)
+                else Modifier
+            }
+        )
+    }
 }

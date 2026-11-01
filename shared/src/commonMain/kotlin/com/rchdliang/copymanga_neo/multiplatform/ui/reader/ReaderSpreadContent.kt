@@ -54,20 +54,35 @@ internal fun ReaderSpreadContent(
     val retained = spreads.filterIndexed { index, _ -> kotlin.math.abs(index - activeIndex) <= 1 }.map(::groupKey).toSet()
     SideEffect { zooms.keys.toList().filter { it !in retained }.forEach { zooms.remove(it)?.stopFling() } }
     val imageActive = pages[current.indices.first()].source != null
+    val fling = PagerDefaults.flingBehavior(pager, snapAnimationSpec = if (tools.pageAnimation) tween(180) else snap())
+    val commentPager = remember(pager, fling, scope) { ReaderCommentPager(pager, fling, scope) }
+    val scrollingEnabled = !zoom.zoomed && !commentPager.blocked
     // Explicit LTR layout prevents the host's locale from reversing the already ordered leaves.
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr, LocalReaderCommentPager provides commentPager) {
         HorizontalPager(state = pager, reverseLayout = rtl, beyondViewportPageCount = 1,
-            flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = if (tools.pageAnimation) tween(180) else snap()),
-            key = { groupKey(spreads[it]) }, userScrollEnabled = !zoom.zoomed,
+            flingBehavior = fling,
+            key = { groupKey(spreads[it]) }, userScrollEnabled = scrollingEnabled,
             modifier = Modifier.fillMaxSize()
-                .mouseDragScroll(pager, Orientation.Horizontal, enabled = !zoom.zoomed, reverseLayout = rtl,
-                    flingBehavior = PagerDefaults.flingBehavior(pager, snapAnimationSpec = if (tools.pageAnimation) tween(180) else snap()))
+                .mouseDragScroll(pager, Orientation.Horizontal, enabled = scrollingEnabled, reverseLayout = rtl,
+                    flingBehavior = fling)
                 .readerSpreadWheel(zoom, imageActive, onInteraction, onForward, onBackward, rtl)
         ) { index ->
             val spread = spreads[index]
             val first = pages[spread.indices.first()]
             if (first.source == null) {
-                if (index == activeIndex) commentContent(first)
+                // 越过半页时 currentPage 已改变，但拖动中的评论仍然可见，不能提前卸载。
+                val visible by remember(pager, index) {
+                    derivedStateOf {
+                        val layout = pager.layoutInfo
+                        layout.visiblePagesInfo.any {
+                            it.index == index && it.offset < layout.viewportEndOffset &&
+                                it.offset + layout.pageSize > layout.viewportStartOffset
+                        }
+                    }
+                }
+                if (index == activeIndex || (pager.isScrollInProgress && (visible || index == pager.settledPage))) {
+                    commentContent(first)
+                }
             } else {
                 val state = zooms.getOrPut(groupKey(spread)) { ReaderZoomState() }
                 Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged(state::updateViewport)

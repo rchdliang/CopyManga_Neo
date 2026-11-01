@@ -45,7 +45,7 @@ class ReaderCommentBoundaryUiTest {
     @Test fun rtlMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("RIGHT_TO_LEFT")
     @Test fun ltrMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("LEFT_TO_RIGHT")
 
-    private fun mouseCrossesComments(direction: String) = runSkikoComposeUiTest(size = Size(1100f, 734f)) {
+    private fun mouseCrossesComments(direction: String) = runSkikoComposeUiTest(size = Size(1600f, 734f)) {
         val fixture = Fixture(direction, commentCount = 40)
         val rtl = direction == "RIGHT_TO_LEFT"
         try {
@@ -59,7 +59,7 @@ class ReaderCommentBoundaryUiTest {
             waitForIdle()
             assertEquals("2", fixture.success()?.chapterUuid)
             onNodeWithText("阅读菜单").assertIsDisplayed()
-            onNodeWithTag("reader").performMouseInput { moveTo(Offset(10f, 350f)); advanceEventTime(400); scroll(1f) }
+            onNodeWithTag("reader").performMouseInput { moveTo(Offset(200f, 350f)); advanceEventTime(400); scroll(1f) }
             waitForIdle()
             onNodeWithText("1 / 15").assertIsDisplayed()
 
@@ -69,21 +69,48 @@ class ReaderCommentBoundaryUiTest {
                 onNodeWithText("阅读菜单").assertIsDisplayed()
             }
             backToComments()
+            val menuX = onNodeWithText("阅读菜单").fetchSemanticsNode().positionInRoot.x
+            mainClock.autoAdvance = false
             onNodeWithTag("reader").performMouseInput {
-                moveTo(Offset(if (rtl) 300f else 800f, 350f)); press()
-                advanceEventTime(60); moveTo(Offset(550f, 350f))
-                advanceEventTime(60); moveTo(Offset(if (rtl) 800f else 300f, 350f)); release()
+                moveTo(Offset(if (rtl) 400f else 1200f, 350f)); press()
+                advanceEventTime(60); moveTo(Offset(800f, 350f))
             }
+            mainClock.advanceTimeBy(48); waitForIdle()
+            val movedX = onNodeWithText("阅读菜单").fetchSemanticsNode().positionInRoot.x - menuX
+            assertTrue(if (rtl) movedX > 300f else movedX < -300f, "Real comments must follow the held mouse: $movedX")
+            onNodeWithTag("reader").performMouseInput {
+                // 拖过半页验证确定的落页；短距离回拖在独立的跟手测试中验证归位。
+                advanceEventTime(16); moveTo(Offset(if (rtl) 1100f else 500f, 350f))
+                advanceEventTime(16); moveTo(Offset(if (rtl) 1400f else 200f, 350f)); release()
+            }
+            mainClock.autoAdvance = true
             waitForIdle()
-            onNodeWithText("1 / 15").assertIsDisplayed()
+            assertTrue(onAllNodesWithText("1 / 15").fetchSemanticsNodes().isNotEmpty(),
+                "Mouse drag ended at chapter ${fixture.success()?.chapterUuid}: ${onNodeWithTag("reader").printToString()}")
             backToComments()
-            onNodeWithTag("reader").performMouseInput { click(Offset(if (rtl) 10f else 1090f, 350f)) }
+            onNodeWithTag("reader").performMouseInput { click(Offset(if (rtl) 200f else 1400f, 350f)) }
             waitForIdle()
             onNodeWithText("1 / 15").assertIsDisplayed()
             assertEquals(1, fixture.commentCalls.count { it == "2" })
             assertEquals(0, fixture.unexpectedHttpCalls)
         } finally { runOnUiThread { fixture.close() } }
     }
+
+    @Test fun forwardWheelLeavesCommentsWhileMoreCommentsArePending() =
+        runSkikoComposeUiTest(size = Size(1100f, 734f)) {
+            val fixture = Fixture("RIGHT_TO_LEFT", commentCount = 2, pendingMoreComments = true)
+            try {
+                mount(fixture)
+                waitUntil(timeoutMillis = 10_000) { fixture.success()?.chapters?.any { it.uuid == "3" } == true }
+                swipeForward("RIGHT_TO_LEFT")
+                waitUntil(timeoutMillis = 5_000) { fixture.comments.inline("2").uiState.value.feed.loading && fixture.commentCalls.size >= 2 }
+                onNodeWithTag("reader").performMouseInput { moveTo(Offset(550f, 350f)); scroll(1f) }
+                waitForIdle()
+                onNodeWithText("1 / 15").assertIsDisplayed()
+                assertEquals("3", fixture.success()?.chapterUuid)
+                assertEquals(0, fixture.unexpectedHttpCalls)
+            } finally { runOnUiThread { fixture.close() } }
+        }
 
     @Test fun throttledInlineCommentsDoNotReloadWhenReturningToTheSpread() =
         runSkikoComposeUiTest(size = Size(1100f, 734f)) {
@@ -232,7 +259,8 @@ class ReaderCommentBoundaryUiTest {
     }
 
     private class Fixture(direction: String, var failNext: Boolean = false, val actualImages: Boolean = false,
-                          val missingNext: Boolean = false, val failComments: Boolean = false, val commentCount: Int = 0) {
+                          val missingNext: Boolean = false, val failComments: Boolean = false, val commentCount: Int = 0,
+                          val pendingMoreComments: Boolean = false) {
         private val root = Files.createTempDirectory("reader-comment-boundary-")
         private val images = (0..14).map { page ->
             if (!actualImages) "fixture-$page" else {
@@ -296,10 +324,11 @@ class ReaderCommentBoundaryUiTest {
         private val repository = object : CommentRepository by r.comments {
             override suspend fun getComments(target: CommentTarget, offset: Int, replyId: String?): Result<CommentPage> {
                 commentCalls += target.id
+                if (pendingMoreComments && offset > 0) awaitCancellation()
                 if (failComments) return Result.failure(RiskControlException("Request was throttled"))
                 return Result.success(CommentPage((0 until commentCount).map {
                     MangaComment("comment-$it", "Reader $it", null, "Offline comment $it: " + "content ".repeat(12), "2026-11-01")
-                }, commentCount, null))
+                }, if (pendingMoreComments) 100 else commentCount, if (pendingMoreComments) commentCount else null))
             }
             override suspend fun getDownloadedChapterComments(uuid: String) =
                 Result.success<DownloadedChapterComments?>(null)
