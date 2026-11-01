@@ -30,11 +30,12 @@ internal fun ReaderSettingsLink(icon: androidx.compose.ui.graphics.vector.ImageV
 
 @Composable
 internal fun ReaderSettingsOverview(qualityAvailable: Boolean, display: () -> Unit, turns: () -> Unit,
-    quality: () -> Unit, loading: () -> Unit, pairing: @Composable () -> Unit, help: @Composable () -> Unit) {
+    quality: () -> Unit, loading: () -> Unit, pairing: @Composable () -> Unit, help: @Composable () -> Unit,
+    qualityEnabled: Boolean = true) {
     val count = if (qualityAvailable) 4 else 3
     ReaderSettingsLink(Icons.Outlined.DisplaySettings, "显示设置", index = 0, count = count, onClick = display)
     ReaderSettingsLink(Icons.Outlined.Swipe, "翻页设置", index = 1, count = count, onClick = turns)
-    if (qualityAvailable) ReaderSettingsLink(Icons.Outlined.Tune, "画质增强", index = 2, count = count, onClick = quality)
+    if (qualityAvailable) ReaderSettingsLink(Icons.Outlined.Tune, "画质增强", index = 2, count = count, enabled = qualityEnabled, onClick = quality)
     ReaderSettingsLink(Icons.Outlined.CloudDownload, "图片加载", index = count - 1, count = count, onClick = loading)
     Spacer(Modifier.height(17.dp))
     pairing(); help()

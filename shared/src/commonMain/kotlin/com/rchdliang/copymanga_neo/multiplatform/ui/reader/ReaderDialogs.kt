@@ -62,7 +62,9 @@ fun ReaderSettingsDialog(
     loadingSettings: @Composable () -> Unit = {},
     pairingSettings: @Composable () -> Unit = {},
     helpSettings: @Composable () -> Unit = {},
-    qualitySettings: (@Composable () -> Unit)? = null
+    qualitySettings: (@Composable () -> Unit)? = null,
+    onQualitySelected: (() -> Unit)? = null,
+    qualityEnabled: Boolean = true
 ) {
     var pages by remember { mutableStateOf<List<ReaderSettingsPage>>(emptyList()) }
     val section = pages.lastOrNull()
@@ -87,12 +89,12 @@ fun ReaderSettingsDialog(
             CompositionLocalProvider(LocalReaderSettingsNavigation provides navigate) {
                 Column(Modifier.verticalScrollWithMouse(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (section != null) section.content() else {
-                        ReaderSettingsOverview(qualitySettings != null,
+                        ReaderSettingsOverview(qualitySettings != null || onQualitySelected != null,
                             display = { navigate(ReaderSettingsPage("显示设置") { displayContent() }) },
                             turns = { navigate(ReaderSettingsPage("翻页设置") { turns() }) },
-                            quality = { navigate(ReaderSettingsPage("画质增强") { quality?.invoke() }) },
+                            quality = { if (onQualitySelected != null) onQualitySelected() else navigate(ReaderSettingsPage("画质增强") { quality?.invoke() }) },
                             loading = { navigate(ReaderSettingsPage("图片加载") { loading() }) },
-                            pairing = pairingSettings, help = helpSettings)
+                            pairing = pairingSettings, help = helpSettings, qualityEnabled = qualityEnabled)
                     }
                 }
             }

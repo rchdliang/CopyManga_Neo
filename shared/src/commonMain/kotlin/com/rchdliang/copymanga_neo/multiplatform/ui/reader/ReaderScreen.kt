@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -497,13 +498,9 @@ fun ReaderSuccessContent(
         showControls = false
         qualityAdjustment.begin(current.key, zoom, focal, if (isContinuous) READER_CONTINUOUS_MAX_SCALE else READER_MAX_SCALE)
     }
-    fun changeRestoreMode(mode: ReaderRestoreMode) {
-        onToolsChange { it.withRestoreMode(mode) }
-        beginQualityAdjustment()
-    }
-    fun changeRestoreLevel(level: ReaderRestoreLevel) {
-        onToolsChange { it.withRestoreLevel(level) }
-        beginQualityAdjustment()
+    fun returnFromQualityAdjustment() {
+        qualityAdjustment.finish()
+        showSettings = true
     }
     LaunchedEffect(activeZoom) { if (qualityAdjustment.active) beginQualityAdjustment() }
     LaunchedEffect(page?.key, restoreActive) {
@@ -879,7 +876,8 @@ fun ReaderSuccessContent(
     }
 
     val desktopZoomed = services?.platform is DesktopReaderKeyboard && activeZoom?.zoomed == true
-    BackHandler(enabled = (showControls || qualityAdjustment.active || desktopZoomed) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog,
+    BackHandler(enabled = qualityAdjustment.active, isTransient = true) { returnFromQualityAdjustment() }
+    BackHandler(enabled = !qualityAdjustment.active && (showControls || desktopZoomed) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog,
         isTransient = true) {
         qualityAdjustment.finish()
         if (desktopZoomed) activeZoom?.reset()
@@ -1060,14 +1058,20 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (qualityAdjustment.active) ReaderRestoreAdjustmentPanel(
-            restoreSelection, restoreEngine.unavailableReason, restoreStatusText,
-            onMode = ::changeRestoreMode, onLevel = ::changeRestoreLevel,
-            onClose = { qualityAdjustment.finish(); showControls = false; focus.requestFocus() },
+        if (qualityAdjustment.active) ReaderQualityPreviewPanel(
+            onBack = ::returnFromQualityAdjustment,
             modifier = if (viewportSize.width / density >= 900f)
-                Modifier.align(Alignment.CenterEnd).padding(16.dp).width(340.dp)
+                Modifier.align(Alignment.CenterEnd).padding(16.dp).width(420.dp)
+                    .heightIn(max = (viewportSize.height / density - 32f).coerceAtLeast(120f).dp)
             else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).widthIn(max = 460.dp).fillMaxWidth()
-        )
+                .heightIn(max = (viewportSize.height / density * .7f).coerceAtLeast(120f).dp)
+        ) {
+            ReaderQualityControls(tools, restoreEngine.unavailableReason, restoreStatusText, onToolsChange,
+                sharpnessStatus = if (sharpness > 0f && readerSharpnessAvailable()) {
+                    if (activeSharpenKeys.any { sharpenStatuses[it] == false }) "当前部分图片未应用锐化（图片过大或渲染不可用）"
+                    else if (sharpnessApplied) "当前图片已启用锐化" else "等待当前图片加载"
+                } else null)
+        }
         if (appending) ReaderOverlayText(
             "正在加载下一章…", color = Color.White, style = MaterialTheme.typography.labelSmall,
             modifier = Modifier
@@ -1090,26 +1094,8 @@ fun ReaderSuccessContent(
                 page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
 
         },
-        qualitySettings = {
-            ReaderQualitySection {
-                ReaderRestoreControls(restoreSelection, restoreEngine.unavailableReason, restoreStatusText,
-                    onMode = ::changeRestoreMode, onLevel = ::changeRestoreLevel, enabled = page?.source != null)
-            }
-            ReaderQualitySection {
-                if (restoreSelection.mode == ReaderRestoreMode.OFF) {
-                    ReaderSharpnessOptions(sharpness, tools.sharpnessRestore,
-                        onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } }) { value ->
-                        onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
-                    }
-                    if (sharpness > 0f && readerSharpnessAvailable()) Text(
-                        if (activeSharpenKeys.any { sharpenStatuses[it] == false }) "当前部分图片未应用锐化（图片过大或渲染不可用）"
-                        else if (sharpnessApplied) "当前图片已启用锐化" else "等待当前图片加载",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Text("画质修复开启时暂停锐化", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
+        onQualitySelected = { beginQualityAdjustment() },
+        qualityEnabled = page?.source != null,
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
         pairingSettings = { ReaderPairingOption(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0, page?.imageCount ?: 0) },

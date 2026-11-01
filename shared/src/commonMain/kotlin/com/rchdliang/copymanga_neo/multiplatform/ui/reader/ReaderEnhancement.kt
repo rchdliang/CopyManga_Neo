@@ -41,24 +41,31 @@ internal const val READER_SHARPNESS_DEFAULT = 0f
 internal const val READER_SHARPNESS_RESTORE = 0.20f
 
 @Composable
-internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
-    ReaderSharpnessControls(readerSharpnessAvailable(), strength, restore, onReset, onChange)
+internal fun ReaderSharpnessOptions(strength: Float, restore: Float, onReset: () -> Unit,
+    enabled: Boolean = true, supportingText: String? = null, onChange: (Float) -> Unit) {
+    ReaderSharpnessControls(readerSharpnessAvailable(), strength, restore, onReset, onChange, enabled, supportingText)
 }
 
 @Composable
-internal fun ReaderSharpnessControls(available: Boolean, strength: Float, restore: Float, onReset: () -> Unit, onChange: (Float) -> Unit) {
+internal fun ReaderSharpnessControls(available: Boolean, strength: Float, restore: Float, onReset: () -> Unit,
+    onChange: (Float) -> Unit, enabled: Boolean = true, supportingText: String? = null) {
+    val interactive = available && enabled
+    val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (interactive) 1f else .38f)
     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         androidx.compose.material3.Icon(Icons.Outlined.Tune, null,
             modifier = Modifier.padding(end = 12.dp), tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant)
-        androidx.compose.material3.Text("锐化", androidx.compose.ui.Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        Column(Modifier.weight(1f)) {
+            Text("锐化", style = MaterialTheme.typography.titleMedium, color = labelColor)
+            val message = supportingText ?: if (!available) "当前系统或渲染环境不支持锐化，显示原图" else null
+            message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+        }
         androidx.compose.material3.Switch(checked = strength > 0f,
-            onCheckedChange = { onChange(if (it) restore else 0f) }, enabled = available, modifier = Modifier.testTag("reader-sharpen-switch"))
+            onCheckedChange = { onChange(if (it) restore else 0f) }, enabled = interactive, modifier = Modifier.testTag("reader-sharpen-switch"))
     }
-    if (!available) androidx.compose.material3.Text("当前系统或渲染环境不支持锐化，显示原图", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    else if (strength > 0f) {
-        androidx.compose.material3.Text("强度 ${(strength / READER_SHARPNESS_MAX * 100).roundToInt()}%", color = MaterialTheme.colorScheme.onSurface)
-        androidx.compose.material3.Slider(value = strength, onValueChange = { onChange(normalizedReaderSharpness(it)) }, valueRange = 0f..READER_SHARPNESS_MAX, steps = 19, modifier = Modifier.testTag("reader-sharpen-strength"))
-        androidx.compose.material3.TextButton(onClick = onReset) { androidx.compose.material3.Text("恢复默认", color = MaterialTheme.colorScheme.primary) }
+    if (available && strength > 0f) {
+        androidx.compose.material3.Text("强度 ${(strength / READER_SHARPNESS_MAX * 100).roundToInt()}%", color = labelColor)
+        androidx.compose.material3.Slider(value = strength, onValueChange = { onChange(normalizedReaderSharpness(it)) }, valueRange = 0f..READER_SHARPNESS_MAX, steps = 19, enabled = interactive, modifier = Modifier.testTag("reader-sharpen-strength"))
+        androidx.compose.material3.TextButton(onClick = onReset, enabled = interactive) { androidx.compose.material3.Text("恢复默认", color = if (interactive) MaterialTheme.colorScheme.primary else labelColor) }
     }
 }
 

@@ -36,7 +36,7 @@ class ReaderWheelZoomUiTest {
             key { keyUp(Key.CtrlLeft) }
         }
         waitForIdle()
-        assertTrue(zoom.scale > 1f)
+        assertEquals(2.5f, zoom.scale, .01f)
         assertEquals(0, pages)
         assertEquals(1, interactions)
         val scenePoint = (focal - Offset(200f, 200f) - zoom.offset) / zoom.scale
@@ -76,7 +76,7 @@ class ReaderWheelZoomUiTest {
             mouse { moveTo(Offset(200f, 200f)); scroll(-1f) }
             key { keyUp(Key.CtrlLeft) }
         }
-        waitForIdle(); assertTrue(zoom.zoomed)
+        waitForIdle(); assertEquals(2.5f, zoom.scale, .01f)
         assertEquals(0, list.firstVisibleItemIndex); assertEquals(0, list.firstVisibleItemScrollOffset)
         onNodeWithTag("reader").performMouseInput { scroll(3f) }
         waitForIdle()

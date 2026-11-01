@@ -10,7 +10,10 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.exp
+import kotlin.math.pow
+
+/** 每个标准滚轮刻度按 2.5 倍放大或缩小，分页和连续阅读共用相同灵敏度。 */
+internal fun readerWheelZoomFactor(delta: Float): Float = 2.5f.pow(-delta.coerceIn(-10f, 10f))
 
 /** Ctrl＋滚轮围绕鼠标位置缩放，在列表和翻页处理前消费事件。 */
 internal fun Modifier.readerWheelZoom(
@@ -35,7 +38,7 @@ internal fun Modifier.readerWheelZoom(
                 interaction()
                 state.stopFling()
                 state.transform(
-                    exp(-wheel.scrollDelta.y.coerceIn(-10f, 10f) * 0.12f),
+                    readerWheelZoomFactor(wheel.scrollDelta.y),
                     wheel.position,
                     Offset.Zero,
                     maxScale

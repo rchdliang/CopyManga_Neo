@@ -8,7 +8,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.*
 import kotlin.math.abs
-import kotlin.math.exp
 
 /** Only the reader focus target owns shortcuts; descendant editors and modal controls do not. */
 internal fun Modifier.readerSpreadKeyboard(
@@ -83,7 +82,7 @@ internal fun Modifier.readerSpreadWheel(
                 val zoom = currentZoom
                 interaction(); zoom.stopFling()
                 if (event.keyboardModifiers.isCtrlPressed) {
-                    zoom.transform(exp(-delta.y.coerceIn(-10f, 10f) * 0.12f), change.position, Offset.Zero, 5f)
+                    zoom.transform(readerWheelZoomFactor(delta.y), change.position, Offset.Zero, READER_MAX_SCALE)
                 } else if (zoom.zoomed) {
                     zoom.pan(Offset(-delta.x * 40f, -delta.y * 40f))
                 } else {

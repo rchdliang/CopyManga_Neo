@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -184,22 +186,46 @@ internal fun ReaderRestoreControls(
 }
 
 @Composable
-internal fun ReaderRestoreAdjustmentPanel(
-    selection: ReaderRestoreSelection,
+internal fun ReaderQualityControls(
+    tools: ReaderToolsSettings,
     unavailableReason: String?,
     status: String?,
-    onMode: (ReaderRestoreMode) -> Unit,
-    onLevel: (ReaderRestoreLevel) -> Unit,
-    onClose: () -> Unit,
+    onToolsChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
+    sharpnessStatus: String? = null,
+) {
+    val selection = tools.restoreSelection()
+    val sharpeningEnabled = selection.mode == ReaderRestoreMode.OFF
+    ReaderQualitySection {
+        ReaderRestoreControls(selection, unavailableReason, status,
+            onMode = { mode -> onToolsChange { it.withRestoreMode(mode) } },
+            onLevel = { level -> onToolsChange { it.withRestoreLevel(level) } })
+    }
+    ReaderQualitySection {
+        ReaderSharpnessOptions(tools.sharpness, tools.sharpnessRestore,
+            onReset = { onToolsChange { it.copy(sharpness = READER_SHARPNESS_DEFAULT, sharpnessRestore = READER_SHARPNESS_RESTORE) } },
+            enabled = sharpeningEnabled,
+            supportingText = if (!sharpeningEnabled) "画质修复开启时暂停锐化" else sharpnessStatus
+        ) { value ->
+            onToolsChange { it.copy(sharpness = normalizedReaderSharpness(value), sharpnessRestore = if (value > 0f) value else it.sharpnessRestore) }
+        }
+    }
+}
+
+/** 预览直接复用完整画质设置，画面可在面板之外继续缩放与拖动。 */
+@Composable
+internal fun ReaderQualityPreviewPanel(
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ReaderRestoreControls(selection, unavailableReason, status, onMode, onLevel)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("拖动画面查看细节", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = onClose, modifier = Modifier.testTag("reader-restore-finish")) {
-                    Text("完成", color = MaterialTheme.colorScheme.primary)
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("画质增强", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            Column(Modifier.weight(1f, fill = false).verticalScrollWithMouse(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onBack, modifier = Modifier.testTag("reader-quality-back")) {
+                    Text("返回", color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
