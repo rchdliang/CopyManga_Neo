@@ -182,7 +182,7 @@ class ReaderChapterTransitionUiTest {
             val forward = listOf("3" to 0, "3" to 1, "3" to 3, "4" to 0, "4" to 1, "4" to 3, "5" to 0)
             fun assertVisiblePage(expected: Pair<String, Int>) {
                 onNodeWithText("Chapter "+expected.first).assertIsDisplayed()
-                onNodeWithText(when(expected.second) { 0 -> "1/5"; 1 -> "2–3/5"; else -> "4–5/5" }).assertIsDisplayed()
+                onNodeWithText(when(expected.second) { 0 -> "1 / 5"; 1 -> "2–3 / 5"; else -> "4–5 / 5" }).assertIsDisplayed()
             }
             for (expected in forward) {
                 onNodeWithTag("reader").performTouchInput { swipe(Offset(300f, 350f), Offset(950f, 350f), 200) }

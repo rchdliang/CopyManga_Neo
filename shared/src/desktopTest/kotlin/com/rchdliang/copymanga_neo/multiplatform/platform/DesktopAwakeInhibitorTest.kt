@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.platform
 
 import java.util.Base64
+import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -48,6 +49,19 @@ class DesktopAwakeInhibitorTest {
     @Test fun silentHelperTimesOutInsteadOfHanging() {
         val result = DesktopAwakeInhibitor.acquire(helperCommand("silent"), startupTimeoutMillis = 100)
         assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.cause is TimeoutException)
+        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("等待 READY 超过 100 毫秒"))
+    }
+
+    /** 模拟 Windows 冷启动超过旧的六秒期限，仍须完成真实子进程握手并释放。 */
+    @Test fun slowWindowsStartupCanCompleteReadyHandshake() {
+        if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+        val lease = DesktopAwakeInhibitor.acquire(helperCommand("delayed-ready")).getOrThrow()
+        try {
+            lease.close()
+        } finally {
+            lease.close()
+        }
     }
 
     @Test fun largeStderrIsDrainedWithoutBlockingReady() {
@@ -131,6 +145,7 @@ object AwakeHandshakeHelper {
             "error" -> { System.err.println("native call failed"); return }
             "stderr-ready" -> { System.err.println("READY"); return }
             "silent" -> { Thread.sleep(30_000); return }
+            "delayed-ready" -> Thread.sleep(7_000)
             "noisy" -> repeat(20_000) { System.err.println("PowerShell diagnostic output") }
         }
         System.err.flush()

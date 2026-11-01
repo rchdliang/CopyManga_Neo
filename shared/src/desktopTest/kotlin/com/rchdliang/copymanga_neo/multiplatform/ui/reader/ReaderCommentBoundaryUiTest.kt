@@ -57,7 +57,7 @@ class ReaderCommentBoundaryUiTest {
                         swipe(Offset(800f, 350f), Offset(300f, 350f), 300)
                     }
                     waitForIdle()
-                    onNodeWithText("14–15/15").assertIsDisplayed()
+                    onNodeWithText("14–15 / 15").assertIsDisplayed()
                     swipeForward("RIGHT_TO_LEFT")
                     onNodeWithText("Request was throttled", substring = true).assertIsDisplayed()
                 }
@@ -90,8 +90,8 @@ class ReaderCommentBoundaryUiTest {
                 mount(fixture, initialPage = 5)
                 waitUntil(timeoutMillis = 10_000) { fixture.success() != null }
                 waitForIdle()
-                onNodeWithText("6–7/15").assertIsDisplayed()
-                for (label in listOf("8–9/15", "10/15", "11–12/15", "13–14/15", "15/15")) {
+                onNodeWithText("6–7 / 15").assertIsDisplayed()
+                for (label in listOf("8–9 / 15", "10 / 15", "11–12 / 15", "13–14 / 15", "15 / 15")) {
                     swipeForward("RIGHT_TO_LEFT")
                     waitUntil(timeoutMillis = 5_000) { onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty() }
                     onNodeWithText(label).assertIsDisplayed()
@@ -101,7 +101,7 @@ class ReaderCommentBoundaryUiTest {
                 waitUntil(timeoutMillis = 5_000) { fixture.comments.inline("2").uiState.value.target?.id == "2" }
                 swipeForward("RIGHT_TO_LEFT")
                 waitUntil(timeoutMillis = 5_000) { fixture.success()?.chapterUuid == "3" }
-                onNodeWithText("1/15").assertIsDisplayed()
+                onNodeWithText("1 / 15").assertIsDisplayed()
                 assertEquals(1, fixture.chapterCalls.count { it == "3" })
                 assertEquals(0, fixture.unexpectedHttpCalls)
             } finally { runOnUiThread { fixture.close() } }
@@ -127,7 +127,7 @@ class ReaderCommentBoundaryUiTest {
             swipeForward(direction)
             waitUntil(timeoutMillis = 5_000) { fixture.success()?.chapterUuid == "3" }
             waitForIdle()
-            onNodeWithText("1/15").assertIsDisplayed()
+            onNodeWithText("1 / 15").assertIsDisplayed()
             assertEquals(1, fixture.chapterCalls.count { it == "3" })
             assertEquals(1, fixture.commentCalls.count { it == "2" })
             assertEquals(0, fixture.unexpectedHttpCalls)
@@ -154,7 +154,7 @@ class ReaderCommentBoundaryUiTest {
                 waitForIdle()
                 swipeForward("RIGHT_TO_LEFT")
                 waitUntil(timeoutMillis = 5_000) { fixture.success()?.chapterUuid == "3" }
-                onNodeWithText("1/15").assertIsDisplayed()
+                onNodeWithText("1 / 15").assertIsDisplayed()
                 assertEquals(2, fixture.chapterCalls.count { it == "3" })
                 assertEquals(0, fixture.unexpectedHttpCalls)
             } finally { runOnUiThread { fixture.close() } }

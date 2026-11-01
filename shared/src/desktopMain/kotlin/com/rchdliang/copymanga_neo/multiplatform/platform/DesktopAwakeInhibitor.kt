@@ -3,6 +3,7 @@ package com.rchdliang.copymanga_neo.multiplatform.platform
 import java.util.Base64
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Native process-scoped inhibitors; closing the lease releases only this reader's request. */
@@ -21,7 +22,7 @@ object DesktopAwakeInhibitor {
     }
 
     /** stdout is a protocol channel. PowerShell progress/errors must never become READY. */
-    internal fun acquire(command: List<String>, startupTimeoutMillis: Long = 6_000): Result<AutoCloseable> = runCatching {
+    internal fun acquire(command: List<String>, startupTimeoutMillis: Long = defaultStartupTimeoutMillis()): Result<AutoCloseable> = runCatching {
         val process = ProcessBuilder(command).redirectErrorStream(false).start()
         val readerExecutor = Executors.newFixedThreadPool(2) { runnable ->
             Thread(runnable, "CopyManga-awake-startup").apply { isDaemon = true }
@@ -66,7 +67,9 @@ object DesktopAwakeInhibitor {
                 if (interrupted) Thread.currentThread().interrupt()
             }
             val detail = diagnostics.toString().trim().takeIf { it.isNotEmpty() }
-            throw IllegalStateException("无法启动屏幕常亮保持：${detail ?: failure.message ?: "启动超时"}", failure)
+            val reason = if (failure is TimeoutException) "等待 READY 超过 $startupTimeoutMillis 毫秒"
+                else failure.message ?: "辅助进程启动失败"
+            throw IllegalStateException("无法启动屏幕常亮保持：${listOfNotNull(reason, detail).joinToString("；")}", failure)
         }
         val closed = AtomicBoolean(false)
         AutoCloseable {
@@ -85,6 +88,10 @@ object DesktopAwakeInhibitor {
             }
         }
     }
+
+    /** Windows 冷启动还需加载 PowerShell 并编译 Add-Type，繁忙 CI 上可能超过六秒。 */
+    private fun defaultStartupTimeoutMillis(): Long =
+        if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) 30_000 else 6_000
 
     private fun stop(process: Process) {
         process.toHandle().descendants().forEach { it.destroy() }
