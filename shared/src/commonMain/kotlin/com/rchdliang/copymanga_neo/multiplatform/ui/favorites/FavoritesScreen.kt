@@ -160,7 +160,7 @@ fun FavoritesContent(
 ) {
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(uiState.favorites.map { it.comic.pathWord })
     val pullToRefreshState = rememberPullToRefreshState()
-    BackHandler(enabled = uiState.isSelectionMode, onBack = onExitSelectionMode)
+    BackHandler(enabled = uiState.isSelectionMode, isTransient = true, onBack = onExitSelectionMode)
     val showingNovels = uiState.selectedKind == FavoritesKind.NOVEL
     val isLoading = if (showingNovels) uiState.novelsLoading else uiState.isLoading
     val error = if (showingNovels) uiState.novelsError else uiState.error

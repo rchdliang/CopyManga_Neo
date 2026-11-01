@@ -41,7 +41,12 @@ class DesktopEscapeKeyHandler {
     }
 
     /** 窗口级兜底不依赖页面焦点，与系统返回共用同一个分发器。 */
-    fun handle(event: KeyEvent, dispatchBack: () -> Boolean): Boolean =
+    fun handle(
+        event: KeyEvent,
+        dispatchBack: () -> Boolean,
+        dispatchTransientBack: () -> Boolean = { false },
+        exitFullscreen: () -> Boolean = { false }
+    ): Boolean =
         event.key == Key.Escape && handle(
             event.escapeEvent(),
             event.isCtrlPressed || event.isAltPressed || event.isMetaPressed || event.isShiftPressed,
@@ -49,7 +54,7 @@ class DesktopEscapeKeyHandler {
                 if (windowBackEnabled) {
                     windowInput.back()
                     true
-                } else dispatchBack()
+                } else dispatchTransientBack() || exitFullscreen() || dispatchBack()
             }
         )
 

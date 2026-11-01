@@ -136,7 +136,7 @@ internal fun BookPresentationHost(
                 }) {
             content()
             // 在导航内容之后注册，返回键优先收起预览。
-            BackHandler(expansion != null) { opened = false }
+            BackHandler(expansion != null, isTransient = true) { opened = false }
             val selected = expansion
             if (selected != null) {
                 val density = LocalDensity.current

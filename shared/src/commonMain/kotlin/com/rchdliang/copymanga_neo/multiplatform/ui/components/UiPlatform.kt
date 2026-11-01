@@ -49,6 +49,7 @@ data class UiBackEvent(val progress: Float, val fromLeft: Boolean)
 class UiBackDispatcher {
     private class Entry(
         val enabled: () -> Boolean,
+        val isTransient: () -> Boolean,
         val onStarted: (UiBackEvent) -> Unit,
         val onProgressed: (UiBackEvent) -> Unit,
         val onCancelled: () -> Unit,
@@ -65,9 +66,10 @@ class UiBackDispatcher {
         onStarted: (UiBackEvent) -> Unit = {},
         onProgressed: (UiBackEvent) -> Unit = {},
         onCancelled: () -> Unit = {},
+        isTransient: () -> Boolean = { false },
         handler: () -> Boolean
     ): () -> Unit {
-        val entry = Entry(enabled, onStarted, onProgressed, onCancelled, handler)
+        val entry = Entry(enabled, isTransient, onStarted, onProgressed, onCancelled, handler)
         entries += entry
         return {
             entries.remove(entry)
@@ -80,6 +82,10 @@ class UiBackDispatcher {
     }
 
     fun dispatchBack(): Boolean = entries.toList().asReversed().any { it.enabled() && it.handler() }
+
+    /** 桌面 Esc 先收起临时界面，窗口退出全屏后才允许页面导航。普通返回仍使用原有顺序。 */
+    fun dispatchTransientBack(): Boolean = entries.toList().asReversed()
+        .any { it.enabled() && it.isTransient() && it.handler() }
 
     fun startGesture(event: UiBackEvent) {
         cancelGesture()
@@ -122,6 +128,7 @@ fun BackHandler(
     onBackStarted: (UiBackEvent) -> Unit = {},
     onBackProgressed: (UiBackEvent) -> Unit = {},
     onBackCancelled: () -> Unit = {},
+    isTransient: Boolean = false,
     onBack: () -> Unit
 ) {
     if (LocalInspectionMode.current) return
@@ -129,6 +136,7 @@ fun BackHandler(
         "Provide UiPlatform at the application root before rendering shared screens."
     }.backDispatcher
     val currentEnabled by rememberUpdatedState(enabled && LocalRouteActive.current)
+    val currentTransient by rememberUpdatedState(isTransient)
     val currentOnBack by rememberUpdatedState(onBack)
     val currentOnStarted by rememberUpdatedState(onBackStarted)
     val currentOnProgressed by rememberUpdatedState(onBackProgressed)
@@ -138,7 +146,8 @@ fun BackHandler(
             enabled = { currentEnabled },
             onStarted = { currentOnStarted(it) },
             onProgressed = { currentOnProgressed(it) },
-            onCancelled = { currentOnCancelled() }
+            onCancelled = { currentOnCancelled() },
+            isTransient = { currentTransient }
         ) {
             currentOnBack()
             true

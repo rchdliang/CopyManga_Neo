@@ -416,7 +416,7 @@ private fun NovelReaderBody(
     val overlayVisible =
         controlsVisible || sheet != null || galleryKey != null || seek || annotationDraft != null || search.visible
     NovelReaderWindow(preferences.keepScreenOn, overlayVisible)
-    BackHandler(enabled = controlsVisible && sheet == null && galleryKey == null && !seek && annotationDraft == null && !search.visible) {
+    BackHandler(enabled = controlsVisible && sheet == null && galleryKey == null && !seek && annotationDraft == null && !search.visible, isTransient = true) {
         controlsVisible = false
     }
     // 系统栏临时出现时，正文只保留固定的挖孔安全区，避免分页和阅读位置跳动。

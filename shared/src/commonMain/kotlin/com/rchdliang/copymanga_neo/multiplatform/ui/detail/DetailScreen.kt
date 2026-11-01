@@ -525,7 +525,7 @@ fun DetailContent(
     val readingAction = if (startChapterIsContinue) "继续阅读" else "开始阅读"
     val readingLabel = if (hasReadingTarget) "$readingAction：$startChapterName" else readingAction
 
-    BackHandler(enabled = isInBatchMode, onBack = onExitBatchMode)
+    BackHandler(enabled = isInBatchMode, isTransient = true, onBack = onExitBatchMode)
     BookDetailLayout(
         bookKey = currentPathWord, title = comicDetail.name, onBack = onNavigateBack,
         readingLabel = readingLabel, readingTargetName = startChapterName, onRead = onStartReading,

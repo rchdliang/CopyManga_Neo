@@ -154,6 +154,13 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                 }
         }
         var quitHidden by remember { mutableStateOf(false) }
+        fun exitFullscreen(): Boolean {
+            if (windowState.placement != WindowPlacement.Fullscreen) return false
+            windowState.size = sizeBeforeFullscreen
+            windowState.position = positionBeforeFullscreen
+            windowState.placement = placementBeforeFullscreen
+            return true
+        }
         DecoratedWindow(
             title = "CopyManga Neo",
             icon = appIcon,
@@ -166,11 +173,7 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                     when (event.type) {
                         KeyEventType.KeyDown -> if (!fullscreenKeyPressed) {
                             fullscreenKeyPressed = true
-                            if (windowState.placement == WindowPlacement.Fullscreen) {
-                                windowState.size = sizeBeforeFullscreen
-                                windowState.position = positionBeforeFullscreen
-                                windowState.placement = placementBeforeFullscreen
-                            } else {
+                            if (!exitFullscreen()) {
                                 placementBeforeFullscreen = windowState.placement
                                 sizeBeforeFullscreen = floatingSize
                                 positionBeforeFullscreen = floatingPosition
@@ -184,7 +187,8 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                 false
             },
             onKeyEvent = { event ->
-                phase.showApplication && escapeKeys.handle(event, backDispatcher::dispatchBack)
+                phase.showApplication && escapeKeys.handle(event, backDispatcher::dispatchBack,
+                    backDispatcher::dispatchTransientBack, ::exitFullscreen)
             },
             // Removing the app is phase one; persistence runs only after that disposal commit.
             onCloseRequest = { if (!phase.flushing) phase = desktopCloseRequest(activeTransfers()) }

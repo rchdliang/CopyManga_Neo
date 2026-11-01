@@ -20,6 +20,50 @@ import kotlin.test.*
 /** 覆盖窗口先观察、子控件处理、窗口兜底的真实 Compose 按键分发顺序。 */
 @OptIn(ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 class DesktopEscapeKeyHandlerSceneTest {
+    @Test fun escapeClosesPopupThenTemporaryUiThenFullscreenThenNavigates() {
+        val keys = DesktopEscapeKeyHandler()
+        val back = UiBackDispatcher()
+        var fullscreen = true
+        var transient = true
+        var canNavigate = true
+        var backs = 0
+        var exits = 0
+        back.register(enabled = { canNavigate }) { backs++; true }
+        back.register(enabled = { transient }, isTransient = { true }) { transient = false; true }
+        var popup by mutableStateOf(true)
+        val scene = ImageComposeScene(320, 480) {
+            keys.WindowNavigationEffect()
+            Box(Modifier.fillMaxSize()) {
+                if (popup) Popup(onDismissRequest = { popup = false }, properties = PopupProperties(focusable = true)) {
+                    Box(Modifier.fillMaxSize())
+                }
+            }
+        }
+        val exit = { if (fullscreen) { fullscreen = false; exits++; true } else false }
+        try {
+            scene.settle()
+            scene.escape(keys, back, exit)
+            scene.settle()
+            assertFalse(popup); assertTrue(transient); assertTrue(fullscreen); assertEquals(0, backs)
+            scene.escape(keys, back, exit)
+            assertFalse(transient); assertTrue(fullscreen); assertEquals(0, backs)
+            // 按住 Esc 只退出一次全屏，重复 KeyDown 和松开不能继续返回页面。
+            repeat(4) {
+                val event = KeyEvent(Key.Escape, KeyEventType.KeyDown)
+                keys.observe(event)
+                if (!scene.sendKeyEvent(event)) keys.handle(event, back::dispatchBack, back::dispatchTransientBack, exit)
+            }
+            assertFalse(fullscreen); assertEquals(1, exits); assertEquals(0, backs)
+            val up = KeyEvent(Key.Escape, KeyEventType.KeyUp)
+            keys.observe(up); if (!scene.sendKeyEvent(up)) keys.handle(up, back::dispatchBack, back::dispatchTransientBack, exit)
+            scene.escape(keys, back, exit)
+            assertEquals(1, backs)
+            canNavigate = false
+            scene.escape(keys, back, exit)
+            assertEquals(1, backs); assertEquals(1, exits)
+        } finally { scene.close() }
+    }
+
     @Test fun escapeWorksWithoutFocusAndAfterFocusedContentIsRemoved() {
         val keys = DesktopEscapeKeyHandler()
         val back = UiBackDispatcher()
@@ -98,11 +142,11 @@ class DesktopEscapeKeyHandlerSceneTest {
         }
     }
 
-    private fun ImageComposeScene.escape(keys: DesktopEscapeKeyHandler, back: UiBackDispatcher) {
+    private fun ImageComposeScene.escape(keys: DesktopEscapeKeyHandler, back: UiBackDispatcher, exitFullscreen: () -> Boolean = { false }) {
         for (type in listOf(KeyEventType.KeyDown, KeyEventType.KeyUp)) {
             val event = KeyEvent(Key.Escape, type)
             keys.observe(event)
-            if (!sendKeyEvent(event)) keys.handle(event, back::dispatchBack)
+            if (!sendKeyEvent(event)) keys.handle(event, back::dispatchBack, back::dispatchTransientBack, exitFullscreen)
         }
     }
 

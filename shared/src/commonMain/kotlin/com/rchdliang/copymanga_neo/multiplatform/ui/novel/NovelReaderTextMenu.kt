@@ -149,7 +149,7 @@ internal fun NovelReaderTextMenuHost(
     var menuBounds by remember { mutableStateOf<Rect?>(null) }
     LaunchedEffect(dismissKey) { state.dismiss() }
     DisposableEffect(state) { onDispose { state.dismiss() } }
-    BackHandler(enabled = state.active) { state.dismiss() }
+    BackHandler(enabled = state.active, isTransient = true) { state.dismiss() }
     CompositionLocalProvider(
         LocalNovelReaderTextMenu provides state,
         LocalTextContextMenuToolbarProvider provides state,

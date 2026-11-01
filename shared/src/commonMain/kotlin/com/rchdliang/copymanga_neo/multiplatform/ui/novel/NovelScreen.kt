@@ -455,7 +455,7 @@ private fun NovelDetailContent(
             selectedIndices.last() - selectedIndices.first() + 1 > selectedIndices.size
     val statuses = novelVolumeStatuses(state)
     val changes = novelDownloadChanges(state)
-    BackHandler(enabled = isInBatchMode, onBack = onExitDownloadMode)
+    BackHandler(enabled = isInBatchMode, isTransient = true, onBack = onExitDownloadMode)
     val platform = novelReaderPlatform()
     val saved = records.filter { it.owner == state.owner && it.kind == "novel" && it.path == path }
         .maxByOrNull { it.updatedAt }

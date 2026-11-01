@@ -191,7 +191,7 @@ private fun DownloadsContent(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter
     ) {
-        BackHandler(enabled = uiState.isSelectionMode) {
+        BackHandler(enabled = uiState.isSelectionMode, isTransient = true) {
             onExitSelectionMode()
         }
 

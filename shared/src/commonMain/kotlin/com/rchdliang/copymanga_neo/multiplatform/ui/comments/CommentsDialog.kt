@@ -270,6 +270,7 @@ internal fun CommentsPanel(
             }
         }
         BackHandler(
+            isTransient = true,
             enabled = state.deleting || (!state.posting && (!embedded || state.reportTarget != null || composerOpen || state.parent != null)),
             onBack = back
         )

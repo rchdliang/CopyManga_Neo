@@ -878,8 +878,11 @@ fun ReaderSuccessContent(
         }
     }
 
-    BackHandler(enabled = (showControls || qualityAdjustment.active) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog) {
+    val desktopZoomed = services?.platform is DesktopReaderKeyboard && activeZoom?.zoomed == true
+    BackHandler(enabled = (showControls || qualityAdjustment.active || desktopZoomed) && !showSettings && !showImageMenu && !showBookmarks && !showCatalog,
+        isTransient = true) {
         qualityAdjustment.finish()
+        if (desktopZoomed) activeZoom?.reset()
         showControls = false
     }
     val nested = remember { object : NestedScrollConnection {} }
