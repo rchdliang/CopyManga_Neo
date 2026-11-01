@@ -67,6 +67,7 @@ tasks.register<Exec>("packageInnoSetup") {
         rootProject.file(".github/scripts/build-windows-installer.ps1").absolutePath,
         "-AppImage", layout.buildDirectory.dir("compose/binaries/main/app/CopyMangaNeo").get().asFile.absolutePath,
         "-AppVersion", installerVersion,
+        "-ArtifactVersion", rootProject.extra["copyMangaBuildVersionName"] as String,
         "-Architecture", installerArchitecture,
         "-Runtime", "jvm",
         "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath,

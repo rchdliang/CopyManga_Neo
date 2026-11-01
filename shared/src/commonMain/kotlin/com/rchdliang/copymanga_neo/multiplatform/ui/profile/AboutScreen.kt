@@ -130,7 +130,7 @@ private fun AppIdentityCard() {
                 color = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Text(
-                    "版本 ${info.versionName} (${info.versionCode})",
+                    "版本 ${info.versionName}",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSecondaryContainer

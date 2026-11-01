@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$AppImage,
     [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')][string]$AppVersion,
+    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?\+\d+$')][string]$ArtifactVersion,
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string]$Architecture,
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
     [string]$Compiler = $env:ISCC,
@@ -39,10 +40,10 @@ if (-not $Compiler -or -not (Test-Path -LiteralPath $Compiler)) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-$installer = Join-Path $OutputDirectory "CopyMangaNeo-$AppVersion-windows-$Architecture-setup.exe"
+$installer = Join-Path $OutputDirectory "CopyMangaNeo_windows_${ArtifactVersion}_${Architecture}_setup.exe"
 # 编译失败不能留下看似本次成功生成的旧文件。
 if (Test-Path -LiteralPath $installer) { Remove-Item -LiteralPath $installer }
-& $Compiler "/DAppImage=$AppImage" "/DAppVersion=$AppVersion" "/DAppArchitecture=$Architecture" "/DAppRuntime=$Runtime" "/DOutputDirectory=$OutputDirectory" (Join-Path $repoRoot 'desktopApp/installer/CopyMangaNeo.iss')
+& $Compiler "/DAppImage=$AppImage" "/DAppVersion=$AppVersion" "/DArtifactVersion=$ArtifactVersion" "/DAppArchitecture=$Architecture" "/DAppRuntime=$Runtime" "/DOutputDirectory=$OutputDirectory" (Join-Path $repoRoot 'desktopApp/installer/CopyMangaNeo.iss')
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
 if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer output missing' }
 $stream = [IO.File]::OpenRead($installer)

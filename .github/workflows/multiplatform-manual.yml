@@ -47,6 +47,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -110,6 +111,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -123,15 +125,17 @@ jobs:
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup 6 compiler missing from runner' }
           "ISCC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Test desktop and build Windows Native Image installer
+      - name: Test desktop and build Windows installer and portable ZIP
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
           ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageInnoSetup -PenableAndroid=false -PdesktopRuntime=native --no-daemon --no-configuration-cache --stacktrace --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8"
+        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageInnoSetup :desktopApp:packageWindowsPortableZip -PenableAndroid=false -PdesktopRuntime=native --no-daemon --no-configuration-cache --stacktrace --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process "-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8"
       - name: Verify Windows packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python .github/scripts/verify-app-config.py desktop-native desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo
+      - name: Check portable ZIP packaging
+        run: python -m unittest discover -s tests/ci -p 'test_windows_portable.py'
       - name: Upload windows-x64-installers
         uses: actions/upload-artifact@v6
         with:
@@ -139,8 +143,10 @@ jobs:
           retention-days: 7
           if-no-files-found: error
           path: |
-            desktopApp/build/installer/*-windows-x64-setup.exe
-            desktopApp/build/installer/*-windows-x64-setup.exe.sha256
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_setup.exe
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_setup.exe.sha256
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_portable.zip
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_portable.zip.sha256
       - name: Upload windows-test-reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v6
@@ -162,6 +168,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -212,6 +219,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -259,6 +267,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

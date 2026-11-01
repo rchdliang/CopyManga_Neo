@@ -21,21 +21,25 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 
 ## 修改版本号
 
-只编辑根目录的 [version.properties](../version.properties)：
+发布版本和平台升级编号只编辑根目录的 [version.properties](../version.properties)；应用内显示的 Git 提交数在构建时生成，不写入此文件：
 
 | 字段 | 含义 |
 | --- | --- |
 | `COPYMANGA_VERSION_BASE` | 三段基础版本，如 `0.10.19`；用于 iOS 短版本 |
-| `COPYMANGA_VERSION_HOTFIX` | 可选修订号；填 `1` 时完整显示版本为 `0.10.19.1`，留空时使用基础版本 |
-| `COPYMANGA_VERSION_CODE` | 递增的整数构建号，用于 Android、iOS 与共享界面 |
+| `COPYMANGA_VERSION_HOTFIX` | 可选修订号；填 `1` 时发布版本为 `0.10.19.1`，留空时使用基础版本 |
+| `COPYMANGA_VERSION_CODE` | 递增的整数构建号，用于 Android、iOS 和 Windows 安装包的版本管理 |
 
 这个文件的赋值语法同时适用于 Java Properties 和 Xcode 配置，不要在其中放本地路径、密钥或机器专用设置。
 
-- 根 Gradle 脚本组合完整版本名，Android、共享界面及桌面 JAR 使用该版本；Linux 安装包沿用完整版本。
-- Windows Inno Setup 安装向导显示完整版本（含修订号）；Compose 内部应用镜像仍使用“基础版本前两段 + 构建号”的三段版本。iOS 使用三段基础版本和构建号，应用内仍显示完整版本；不需要另改平台版本常量。
+- 根 Gradle 脚本在构建时执行 `git rev-list --count HEAD`，各平台关于页显示“发布版本+提交数”，例如 `0.10.30+181`。同时通过 `git rev-parse --verify HEAD` 读取完整提交哈希，固定取前七位，生成 Android 系统包管理器使用的 `versionName`，例如 `0.10.30-d3b3d30`。同一次提交重复构建或仅修改未提交文件时两个后缀均不变；主版本仍只在 `version.properties` 中维护。
+- 构建需要 Git 和完整仓库历史；浅克隆先执行 `git fetch --unshallow`，CI checkout 使用 `fetch-depth: 0`，避免生成错误的提交数。配置缓存会跟踪 Git 输出，新增提交后自动更新生成版本。
+- 发布标签、桌面打包元数据及 iOS 系统版本沿用数字版本，避免平台版本格式限制；`COPYMANGA_VERSION_CODE` 仍独立递增。Android 附件名使用“版本-七位哈希+提交数”，Windows 附件名使用“版本+提交数”，不把平台升级编号当作 Git 提交数。
+- Windows Inno Setup 安装向导显示数字发布版本（含可选修订号，不含 `+提交数`）；Compose 内部 Windows 应用镜像仍使用“基础版本前两段 + 构建号”的三段版本。iOS 系统版本使用三段基础版本和构建号，各平台应用内显示带 `+提交数` 的版本；不需要另改平台版本常量。
 - `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
 - iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
-- Android Debug 与 Release 使用相同版本名，不再追加测试后缀。
+- Android Debug 与 Release 使用相同版本名。
+- Android 宿主向关于页和更新检查传入共享显示版本，`BuildConfig.VERSION_NAME` 保留系统安装包版本。更新比较忽略提交数和七位哈希，不把哈希后缀当作预发布；同一数字发布版本的不同提交不触发版本升级提示。
+- 更新元数据同时读取 Release 的附件列表，仅接受本仓库、对应标签的 HTTPS 下载地址。Android 按 `SUPPORTED_ABIS` 顺序匹配当前版本的 APK，再尝试通用包；Windows 将系统架构映射为 x64/arm64，分别提供已有的 ZIP、EXE 附件。未知架构、无匹配附件或不支持直接包下载的平台使用发布页入口，不跨架构选择安装包。
 - 版本回归测试读取 Gradle 传入的期望值，升级时不需要另改测试常量。
 
 可以单独检查版本生成及桌面默认元数据：
@@ -65,7 +69,7 @@ Release 构建：
 
 需要本地 `keystore.properties` 的 `storeFile`、`storePassword`、`keyAlias`、`keyPassword` 及对应密钥库。普通本地 Debug 使用调试签名；`-PuseReleaseSigningForTest=true` 让 CMP Debug 包使用已有发布签名，签名材料不完整时构建失败。
 
-CMP Debug 与 Release 不再作为两个应用并存；签名相同且版本满足要求时会覆盖安装并使用同一份数据。切换调试签名与发布签名前先备份个人数据。旧的 `.migrationtest` 安装不会自动迁入新包。设备测试使用 `:app:connectedDebugAndroidTest`，需先连接目标设备；构建成功不等于设备操作验证完成。
+CMP Debug 与 Release 使用相同安装标识；签名相同且版本满足要求时会覆盖安装并使用同一份数据。切换调试签名与发布签名前先备份个人数据。设备测试使用 `:app:connectedDebugAndroidTest`，需先连接目标设备；构建成功不等于设备操作验证完成。
 
 ## 桌面
 
@@ -84,8 +88,9 @@ Windows x64 默认使用 Nucleus Tao 窗口，日常验证直接在 JVM 上运�
 | 原生应用目录 / 运行原生目录 | `:desktopApp:createGraalvmNativeDistributable` / `:desktopApp:runGraalvmNativeDistributable` |
 | 原生便携 EXE | `:desktopApp:packageGraalvmPortable` |
 | 原生安装向导 | `:desktopApp:packageInnoSetup` |
+| 原生免安装 ZIP | `:desktopApp:packageWindowsPortableZip` |
 
-`runRelease`、`createReleaseDistributable`、`packageReleasePortable` 等保留插件的 JVM Release 流程，不再重定向到普通原生任务。`createRuntimeImage` 也恢复为 JVM 分发包准备精简运行时。`desktopApp:test` 只运行该模块自己的测试；共享业务测试需执行 `:shared:desktopTest`。
+`runRelease`、`createReleaseDistributable`、`packageReleasePortable` 执行插件的 JVM Release 流程；`createRuntimeImage` 为 JVM 分发包准备精简运行时。`desktopApp:test` 只运行该模块自己的测试；共享业务测试需执行 `:shared:desktopTest`。
 
 热重载需要 JetBrains Runtime（JBR），普通 JVM 运行只需要 JDK。settings 中的 Foojay 工具链解析器允许 Gradle 按需下载 JBR，首次热重载可能需要联网下载；不影响普通 `run`。热重载不能替代原生版的反射、JNI 和打包验收。
 
@@ -101,12 +106,14 @@ Gradle / Kotlin 编译仍需要 JDK 21；Native Image 使用版本目录固定�
 Windows x64 原生安装包在 Windows x64 上构建：
 
 ```powershell
-.\gradlew.bat :desktopApp:packageInnoSetup -PenableAndroid=false --no-daemon --no-configuration-cache --max-workers=1 '-Pkotlin.compiler.execution.strategy=in-process' '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
+.\gradlew.bat :desktopApp:packageInnoSetup :desktopApp:packageWindowsPortableZip -PenableAndroid=false --no-daemon --no-configuration-cache --max-workers=1 '-Pkotlin.compiler.execution.strategy=in-process' '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8'
 ```
 
-任务先生成 `desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo` 原生应用目录，再编译 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss)。输出为 `desktopApp/build/installer/CopyMangaNeo-<完整版本>-windows-x64-setup.exe` 和 SHA-256 文件。CI 的 Windows 任务使用相同原生路径，并运行产物核对协议配置。原生版沿用 `%LOCALAPPDATA%\CopyMangaNeo`、DPAPI 凭据和实例锁；测试独立资料时传入 `-Dcopymanga.dataDir=<目录>`。
+两个任务先共用 `createGraalvmNativeDistributable` 生成的 `desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo` 原生应用目录。安装程序通过 [Inno Setup 脚本](../desktopApp/installer/CopyMangaNeo.iss) 编译；[ZIP 打包脚本](../.github/scripts/build-windows-portable.ps1) 保留完整目录（包括隐藏文件、DLL、bin、lib 和资源），并写入 Nucleus 原生启动标记。输出位于 `desktopApp/build/installer`，分别为 `CopyMangaNeo_windows_<版本+提交数>_x64_setup.exe` 和 `CopyMangaNeo_windows_<版本+提交数>_x64_portable.zip`，各有 SHA-256 文件。CI 同时构建并上传两种包，无需重复编译原生程序。
 
-Linux 和 Windows ARM64 仍使用原有 JVM 构建，尚未迁移或验收 Native Image。Windows x64 的快速运行不需要添加 `-PdesktopRuntime=jvm`：这个参数会选择 `desktopApp/build-jvm.gradle.kts` 和旧的 `MainKt` 窗口入口，仅保留给旧版对照、跨平台及便携 JAR 构建。切换这套构建脚本后应重新同步 IDE。
+免安装 ZIP 解压到独立目录后运行 `CopyMangaNeo.exe`，无需安装 Java；不要只复制 EXE。这里的“便携”指免安装，用户资料仍位于 `%LOCALAPPDATA%\CopyMangaNeo`，与安装版共用 DPAPI 凭据和实例锁，不会自动在解压目录保存数据。测试独立资料时传入 `-Dcopymanga.dataDir=<目录>`；ZIP 的打包测试不替代真实机器解压启动验收。
+
+Linux 和 Windows ARM64 使用 JVM 构建。Windows x64 默认通过 Nucleus 窗口快速运行；`-PdesktopRuntime=jvm` 会选择 `desktopApp/build-jvm.gradle.kts` 和 `MainKt` 窗口入口，用于跨平台及便携 JAR 构建。切换构建脚本后应重新同步 IDE。
 
 JVM 应用目录位于 `compose/binaries/main/app`，原生应用目录位于 `compose/binaries/main/graalvm-app`。重新打包前退出从相应构建目录启动的应用，否则 Windows 可能锁住 EXE、DLL 或 `icudtl.dat`，导致复制失败。日常使用 JVM `run` 可避免占用原生分发目录。两种运行方式默认共用用户资料和实例锁；已有实例运行时，新启动会请求打开已有窗口。
 
@@ -177,20 +184,37 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 `gradle.properties` 中的 Wasm 增量链接配置及堆大小用于当前工具链。遇到旧链接缓存错误时，先停止构建，再只清理相关的生成链接缓存；不要删除源文件、账号数据或其他平台产物。
 
-## CMP Android 与 Windows 正式发布草稿
+## CMP Android 与 Windows 自动构建及发布草稿
 
-[CMP release draft](../.github/workflows/cmp-release.yml) 仅支持手动运行，且只允许选择 `CMP` 分支。不会响应 push、PR 或标签事件；不构建 Linux、Wasm、iOS。原 Android 自动工作流和多平台测试工作流保持独立。
+[CMP Android + Windows](../.github/workflows/cmp-release.yml) 在每次推送到 `CMP` 分支时自动构建 Android 签名 Release APK、Windows x64 Native Image 安装程序和免安装 ZIP，产物可从该次 Actions 的 Artifacts 下载，保留七天。一次推送包含多个提交时构建分支的最新提交；不同提交的推送不会互相取消。
 
-1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交到 CMP 后，在 Actions → CMP release draft → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
-2. 工作流固定运行开始时的提交，构建 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal）及 Windows x64 Native Image 安装程序。Android 会验证 APK 签名与非调试标志；两个平台都必须通过 App 协议配置核对。
-3. 两个平台均成功后，汇总附件并创建 `cmp-v<完整版本>` 的 **GitHub Release 草稿**，附带每个安装包的 SHA-256 文件和记录版本、提交、校验值的 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
+自动构建只监听 `push.branches: [CMP]`，不监听标签或 PR：同时推送 CMP 分支和 `v*` 标签只启动一次自动构建；之后给同一提交补推标签也不会再次构建。标签本身不会创建 Release。普通推送不校验已有发布目标，也不创建或更新发布草稿，因此同一主版本可以持续提交构建。
+
+手动运行仍只允许选择 `CMP` 分支，用于重新构建并创建发布草稿。不构建 Linux、Wasm、iOS；原 Android 自动工作流和多平台手动测试工作流保持独立。
+
+1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交到 CMP 后，在 Actions → CMP Android + Windows → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
+2. 工作流固定运行开始时的提交，构建 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal），以及 Windows x64 Native Image 安装程序和免安装 ZIP。Android 会验证 APK 签名与非调试标志；两个平台都必须通过 App 协议配置核对。
+3. 两个平台均成功后，汇总附件并创建 `v<数字发布版本>` 的 **GitHub Release 草稿**（标签不含 `+提交数`），附带每个安装包的 SHA-256 文件和记录版本、提交、校验值的 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
 4. 从草稿下载最终安装包，在 Android 验证覆盖安装、数据保留、登录、阅读和下载，在 Windows 验证安装、启动及升级；补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
 
-使用既有仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`，无需新增名称。前四项必须对应原发布密钥，以保持覆盖升级能力。复用的 `prepare-test-signing.py` 虽保留历史文件名，但只负责安全恢复签名材料；正式流程执行的是 `:app:assembleRelease`。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
+附件命名示例（发布版本 `1.2.3`、Git 提交数 `234`、短哈希 `1a2b3c4`）：
+
+```text
+CopyMangaNeo_android_1.2.3-1a2b3c4+234_arm64-v8a.apk
+CopyMangaNeo_android_1.2.3-1a2b3c4+234_armeabi-v7a.apk
+CopyMangaNeo_android_1.2.3-1a2b3c4+234_x86_64.apk
+CopyMangaNeo_android_1.2.3-1a2b3c4+234_universal.apk
+CopyMangaNeo_windows_1.2.3+234_x64_setup.exe
+CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
+```
+
+六个产物各有 `.sha256` 文件，加上 `release-manifest.json` 共上传 13 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希；缺少 ZIP、校验不符或附件属于其他构建时拒绝发布。
+
+工作流使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，正式流程执行 `:app:assembleRelease`。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 
 若本地签名文件位于另一个 checkout，本地打包时需单独准备 CMP 的被忽略配置，并按原文件所在目录解析相对 `storeFile`；不能直接假设相对路径在 CMP 目录仍有效。这与 Actions 使用仓库 Secrets 是两条独立路径。
 
-工作流不自动修改版本号、不移动现有标签、不覆盖已公开 Release。相同版本的已有标签必须指向同一提交；已有草稿也必须固定到同一提交，才能重跑草稿任务恢复上传，并保留人工编辑的发布说明。不同提交需要新版本，或由维护者检查并处理未发布草稿；不要删除已公开版本来重用版本号。若构建失败，不会进入草稿任务；若附件上传中断，草稿可能不完整，应重跑失败任务并等待成功后再验收。中间 Actions 产物保留七天，过期后需重新构建。
+工作流不改写 `version.properties`；应用版本的 `+提交数` 由构建脚本自动生成。手动发布阶段不移动现有标签、不覆盖已公开 Release：相同数字发布版本的已有标签必须指向同一提交，已有草稿也必须固定到同一提交，才能重跑草稿任务恢复上传并保留人工编辑的发布说明。要从不同提交创建草稿，需要新发布版本，或由维护者检查并处理未发布草稿；不要删除已公开版本来重用版本号。这些发布目标限制不影响普通分支推送的自动构建。若构建失败，不会进入草稿任务；若附件上传中断，草稿可能不完整，应重跑失败任务并等待成功后再验收。中间 Actions 产物保留七天，过期后需重新构建。
 
 发布自动化的本地检查（不会访问 GitHub 或创建 Release）：
 
@@ -202,7 +226,10 @@ python -m unittest discover -s tests/ci -p 'test_app_config.py'
 
 ## CI 与检查
 
+README 的实机图片与设置组件渲染分别维护，设备来源、渲染命令和输出路径见 [截图说明](../screenshots/cmp/README.md)。设置图更新后逐张检查，不能用控件渲染替代设备或 GPU 验收。
+
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
+- [CMP Android + Windows](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建两个平台的正式安装包，标签推送不重复触发；手动运行可创建发布草稿。
 - [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
 - 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 设备 IPA，仍须用户重签名及真机验收。
 - 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。

@@ -12,6 +12,9 @@
 #ifndef AppArchitecture
   #error AppArchitecture is required.
 #endif
+#ifndef ArtifactVersion
+  #error ArtifactVersion is required.
+#endif
 #ifndef OutputDirectory
   #error OutputDirectory is required.
 #endif
@@ -44,7 +47,7 @@ WizardStyle=modern
 SetupIconFile=..\icons\copymanga-neo.ico
 UninstallDisplayIcon={app}\CopyMangaNeo.exe
 OutputDir={#OutputDirectory}
-OutputBaseFilename=CopyMangaNeo-{#AppVersion}-windows-{#AppArchitecture}-setup
+OutputBaseFilename=CopyMangaNeo_windows_{#ArtifactVersion}_{#AppArchitecture}_setup
 Compression=lzma2
 SolidCompression=yes
 CloseApplications=yes

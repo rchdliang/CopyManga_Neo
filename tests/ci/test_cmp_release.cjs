@@ -8,10 +8,39 @@ const release = require('../../.github/scripts/cmp-release.cjs');
 
 const source = 'COPYMANGA_VERSION_BASE = 1.2.3\nCOPYMANGA_VERSION_HOTFIX =\nCOPYMANGA_VERSION_CODE = 40\n';
 const context = {
-  eventName: 'workflow_dispatch', ref: 'refs/heads/CMP', sha: 'a'.repeat(40),
+  eventName: 'workflow_dispatch', ref: 'refs/heads/CMP', sha: '1a2b3c4' + 'a'.repeat(33),
   repo: {owner: 'example', repo: 'example'},
 };
-const meta = release.metadata(source, context);
+const meta = release.metadata(source, context, 234);
+const git = (command, args) => {
+  assert.equal(command, 'git');
+  switch (args.join(' ')) {
+    case 'rev-parse --verify HEAD': return context.sha + '\n';
+    case 'rev-parse --is-shallow-repository': return 'false\n';
+    case 'rev-list --count HEAD': return '234\n';
+    default: throw new Error('Unexpected git command: ' + args.join(' '));
+  }
+};
+
+test('automatic builds only watch CMP branch pushes, not tag or PR events', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/cmp-release.yml'), 'utf8');
+  const triggers = workflow.match(/^on:\r?\n([\s\S]*?)(?=^\S)/m)?.[1];
+  assert.ok(triggers, 'workflow triggers must be present');
+  assert.match(triggers, /^  push:\r?\n    branches: \[CMP\]$/m);
+  assert.match(triggers, /^  workflow_dispatch:$/m);
+  assert.doesNotMatch(triggers, /^\s+(?:tags|tags-ignore|pull_request|release|paths|paths-ignore):/m);
+  assert.match(workflow, /^  group: .*github\.sha.*$/m);
+  assert.match(workflow, /^  cancel-in-progress: false$/m);
+  for (const platform of ['android', 'windows']) {
+    assert.match(workflow, new RegExp('^  ' + platform + ':\\r?\\n    needs: prepare$', 'm'));
+  }
+});
+
+test('push builds cannot validate release destinations or write release drafts', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/cmp-release.yml'), 'utf8');
+  assert.match(workflow, /- name: Validate version and destination\r?\n        if: github\.event_name == 'workflow_dispatch'/);
+  assert.match(workflow, /^  draft:\r?\n    if: github\.event_name == 'workflow_dispatch'\r?\n    needs: \[android, windows\]$/m);
+});
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cmp-release-test-'));
@@ -20,9 +49,10 @@ function fixture(t) {
   const directory = path.join(root, 'release-assets');
   fs.mkdirSync(directory);
   for (const name of release.binaries(meta)) fs.writeFileSync(path.join(directory, name), 'fixture-' + name);
-  const installer = release.binaries(meta).at(-1);
-  const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, installer))).digest('hex');
-  fs.writeFileSync(path.join(directory, installer + '.sha256'), hash + '  ' + installer + '\r\n');
+  for (const name of release.binaries(meta).filter(name => /\.(zip|exe)$/.test(name))) {
+    const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, name))).digest('hex');
+    fs.writeFileSync(path.join(directory, name + '.sha256'), hash + '  ' + name + '\r\n');
+  }
   return {root, directory};
 }
 
@@ -64,8 +94,8 @@ function core() {
 }
 
 test('version and optional hotfix come only from version.properties', () => {
-  assert.equal(meta.tag, 'cmp-v1.2.3');
-  assert.equal(release.metadata(source.replace('HOTFIX =', 'HOTFIX = 2'), context).version, '1.2.3.2');
+  assert.equal(meta.tag, 'v1.2.3');
+  assert.equal(release.metadata(source.replace('HOTFIX =', 'HOTFIX = 2'), context, 234).version, '1.2.3.2');
   assert.throws(() => release.metadata(source.replace('40', '0'), context), /version/);
   assert.throws(() => release.metadata(source + 'COPYMANGA_VERSION_CODE=41\n', context), /Invalid/);
   assert.throws(() => release.metadata(source.replace('1.2.3', '1.2.3; echo secret'), context), /version/);
@@ -74,6 +104,39 @@ test('version and optional hotfix come only from version.properties', () => {
 test('only manual CMP runs are eligible', () => {
   assert.throws(() => release.metadata(source, {...context, ref: 'refs/heads/Android'}), /CMP/);
   assert.throws(() => release.metadata(source, {...context, eventName: 'push'}), /manually/);
+});
+
+test('asset names include Git identity and both Windows package types', () => {
+  assert.deepEqual(release.binaries(meta), [
+    'CopyMangaNeo_android_1.2.3-1a2b3c4+234_armeabi-v7a.apk',
+    'CopyMangaNeo_android_1.2.3-1a2b3c4+234_arm64-v8a.apk',
+    'CopyMangaNeo_android_1.2.3-1a2b3c4+234_x86_64.apk',
+    'CopyMangaNeo_android_1.2.3-1a2b3c4+234_universal.apk',
+    'CopyMangaNeo_windows_1.2.3+234_x64_portable.zip',
+    'CopyMangaNeo_windows_1.2.3+234_x64_setup.exe',
+  ]);
+  for (const value of [undefined, 0, -1, 2.5, NaN]) {
+    assert.throws(() => release.metadata(source, context, value), /commit count/);
+  }
+});
+
+test('release metadata requires matching checkout and complete history', t => {
+  const {root} = fixture(t);
+  assert.deepEqual(release.readMetadata(root, context, git), meta);
+  assert.throws(() => release.readMetadata(root, context, () => 'b'.repeat(40)), /Checkout/);
+  assert.throws(() => release.readMetadata(root, context, (command, args) =>
+    args.includes('--is-shallow-repository') ? 'true' : git(command, args)), /Full Git history/);
+});
+
+test('missing or corrupted portable ZIP blocks release publication', t => {
+  const {directory} = fixture(t);
+  const name = release.binaries(meta).find(name => name.endsWith('.zip'));
+  const file = path.join(directory, name);
+  const original = fs.readFileSync(file);
+  fs.unlinkSync(file);
+  assert.throws(() => release.prepareAssets(directory, meta), /exactly/);
+  fs.writeFileSync(file, Buffer.concat([original, Buffer.from('corrupt')]));
+  assert.throws(() => release.prepareAssets(directory, meta), /checksum mismatch/);
 });
 
 test('published releases, conflicting tags/drafts and API errors block writes', async () => {
@@ -107,15 +170,17 @@ test('missing platform, unexpected files and corrupt installer checksum are reje
 test('successful run creates only a draft with complete assets and commit manifest', async t => {
   const {root, directory} = fixture(t);
   const mock = api();
-  await release.publish({github: mock.github, context, core: core(), root});
+  await release.publish({github: mock.github, context, core: core(), root, git});
   const request = mock.state.writes[0][1];
   assert.equal(request.draft, true);
   assert.equal(request.prerelease, false);
   assert.equal(request.make_latest, 'false');
   assert.equal(request.target_commitish, context.sha);
-  assert.equal(mock.state.assets.length, 11);
+  assert.equal(mock.state.assets.length, 13);
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'release-manifest.json'), 'utf8'));
   assert.equal(manifest.commit, context.sha);
+  assert.equal(manifest.commitCount, 234);
+  assert.equal(manifest.versionCode, 40);
   assert.deepEqual(manifest.platforms, ['android', 'windows-x64']);
   for (const [name, hash] of Object.entries(manifest.sha256)) {
     assert.equal(fs.readFileSync(path.join(directory, name + '.sha256'), 'utf8'), hash + '  ' + name + '\n');
@@ -129,7 +194,7 @@ test('retry resumes a matching draft without creating or publishing another rele
     body: 'Maintainer edited notes', html_url: 'https://example.invalid/draft',
   }, meta.commit);
   mock.state.assets.push({id: 99, name: release.binaries(meta)[0]});
-  await release.publish({github: mock.github, context, core: core(), root});
+  await release.publish({github: mock.github, context, core: core(), root, git});
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'create').length, 0);
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'delete').length, 1);
   assert.equal(mock.state.release.body, 'Maintainer edited notes');
@@ -144,6 +209,6 @@ test('publishing a draft during upload stops further writes', async t => {
     await upload(args);
     mock.state.release.draft = false;
   };
-  await assert.rejects(release.publish({github: mock.github, context, core: core(), root}), /already published/);
+  await assert.rejects(release.publish({github: mock.github, context, core: core(), root, git}), /already published/);
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'upload').length, 1);
 });

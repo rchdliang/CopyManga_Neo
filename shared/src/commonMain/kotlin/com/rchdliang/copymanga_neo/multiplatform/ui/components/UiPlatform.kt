@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.emptyFlow
 /** Native operations required by the original UI. Hosts provide real platform adapters. */
 interface UiPlatform {
     val backDispatcher: UiBackDispatcher
+    /** 没有兼容原生安装包的平台保留发布页入口。 */
+    val appReleaseTarget: com.rchdliang.copymanga_neo.domain.model.AppReleaseTarget? get() = null
     /** 默认沿用图片库的封面解码，仅由指定平台覆盖。 */
     val coverImageQuality: CoverImageQuality? get() = null
     /** Completion feedback for platform operations handled without a system share surface. */

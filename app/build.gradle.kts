@@ -77,7 +77,7 @@ android {
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = rootProject.extra["copyMangaVersionCode"] as Int
-        versionName = rootProject.extra["copyMangaVersionName"] as String
+        versionName = rootProject.extra["copyMangaPackageVersionName"] as String
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")
     }
@@ -145,12 +145,9 @@ androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
         variant.outputs.forEach { output ->
             val abi = output.filters.firstOrNull { it.filterType == ABI }?.identifier
-            val suffix = if (enableAbiSplits) "-${abi ?: "universal"}" else ""
-            output.outputFileName.set(
-                output.versionName.map { versionName ->
-                    "CopyManga_Neo-v$versionName$suffix-release.apk"
-                }
-            )
+            val architecture = abi ?: "universal"
+            val artifactVersion = rootProject.extra["copyMangaAndroidArtifactVersion"] as String
+            output.outputFileName.set("CopyMangaNeo_android_${artifactVersion}_$architecture.apk")
         }
     }
 }

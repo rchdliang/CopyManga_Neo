@@ -2,8 +2,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {execFileSync} = require('node:child_process');
 
-function metadata(source, context) {
+function metadata(source, context, commitCount) {
   if (context.eventName !== 'workflow_dispatch' || context.ref !== 'refs/heads/CMP') {
     throw new Error('Run this workflow manually on the CMP branch.');
   }
@@ -24,7 +25,23 @@ function metadata(source, context) {
     throw new Error('Invalid release version or version code.');
   }
   const version = base + (hotfix ? '.' + hotfix : '');
-  return {version, versionCode: Number(code), tag: 'cmp-v' + version, commit: context.sha};
+  if (!Number.isSafeInteger(commitCount) || commitCount < 1) throw new Error('Invalid Git commit count.');
+  const shortCommit = context.sha.slice(0, 7);
+  return {version, versionCode: Number(code), tag: 'v' + version, commit: context.sha,
+    commitCount, shortCommit, buildVersion: version + '+' + commitCount,
+    androidArtifactVersion: version + '-' + shortCommit + '+' + commitCount};
+}
+
+function readMetadata(root, context, git = execFileSync) {
+  const options = {cwd: root, encoding: 'utf8'};
+  if (git('git', ['rev-parse', '--verify', 'HEAD'], options).trim() !== context.sha) {
+    throw new Error('Checkout does not match the release commit.');
+  }
+  if (git('git', ['rev-parse', '--is-shallow-repository'], options).trim() !== 'false') {
+    throw new Error('Full Git history is required for artifact naming.');
+  }
+  const commitCount = Number(git('git', ['rev-list', '--count', 'HEAD'], options).trim());
+  return metadata(fs.readFileSync(path.join(root, 'version.properties'), 'utf8'), context, commitCount);
 }
 
 function assertDraft(release, meta) {
@@ -56,18 +73,19 @@ async function destination(github, context, meta) {
 function binaries(meta) {
   return [
     ...['armeabi-v7a', 'arm64-v8a', 'x86_64', 'universal'].map(
-      abi => 'CopyManga_Neo-v' + meta.version + '-' + abi + '-release.apk'),
-    'CopyMangaNeo-' + meta.version + '-windows-x64-setup.exe',
+      abi => 'CopyMangaNeo_android_' + meta.androidArtifactVersion + '_' + abi + '.apk'),
+    'CopyMangaNeo_windows_' + meta.buildVersion + '_x64_portable.zip',
+    'CopyMangaNeo_windows_' + meta.buildVersion + '_x64_setup.exe',
   ];
 }
 
 function prepareAssets(directory, meta) {
   const names = binaries(meta);
-  const installer = names.at(-1);
-  const expected = [...names, installer + '.sha256'].sort();
+  const windows = names.filter(name => name.endsWith('.exe') || name.endsWith('.zip'));
+  const expected = [...names, ...windows.map(name => name + '.sha256')].sort();
   const actual = fs.readdirSync(directory).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error('Release assets must contain exactly four release APKs and the Windows installer/checksum.');
+    throw new Error('Release assets must contain exactly four release APKs, the Windows installer/portable ZIP and their checksums.');
   }
   const hashes = {};
   for (const name of names) {
@@ -75,8 +93,10 @@ function prepareAssets(directory, meta) {
     if (!fs.lstatSync(file).isFile() || fs.statSync(file).size === 0) throw new Error('Empty or invalid asset: ' + name);
     hashes[name] = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }
-  const checksum = fs.readFileSync(path.join(directory, installer + '.sha256'), 'utf8').trim();
-  if (checksum !== hashes[installer] + '  ' + installer) throw new Error('Windows installer checksum mismatch.');
+  for (const name of windows) {
+    const checksum = fs.readFileSync(path.join(directory, name + '.sha256'), 'utf8').trim();
+    if (checksum !== hashes[name] + '  ' + name) throw new Error('Windows artifact checksum mismatch: ' + name);
+  }
   for (const name of names) {
     fs.writeFileSync(path.join(directory, name + '.sha256'), hashes[name] + '  ' + name + '\n');
   }
@@ -86,15 +106,15 @@ function prepareAssets(directory, meta) {
   return [...names.flatMap(name => [name, name + '.sha256']), 'release-manifest.json'];
 }
 
-async function prepare({github, context, core, root = process.cwd()}) {
-  const meta = metadata(fs.readFileSync(path.join(root, 'version.properties'), 'utf8'), context);
+async function prepare({github, context, core, root = process.cwd(), git = execFileSync}) {
+  const meta = readMetadata(root, context, git);
   await destination(github, context, meta);
   core.info('CMP ' + meta.version + ' (' + meta.versionCode + '), commit ' + meta.commit);
   return meta;
 }
 
-async function publish({github, context, core, root = process.cwd()}) {
-  const meta = metadata(fs.readFileSync(path.join(root, 'version.properties'), 'utf8'), context);
+async function publish({github, context, core, root = process.cwd(), git = execFileSync}) {
+  const meta = readMetadata(root, context, git);
   let release = await destination(github, context, meta);
   const directory = path.join(root, 'release-assets');
   const files = prepareAssets(directory, meta);
@@ -111,10 +131,11 @@ async function publish({github, context, core, root = process.cwd()}) {
         '本次提供 Android 和 Windows x64。',
         '',
         '- Android：正式签名 Release APK；普通 ARM64 手机选择 arm64-v8a，不确定时选择 universal。',
-        '- Windows：x64 安装程序，无需另装 Java。',
+        '- Windows：x64 安装程序及免安装 ZIP，无需另装 Java；ZIP 解压后运行 CopyMangaNeo.exe，保留同目录运行库和资源。',
+        '- 免安装 ZIP 仍使用当前用户的数据目录，与安装版共用资料及单实例锁。',
         '- 每个安装包附带 SHA-256 校验文件；release-manifest.json 记录构建提交和文件校验值。',
         '',
-        '版本：' + meta.version + '；构建号：' + meta.versionCode,
+        '版本：' + meta.buildVersion + '；平台升级编号：' + meta.versionCode,
         '源码提交：' + meta.commit,
         '',
         '发布前请补充更新说明，并用本页附件完成 Android 覆盖安装、数据保留及 Windows 安装、启动、升级验收。',
@@ -152,4 +173,4 @@ async function publish({github, context, core, root = process.cwd()}) {
     .addRaw('\n\n仅创建草稿；请验收附件、补充更新说明后手动发布。\n').write();
 }
 
-module.exports = {metadata, assertDraft, destination, binaries, prepareAssets, prepare, publish};
+module.exports = {metadata, readMetadata, assertDraft, destination, binaries, prepareAssets, prepare, publish};

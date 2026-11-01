@@ -9,6 +9,38 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class GitHubMetadataTest {
+    @Test fun appAssetsAcceptOnlyUploadedDownloadsForThisRepositoryAndTag() = runTest {
+        val prefix = "https://github.com/rchdliang/CopyManga_Neo/releases/download/v1.2.3/"
+        val name = "CopyMangaNeo_android_1.2.3-1a2b3c4+234_arm64-v8a.apk"
+        val encoded = prefix + name.replace("+", "%2B")
+        val payload = buildJsonArray { add(buildJsonObject {
+            put("tag_name", "v1.2.3"); put("draft", false); put("prerelease", false); put("body", "说明")
+            put("assets", buildJsonArray {
+                fun asset(url: String, state: String = "uploaded") = add(buildJsonObject {
+                    put("name", name); put("browser_download_url", url); put("state", state)
+                })
+                asset(encoded)
+                asset(prefix + name)
+                asset(encoded.replace("https://", "http://"))
+                asset(encoded.replace("github.com", "github.com.evil.invalid"))
+                asset(encoded.replace("rchdliang", "someone-else"))
+                asset(encoded.replace("v1.2.3/", "v1.2.4/"))
+                asset(encoded + ".sha256")
+                asset(encoded + "?redirect=elsewhere")
+                asset(encoded, "starter")
+                add(JsonNull)
+                add(buildJsonObject { put("name", name) })
+            })
+        }) }
+        val http = HttpClient(MockEngine { respond(payload.toString(), headers = headersOf(HttpHeaders.ContentType, "application/json")) })
+        val client = CopyMangaClient(http, PortableNetworkState())
+        try {
+            val release = GitHubMetadata(client).latestApp()
+            assertEquals(listOf(encoded, prefix + name), release.assets.map { it.downloadUrl })
+            assertEquals("说明", release.releaseNotes)
+        } finally { client.close(); http.close() }
+    }
+
     @Test fun appReleasePreservesNotesFromTheSelectedStableCmpRelease() = runTest {
         val notes = "## 更新说明\n\n- 修复跨组阅读\n- **优化体验**\n\n[完整说明](https://example.com/notes)"
         val releases = buildJsonArray {

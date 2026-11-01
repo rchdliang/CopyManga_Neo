@@ -34,7 +34,7 @@ abstract class GenerateReleaseVersion : DefaultTask() {
         target.writeText("""
             package com.rchdliang.copymanga_neo.multiplatform.app
 
-            // Generated from version.properties. Do not edit.
+            // Generated from version.properties and the Git commit. Do not edit.
             internal object ReleaseVersion {
                 const val NAME = "${releaseName.get()}"
                 const val CODE = ${releaseCode.get()}
@@ -44,7 +44,7 @@ abstract class GenerateReleaseVersion : DefaultTask() {
 }
 
 val generateReleaseVersion = tasks.register<GenerateReleaseVersion>("generateReleaseVersion") {
-    releaseName.set(rootProject.extra["copyMangaVersionName"] as String)
+    releaseName.set(rootProject.extra["copyMangaBuildVersionName"] as String)
     releaseCode.set(rootProject.extra["copyMangaVersionCode"] as Int)
     outputDirectory.set(layout.buildDirectory.dir("generated/releaseVersion/commonMain"))
 }
@@ -197,7 +197,7 @@ tasks.matching { it.name == "desktopProcessResources" }.configureEach {
 // Keep native test extraction in the build directory, including read-only-home CI workers.
 tasks.withType<Test>().configureEach {
     systemProperty("skiko.data.path", layout.buildDirectory.dir("skiko-test-cache").get().asFile.absolutePath)
-    systemProperty("copymanga.expectedVersionName", rootProject.extra["copyMangaVersionName"] as String)
+    systemProperty("copymanga.expectedVersionName", rootProject.extra["copyMangaBuildVersionName"] as String)
     systemProperty("copymanga.expectedVersionCode", rootProject.extra["copyMangaVersionCode"] as Int)
 }
 

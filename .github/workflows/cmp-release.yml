@@ -1,15 +1,19 @@
-name: CMP release draft
-run-name: CMP Android + Windows release draft (${{ github.sha }})
+name: CMP Android + Windows
+run-name: CMP Android + Windows ${{ github.event_name == 'push' && 'build' || 'release draft' }} (${{ github.sha }})
 
-# 仅手动启动；发布草稿必须由维护者验收后在 Releases 页面公开。
+# 仅分支推送自动构建，不监听标签，避免同一提交的分支和标签各构建一次。
+# 手动运行才创建发布草稿；草稿仍由维护者验收后公开。
 on:
+  push:
+    branches: [CMP]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cmp-release-draft
+  # 不同提交各自构建；手动发布仍共用互斥组，避免同时修改草稿。
+  group: cmp-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || 'release-draft' }}
   cancel-in-progress: false
 
 defaults:
@@ -26,9 +30,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Check release automation
         run: node --test tests/ci/test_cmp_release.cjs
       - name: Validate version and destination
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/github-script@v9
         with:
           script: |
@@ -43,6 +49,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -105,6 +112,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -118,31 +126,36 @@ jobs:
           "ISCC=$compiler" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           cmake --version
           if ($LASTEXITCODE -ne 0) { throw 'CMake missing' }
-      - name: Build Windows x64 Native Image installer
+      - name: Build Windows x64 installer and portable ZIP
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: |
-          ./gradlew :desktopApp:packageInnoSetup -PenableAndroid=false -PdesktopRuntime=native \
+          ./gradlew :desktopApp:packageInnoSetup :desktopApp:packageWindowsPortableZip -PenableAndroid=false -PdesktopRuntime=native \
             -PrequireOfficialAppConfig=true --no-daemon --no-configuration-cache --max-workers=1 \
             -Pkotlin.compiler.execution.strategy=in-process \
             "-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8" --stacktrace
+      - name: Check portable ZIP packaging
+        run: python -m unittest discover -s tests/ci -p 'test_windows_portable.py'
       - name: Verify Windows packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python .github/scripts/verify-app-config.py desktop-native desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo
-      - name: Upload Windows installer
+      - name: Upload Windows installer and portable ZIP
         uses: actions/upload-artifact@v6
         with:
           name: cmp-release-windows-${{ github.run_id }}
           path: |
-            desktopApp/build/installer/*-windows-x64-setup.exe
-            desktopApp/build/installer/*-windows-x64-setup.exe.sha256
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_setup.exe
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_setup.exe.sha256
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_portable.zip
+            desktopApp/build/installer/CopyMangaNeo_windows_*_x64_portable.zip.sha256
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
           overwrite: true
 
   draft:
+    if: github.event_name == 'workflow_dispatch'
     needs: [android, windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -153,6 +166,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           name: cmp-release-android-${{ github.run_id }}

@@ -69,6 +69,7 @@ class DesktopPlatformHost(
     override val backDispatcher: UiBackDispatcher = UiBackDispatcher(),
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
+    override val appReleaseTarget = desktopAppReleaseTarget(System.getProperty("os.name"), System.getProperty("os.arch"))
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
         com.rchdliang.copymanga_neo.multiplatform.ui.reader.windowsReaderImageQuality else null
 

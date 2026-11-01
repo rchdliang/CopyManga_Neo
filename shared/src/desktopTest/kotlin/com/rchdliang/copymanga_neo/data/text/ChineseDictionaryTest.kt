@@ -131,5 +131,22 @@ class ChineseDictionaryTest {
         assertFalse(AppVersion.isNewer("v0.10.3", "0.10.3.0"))
         assertFalse(AppVersion.isNewer("v0.10.2", "0.10.3"))
         assertTrue(AppVersion.isNewer("v0.10.3", "0.10.3-dev"))
+        assertFalse(AppVersion.isNewer("v0.10.30", "0.10.30+181"))
+        assertFalse(AppVersion.isNewer("0.10.30+182", "0.10.30+181"))
+        assertTrue(AppVersion.isNewer("v0.10.31", "0.10.30+181"))
+        assertTrue(AppVersion.isNewer("v0.10.30.1", "0.10.30+181"))
+    }
+
+    @Test fun applicationVersionsIgnoreCommitHashes() {
+        assertFalse(AppVersion.isNewer("v0.10.30", "0.10.30-d3b3d30"))
+        assertFalse(AppVersion.isNewer("0.10.30-abcdef0", "0.10.30-d3b3d30"))
+        assertFalse(AppVersion.isNewer("0.10.30-d3b3d30", "0.10.30"))
+        assertFalse(AppVersion.isNewer("0.10.30-d3b3d30", "0.10.30+181"))
+        assertFalse(AppVersion.isNewer("v0.10.30", "0.10.30-1234567"))
+        assertFalse(AppVersion.isNewer("v0.10.30", "0.10.30-D3B3D30"))
+        assertTrue(AppVersion.isNewer("v0.10.31", "0.10.30-d3b3d30"))
+        assertTrue(AppVersion.isNewer("v0.10.30.1", "0.10.30-d3b3d30"))
+        assertTrue(AppVersion.isNewer("0.10.30-d3b3d30", "0.10.30-dev-abcdef0"))
+        assertFalse(AppVersion.isNewer("0.10.30-dev-abcdef0", "0.10.30-d3b3d30"))
     }
 }

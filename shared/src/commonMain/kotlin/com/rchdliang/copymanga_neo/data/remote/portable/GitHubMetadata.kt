@@ -2,6 +2,10 @@ package com.rchdliang.copymanga_neo.data.remote.portable
 
 import com.rchdliang.copymanga_neo.data.text.*
 import com.rchdliang.copymanga_neo.domain.model.AppRelease
+import com.rchdliang.copymanga_neo.domain.model.AppReleaseAsset
+import io.ktor.http.Url
+import io.ktor.http.URLProtocol
+import io.ktor.http.decodeURLPart
 import com.rchdliang.copymanga_neo.domain.repository.*
 import kotlinx.serialization.json.*
 
@@ -55,11 +59,30 @@ class GitHubMetadata(private val client: CopyMangaClient) {
                 if (!release.getValue("draft").jsonPrimitive.boolean && !release.getValue("prerelease").jsonPrimitive.boolean &&
                     tag !in legacyAndroidTags && tag.matches(Regex("v[0-9]+(\\.[0-9]+){1,3}"))) {
                     return AppRelease(tag, tag.removePrefix("v"), "${ProjectLinks.GITHUB}/releases/tag/$tag",
-                        release["body"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                        release["body"]?.jsonPrimitive?.contentOrNull.orEmpty(), appAssets(release, tag))
                 }
             }
             if (releases.size < 20) break
         }
         throw PublicReleaseUnavailableException()
     }
+
+    /** 只接收本仓库、本标签的 HTTPS 附件地址；错误条目不阻断更新说明。 */
+    private fun appAssets(release: JsonObject, tag: String): List<AppReleaseAsset> =
+        (release["assets"] as? JsonArray).orEmpty().mapNotNull { element ->
+            val asset = element as? JsonObject ?: return@mapNotNull null
+            val name = (asset["name"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val address = (asset["browser_download_url"] as? JsonPrimitive)?.contentOrNull
+                ?: return@mapNotNull null
+            val state = (asset["state"] as? JsonPrimitive)?.contentOrNull
+            if (state != null && state != "uploaded") return@mapNotNull null
+            val url = runCatching { Url(address) }.getOrNull() ?: return@mapNotNull null
+            val expectedPath = Url(ProjectLinks.GITHUB).encodedPath + "/releases/download/$tag/$name"
+            val decodedPath = runCatching { url.encodedPath.decodeURLPart() }.getOrNull()
+            if (url.protocol != URLProtocol.HTTPS || url.host != "github.com" || url.port != 443 ||
+                !url.user.isNullOrEmpty() || !url.password.isNullOrEmpty() ||
+                !url.parameters.isEmpty() || url.fragment.isNotEmpty() || decodedPath != expectedPath) return@mapNotNull null
+            AppReleaseAsset(name, address)
+        }
 }

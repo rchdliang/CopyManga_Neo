@@ -40,7 +40,32 @@ require(releaseVersionHotfix.isEmpty() || releaseVersionHotfix.matches(Regex("[0
 require(releaseVersionCode != null && releaseVersionCode in 1..2_100_000_000) {
     "version.properties: COPYMANGA_VERSION_CODE 必须是有效的正整数构建号"
 }
+// 关于页继续使用完整历史的提交数；Provider 会跟踪 Git 输出并使配置缓存失效。
+val shallowRepository = providers.exec {
+    workingDir(rootDir)
+    commandLine("git", "rev-parse", "--is-shallow-repository")
+}.standardOutput.asText.get().trim()
+require(shallowRepository == "false") {
+    "构建版本需要完整 Git 历史；请执行 git fetch --unshallow，CI checkout 使用 fetch-depth: 0"
+}
+val gitCommitCount = providers.exec {
+    workingDir(rootDir)
+    commandLine("git", "rev-list", "--count", "HEAD")
+}.standardOutput.asText.get().trim()
+require(gitCommitCount.toLongOrNull()?.let { it > 0 } == true) { "无法读取有效的 Git 提交数量" }
+
+// 系统包管理器版本使用提交哈希的前七位。
+val gitCommitHash = providers.exec {
+    workingDir(rootDir)
+    commandLine("git", "rev-parse", "--verify", "HEAD")
+}.standardOutput.asText.get().trim()
+require(gitCommitHash.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))) { "无法读取有效的 Git 提交哈希" }
+
+// 分别维护数字发布版本、应用内显示版本和 Android 系统安装包版本。
 extra["copyMangaVersionName"] = releaseVersionName
+extra["copyMangaBuildVersionName"] = "$releaseVersionName+$gitCommitCount"
+extra["copyMangaPackageVersionName"] = "$releaseVersionName-${gitCommitHash.take(7)}"
+extra["copyMangaAndroidArtifactVersion"] = "$releaseVersionName-${gitCommitHash.take(7)}+$gitCommitCount"
 extra["copyMangaVersionCode"] = releaseVersionCode
 // Windows 安装包只支持三段数值，使用递增构建号保证修订版本仍能升级。
 extra["copyMangaWindowsVersion"] = releaseVersionBase.substringBeforeLast('.') + ".$releaseVersionCode"

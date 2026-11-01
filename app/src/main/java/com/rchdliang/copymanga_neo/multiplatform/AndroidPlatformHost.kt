@@ -67,6 +67,7 @@ class AndroidPlatformHost(context: Context, private val savedState: SavedStateHa
     private val app = context.applicationContext
     private var activity by mutableStateOf<ComponentActivity?>(null)
     override val backDispatcher = UiBackDispatcher()
+    override val appReleaseTarget = com.rchdliang.copymanga_neo.domain.model.AppReleaseTarget.Android(Build.SUPPORTED_ABIS.toList())
     override fun batteryStatuses() = androidReaderBatteryStatuses(app)
     override val notificationSettingsUnavailableReason: String? = null
     private var readerPreviousOrientation: Int? = savedState["reader_original_orientation"]

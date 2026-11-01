@@ -25,6 +25,7 @@ import com.rchdliang.copymanga_neo.domain.model.AppSettings
 import kotlinx.coroutines.flow.catch
 import com.rchdliang.copymanga_neo.multiplatform.app.AppPlatforms
 import com.rchdliang.copymanga_neo.multiplatform.app.CopyMangaApp
+import com.rchdliang.copymanga_neo.multiplatform.app.portableReleaseBuildInfo
 import com.rchdliang.copymanga_neo.multiplatform.app.startupDraw
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalUiPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
@@ -148,7 +149,7 @@ class AndroidSharedActivity : ComponentActivity() {
                 imageLoader = graph.imageLoader,
                 notifications = host,
                 buildInfo = AppBuildInfo(
-                    "CopyManga Neo", BuildConfig.VERSION_NAME,
+                    "CopyManga Neo", portableReleaseBuildInfo.versionName,
                     BuildConfig.VERSION_CODE, BuildConfig.APPLICATION_ID, BuildConfig.DEBUG
                 )
             )

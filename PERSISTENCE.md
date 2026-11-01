@@ -1,6 +1,6 @@
 # 首发后的本地数据契约
 
-Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不再增加 migrationtest 后缀，显示名称为 `CopyManga Neo`。原 Android 分支使用 `com.rchdliang.copymanga_neo.Android`，两个实现独立安装和存储；首发后保持这些安装标识稳定。
+Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，显示名称为 `CopyManga Neo`。独立 Android 分支使用 `com.rchdliang.copymanga_neo.Android`，两个实现独立安装和存储；首发后保持这些安装标识稳定。
 
 普通文档由 DocumentStore 管理。公开后的磁盘格式为：
 
@@ -43,7 +43,7 @@ Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不�
 
 ## 阅读设置与重置范围
 
-- `comic-reader-settings.json` 保存全局显示默认值与按漫画键保存的 `ReaderPreferences`。页面布局 `pageLayout` 默认 `SINGLE`；方向、缩放和屏幕方向与布局一起保存为漫画快照。修改 A 漫画不改 B 漫画；本轮不迁移旧全局布局，也没有冻结 seed 或自动清空数据。
+- `comic-reader-settings.json` 保存全局显示默认值与按漫画键保存的 `ReaderPreferences`。页面布局 `pageLayout` 默认 `SINGLE`；方向、缩放和屏幕方向与布局一起保存为漫画快照。各漫画的设置独立保存。
 - “重置显示设置”写入当前全局方向/缩放/屏幕方向的快照，并明确将当前漫画布局设为 `SINGLE`；不删除条目，不清其他漫画、章节配页或全局工具。
 - `reader-tools.json` 保存全局翻页动画、音量键翻页、连续跨章、评论、自动阅读间隔及图片加载偏好。`pairingRestarts` 在其中按章节键保存排序去重后的原图索引边界；“恢复默认配页”只清当前章。遗留工具 `pageLayout` 字段不是当前布局 UI 的读写来源。
 - 锐化强度与重新开启时的恢复值也在 `reader-tools.json` 全局保存，默认关闭。同尺寸修复保存 `restorationMode`、`restorationLastMode`、`restoreLevel` 与 `restoreSoftLevel`，模式默认关闭，两组档位分别记忆且默认 M；设置备份包含这些字段，旧备份缺少时使用默认值。
@@ -56,7 +56,6 @@ Android 宿主的 Debug / Release 均使用 `com.rchdliang.copymanga_neo`，不�
 - Anime4K Restore / RestoreSoft 各五档编译为 SPIR-V 随 CMP Android、Windows、Linux 包分发，无运行时模型下载或推理临时图片文件。桌面 JNI 库校验后提取至 `~/.cache/copymanga-neo/reader-restore-runtime/<摘要>`，Android 使用安装的原生库。
 - 输出按源位图身份、generationId、页面与模型/档位缓存在阅读会话内存中，最多两份输出、总输出位图最多 32 MiB；源位图、GPU 资源和活跃绘制引用另计。
 - 后台/非活动路由清空缓存及 GPU 资源，会话关闭释放专用线程；修复结果不在备份白名单中。
-- 老版本已经存放的超分缓存不由此次源码修改自动删除，且不再参与运行与打包。原图缓存、下载与用户数据不受影响。
 - 实现范围和未验证限制见 [画质修复说明](docs/READER-RESTORATION.md)。
 
 ## 平台存储边界

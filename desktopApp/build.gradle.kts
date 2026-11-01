@@ -68,6 +68,22 @@ tasks.register<Exec>("packageInnoSetup") {
         rootProject.file(".github/scripts/build-windows-installer.ps1").absolutePath,
         "-AppImage", layout.buildDirectory.dir("compose/binaries/main/graalvm-app/CopyMangaNeo").get().asFile.absolutePath,
         "-AppVersion", rootProject.extra["copyMangaVersionName"] as String,
+        "-ArtifactVersion", rootProject.extra["copyMangaBuildVersionName"] as String,
         "-Architecture", "x64", "-Runtime", "native",
+        "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath)
+}
+
+// 与安装程序复用同一次 Native Image 构建，完整保留运行库和资源。
+tasks.register<Exec>("packageWindowsPortableZip") {
+    group = "distribution"
+    description = "Build the Windows x64 native portable ZIP"
+    dependsOn("createGraalvmNativeDistributable")
+    workingDir(rootProject.projectDir)
+    commandLine("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+        rootProject.file(".github/scripts/build-windows-portable.ps1").absolutePath,
+        "-AppImage", layout.buildDirectory.dir("compose/binaries/main/graalvm-app/CopyMangaNeo").get().asFile.absolutePath,
+        "-AppVersion", rootProject.extra["copyMangaVersionName"] as String,
+        "-ArtifactVersion", rootProject.extra["copyMangaBuildVersionName"] as String,
+        "-Architecture", "x64",
         "-OutputDirectory", layout.buildDirectory.dir("installer").get().asFile.absolutePath)
 }
