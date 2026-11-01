@@ -4,7 +4,7 @@ import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -31,7 +31,7 @@ internal val LocalReaderCommentPager = staticCompositionLocalOf<ReaderCommentPag
 
 /** 评论正文保留滚动和点击；边缘、滚动边界及明确的横向鼠标拖动交给阅读器翻页。 */
 internal fun Modifier.readerCommentMouseNavigation(
-    list: LazyListState,
+    list: ScrollableState,
     rtl: Boolean,
     blocked: Boolean,
     onForward: () -> Unit,

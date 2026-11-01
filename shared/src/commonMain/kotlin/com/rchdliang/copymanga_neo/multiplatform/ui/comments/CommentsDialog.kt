@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.comments
 
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableState
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
@@ -34,8 +36,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -71,7 +77,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -150,9 +155,8 @@ internal fun CommentsPanel(
     onFeedChanged: (CommentFeed) -> Unit = {},
     onClosed: () -> Unit = {},
     // 由嵌入宿主协调翻页与评论滚动；弹层默认不接管任何手势。
-    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean, canLeaveEnd: () -> Boolean) -> Modifier = { _, _, _ -> Modifier }
+    navigationModifier: (list: ScrollableState, blocked: Boolean, canLeaveEnd: () -> Boolean) -> Modifier = { _, _, _ -> Modifier }
 ) {
-    var columnCount by remember { mutableIntStateOf(1) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val currentTime by produceState(initialValue = CommentMoment.now()) {
         while (true) {
@@ -203,8 +207,8 @@ internal fun CommentsPanel(
     ActiveRouteLaunchedEffect(target, initialReport?.id, state.target) {
         if (state.target == target && initialReport != null) viewModel.openReport(initialReport)
     }
-    val rootList = rememberLazyListState()
-    val replyList = rememberLazyListState()
+    val rootList = rememberLazyStaggeredGridState()
+    val replyList = rememberLazyStaggeredGridState()
     LaunchedEffect(target) {
         rootList.requestScrollToItem(0)
         replyList.requestScrollToItem(0)
@@ -238,14 +242,14 @@ internal fun CommentsPanel(
         }
     }
     // 数据变更必须完成布局后才判断触底，避免分页结果回来时连续抢跑下一页。
-    ActiveRouteLaunchedEffect(listState, target, state.parent?.id, columnCount) {
+    ActiveRouteLaunchedEffect(listState, target, state.parent?.id) {
         snapshotFlow {
             val feed = state.feed
             val layout = listState.layoutInfo
             val expectedItems =
-                (feed.items.size + columnCount - 1) / columnCount + 1 + if (state.parent != null) 1 else 0
+                feed.items.size + 1 + if (state.parent != null) 1 else 0
             val atEnd = layout.totalItemsCount == expectedItems &&
-                    layout.visibleItemsInfo.lastOrNull()?.index == expectedItems - 1
+                    layout.visibleItemsInfo.any { it.key == "footer:${feed.items.size}" }
             feed.nextOffset.takeIf {
                 state.target == target && atEnd && !feed.loading && feed.error == null && !state.posting
             }
@@ -300,17 +304,16 @@ internal fun CommentsPanel(
                 {
                     val feed = state.feed
                     val layout = listState.layoutInfo
-                    val expectedItems = (feed.items.size + columnCount - 1) / columnCount + 1 + if (state.parent != null) 1 else 0
+                    val expectedItems = feed.items.size + 1 + if (state.parent != null) 1 else 0
                     // 加载前的调度间隙、加载中和新数据尚未布局时都不是正文的真实末尾。
                     // 失败后仍允许明确离开，避免错误游标把用户困在评论页。
                     state.target == target && !feed.loading && !feed.refreshing &&
                         (feed.nextOffset == null || feed.error != null) &&
                         layout.totalItemsCount == expectedItems &&
-                        layout.visibleItemsInfo.lastOrNull()?.key == "footer:${feed.items.size}"
+                        layout.visibleItemsInfo.any { it.key == "footer:${feed.items.size}" }
                 }
             )),
             embedded = embedded,
-            onColumnCountChange = { columnCount = it },
             onLogin = if (onLogin != null) ({
                 if (viewModel.hasDraft()) {
                     loginAfterDiscard = true
@@ -376,7 +379,7 @@ internal fun CommentsContent(
     title: String,
     state: CommentsUiState,
     currentTime: CommentMoment,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    listState: LazyStaggeredGridState,
     fabVisible: Boolean,
     composerOpen: Boolean,
     onCompose: (MangaComment?) -> Unit,
@@ -394,7 +397,6 @@ internal fun CommentsContent(
     onReport: (MangaComment) -> Unit = {},
     onLogin: (() -> Unit)? = null,
     embedded: Boolean = false,
-    onColumnCountChange: (Int) -> Unit = {},
     onDownloadComments: () -> Unit = {},
     canDelete: (MangaComment) -> Boolean = { false },
     onDelete: (MangaComment) -> Unit = {}
@@ -413,7 +415,6 @@ internal fun CommentsContent(
         val wide = maxWidth >= 840.dp
         val fullChapterPanel = target.kind == CommentKind.CHAPTER && wide && landscape
         val columnCount = if (fullChapterPanel) 2 else 1
-        LaunchedEffect(columnCount) { onColumnCountChange(columnCount) }
         val fabBottomInset = with(LocalDensity.current) {
             (if (wide) 32.dp else 16.dp).roundToPx()
         } + WindowInsets.navigationBars.getBottom(LocalDensity.current)
@@ -584,81 +585,78 @@ internal fun CommentsContent(
                                 )
                             }
                         ) {
-                            MouseDragLazyColumn(
-                                state = listState, modifier = Modifier.fillMaxSize(),
+                            LazyVerticalStaggeredGrid(
+                                columns = StaggeredGridCells.Fixed(columnCount),
+                                state = listState, modifier = Modifier.fillMaxSize().mouseDragScroll(listState, Orientation.Vertical),
                                 contentPadding = PaddingValues(bottom = if (embedded) 16.dp else 96.dp)
                             ) {
                                 state.parent?.let { parent ->
-                                    item(key = "parent") {
+                                    item(key = "parent", span = StaggeredGridItemSpan.FullLine) {
+                                        Column {
+                                            CommentCard(
+                                                comment = parent,
+                                                currentTime = currentTime,
+                                                onReport = onReport,
+                                                canDelete = canDelete,
+                                                onDelete = onDelete,
+                                                onReply = if (state.postingAllowed) ({
+                                                    onCompose(parent)
+                                                }) else null,
+                                                enabled = !state.posting && !state.deleting
+                                            )
+                                            CommentDivider()
+                                            Text(
+                                                if (state.feed.totalExact) "共 ${state.feed.total} 条回复" else "已加载 ${state.feed.items.size} 条回复",
+                                                Modifier.padding(
+                                                    start = 68.dp,
+                                                    top = 16.dp,
+                                                    bottom = 8.dp
+                                                ),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.labelLarge
+                                            )
+                                        }
+                                    }
+                                }
+                                // 每条评论独立测量高度，两栏共享一个滚动容器。
+                                items(state.feed.items, key = { "comment:${it.id}" }) { comment ->
+                                    Column(Modifier.fillMaxWidth()) {
+                                        val preview = state.replyPreviews[comment.id]
+                                        if (state.parent == null && comment.replyCount > 0 && target.kind != CommentKind.CHAPTER) {
+                                            ActiveRouteLaunchedEffect(
+                                                comment.id,
+                                                state.previewGeneration
+                                            ) {
+                                                onLoadReplyPreview(comment)
+                                            }
+                                        }
                                         CommentCard(
-                                            comment = parent,
+                                            comment = comment,
                                             currentTime = currentTime,
+                                            previews = preview?.comments.orEmpty(),
+                                            previewTotal = preview?.total,
+                                            threadUsername = state.parent?.username,
                                             onReport = onReport,
                                             canDelete = canDelete,
                                             onDelete = onDelete,
-                                            onReply = if (state.postingAllowed) ({
-                                                onCompose(parent)
+                                            onClick = if (state.parent == null && target.kind != CommentKind.CHAPTER &&
+                                                (preview?.total ?: comment.replyCount) > 0
+                                            ) ({
+                                                onShowReplies(comment)
+                                            }) else null,
+                                            onReply = if (target.kind != CommentKind.CHAPTER && state.postingAllowed) ({
+                                                onCompose(comment)
+                                            }) else null,
+                                            onShowReplies = if (state.parent == null && target.kind != CommentKind.CHAPTER && preview?.comments?.isNotEmpty() == true) ({
+                                                onShowReplies(comment)
                                             }) else null,
                                             enabled = !state.posting && !state.deleting
                                         )
                                         CommentDivider()
-                                        Text(
-                                            if (state.feed.totalExact) "共 ${state.feed.total} 条回复" else "已加载 ${state.feed.items.size} 条回复",
-                                            Modifier.padding(
-                                                start = 68.dp,
-                                                top = 16.dp,
-                                                bottom = 8.dp
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            style = MaterialTheme.typography.labelLarge
-                                        )
-                                    }
-                                }
-                                items(
-                                    state.feed.items.chunked(columnCount),
-                                    key = { "comment:${it.first().id}" }) { row ->
-                                    Row(Modifier.fillMaxWidth()) {
-                                        row.forEach { comment ->
-                                            Column(Modifier.weight(1f)) {
-                                                val preview = state.replyPreviews[comment.id]
-                                                if (state.parent == null && comment.replyCount > 0 && target.kind != CommentKind.CHAPTER) {
-                                                    ActiveRouteLaunchedEffect(
-                                                        comment.id,
-                                                        state.previewGeneration
-                                                    ) {
-                                                        onLoadReplyPreview(comment)
-                                                    }
-                                                }
-                                                CommentCard(
-                                                    comment = comment,
-                                                    currentTime = currentTime,
-                                                    previews = preview?.comments.orEmpty(),
-                                                    previewTotal = preview?.total,
-                                                    threadUsername = state.parent?.username,
-                                                    onReport = onReport,
-                                                    canDelete = canDelete,
-                                                    onDelete = onDelete,
-                                                    onClick = if (state.parent == null && target.kind != CommentKind.CHAPTER &&
-                                                        (preview?.total ?: comment.replyCount) > 0
-                                                    ) ({
-                                                        onShowReplies(comment)
-                                                    }) else null,
-                                                    onReply = if (target.kind != CommentKind.CHAPTER && state.postingAllowed) ({
-                                                        onCompose(comment)
-                                                    }) else null,
-                                                    onShowReplies = if (state.parent == null && target.kind != CommentKind.CHAPTER && preview?.comments?.isNotEmpty() == true) ({
-                                                        onShowReplies(comment)
-                                                    }) else null,
-                                                    enabled = !state.posting && !state.deleting
-                                                )
-                                                CommentDivider()
-                                            }
-                                        }
-                                        if (row.size < columnCount) Spacer(Modifier.weight(1f))
                                     }
                                 }
                                 // 固定页脚不能成为首屏或分页加载的滚动锚点。
-                                item(key = "footer:${state.feed.items.size}") {
+                                item(key = "footer:${state.feed.items.size}", span = StaggeredGridItemSpan.FullLine) {
                                     Column(
                                         Modifier
                                             .fillMaxWidth()

@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
@@ -141,6 +142,7 @@ fun Modifier.readerImageZoomable(
 ): Modifier = composed {
     val currentEnabled by rememberUpdatedState(enabledAt)
     val currentScrolling by rememberUpdatedState(isContentScrolling)
+    val wheelPinchSteps by rememberUpdatedState(LocalReaderCtrlWheelPinchSteps.current)
     pointerInput(state, isContinuous, maxScale) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -171,7 +173,8 @@ fun Modifier.readerImageZoomable(
                     dragStarted = false
                     tracker.resetTracking()
                     state.transform(
-                        event.calculateZoom(), event.calculateCentroid(useCurrent = false),
+                        readerPinchZoomFactor(event.calculateZoom(), event.keyboardModifiers.isCtrlPressed, wheelPinchSteps),
+                        event.calculateCentroid(useCurrent = false),
                         event.calculatePan(), maxScale
                     )
                     event.changes.forEach { it.consume() }

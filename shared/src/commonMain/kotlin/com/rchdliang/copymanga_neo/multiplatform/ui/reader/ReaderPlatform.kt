@@ -15,6 +15,9 @@ interface ReaderPlatform {
     /** 仅由需要修正图片采样的平台启用，其他平台保持原图片链路。 */
     val imageQuality: ReaderImageQuality? get() = null
 
+    /** 原生窗口若把 Ctrl＋滚轮转换为捏合，提供其默认曲线的翻倍刻度数。 */
+    val ctrlWheelPinchStepsPerDoubling: Float? get() = null
+
     /** Android: hide status bars and apply the per-comic orientation. Desktop: reader window policy. */
     @Composable
     fun ImmersiveEffect(orientation: ScreenOrientationSetting?)

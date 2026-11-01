@@ -3,7 +3,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.comments
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -99,7 +99,7 @@ private fun CommentsPreview(
                 title = "突然成为公寓管理员",
                 state = state.copy(target = target),
                 currentTime = previewNow,
-                listState = rememberLazyListState(),
+                listState = rememberLazyStaggeredGridState(),
                 fabVisible = true,
                 composerOpen = composerOpen,
                 onCompose = {},

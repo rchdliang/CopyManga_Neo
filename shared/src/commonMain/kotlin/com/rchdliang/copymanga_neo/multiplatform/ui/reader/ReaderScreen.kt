@@ -938,6 +938,7 @@ fun ReaderSuccessContent(
             .focusable()
     ) {
         androidx.compose.runtime.CompositionLocalProvider(LocalReaderSharpness provides displayedSharpness,
+            LocalReaderCtrlWheelPinchSteps provides services?.platform?.ctrlWheelPinchStepsPerDoubling,
             LocalReaderRestoreEngine provides restoreEngine,
             LocalReaderRestoreSelection provides effectiveRestoreSelection,
             LocalReaderRestoreStatus provides { key, status -> restoreStatuses[key] = status },

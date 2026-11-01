@@ -32,11 +32,11 @@ class ReaderWheelZoomUiTest {
         val focal = Offset(300f, 100f)
         onNodeWithTag("reader").performMultiModalInput {
             key { keyDown(Key.CtrlLeft) }
-            mouse { moveTo(focal); scroll(-1f) }
+            mouse { moveTo(focal); scroll(-.5f) }
             key { keyUp(Key.CtrlLeft) }
         }
         waitForIdle()
-        assertEquals(2.5f, zoom.scale, .01f)
+        assertEquals(kotlin.math.sqrt(3f), zoom.scale, .01f)
         assertEquals(0, pages)
         assertEquals(1, interactions)
         val scenePoint = (focal - Offset(200f, 200f) - zoom.offset) / zoom.scale
@@ -76,7 +76,7 @@ class ReaderWheelZoomUiTest {
             mouse { moveTo(Offset(200f, 200f)); scroll(-1f) }
             key { keyUp(Key.CtrlLeft) }
         }
-        waitForIdle(); assertEquals(2.5f, zoom.scale, .01f)
+        waitForIdle(); assertEquals(READER_CONTINUOUS_MAX_SCALE, zoom.scale, .01f)
         assertEquals(0, list.firstVisibleItemIndex); assertEquals(0, list.firstVisibleItemScrollOffset)
         onNodeWithTag("reader").performMouseInput { scroll(3f) }
         waitForIdle()

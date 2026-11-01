@@ -73,7 +73,7 @@ class ReaderSpreadInputUiTest {
                 key { keyUp(Key.CtrlLeft) }
             }
             val scene = (Offset(300f, 100f) - zoom.viewportCenter() - zoom.offset) / zoom.scale
-            assertEquals(READER_MAX_SCALE, zoom.scale, .01f, "Two 2.5x wheel notches should respect the maximum scale")
+            assertEquals(READER_MAX_SCALE, zoom.scale, .01f, "Wheel zoom must respect the maximum scale with a 3x multiplier")
             assertEquals(100f, scene.x, 0.01f); assertEquals(-100f, scene.y, 0.01f)
             val before = zoom.offset
             onNodeWithTag("reader").performMouseInput { scroll(1f) }

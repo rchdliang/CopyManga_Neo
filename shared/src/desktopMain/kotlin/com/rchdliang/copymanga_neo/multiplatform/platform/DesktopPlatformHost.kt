@@ -72,6 +72,9 @@ class DesktopPlatformHost(
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
         com.rchdliang.copymanga_neo.multiplatform.ui.reader.windowsReaderImageQuality else null
 
+    override val ctrlWheelPinchStepsPerDoubling = desktopCtrlWheelPinchStepsPerDoubling(
+        System.getProperty("os.name"), nativeWindowHandle != null)
+
     override val coverImageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
         com.rchdliang.copymanga_neo.multiplatform.ui.components.windowsCoverImageQuality else null
 
