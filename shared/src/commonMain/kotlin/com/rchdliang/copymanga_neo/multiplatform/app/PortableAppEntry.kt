@@ -48,7 +48,10 @@ fun PortableAppEntry(
             }
         }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "初始化失败" }
+        catch (failure: Exception) {
+            com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("E", "Startup", "初始化失败", failure)
+            error = failure.message ?: "初始化失败"
+        }
         finally {
             try { uninstalled?.shutdown() }
             finally { if (startupJob === job) startupJob = null }

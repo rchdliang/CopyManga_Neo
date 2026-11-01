@@ -63,6 +63,7 @@ class AndroidAppContainer(context: Context) {
             } catch (cancel: CancellationException) {
                 throw cancel
             } catch (error: Exception) {
+                com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("E", "Startup", "初始化失败", error)
                 AndroidStartupTrace.mark("startup_failed")
                 mutable.value = Result.failure(error)
             }

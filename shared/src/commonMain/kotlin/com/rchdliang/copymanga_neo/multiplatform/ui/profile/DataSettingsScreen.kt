@@ -39,7 +39,8 @@ internal fun DataSettingsScreen(
     onNavigateBack: () -> Unit,
     settings: SettingsViewModel,
     backup: SettingsBackupViewModel,
-    logs: NetworkLogViewModel
+    logs: NetworkLogViewModel,
+    errorLogs: ErrorLogViewModel
 ) {
     val state by settings.uiState.collectAsStateWithLifecycle()
     val backupState by backup.uiState.collectAsStateWithLifecycle()
@@ -62,7 +63,10 @@ internal fun DataSettingsScreen(
         onCancelRestore = backup::cancelRestore,
         restorePending = backupState.restorePending,
         onClearNovelCache = settings::clearNovelCache,
-        logsContent = { NetworkLogCard(logs) }
+        logsContent = {
+            ErrorLogCard(errorLogs)
+            NetworkLogCard(logs)
+        }
     )
     backupState.pendingImport?.let {
         if (LocalRouteActive.current) AlertDialog(
@@ -213,7 +217,7 @@ internal fun DataSettingsPage(
         )
         ProfileSectionTitle("维护")
         ProfileListItem(
-            Icons.Outlined.Description, "诊断日志", "记录、导出与清理请求日志",
+            Icons.Outlined.Description, "诊断日志", "导出错误、崩溃与网络请求日志",
             index = 0, count = 2, onClick = { showLogs = true })
         ProfileListItem(
             Icons.Outlined.Restore, "恢复默认偏好", "恢复主题、下载和全局阅读默认值",

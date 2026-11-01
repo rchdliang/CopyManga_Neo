@@ -69,9 +69,13 @@ fun main(args: Array<String>) {
             if (!signaled) showLaunchFailure("已有实例正在启动或退出，但未能确认打开窗口。为保护资料，本次不会启动第二个实例。请稍后重试。")
             return
         }
+        com.rchdliang.copymanga_neo.data.logging.JvmErrorLog.install(
+            dataDirectory().resolve("diagnostics").toFile(), "Desktop Native Image"
+        )
         try { runPrimary(instance, args) }
         catch (failure: Exception) {
             // Never release the lock while an unexpectedly failed UI may have live graph writers.
+            com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("E", "DesktopMain", "应用意外停止", failure, crash = true)
             showLaunchFailure("应用意外停止：${failure.message.orEmpty()}")
             kotlin.system.exitProcess(1)
         }
@@ -129,7 +133,10 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                     uninstalled = null
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = failure.message ?: "初始化失败" }
+            catch (failure: Exception) {
+                com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("E", "Startup", "初始化失败", failure)
+                error = failure.message ?: "初始化失败"
+            }
             finally {
                 withContext(NonCancellable) { uninstalled?.shutdown() }
                 if (startupJob === job) startupJob = null

@@ -271,6 +271,7 @@ private fun ProfileScreenContent(
                 settings = services.settings,
                 backup = services.backup,
                 logs = services.logs,
+                errorLogs = services.errorLogs,
                 onNavigateBack = {
                     currentPage = ProfilePage.MAIN
                 })

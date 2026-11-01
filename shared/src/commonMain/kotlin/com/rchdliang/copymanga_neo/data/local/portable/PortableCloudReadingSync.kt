@@ -31,8 +31,9 @@ class PortableCloudReadingSync(
                     if (snapshot.session().token.isBlank() || snapshot.session().owner == "guest") return@collectLatest
                     try { pull(snapshot) }
                     catch (cancel: CancellationException) { throw cancel }
-                    catch (_: Exception) {
+                    catch (error: Exception) {
                         if (current(snapshot)) {
+                            com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("W", "CloudReadingSync", "云端阅读记录同步未完成", error)
                             failure.value = "云端阅读记录同步未完成，本地记录已保留；返回应用后重试"
                             println("CloudReadingSync: ${failure.value}")
                         }

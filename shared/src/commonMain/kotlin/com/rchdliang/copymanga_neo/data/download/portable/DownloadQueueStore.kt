@@ -47,6 +47,7 @@ internal object DownloadLog {
     fun w(tag: String, message: String, error: Throwable? = null) = write("W", tag, message, error)
     fun e(tag: String, message: String, error: Throwable? = null) = write("E", tag, message, error)
     private fun write(level: String, tag: String, message: String, error: Throwable?) {
+        com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record(level, tag, message, error)
         println("$level/$tag: $message"); error?.let { println(it.stackTraceToString()) }
     }
 }

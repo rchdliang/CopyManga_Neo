@@ -60,7 +60,8 @@ data class ProfileUiServices(
     val logs: NetworkLogViewModel,
     val localLibrary: LocalLibraryViewModel,
     val history: HistoryViewModel,
-    val avatar: ProfileAvatarViewModel
+    val avatar: ProfileAvatarViewModel,
+    val errorLogs: ErrorLogViewModel
 )
 
 /** Portable fixed decimal formatting for transfer/storage UI, matching the original positive half-up rounding. */

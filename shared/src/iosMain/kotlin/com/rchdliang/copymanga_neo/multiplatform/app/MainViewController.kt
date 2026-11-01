@@ -25,6 +25,7 @@ private fun iosTapString(debugBuild: Boolean): String {
 
 /** Entry point used by the native UIKit launcher. Configuration is supplied by the host build/run. */
 fun MainViewController(windowState: IosReaderWindowState, backBridge: NativeBackBridge, presenter: () -> UIViewController): UIViewController {
+    com.rchdliang.copymanga_neo.data.logging.IosErrorLog.install(IosGraph.applicationDirectory() + "/diagnostics")
     val debugBuild = NSBundle.mainBundle.objectForInfoDictionaryKey("CopyMangaDebugBuild") == "YES"
     val host = IosPlatformHost(presenter = presenter, windowPolicy = windowState.windowPolicy)
     backBridge.connect(host.backDispatcher)

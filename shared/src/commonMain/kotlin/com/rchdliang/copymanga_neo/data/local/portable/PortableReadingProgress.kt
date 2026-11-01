@@ -67,6 +67,7 @@ class PortableReadingProgress(
                         // A cancelled request must not permanently kill the application collector.
                         currentCoroutineContext().ensureActive()
                     } catch (error: Exception) {
+                        com.rchdliang.copymanga_neo.data.logging.AppErrorLog.record("W", "ReadingProgress", "同步失败，保留本地进度并等待明确重试", error)
                         println("ReadingProgress: 同步失败，保留本地进度并等待明确重试：${error.message.orEmpty()}")
                     }
                 }

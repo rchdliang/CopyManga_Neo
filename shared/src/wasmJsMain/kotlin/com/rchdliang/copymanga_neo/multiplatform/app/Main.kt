@@ -56,6 +56,7 @@ private external fun browserBackAction(id: String, action: String)
 
 /** HTTPS/localhost is required for secure file pickers and persistent browser storage. */
 fun main() {
+    com.rchdliang.copymanga_neo.data.logging.installBrowserErrorLog()
     val host = BrowserPlatformHost()
     ComposeViewport {
         PortableAppEntry(
