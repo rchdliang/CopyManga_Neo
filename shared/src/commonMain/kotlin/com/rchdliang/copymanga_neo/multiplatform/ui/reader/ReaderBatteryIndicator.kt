@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.BatteryUnknown
 import androidx.compose.material.icons.filled.Battery0Bar
 import androidx.compose.material.icons.filled.Battery1Bar
 import androidx.compose.material.icons.filled.Battery2Bar
@@ -13,7 +14,6 @@ import androidx.compose.material.icons.filled.Battery5Bar
 import androidx.compose.material.icons.filled.Battery6Bar
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.BatteryChargingFull
-import androidx.compose.material.icons.filled.BatteryUnknown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -41,7 +41,7 @@ internal fun ReaderBatteryIndicator(battery: ReaderBatteryStatus, modifier: Modi
         ReaderBatteryGlyph.BAR_6 -> Icons.Filled.Battery6Bar
         ReaderBatteryGlyph.FULL -> Icons.Filled.BatteryFull
         ReaderBatteryGlyph.CHARGING -> Icons.Filled.BatteryChargingFull
-        ReaderBatteryGlyph.UNKNOWN -> Icons.Filled.BatteryUnknown
+        ReaderBatteryGlyph.UNKNOWN -> Icons.AutoMirrored.Filled.BatteryUnknown
     }
     val painter = rememberVectorPainter(icon)
     val description = when {

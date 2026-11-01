@@ -35,13 +35,23 @@ internal fun ReaderSpreadContent(
     val scope = rememberCoroutineScope()
     val zooms = remember { mutableMapOf<String, ReaderZoomState>() }
     fun groupKey(group: ReaderSpread) = group.key(pages)
-    val current = spreads.getOrNull(pager.currentPage) ?: return
+    if (spreads.isEmpty()) return
+    // 裁剪旧章节后 pager 的下标要到下一次测量才更新；此时必须保留 Pager，
+    // 让它按稳定 key 迁移已有页面，不能因旧下标越界而移除整棵图片视图。
+    val laidOutKey by remember(pager) {
+        derivedStateOf {
+            pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pager.currentPage }?.key
+        }
+    }
+    val activeIndex = spreads.indexOfFirst { groupKey(it) == laidOutKey }
+        .takeIf { it >= 0 } ?: pager.currentPage.coerceIn(spreads.indices)
+    val current = spreads[activeIndex]
     val activeKey = groupKey(current)
     val zoom = zooms.getOrPut(activeKey) { ReaderZoomState() }
     SideEffect { onZoomAvailable(zoom) }
     LaunchedEffect(activeKey) { zoom.reset() }
     DisposableEffect(zooms) { onDispose { zooms.values.forEach { it.stopFling() } } }
-    val retained = spreads.filterIndexed { index, _ -> kotlin.math.abs(index - pager.currentPage) <= 1 }.map(::groupKey).toSet()
+    val retained = spreads.filterIndexed { index, _ -> kotlin.math.abs(index - activeIndex) <= 1 }.map(::groupKey).toSet()
     SideEffect { zooms.keys.toList().filter { it !in retained }.forEach { zooms.remove(it)?.stopFling() } }
     val imageActive = pages[current.indices.first()].source != null
     // Explicit LTR layout prevents the host's locale from reversing the already ordered leaves.
@@ -57,7 +67,7 @@ internal fun ReaderSpreadContent(
             val spread = spreads[index]
             val first = pages[spread.indices.first()]
             if (first.source == null) {
-                if (index == pager.currentPage) commentContent(first)
+                if (index == activeIndex) commentContent(first)
             } else {
                 val state = zooms.getOrPut(groupKey(spread)) { ReaderZoomState() }
                 Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged(state::updateViewport)
@@ -84,7 +94,7 @@ internal fun ReaderSpreadContent(
                                 Box(Modifier.weight(1f).fillMaxHeight()) {
                                     ReaderImageItem(leaf.page, leaf.source!!,
                                         if (spread.indices.size == 2) ContentScale.Fit else contentScale,
-                                        false, index == pager.currentPage, false,
+                                        false, index == activeIndex, false,
                                         zoomState = state, imageLoader = imageLoader, tools = tools,
                                         imageAlignment = readerSpreadImageAlignment(spread.indices.size, visualIndex),
                                         onReady = { onReady(leaf.key) },
