@@ -96,7 +96,10 @@ class ReaderCommentBoundaryUiTest {
         } finally { runOnUiThread { fixture.close() } }
     }
 
-    @Test fun forwardWheelLeavesCommentsWhileMoreCommentsArePending() =
+    @Test fun forwardWheelWaitsForLoadingThenLeavesAtRealEnd() = wheelWaitsForComments(moreContent = false)
+    @Test fun forwardWheelScrollsNewCommentsInsteadOfLeaving() = wheelWaitsForComments(moreContent = true)
+
+    private fun wheelWaitsForComments(moreContent: Boolean) =
         runSkikoComposeUiTest(size = Size(1100f, 734f)) {
             val fixture = Fixture("RIGHT_TO_LEFT", commentCount = 2, pendingMoreComments = true)
             try {
@@ -104,10 +107,29 @@ class ReaderCommentBoundaryUiTest {
                 waitUntil(timeoutMillis = 10_000) { fixture.success()?.chapters?.any { it.uuid == "3" } == true }
                 swipeForward("RIGHT_TO_LEFT")
                 waitUntil(timeoutMillis = 5_000) { fixture.comments.inline("2").uiState.value.feed.loading && fixture.commentCalls.size >= 2 }
-                onNodeWithTag("reader").performMouseInput { moveTo(Offset(550f, 350f)); scroll(1f) }
+                repeat(3) {
+                    onNodeWithTag("reader").performMouseInput { moveTo(Offset(550f, 350f)); advanceEventTime(400); scroll(1f) }
+                    waitForIdle()
+                    assertEquals("2", fixture.success()?.chapterUuid, "Loading must not turn the chapter")
+                    onNodeWithText("阅读菜单").assertIsDisplayed()
+                }
+                val additional = if (moreContent) (2..31).map {
+                    MangaComment("comment-$it", "Reader $it", null, "Loaded comment $it: " + "content ".repeat(12), "2026-11-01")
+                } else emptyList()
+                runOnIdle { fixture.pendingComments.complete(CommentPage(additional, additional.size + 2, null)) }
+                waitUntil(timeoutMillis = 5_000) { !fixture.comments.inline("2").uiState.value.feed.loading }
                 waitForIdle()
-                onNodeWithText("1 / 15").assertIsDisplayed()
+                onNodeWithTag("reader").performMouseInput { advanceEventTime(400); scroll(1f) }
+                waitForIdle()
+                if (moreContent) {
+                    assertEquals("2", fixture.success()?.chapterUuid)
+                    onNodeWithText("阅读菜单").assertIsDisplayed()
+                    // 仍可通过黑边明确离开，加载保护不影响主动翻页。
+                    onNodeWithTag("reader").performMouseInput { moveTo(Offset(10f, 350f)); advanceEventTime(400); scroll(1f) }
+                    waitForIdle()
+                }
                 assertEquals("3", fixture.success()?.chapterUuid)
+                onNodeWithText("1 / 15").assertIsDisplayed()
                 assertEquals(0, fixture.unexpectedHttpCalls)
             } finally { runOnUiThread { fixture.close() } }
         }
@@ -321,10 +343,11 @@ class ReaderCommentBoundaryUiTest {
             override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> =
                 Result.failure(IllegalStateException("Offline fixture: no posting permission"))
         }
+        val pendingComments = CompletableDeferred<CommentPage>()
         private val repository = object : CommentRepository by r.comments {
             override suspend fun getComments(target: CommentTarget, offset: Int, replyId: String?): Result<CommentPage> {
                 commentCalls += target.id
-                if (pendingMoreComments && offset > 0) awaitCancellation()
+                if (pendingMoreComments && offset > 0) return Result.success(pendingComments.await())
                 if (failComments) return Result.failure(RiskControlException("Request was throttled"))
                 return Result.success(CommentPage((0 until commentCount).map {
                     MangaComment("comment-$it", "Reader $it", null, "Offline comment $it: " + "content ".repeat(12), "2026-11-01")

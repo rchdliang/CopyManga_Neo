@@ -130,9 +130,9 @@ fun ReaderChapterComments(
             modifier = Modifier,
             onFeedChanged = { viewModel.updateFeed(page.chapterUuid, it) },
             onClosed = onClosed,
-            navigationModifier = { list, blocked ->
+            navigationModifier = { list, blocked, canLeaveEnd ->
                 if (paged) Modifier
-                    .readerCommentMouseNavigation(list, rtl, blocked, onForward, onBackward, edgeWidth)
+                    .readerCommentMouseNavigation(list, rtl, blocked, onForward, onBackward, edgeWidth, canLeaveEnd)
                     .padding(horizontal = READER_COMMENT_EDGE_WIDTH)
                 else Modifier
             }

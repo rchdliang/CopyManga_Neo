@@ -36,10 +36,12 @@ internal fun Modifier.readerCommentMouseNavigation(
     blocked: Boolean,
     onForward: () -> Unit,
     onBackward: () -> Unit,
-    edgeWidth: Dp = READER_COMMENT_EDGE_WIDTH
+    edgeWidth: Dp = READER_COMMENT_EDGE_WIDTH,
+    canLeaveEnd: () -> Boolean = { true }
 ): Modifier = composed {
     val forward by rememberUpdatedState(onForward)
     val backward by rememberUpdatedState(onBackward)
+    val mayLeaveEnd by rememberUpdatedState(canLeaveEnd)
     val paging = LocalReaderCommentPager.current
     val blocker = remember { Any() }
     DisposableEffect(paging, blocked) {
@@ -67,9 +69,8 @@ internal fun Modifier.readerCommentMouseNavigation(
                 val vertical = abs(delta.y) >= abs(delta.x)
                 val amount = if (vertical) delta.y else if (rtl) -delta.x else delta.x
                 val atEdge = change.position.x < edge || change.position.x > size.width - edge
-                // 判断当前可见列表的边界，不要求读完服务器上的全部评论。
-                // 触底后的下一次滚轮是明确翻页意图，即使列表仍处于滚轮动画或加载状态也应响应。
-                val atBoundary = if (amount > 0) !list.canScrollForward else !list.canScrollBackward
+                // 正文向前翻页还须确认评论已加载并布局；两侧黑边保留主动翻页入口。
+                val atBoundary = if (amount > 0) !list.canScrollForward && mayLeaveEnd() else !list.canScrollBackward
                 if (!atEdge && (!vertical || !atBoundary)) {
                     accumulated = 0f
                     continue

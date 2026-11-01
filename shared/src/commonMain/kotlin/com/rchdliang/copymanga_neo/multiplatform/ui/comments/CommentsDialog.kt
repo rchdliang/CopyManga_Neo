@@ -150,7 +150,7 @@ internal fun CommentsPanel(
     onFeedChanged: (CommentFeed) -> Unit = {},
     onClosed: () -> Unit = {},
     // 由嵌入宿主协调翻页与评论滚动；弹层默认不接管任何手势。
-    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean) -> Modifier = { _, _ -> Modifier }
+    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean, canLeaveEnd: () -> Boolean) -> Modifier = { _, _, _ -> Modifier }
 ) {
     var columnCount by remember { mutableIntStateOf(1) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -296,7 +296,18 @@ internal fun CommentsPanel(
             onDelete = viewModel::delete,
             modifier = modifier.then(navigationModifier(
                 listState,
-                composerOpen || state.reportTarget != null || state.posting || state.reporting || state.deleting || confirmDiscard
+                composerOpen || state.reportTarget != null || state.posting || state.reporting || state.deleting || confirmDiscard,
+                {
+                    val feed = state.feed
+                    val layout = listState.layoutInfo
+                    val expectedItems = (feed.items.size + columnCount - 1) / columnCount + 1 + if (state.parent != null) 1 else 0
+                    // 加载前的调度间隙、加载中和新数据尚未布局时都不是正文的真实末尾。
+                    // 失败后仍允许明确离开，避免错误游标把用户困在评论页。
+                    state.target == target && !feed.loading && !feed.refreshing &&
+                        (feed.nextOffset == null || feed.error != null) &&
+                        layout.totalItemsCount == expectedItems &&
+                        layout.visibleItemsInfo.lastOrNull()?.key == "footer:${feed.items.size}"
+                }
             )),
             embedded = embedded,
             onColumnCountChange = { columnCount = it },
