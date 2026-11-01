@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -103,7 +104,11 @@ fun ReaderChapterComments(
     modifier: Modifier = Modifier,
     refreshVersion: Int = 0,
     viewModel: ReaderChapterCommentsViewModel,
-    commentsViewModel: CommentsViewModel
+    commentsViewModel: CommentsViewModel,
+    paged: Boolean = false,
+    rtl: Boolean = false,
+    onForward: () -> Unit = {},
+    onBackward: () -> Unit = {}
 ) {
     LaunchedEffect(refreshVersion) {
         if (refreshVersion > 0 && commentsViewModel.uiState.value.target?.id == page.chapterUuid) {
@@ -119,6 +124,12 @@ fun ReaderChapterComments(
         embedded = true,
         modifier = modifier,
         onFeedChanged = { viewModel.updateFeed(page.chapterUuid, it) },
-        onClosed = onClosed
+        onClosed = onClosed,
+        navigationModifier = { list, blocked, endLoaded ->
+            if (paged) Modifier
+                .readerCommentMouseNavigation(list, rtl, blocked, endLoaded, onForward, onBackward)
+                .padding(horizontal = READER_COMMENT_EDGE_WIDTH)
+            else Modifier
+        }
     )
 }

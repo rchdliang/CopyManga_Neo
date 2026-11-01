@@ -148,7 +148,9 @@ internal fun CommentsPanel(
     embedded: Boolean = false,
     modifier: Modifier = Modifier,
     onFeedChanged: (CommentFeed) -> Unit = {},
-    onClosed: () -> Unit = {}
+    onClosed: () -> Unit = {},
+    // 由嵌入宿主协调翻页与评论滚动；弹层默认不接管任何手势。
+    navigationModifier: (list: androidx.compose.foundation.lazy.LazyListState, blocked: Boolean, endLoaded: Boolean) -> Modifier = { _, _, _ -> Modifier }
 ) {
     var columnCount by remember { mutableIntStateOf(1) }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -291,7 +293,11 @@ internal fun CommentsPanel(
             onReport = viewModel::openReport,
             canDelete = viewModel::canDelete,
             onDelete = viewModel::delete,
-            modifier = modifier,
+            modifier = modifier.then(navigationModifier(
+                listState,
+                composerOpen || state.reportTarget != null || state.posting || state.reporting || state.deleting || confirmDiscard,
+                state.target == target && !state.feed.loading && state.feed.nextOffset == null
+            )),
             embedded = embedded,
             onColumnCountChange = { columnCount = it },
             onLogin = if (onLogin != null) ({

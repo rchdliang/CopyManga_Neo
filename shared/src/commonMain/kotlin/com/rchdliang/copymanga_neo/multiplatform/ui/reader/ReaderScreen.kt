@@ -982,7 +982,11 @@ fun ReaderSuccessContent(
                     refreshVersion = commentRefreshVersion,
                     modifier = Modifier.fillMaxSize(),
                     viewModel = services!!.chapterComments(comment.chapterUuid),
-                    commentsViewModel = services.inlineComments(comment.chapterUuid)
+                    commentsViewModel = services.inlineComments(comment.chapterUuid),
+                    paged = !isContinuous,
+                    rtl = dir == ReadingDirection.RIGHT_TO_LEFT,
+                    onForward = { automatic = false; forward() },
+                    onBackward = { automatic = false; backward() }
                 )
             })
         }

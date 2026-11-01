@@ -42,6 +42,49 @@ import kotlin.test.*
 /** 完整 ReaderScreen + 评论组件 + ReaderViewModel；仅假仓库和临时数据，禁止外网。 */
 @OptIn(ExperimentalTestApi::class)
 class ReaderCommentBoundaryUiTest {
+    @Test fun rtlMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("RIGHT_TO_LEFT")
+    @Test fun ltrMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("LEFT_TO_RIGHT")
+
+    private fun mouseCrossesComments(direction: String) = runSkikoComposeUiTest(size = Size(1100f, 734f)) {
+        val fixture = Fixture(direction, commentCount = 40)
+        val rtl = direction == "RIGHT_TO_LEFT"
+        try {
+            mount(fixture)
+            waitUntil(timeoutMillis = 10_000) { fixture.success()?.chapters?.any { it.uuid == "3" } == true }
+            swipeForward(direction)
+            waitUntil(timeoutMillis = 5_000) { fixture.comments.inline("2").uiState.value.feed.items.size == 40 }
+            waitForIdle()
+            // 中间滚轮仍浏览真实评论；边缘滚轮则离开评论页。
+            onNodeWithTag("reader").performMouseInput { moveTo(Offset(550f, 350f)); scroll(1f) }
+            waitForIdle()
+            assertEquals("2", fixture.success()?.chapterUuid)
+            onNodeWithText("阅读菜单").assertIsDisplayed()
+            onNodeWithTag("reader").performMouseInput { moveTo(Offset(10f, 350f)); advanceEventTime(400); scroll(1f) }
+            waitForIdle()
+            onNodeWithText("1 / 15").assertIsDisplayed()
+
+            fun backToComments() {
+                onNodeWithTag("reader").performMouseInput { moveTo(Offset(550f, 350f)); advanceEventTime(400); scroll(-1f) }
+                waitForIdle()
+                onNodeWithText("阅读菜单").assertIsDisplayed()
+            }
+            backToComments()
+            onNodeWithTag("reader").performMouseInput {
+                moveTo(Offset(if (rtl) 300f else 800f, 350f)); press()
+                advanceEventTime(60); moveTo(Offset(550f, 350f))
+                advanceEventTime(60); moveTo(Offset(if (rtl) 800f else 300f, 350f)); release()
+            }
+            waitForIdle()
+            onNodeWithText("1 / 15").assertIsDisplayed()
+            backToComments()
+            onNodeWithTag("reader").performMouseInput { click(Offset(if (rtl) 10f else 1090f, 350f)) }
+            waitForIdle()
+            onNodeWithText("1 / 15").assertIsDisplayed()
+            assertEquals(1, fixture.commentCalls.count { it == "2" })
+            assertEquals(0, fixture.unexpectedHttpCalls)
+        } finally { runOnUiThread { fixture.close() } }
+    }
+
     @Test fun throttledInlineCommentsDoNotReloadWhenReturningToTheSpread() =
         runSkikoComposeUiTest(size = Size(1100f, 734f)) {
             val fixture = Fixture("RIGHT_TO_LEFT", missingNext = true, failComments = true)
@@ -189,7 +232,7 @@ class ReaderCommentBoundaryUiTest {
     }
 
     private class Fixture(direction: String, var failNext: Boolean = false, val actualImages: Boolean = false,
-                          val missingNext: Boolean = false, val failComments: Boolean = false) {
+                          val missingNext: Boolean = false, val failComments: Boolean = false, val commentCount: Int = 0) {
         private val root = Files.createTempDirectory("reader-comment-boundary-")
         private val images = (0..14).map { page ->
             if (!actualImages) "fixture-$page" else {
@@ -254,7 +297,9 @@ class ReaderCommentBoundaryUiTest {
             override suspend fun getComments(target: CommentTarget, offset: Int, replyId: String?): Result<CommentPage> {
                 commentCalls += target.id
                 if (failComments) return Result.failure(RiskControlException("Request was throttled"))
-                return Result.success(CommentPage(emptyList(), 0, null))
+                return Result.success(CommentPage((0 until commentCount).map {
+                    MangaComment("comment-$it", "Reader $it", null, "Offline comment $it: " + "content ".repeat(12), "2026-11-01")
+                }, commentCount, null))
             }
             override suspend fun getDownloadedChapterComments(uuid: String) =
                 Result.success<DownloadedChapterComments?>(null)
