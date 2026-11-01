@@ -1,4 +1,10 @@
 {
+  "resources": [
+    {
+      "module": "java.desktop",
+      "glob": "javax/swing/text/html/parser/html32.bdtd"
+    }
+  ],
   "reflection": [
     {
       "type": "com.rchdliang.copymanga_neo.multiplatform.platform.ClipboardUser32",
