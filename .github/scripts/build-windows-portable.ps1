@@ -6,7 +6,8 @@
     [Parameter(Mandatory = $true)][string]$OutputDirectory
 )
 $ErrorActionPreference = 'Stop'
-$AppImage = (Resolve-Path -LiteralPath $AppImage).Path
+# 与输出目录采用相同的 .NET 路径规范化，展开 CI 临时目录中的 8.3 短路径。
+$AppImage = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $AppImage).Path)
 if (-not (Test-Path -LiteralPath (Join-Path $AppImage 'CopyMangaNeo.exe') -PathType Leaf)) {
     throw 'Native application executable missing'
 }

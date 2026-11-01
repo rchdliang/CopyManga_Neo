@@ -1,5 +1,7 @@
 """验证 Windows 原生应用目录的 ZIP 内容、启动标记和校验文件。"""
 import hashlib
+import ctypes
+from ctypes import wintypes
 import os
 from pathlib import Path
 import shutil
@@ -34,11 +36,11 @@ class WindowsPortableTest(unittest.TestCase):
             file.write_bytes(data)
         subprocess.run(["attrib", "+h", str(self.image / ".hidden-resource")], check=True)
 
-    def package(self, output=None):
+    def package(self, output=None, image=None):
         return subprocess.run([
             POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
             str(ROOT / ".github/scripts/build-windows-portable.ps1"),
-            "-AppImage", str(self.image), "-AppVersion", "1.2.3",
+            "-AppImage", str(image or self.image), "-AppVersion", "1.2.3",
             "-ArtifactVersion", "1.2.3+234", "-Architecture", "x64",
             "-OutputDirectory", str(output or self.output),
         ], capture_output=True)
@@ -63,13 +65,40 @@ class WindowsPortableTest(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_jvm_image_and_nested_output_are_rejected(self):
-        self.assertNotEqual(self.package(self.image / "output").returncode, 0)
+        result = self.package(self.image / "output")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"ZIP output directory must be outside", result.stderr)
         self.assertFalse((self.image / "output").exists())
         runtime = self.image / "runtime/bin/server/jvm.dll"
         runtime.parent.mkdir(parents=True)
         runtime.write_bytes(b"synthetic JVM")
         self.assertNotEqual(self.package().returncode, 0)
         self.assertFalse(self.output.exists())
+
+    def test_short_and_long_paths_reject_nested_output_before_creating_it(self):
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        def convert(function_name, path):
+            function = getattr(kernel32, function_name)
+            function.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+            function.restype = wintypes.DWORD
+            buffer = ctypes.create_unicode_buffer(32768)
+            size = function(str(path), buffer, len(buffer))
+            if size == 0:
+                raise ctypes.WinError(ctypes.get_last_error())
+            self.assertLess(size, len(buffer))
+            return Path(buffer.value)
+
+        long_image = convert("GetLongPathNameW", self.image)
+        short_image = convert("GetShortPathNameW", self.image)
+        if str(long_image).casefold() == str(short_image).casefold():
+            self.skipTest("The test volume does not provide an 8.3 short-path alias")
+        for image, output_parent in [(short_image, short_image), (short_image, long_image), (long_image, short_image)]:
+            with self.subTest(image=image, output_parent=output_parent):
+                output = output_parent / "output"
+                result = self.package(output, image=image)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b"ZIP output directory must be outside", result.stderr)
+                self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":
