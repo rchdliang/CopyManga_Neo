@@ -1,11 +1,11 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.detail
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.horizontalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -622,7 +622,7 @@ fun DetailContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                        .horizontalScrollWithMouse(rememberScrollState())
                         .padding(horizontal = 0.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
                 ) {

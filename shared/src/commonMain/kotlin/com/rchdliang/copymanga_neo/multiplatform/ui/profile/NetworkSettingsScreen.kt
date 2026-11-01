@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Restore
@@ -116,7 +116,7 @@ internal fun NetworkSettingsScreen(
             Column(
                 Modifier
                     .weight(1f)
-                    .verticalScroll(if (advanced) advancedScroll else mainScroll)
+                    .verticalScrollWithMouse(if (advanced) advancedScroll else mainScroll)
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (!advanced) {
@@ -341,7 +341,7 @@ internal fun NetworkSettingsScreen(
     if (choice != null && active) AlertDialog(
         onDismissRequest = { choice = null },
         title = { Text(when (choice) { "mode" -> "请求模式"; "proxy" -> "代理"; else -> "漫画详情预加载" }) },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        text = { Column(Modifier.verticalScrollWithMouse(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (choice == "mode") Column(Modifier.selectableGroup()) {
                 NetworkChoice("网页模式", draft.requestMode == RequestMode.WEB, enabled) { viewModel.edit { it.copy(requestMode = RequestMode.WEB) } }
                 NetworkChoice("App 模式", draft.requestMode == RequestMode.OFFICIAL_APP, enabled) { viewModel.edit { it.copy(requestMode = RequestMode.OFFICIAL_APP) } }

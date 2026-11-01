@@ -1,10 +1,10 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.export
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,7 +40,7 @@ fun ComicExportDialogs(viewModel: ComicExportViewModel) {
     ) {
         Column(
             Modifier.testTag("comic-export-options").fillMaxWidth().heightIn(max = 640.dp)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
+                .verticalScrollWithMouse(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

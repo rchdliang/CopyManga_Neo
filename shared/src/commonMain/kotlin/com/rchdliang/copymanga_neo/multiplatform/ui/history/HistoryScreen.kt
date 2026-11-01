@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.history
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import androidx.compose.foundation.layout.Arrangement
@@ -11,10 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.outlined.History
@@ -152,7 +152,7 @@ fun HistoryContent(
                     EmptyContent(
                         icon = Icons.AutoMirrored.Filled.Login,
                         title = "登录后查看云端浏览记录",
-                        modifier = Modifier.verticalScroll(rememberScrollState())
+                        modifier = Modifier.verticalScrollWithMouse(rememberScrollState())
                     ) {
                         FilledTonalButton(onClick = onLoginClick) {
                             Text("前往登录", color = MaterialTheme.colorScheme.onSecondaryContainer)
@@ -171,11 +171,11 @@ fun HistoryContent(
                         icon = Icons.Outlined.History,
                         title = "暂无云端漫画浏览记录",
                         description = "阅读漫画后，可以在这里找回浏览过的作品。",
-                        modifier = Modifier.verticalScroll(rememberScrollState())
+                        modifier = Modifier.verticalScrollWithMouse(rememberScrollState())
                     )
                 }
                 else -> {
-                    LazyColumn(
+                    MouseDragLazyColumn(
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .widthIn(max = 840.dp)
@@ -259,7 +259,7 @@ private fun HistoryMessage(message: String, action: String? = null, onAction: ()
     Box(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScrollWithMouse(rememberScrollState())
             .padding(24.dp), contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

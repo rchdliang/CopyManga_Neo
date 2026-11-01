@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -54,7 +54,7 @@ internal fun ProfileSettingsScaffold(
                     Modifier
                         .widthIn(max = 720.dp)
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScrollWithMouse(rememberScrollState())
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(ProfileListDefaults.Gap),
                     content = content

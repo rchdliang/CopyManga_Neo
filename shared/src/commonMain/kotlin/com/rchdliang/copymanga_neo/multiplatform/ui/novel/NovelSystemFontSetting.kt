@@ -1,9 +1,9 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
@@ -60,7 +60,7 @@ internal fun NovelSystemFontSetting(
                 failed -> Text("无法读取系统字体，请关闭后重新打开阅读器。")
                 fonts == null -> Text("正在读取系统字体…")
                 fonts.orEmpty().isEmpty() -> Text("没有可用的系统字体")
-                else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                else -> MouseDragLazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
                     items(fonts.orEmpty(), key = { it.id }) { font ->
                         val isSelected = preferences.systemFont == font.id
                         val textStyle = novelTextStyle(preferences.copy(systemFont = font.id))

@@ -1,9 +1,10 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.horizontalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -271,7 +271,7 @@ private fun ReaderChoiceRow(
     change: (Int) -> Unit
 ) {
     Row(
-        Modifier.horizontalScroll(rememberScrollState()),
+        Modifier.horizontalScrollWithMouse(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         choices.forEach { value ->
@@ -311,7 +311,7 @@ fun ReaderCatalogDialog(
                         )
                     }
                 }
-                LazyColumn(Modifier.heightIn(max = 440.dp)) {
+                MouseDragLazyColumn(Modifier.heightIn(max = 440.dp)) {
                     items(state.chapters, key = { it.uuid }) { chapter ->
                         TextButton(onClick = { onSelect(chapter.uuid) }) {
                             Text(
@@ -348,7 +348,7 @@ fun ReaderBookmarksDialog(
                 title = "还没有书签",
                 description = "点击顶栏书签图标收藏当前页。"
             )
-            else LazyColumn(Modifier.heightIn(max = 440.dp)) {
+            else MouseDragLazyColumn(Modifier.heightIn(max = 440.dp)) {
                 items(bookmarks, key = { "${it.chapterUuid}:${it.page}" }) { mark ->
                     TextButton(onClick = { onSelect(mark) }) {
                         Text(

@@ -5,6 +5,9 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteReport
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.pager.PagerDefaults
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,7 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -252,7 +255,7 @@ private fun NovelScrollViewport(
             { selection.selectedTexts.isNotEmpty() }, onToggleControls, onDismissControls
         )
     ) {
-        LazyColumn(
+        MouseDragLazyColumn(
             Modifier.fillMaxSize()
                 .focusRequester(keyboardFocus)
                 .readerKeyboardNavigation(keyboardEnabled, ReadingDirection.TOP_TO_BOTTOM, keyboardUnavailable) { command ->
@@ -410,6 +413,9 @@ private fun NovelPagedViewport(
     } else {
         HorizontalPager(
             state = pager, modifier = Modifier.fillMaxSize()
+                .mouseDragScroll(pager, Orientation.Horizontal,
+                    enabled = LocalRouteActive.current && !selectedColumns.values.any { it } && applied == navigation,
+                    flingBehavior = PagerDefaults.flingBehavior(pager))
                 .focusRequester(keyboardFocus)
                 .readerKeyboardNavigation(keyboardEnabled, ReadingDirection.LEFT_TO_RIGHT, keyboardUnavailable) { command ->
                     onDismissControls()

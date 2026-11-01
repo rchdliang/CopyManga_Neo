@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.foundation.clickable
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -84,7 +84,7 @@ internal fun ColumnScope.NovelReaderSettings(
                 text = { Text(title, color = MaterialTheme.colorScheme.onSurface) })
         }
     }
-    LazyColumn(
+    MouseDragLazyColumn(
         Modifier
             .weight(1f)
             .fillMaxWidth(),
@@ -291,7 +291,7 @@ internal fun ColumnScope.NovelReaderBookmarks(
     onOpen: (LocalReadingRecord) -> Unit,
     onDelete: (LocalReadingRecord) -> Unit
 ) {
-    LazyColumn(
+    MouseDragLazyColumn(
         Modifier
             .weight(1f)
             .fillMaxWidth()

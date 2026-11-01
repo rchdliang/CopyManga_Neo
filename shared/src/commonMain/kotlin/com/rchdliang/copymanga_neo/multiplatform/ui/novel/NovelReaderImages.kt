@@ -1,10 +1,14 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.RouteImageScope
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.routeImageModel
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.pager.PagerDefaults
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
@@ -25,7 +29,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -207,7 +210,7 @@ internal fun ColumnScope.NovelReaderImageGrid(
     blurred: Boolean = false,
     onOpen: (String) -> Unit
 ) {
-    LazyVerticalGrid(
+    MouseDragLazyVerticalGrid(
         columns = GridCells.Adaptive(128.dp),
         modifier = Modifier
             .weight(1f)
@@ -302,7 +305,9 @@ internal fun NovelReaderGallery(
                 HorizontalPager(
                     state = pager, modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .mouseDragScroll(pager, Orientation.Horizontal, enabled = !zoomed,
+                            flingBehavior = PagerDefaults.flingBehavior(pager)),
                     userScrollEnabled = !zoomed
                 ) { index ->
                     var size by remember { mutableStateOf(IntSize.Zero) }

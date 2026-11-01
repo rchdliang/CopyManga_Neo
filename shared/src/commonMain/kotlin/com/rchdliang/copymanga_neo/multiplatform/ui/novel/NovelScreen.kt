@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteProgressFlushEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -301,7 +301,7 @@ private fun NovelDiscovery(
         applySystemInsets = false
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            LazyVerticalGrid(
+            MouseDragLazyVerticalGrid(
                 state = grid,
                 columns = if (compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
                 else GridCells.Adaptive(360.dp),

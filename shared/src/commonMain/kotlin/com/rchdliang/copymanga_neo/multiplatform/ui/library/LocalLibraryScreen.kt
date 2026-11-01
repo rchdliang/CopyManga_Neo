@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.library
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -188,7 +188,7 @@ fun LocalLibraryContent(
                     }
                 }
                 if (state.owner == null && state.error == null) LinearProgressIndicator(Modifier.fillMaxWidth())
-                LazyColumn(
+                MouseDragLazyColumn(
                     Modifier.weight(1f),
                     contentPadding = PaddingValues(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)

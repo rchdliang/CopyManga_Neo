@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.comments
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +46,7 @@ internal fun CommentReportDialog(
         onDismissRequest = { if (!state.reporting) onDismiss() },
         title = { Text("举报评论", color = MaterialTheme.colorScheme.onSurface) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.verticalScrollWithMouse(rememberScrollState())) {
                 Text(
                     state.reportTarget?.content.orEmpty(),
                     maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,

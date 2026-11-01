@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.comments
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
@@ -32,13 +34,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
@@ -573,7 +573,7 @@ internal fun CommentsContent(
                                 )
                             }
                         ) {
-                            LazyColumn(
+                            MouseDragLazyColumn(
                                 state = listState, modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(bottom = if (embedded) 16.dp else 96.dp)
                             ) {
@@ -1002,7 +1002,7 @@ private fun CommentComposer(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScrollWithMouse(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {

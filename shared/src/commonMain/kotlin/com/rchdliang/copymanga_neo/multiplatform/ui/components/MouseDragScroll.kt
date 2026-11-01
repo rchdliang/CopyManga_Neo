@@ -107,12 +107,13 @@ fun Modifier.mouseDragScroll(
                     deltas.trySend(change.positionChange().axis())
                     change.consume()
                 }
-                val completed = if (orientation == Orientation.Vertical) {
-                    verticalDrag(start.id, onDrag)
-                } else {
-                    horizontalDrag(start.id, onDrag)
+                val completed = try {
+                    if (orientation == Orientation.Vertical) verticalDrag(start.id, onDrag)
+                    else horizontalDrag(start.id, onDrag)
+                } finally {
+                    // 禁用滚动或切换界面取消手势时，也要结束消费增量的协程，释放滚动锁。
+                    deltas.close()
                 }
-                deltas.close()
                 val velocity = if (completed) tracker.calculateVelocity().axis() else 0f
                 scope.launch {
                     dragJob.join()

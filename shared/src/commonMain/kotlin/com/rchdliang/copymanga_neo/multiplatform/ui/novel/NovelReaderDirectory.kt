@@ -5,6 +5,7 @@
  */
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -34,7 +35,6 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -343,7 +343,7 @@ internal fun NovelReaderDirectory(
                     .fillMaxWidth()
             ) {
                 val fastScroll = rows.size >= 30
-                LazyColumn(
+                MouseDragLazyColumn(
                     Modifier
                         .fillMaxSize()
                         .padding(end = if (fastScroll) 32.dp else 0.dp),

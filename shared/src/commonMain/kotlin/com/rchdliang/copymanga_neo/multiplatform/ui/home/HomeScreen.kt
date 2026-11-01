@@ -1,18 +1,18 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.home
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyRow
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.horizontalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.app.LocalStartupTrace
 import com.rchdliang.copymanga_neo.multiplatform.app.startupDraw
 import com.rchdliang.copymanga_neo.multiplatform.app.startupLayout
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.ripple
 import androidx.compose.ui.draw.clip
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -27,9 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -316,11 +314,10 @@ fun HomeContent(
                 }
 
                 else -> {
-                    LazyColumn(
+                    MouseDragLazyColumn(
                         state = pageScroll,
                         modifier = Modifier
                             .fillMaxSize().startupLayout(trace, "home_list")
-                            .mouseDragScroll(pageScroll, Orientation.Vertical)
                             .padding(horizontal = 16.dp),
                         contentPadding = PaddingValues(bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -713,7 +710,7 @@ private fun HomeRankChoices(
     onPeriodSelected: (String) -> Unit
 ) {
     Row(
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        modifier = Modifier.horizontalScrollWithMouse(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val periods = listOf(
@@ -763,10 +760,10 @@ private fun HomeTopicsSection(
                     }.distinctUntilChanged().collect { nearEnd -> if (nearEnd) onLoadMore() }
                 }
             }
-            LazyRow(
+            MouseDragLazyRow(
                 state = listState,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.mouseDragScroll(listState, Orientation.Horizontal)
+                modifier = Modifier
             ) {
                 if (topics.isEmpty() && (initialLoading || paging.nextOffset != null || paging.isLoading)) {
                     items(visibleCards, key = { "topic-placeholder-$it" }) {
@@ -815,11 +812,11 @@ private fun ComicGrid(
         HomePlaceholderRow(placeholderCount, cardWidth, modifier = modifier)
         return
     }
-    LazyRow(
+    MouseDragLazyRow(
         contentPadding = PaddingValues(0.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         state = state,
-        modifier = modifier.mouseDragScroll(state, Orientation.Horizontal)
+        modifier = modifier
     ) {
         itemsIndexed(
             items = comics,
@@ -1058,7 +1055,7 @@ private fun HomeRanksAndTopicsPreview() {
     val state = rememberHomePreviewState()
     CopyManga_NeoTheme(dynamicColor = false) {
         Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
+            MouseDragLazyColumn(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -1133,10 +1130,10 @@ private fun HomeNovelSection(
                 val count = homeBookColumns(maxWidth)
                 val width = (maxWidth - 8.dp * (count - 1)) / count
                 if (state.books.isEmpty()) HomePlaceholderRow(count, width)
-                else LazyRow(
+                else MouseDragLazyRow(
                     state = listState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.mouseDragScroll(listState, Orientation.Horizontal)
+                    modifier = Modifier
                 ) {
                     items(state.books, key = { it.path }) { book ->
                         NovelTransitionCard(

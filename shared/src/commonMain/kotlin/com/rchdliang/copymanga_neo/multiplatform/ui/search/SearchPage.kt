@@ -1,8 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.search
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.horizontalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,7 +116,7 @@ internal fun SearchCategorySelector(
     }
     Row(
         Modifier
-            .horizontalScroll(rememberScrollState())
+            .horizontalScrollWithMouse(rememberScrollState())
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)
     ) {

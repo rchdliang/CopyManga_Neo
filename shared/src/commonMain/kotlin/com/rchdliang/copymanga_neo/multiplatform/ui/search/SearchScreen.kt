@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.search
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyRow
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
@@ -21,10 +23,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -266,7 +266,7 @@ internal fun SearchOptionRow(
             style = MaterialTheme.typography.labelLarge
         )
         Box(Modifier.weight(1f)) {
-            LazyRow(
+            MouseDragLazyRow(
                 state = list,
                 contentPadding = PaddingValues(end = if (onAllTags != null) 48.dp else 0.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -481,7 +481,7 @@ internal fun ComicResultsGrid(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = if (state.compactLayout) GridCells.Fixed(comicGridColumns(maxWidth - 32.dp))
         else GridCells.Adaptive(360.dp)
-        LazyVerticalGrid(
+        MouseDragLazyVerticalGrid(
             columns = columns, state = grid, modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),

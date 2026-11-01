@@ -1,8 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.export
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
@@ -85,7 +85,7 @@ internal fun ComicExportSelectionScreen(
                     Text(state.error.orEmpty(), color = MaterialTheme.colorScheme.error)
                     TextButton(onClick = viewModel::load) { Text("重试") }
                 }
-                else -> LazyColumn(
+                else -> MouseDragLazyColumn(
                     Modifier.widthIn(max = 840.dp).fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)

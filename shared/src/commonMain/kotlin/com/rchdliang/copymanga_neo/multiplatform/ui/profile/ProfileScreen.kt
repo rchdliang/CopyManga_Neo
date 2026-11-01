@@ -1,12 +1,12 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.lazy.rememberLazyListState
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -32,7 +31,6 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
@@ -338,12 +336,12 @@ internal fun ProfileMainPage(
                 )
             }
         ) {
-            LazyColumn(
+            MouseDragLazyColumn(
                 Modifier
                     .widthIn(max = 1040.dp)
                     .fillMaxSize()
                     .align(Alignment.TopCenter)
-                    .mouseDragScroll(pageScroll, Orientation.Vertical),
+                    ,
                 state = pageScroll,
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -720,7 +718,7 @@ internal fun LoginDialog(
         text = {
             CompositionLocalProvider(LocalBringIntoViewSpec provides relocationSpec) {
                 Column(
-                    Modifier.verticalScroll(formScrollState),
+                    Modifier.verticalScrollWithMouse(formScrollState),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     CompositionLocalProvider(LocalBringIntoViewSpec provides inheritedRelocationSpec) {

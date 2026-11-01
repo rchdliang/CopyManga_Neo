@@ -1,13 +1,13 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.downloads
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.runtime.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.gestures.Orientation
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,12 +22,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.filled.Close
@@ -178,8 +176,7 @@ private fun DownloadsContent(
                 ) {
                     EmptyDownloadSection(
                         onDiscover = onDiscover,
-                        modifier = Modifier.verticalScroll(emptyScroll)
-                            .mouseDragScroll(emptyScroll, Orientation.Vertical)
+                        modifier = Modifier.verticalScrollWithMouse(emptyScroll)
                     )
                 }
             }
@@ -195,13 +192,12 @@ private fun DownloadsContent(
             onExitSelectionMode()
         }
 
-        LazyVerticalGrid(
+        MouseDragLazyVerticalGrid(
             state = gridState,
             columns = GridCells.Adaptive(cardMinWidth),
             modifier = Modifier
                 .widthIn(max = 1120.dp)
-                .fillMaxSize()
-                .mouseDragScroll(gridState, Orientation.Vertical),
+                .fillMaxSize(),
             contentPadding = PaddingValues(
                 start = screenPadding,
                 end = screenPadding,

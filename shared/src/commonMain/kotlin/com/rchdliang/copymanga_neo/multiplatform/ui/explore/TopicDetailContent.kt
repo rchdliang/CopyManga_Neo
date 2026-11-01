@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.explore
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -178,7 +178,7 @@ private fun TopicPreviewContent(darkTheme: Boolean) {
     CopyManga_NeoTheme(darkTheme = darkTheme) {
         Surface {
             BoxWithConstraints {
-                LazyVerticalGrid(
+                MouseDragLazyVerticalGrid(
                     columns = GridCells.Fixed(
                         ((maxWidth - 16.dp) / 152.dp).toInt().coerceAtLeast(2)
                     ),

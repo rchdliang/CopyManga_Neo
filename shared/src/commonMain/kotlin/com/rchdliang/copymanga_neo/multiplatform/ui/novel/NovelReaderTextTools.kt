@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.novel
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColumn
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UnsavedChangesDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
@@ -13,10 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.EmptyContent
 import androidx.compose.material.icons.outlined.Check
@@ -183,7 +183,7 @@ internal fun NovelAnnotationEditor(
         },
         text = {
             Column(
-                Modifier.verticalScroll(rememberScrollState()),
+                Modifier.verticalScrollWithMouse(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Surface(
@@ -268,7 +268,7 @@ internal fun ColumnScope.NovelReaderAnnotations(
     onEdit: (NovelAnnotation) -> Unit,
     onDelete: (NovelAnnotation) -> Unit
 ) {
-    LazyColumn(
+    MouseDragLazyColumn(
         Modifier
             .weight(1f)
             .fillMaxWidth(), contentPadding = PaddingValues(bottom = 12.dp)

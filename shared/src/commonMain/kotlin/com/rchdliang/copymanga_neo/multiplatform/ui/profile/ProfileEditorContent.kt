@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,7 +9,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Close
@@ -118,7 +118,7 @@ internal fun ProfileEditorContent(
                 }
                 Column(
                     Modifier.weight(1f, fill = false).fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScrollWithMouse(rememberScrollState())
                         .padding(horizontal = sidePadding, vertical = if (compact) 8.dp else 12.dp),
                     verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 24.dp)
                 ) {

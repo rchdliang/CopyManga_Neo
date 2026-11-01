@@ -1,5 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.explore
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyRow
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
@@ -17,10 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -229,7 +229,7 @@ fun ComicExploreContent(
                             .collect { nearEnd -> if (nearEnd) onLoadMore() }
                     }
                 }
-                LazyVerticalGrid(
+                MouseDragLazyVerticalGrid(
                     columns = GridCells.Fixed(columns),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
@@ -411,7 +411,7 @@ private fun OptionRow(
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurface
     )
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    MouseDragLazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(options, key = { it.pathWord }) { option ->
             FilterChip(
                 selected = selected == option.pathWord,

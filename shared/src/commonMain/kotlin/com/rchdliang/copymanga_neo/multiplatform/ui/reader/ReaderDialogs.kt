@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
@@ -85,7 +85,7 @@ fun ReaderSettingsDialog(
         title = { Text(section?.title ?: "阅读设置", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             CompositionLocalProvider(LocalReaderSettingsNavigation provides navigate) {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.verticalScrollWithMouse(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (section != null) section.content() else {
                         ReaderSettingsOverview(qualitySettings != null,
                             display = { navigate(ReaderSettingsPage("显示设置") { displayContent() }) },

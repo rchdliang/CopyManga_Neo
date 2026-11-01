@@ -1,13 +1,12 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.favorites
 
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVerticalGrid
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import androidx.compose.runtime.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.Orientation
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.mouseDragScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
@@ -259,7 +257,7 @@ fun FavoritesContent(
 
                 else -> {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        LazyVerticalGrid(
+                        MouseDragLazyVerticalGrid(
                             state = activeGrid,
                             columns = GridCells.Adaptive(120.dp),
                             contentPadding = PaddingValues(
@@ -271,7 +269,6 @@ fun FavoritesContent(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
-                                .mouseDragScroll(activeGrid, Orientation.Vertical)
                         ) {
                             if (error != null) item(
                                 span = { GridItemSpan(maxLineSpan) },
