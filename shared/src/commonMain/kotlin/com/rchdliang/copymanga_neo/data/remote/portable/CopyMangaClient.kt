@@ -113,6 +113,10 @@ class CopyMangaClient(
         return root["results"] as? JsonObject ?: error("官方接口未返回有效内容")
     }
     suspend fun execute(request: ApiRequest): NetworkResponse = coroutineScope {
+        val requestId = nextDiagnosticId()
+        val trace = currentCoroutineContext()[NetworkTrace]
+        var terminalRecorded = false
+        var recordFailure: ((String) -> Unit)? = null
         val snapshot = state.snapshot
         val settings = snapshot.settings
         val mode = request.mode ?: settings.requestMode
@@ -190,9 +194,19 @@ class CopyMangaClient(
                 }
                 state.requireCurrent(snapshot.generation)
                 val started=nowMillis()
+                val safeQuery = diagnosticQuery(query)
+                val authKind = diagnosticAuth(headers)
                 fun diagnostic(phase:String,status:Int?=null,code:Int?=null,bytes:Int?=null,failure:String?=null) {
-                    runCatching { diagnostics?.invoke(NetworkDiagnostic(phase,request.method,host,redactedEndpoint(path),mode,snapshot.generation,status,code,nowMillis()-started,bytes,failure,request.method!="GET"||path.contains("/chapter2download/"))) }
+                    if (phase != "request") {
+                        if (terminalRecorded) return
+                        terminalRecorded = true
+                    }
+                    runCatching { diagnostics?.invoke(NetworkDiagnostic(phase,request.method,host,diagnosticEndpoint(path),mode,snapshot.generation,status,code,nowMillis()-started,bytes,failure,request.method!="GET"||path.contains("/chapter2download/"),
+                        requestId = requestId, operationId = trace?.operationId ?: requestId,
+                        source = trace?.source ?: diagnosticSource(path), trigger = trace?.trigger ?: "unspecified",
+                        auth = authKind, query = safeQuery, forceRefresh = trace?.forceRefresh)) }
                 }
+                recordFailure = { diagnostic("failure", failure = it) }
                 diagnostic("request")
                 if(request.avatarJpeg!=null) headers.remove("Content-Type")
                 val response=try { selectedHttp.prepareRequest {
@@ -257,6 +271,12 @@ class CopyMangaClient(
                 if(app&&response.status.value in 200..299&&!permitsEmptyResult(request.method,path)&&root?.get("results")==JsonNull) error("App 接口返回空结果，请检查登录会话和设备配置；未自动回退网页路径")
                 NetworkResponse(response.status.value,text,response.headers.entries().associate { it.key to it.value })
             } finally { risk.unregister(job) }
+        } catch (error: CancellationException) {
+            recordFailure?.invoke("cancelled")
+            throw error
+        } catch (error: Exception) {
+            recordFailure?.invoke("transport_or_policy")
+            throw error
         } finally { state.unregister(job) }
     }
 
@@ -277,8 +297,17 @@ class CopyMangaClient(
             (target.host in setOf(snapshot.settings.apiHost,snapshot.settings.officialApp.apiHost,CopyMangaNetworkConfig.API_HOST)&&target.encodedPath.startsWith("/api/"))
         require(!site||target.protocol==URLProtocol.HTTPS){"站点资源必须使用 HTTPS"}
         val requestedAt=nowMillis()
+        val requestId = nextDiagnosticId()
+        val trace = currentCoroutineContext()[NetworkTrace]
+        var terminalRecorded = false
         fun diagnostic(phase:String,status:Int?=null,bytes:Int?=null,failure:String?=null) {
-            runCatching{diagnostics?.invoke(NetworkDiagnostic(phase,"GET",target.host,redactedEndpoint(target.encodedPath),snapshot.settings.requestMode,snapshot.generation,status,elapsedMillis=nowMillis()-requestedAt,bytes=bytes,failureKind=failure))}
+            if (phase != "request") {
+                if (terminalRecorded) return
+                terminalRecorded = true
+            }
+            runCatching{diagnostics?.invoke(NetworkDiagnostic(phase,"GET",target.host,redactedEndpoint(target.encodedPath),snapshot.settings.requestMode,snapshot.generation,status,elapsedMillis=nowMillis()-requestedAt,bytes=bytes,failureKind=failure,
+                requestId = requestId, operationId = trace?.operationId ?: requestId,
+                source = trace?.source ?: "resource", trigger = trace?.trigger ?: "resource_load", auth = "guest"))}
         }
         state.register(job,snapshot.generation)
         try {

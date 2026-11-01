@@ -5,6 +5,7 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rchdliang.copymanga_neo.data.remote.portable.NetworkTrace
 import com.rchdliang.copymanga_neo.domain.model.ChapterContent
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
@@ -192,7 +193,7 @@ class ReaderViewModel constructor(
         mutableCommentsAllowed.value = true
         mutableClosedChapters.value = emptySet()
         policyJob?.cancel()
-        policyJob = viewModelScope.launch(exceptionHandler) {
+        policyJob = viewModelScope.launch(exceptionHandler + NetworkTrace("reader.metadata", "reader_open")) {
             val owner = readingProgress.awaitOwner()
             downloadRepository.getDownloadedComic(comicPathWord)?.let { cached ->
                 comicTitle = cached.name
@@ -224,14 +225,15 @@ class ReaderViewModel constructor(
                     .onFailure { if (it is CancellationException) throw it }
             }
         }
-        loadChapter(comicPathWord, initialChapterPathWord, groupPathWord)
+        loadChapter(comicPathWord, initialChapterPathWord, groupPathWord, trigger = "reader_open")
     }
 
     fun loadChapter(
         comicPathWord: String,
         chapterUuid: String,
         group: String = "default",
-        preserveContent: Boolean = false
+        preserveContent: Boolean = false,
+        trigger: String = "chapter_navigation"
     ) {
         // 刷新保留同一阅读会话，页码和连续滚动偏移仍由已存在的界面状态维护。
         val keepContent = preserveContent && currentComicPathWord == comicPathWord &&
@@ -269,7 +271,7 @@ class ReaderViewModel constructor(
         val revision = sessionRevision
 
         loadJob?.cancel()
-        loadJob = viewModelScope.launch(exceptionHandler) {
+        loadJob = viewModelScope.launch(exceptionHandler + NetworkTrace("reader.chapter", trigger)) {
             if (!preserveOnFailure) _uiState.value = ReaderUiState.Loading
 
             try {
@@ -366,7 +368,7 @@ class ReaderViewModel constructor(
         comic: String, uuid: String, group: String, revision: Long
     ) {
         navigationJobs.remove(uuid)?.cancel()
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+        val job = viewModelScope.launch(NetworkTrace("reader.offline_navigation", "offline_chapter"), start = CoroutineStart.LAZY) {
             try {
                 val result = repository.getChapterInfo(comic, uuid, group)
                 ensureActive()
@@ -453,7 +455,10 @@ class ReaderViewModel constructor(
         else { attemptedNext = next; appendBoundary = boundary.uuid; mutableAppending.value = true }
         val revision = sessionRevision
         val comic = currentComicPathWord
-        val request = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+        val request = viewModelScope.launch(
+            NetworkTrace(if (previous) "reader.preload_previous" else "reader.preload_next",
+                if (retry) "explicit_adjacent_request" else "reader_boundary"),
+            start = kotlinx.coroutines.CoroutineStart.LAZY) {
             try {
                 val downloaded = downloadRepository.getDownloadedChapter(next)
                 val result = if (downloaded != null && downloaded.comicPathWord == comic) {
@@ -546,7 +551,7 @@ class ReaderViewModel constructor(
         val comic = currentComicPathWord
         val group = currentGroup
         mutableCatalog.value = ReaderCatalogUiState(loading = true)
-        catalogJob = viewModelScope.launch {
+        catalogJob = viewModelScope.launch(NetworkTrace("reader.catalog", "open_or_retry_catalog", forceRefresh = false)) {
             var local = emptyList<ReaderChapterLink>()
             try {
                 local = downloadRepository.getDownloadedChapters(comic)
@@ -656,7 +661,7 @@ class ReaderViewModel constructor(
     fun refreshCurrentChapter() {
         val comic = currentComicPathWord.ifEmpty { return }
         val chapter = currentChapterUuid.ifEmpty { return }
-        loadChapter(comic, chapter, currentGroup.ifEmpty { "default" }, preserveContent = true)
+        loadChapter(comic, chapter, currentGroup.ifEmpty { "default" }, preserveContent = true, trigger = "manual_refresh")
     }
 
     fun setReadingDirection(value: String) {

@@ -78,11 +78,19 @@ class PortableNetworkLog(private val storage: DocumentStorage, scope: CoroutineS
     fun record(event: NetworkDiagnostic) {
         if (restored.isCompleted && !state.value.enabled) return
         val json = buildJsonObject {
+            put("schemaVersion", 2)
             put("at", Clock.System.now().toString()); put("phase", event.phase); put("method", event.method)
             put("host", event.host); put("endpoint", event.endpoint); put("mode", event.mode.name)
             put("generation", event.generation); event.status?.let { put("status", it) }; event.businessCode?.let { put("businessCode", it) }
             event.elapsedMillis?.let { put("elapsedMillis", it) }; event.bytes?.let { put("bytes", it) }
             event.failureKind?.let { put("failureKind", it) }; put("outcomeUnknown", event.outcomeUnknown)
+            event.requestId?.let { put("requestId", it) }
+            event.operationId?.let { put("operationId", it) }
+            event.source?.let { put("source", it) }
+            event.trigger?.let { put("trigger", it) }
+            event.auth?.let { put("auth", it) }
+            if (event.query.isNotEmpty()) putJsonObject("query") { event.query.forEach { (key, value) -> put(key, value) } }
+            event.forceRefresh?.let { put("forceRefresh", it) }
         }.toString()
         // 以 ASCII JSON 转义非 ASCII 字符，进程中断不会留下半个 UTF-8 字符导致整段无法读取。
         events.trySend(if (json.all { it.code < 128 }) json else buildString {

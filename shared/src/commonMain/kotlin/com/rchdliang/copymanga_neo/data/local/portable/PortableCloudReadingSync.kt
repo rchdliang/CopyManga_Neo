@@ -7,6 +7,7 @@ import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Clock
+import com.rchdliang.copymanga_neo.data.remote.portable.NetworkTrace
 
 /** 登录及恢复前台时只读拉取云端历史；不执行云端写入，也不删除任何本地个人数据。 */
 class PortableCloudReadingSync(
@@ -17,7 +18,8 @@ class PortableCloudReadingSync(
     private val shelf: PortableShelfReading,
     private val scope: CoroutineScope
 ) {
-    private val requests = MutableStateFlow(0L)
+    private data class RefreshRequest(val sequence: Long = 0, val trigger: String = "startup")
+    private val requests = MutableStateFlow(RefreshRequest())
     private val failure = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = failure.asStateFlow()
     private var job: Job? = null
@@ -25,11 +27,14 @@ class PortableCloudReadingSync(
     fun start() {
         if (job != null) return
         job = scope.launch {
-            combine(state.snapshots.map { it.generation }.distinctUntilChanged(), requests) { _, _ -> state.snapshot }
-                .collectLatest { snapshot ->
+            var previousGeneration: Long? = null
+            combine(state.snapshots.map { it.generation }.distinctUntilChanged(), requests) { _, request -> state.snapshot to request }
+                .collectLatest { (snapshot, request) ->
+                    val trigger = if (previousGeneration != null && previousGeneration != snapshot.generation) "session_change" else request.trigger
+                    previousGeneration = snapshot.generation
                     failure.value = null
                     if (snapshot.session().token.isBlank() || snapshot.session().owner == "guest") return@collectLatest
-                    try { pull(snapshot) }
+                    try { withContext(NetworkTrace("cloud.history", trigger)) { pull(snapshot) } }
                     catch (cancel: CancellationException) { throw cancel }
                     catch (error: Exception) {
                         if (current(snapshot)) {
@@ -42,7 +47,7 @@ class PortableCloudReadingSync(
         }
     }
 
-    fun retry() { requests.update { it + 1 } }
+    fun retry(trigger: String = "manual_retry") { requests.update { RefreshRequest(it.sequence + 1, trigger) } }
     private fun current(snapshot: NetworkSnapshot) = state.snapshot.generation == snapshot.generation &&
         state.snapshot.session().owner == snapshot.session().owner && state.snapshot.session().token.isNotBlank()
 
@@ -84,7 +89,7 @@ class PortableCloudReadingSync(
                     accepted(record.path, record.chapter) && local.isCurrentCloudPosition(record)
                 } == true
             }.getOrThrow()
-            shelf.refresh(session, "comic", merged.keys)
+            shelf.refresh(session, "comic", merged.keys, currentCoroutineContext()[NetworkTrace]!!)
             val next = page.nextOffset ?: return
             require(page.items.isNotEmpty() && next > offset) { "云端历史分页没有前进" }
             offset = next

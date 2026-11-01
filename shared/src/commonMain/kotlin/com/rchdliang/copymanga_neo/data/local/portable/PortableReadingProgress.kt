@@ -62,7 +62,11 @@ class PortableReadingProgress(
                 signals.trySend(Unit)
                 for (ignored in signals) {
                     try {
-                        syncMutex.withLock { syncPending(owner, generation) }
+                        syncMutex.withLock {
+                            com.rchdliang.copymanga_neo.data.remote.portable.withNetworkTrace("reading.progress", "pending_progress") {
+                                syncPending(owner, generation)
+                            }
+                        }
                     } catch (cancel: CancellationException) {
                         // A cancelled request must not permanently kill the application collector.
                         currentCoroutineContext().ensureActive()

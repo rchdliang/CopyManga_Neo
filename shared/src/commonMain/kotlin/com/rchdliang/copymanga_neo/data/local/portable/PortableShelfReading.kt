@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlin.time.Clock
+import com.rchdliang.copymanga_neo.data.remote.portable.NetworkTrace
+import com.rchdliang.copymanga_neo.data.remote.portable.withNetworkTrace
 
 /** 合并本机和云端续读位置，保留真实追更资格；按作品最新章节判断跨组更新。 */
 class PortableShelfReading(
@@ -81,7 +83,7 @@ class PortableShelfReading(
                         // 恢复真实完成记录时重新核对目录，不依赖旧书架保存的最新章指针。
                         snapshot.value.books(session, "comic").values
                             .filter { it.key.path in changed && it.completed && it.caughtUpChapter == null }
-                            .forEach { record -> scope.launch { checkCatalog(session, record.key) } }
+                            .forEach { record -> scope.launch(NetworkTrace("shelf.catalog", "cloud_progress_changed")) { checkCatalog(session, record.key) } }
                     }
                 }
             }
@@ -134,7 +136,7 @@ class PortableShelfReading(
                 }
             }.onFailure { needsCheck = false }
         }
-        if (needsCheck) scope.launch { checkCatalog(session, key) }
+        if (needsCheck) scope.launch(NetworkTrace("shelf.catalog", "local_reading_changed")) { checkCatalog(session, key) }
     }
 
     private fun deletion(key: ShelfReadingKey): Long = reading.snapshot.value.let {
@@ -185,7 +187,11 @@ class PortableShelfReading(
     }
 
     override fun refresh(session: LocalReadingSession, kind: String, paths: Set<String>) {
-        scope.launch {
+        refresh(session, kind, paths, NetworkTrace("shelf.catalog", "shelf_refresh"))
+    }
+
+    internal fun refresh(session: LocalReadingSession, kind: String, paths: Set<String>, trace: NetworkTrace) {
+        scope.launch(trace.child("shelf.catalog")) {
             if (document.ensureLoaded().isFailure || !current(session)) return@launch
             pruneDeleted()
             snapshot.value.books(session, kind).values.filter {
@@ -202,7 +208,7 @@ class PortableShelfReading(
             slots.withPermit {
                 if (!current(session)) return@withPermit
                 operations.withLock { checked += session.generation to key.id }
-                val result = try { loadCatalog(key) }
+                val result = try { withNetworkTrace("shelf.catalog", forceRefresh = true) { loadCatalog(key) } }
                 catch (cancel: CancellationException) { throw cancel }
                 catch (error: Exception) { Result.failure(error) }
                 val chapters = result.getOrNull() ?: return@withPermit

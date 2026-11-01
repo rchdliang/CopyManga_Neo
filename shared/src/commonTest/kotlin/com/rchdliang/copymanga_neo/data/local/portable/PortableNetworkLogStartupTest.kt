@@ -37,6 +37,26 @@ class PortableNetworkLogStartupTest {
         return text.lines().filter(String::isNotBlank).map { Json.parseToJsonElement(it).jsonObject }
     }
 
+    @Test fun exportPreservesStructuredRequestContextAndOriginalResourceIds() = runTest {
+        val logs = PortableNetworkLog(Disk(), backgroundScope)
+        logs.setEnabled(true)
+        logs.record(event(endpoint = "/api/v3/comic/作品/group/default/chapters").copy(
+            requestId = "request-1", operationId = "sync-1", source = "shelf.catalog",
+            trigger = "app_resume", auth = "authenticated", forceRefresh = true,
+            query = mapOf("offset" to "100", "limit" to "100")))
+        runCurrent()
+        val row = exported(logs).single()
+        assertEquals(2, row.getValue("schemaVersion").jsonPrimitive.int)
+        assertEquals("/api/v3/comic/作品/group/default/chapters", row.getValue("endpoint").jsonPrimitive.content)
+        assertEquals("request-1", row.getValue("requestId").jsonPrimitive.content)
+        assertEquals("sync-1", row.getValue("operationId").jsonPrimitive.content)
+        assertEquals("shelf.catalog", row.getValue("source").jsonPrimitive.content)
+        assertEquals("app_resume", row.getValue("trigger").jsonPrimitive.content)
+        assertEquals("authenticated", row.getValue("auth").jsonPrimitive.content)
+        assertTrue(row.getValue("forceRefresh").jsonPrimitive.boolean)
+        assertEquals("100", row.getValue("query").jsonObject.getValue("offset").jsonPrimitive.content)
+    }
+
     @Test fun earlyRequestsQueueAndLaterWritesOnlyAppendWithoutReadingHistory() = runTest {
         val disk = Disk()
         PortableNetworkLog(disk, backgroundScope).setEnabled(true)

@@ -75,7 +75,7 @@ class PortableCommentRepository(
     }
 
     override suspend fun downloadChapterComments(uuid: String): Result<DownloadedChapterComments> =
-        result {
+        com.rchdliang.copymanga_neo.data.remote.portable.withNetworkTrace("comments.download", "download_comments") { result {
             downloadMutex.withLock {
                 check(
                     downloads?.hasCompleteChapter(uuid) == true
@@ -127,7 +127,7 @@ class PortableCommentRepository(
                 @Suppress("UNREACHABLE_CODE")
                 error("评论下载未完成")
             }
-        }
+        } }
 
     private suspend fun saveComments(uuid:String,snapshot:DownloadedChapterComments) {
         requireNotNull(downloads) { "此平台尚未配置离线评论存储" }.save(uuid,snapshot)

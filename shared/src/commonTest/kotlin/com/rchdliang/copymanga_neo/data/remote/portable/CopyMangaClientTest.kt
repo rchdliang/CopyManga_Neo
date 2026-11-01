@@ -17,6 +17,95 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class CopyMangaClientTest {
+    @Test fun diagnosticRequestsKeepResourceIdsAndCorrelateConcurrentSourcesWithoutCredentials() = runTest {
+        val events = mutableListOf<NetworkDiagnostic>()
+        val engine = MockEngine { request ->
+            if (request.url.encodedPath.endsWith("/one")) delay(20) else delay(5)
+            respond("""{"code":200,"results":{}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val client = CopyMangaClient(HttpClient(engine), state(true, "private-token"), identity = identity, diagnostics = events::add)
+        val trace = NetworkTrace("reader.chapter", "reader_open")
+        try {
+            withContext(trace) {
+                coroutineScope {
+                    launch {
+                        client.execute(ApiRequest("/api/v3/comic/my-book/chapter2/one",
+                            query = listOf("offset" to "20", "limit" to "30", "chapter_id" to "chapter-one",
+                                "q" to "private-search", "token" to "private-query", "sign" to "private-sign"),
+                            headers = mapOf("X-No-Auth" to "1", "Authorization" to "Token")))
+                    }
+                    launch(trace.child("reading.progress")) {
+                        client.execute(ApiRequest("/api/v3/comic/my-book/chapter2/two"))
+                    }
+                }
+            }
+            val groups = events.groupBy { it.requestId }
+            assertEquals(2, groups.size)
+            assertTrue(groups.keys.all { !it.isNullOrBlank() })
+            groups.values.forEach { pair ->
+                assertEquals(listOf("request", "response"), pair.map { it.phase })
+                assertEquals(1, pair.map { it.endpoint }.distinct().size)
+                assertEquals(setOf(trace.operationId), pair.map { it.operationId }.toSet())
+                assertEquals(setOf("reader_open"), pair.map { it.trigger }.toSet())
+            }
+            val guest = events.first { it.phase == "request" && it.source == "reader.chapter" }
+            assertEquals("/api/v3/comic/my-book/chapter2/one", guest.endpoint)
+            assertEquals("guest", guest.auth)
+            assertEquals(mapOf("offset" to "20", "limit" to "30", "chapter_id" to "chapter-one",
+                "platform" to "3", "in_mainland" to "false"), guest.query)
+            assertEquals("authenticated", events.first { it.source == "reading.progress" }.auth)
+            assertFalse(events.toString().contains("private-"))
+        } finally { client.close() }
+    }
+
+    @Test fun cancelledApiRequestHasOneMatchingTerminalEvent() = runTest {
+        val events = mutableListOf<NetworkDiagnostic>()
+        val entered = CompletableDeferred<Unit>()
+        val client = CopyMangaClient(HttpClient(MockEngine {
+            entered.complete(Unit)
+            awaitCancellation()
+        }), state(), diagnostics = events::add)
+        try {
+            val request = launch { client.execute(ApiRequest("/api/v3/comic2/book")) }
+            entered.await()
+            request.cancelAndJoin()
+            assertEquals(listOf("request", "failure"), events.map { it.phase })
+            assertEquals("cancelled", events.last().failureKind)
+            assertEquals(events.first().requestId, events.last().requestId)
+        } finally { client.close() }
+    }
+
+    @Test fun throttledApiResponseIsNotRecordedAgainAsTransportFailure() = runTest {
+        val events = mutableListOf<NetworkDiagnostic>()
+        val client = CopyMangaClient(HttpClient(MockEngine {
+            respond("""{"code":210,"message":"request was throttled"}""", HttpStatusCode(210, "Throttled"),
+                headersOf(HttpHeaders.ContentType, "application/json"))
+        }), state(), diagnostics = events::add)
+        try {
+            assertFailsWith<RiskControlException> { client.execute(ApiRequest("/api/v3/comic2/book")) }
+            assertEquals(listOf("request", "response"), events.map { it.phase })
+            assertEquals(210, events.last().businessCode)
+            assertEquals(events.first().requestId, events.last().requestId)
+        } finally { client.close() }
+    }
+
+    @Test fun publicResourcesNeverExposeSignedUrlsOrCredentialsInDiagnostics() = runTest {
+        val events = mutableListOf<NetworkDiagnostic>()
+        val client = CopyMangaClient(HttpClient(MockEngine { respond("image") }), state(), diagnostics = events::add)
+        try {
+            client.resource("https://cdn.example/book/private-path/image.jpg?signature=private-sign&token=private-token", 100)
+            assertEquals(listOf("request", "response"), events.map { it.phase })
+            assertEquals(events.first().requestId, events.last().requestId)
+            assertEquals("resource", events.first().source)
+            assertEquals("guest", events.first().auth)
+            assertTrue(events.all { it.query.isEmpty() })
+            assertFalse(events.toString().contains("private-"))
+            assertEquals("/api/v3/comic/my-book/group/default/chapters",
+                diagnosticEndpoint("/api/v3/comic/my-book/group/default/chapters"))
+            assertEquals("/api/v3/book/novel/volume/volume-one",
+                diagnosticEndpoint("/api/v3/book/novel/volume/volume-one?token=private-token"))
+        } finally { client.close() }
+    }
     @Test fun shelfSortReachesBothEndpointsAndEveryPageInBothRequestModes() = runTest {
         for (app in listOf(false, true)) for (sort in FavoritesSort.entries) {
             val requests = mutableListOf<Pair<String, Int>>()

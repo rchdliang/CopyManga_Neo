@@ -293,7 +293,7 @@ class PortableAppGraph private constructor(
                     startBackground = { if (background.start()) trace("shell_frame") }, comicMetadata = metadata,
                     novelIllustrations = novelIllustrations, chineseDictionary = portableChineseDictionary(documents, client), startupTrace = probe,
                     shelfReading = shelfReading,
-                    retryCloudReadingSync = cloudReading::retry,
+                    retryCloudReadingSync = { cloudReading.retry("app_resume") },
                     appInfo = object : com.rchdliang.copymanga_neo.domain.repository.AppInfoRepository {
                         override suspend fun latestRelease() = try { Result.success(GitHubMetadata(client).latestApp()) }
                         catch (cancel: CancellationException) { throw cancel }
