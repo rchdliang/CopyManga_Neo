@@ -46,6 +46,7 @@ class ComicMetadataRepositoryTest {
         val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB, themeFetchConcurrency = 1, themeFetchIntervalMillis = 0)))
         var calls = 0
         var fail = false
+        var closed = false
         var risk = false
         var wait: CompletableDeferred<Unit>? = null
         val http = HttpClient(MockEngine(MockEngineConfig().apply {
@@ -56,7 +57,7 @@ class ComicMetadataRepositoryTest {
                 when {
                     risk -> respond("""{"code":210,"message":"blocked"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
                     fail -> respondError(HttpStatusCode.ServiceUnavailable)
-                    else -> respond(response, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+                    else -> respond(response.replace("\"close_roast\":false", "\"close_roast\":$closed"), headers = headersOf(HttpHeaders.ContentType, "application/json"))
                 }
             }
         }))
@@ -85,6 +86,60 @@ class ComicMetadataRepositoryTest {
             restored.preload(listOf("book"))
             runCurrent()
             assertEquals("public summary", restored.metadata.value["book"]?.brief)
+            assertEquals(1, f.calls)
+        } finally { f.close() }
+    }
+
+    @Test fun chapterPermissionReusesDetailAndPersistedCacheWithoutRequests() = runTest {
+        val f = Fixture(this)
+        try {
+            assertTrue(f.repo.detail("book").isSuccess)
+            repeat(3) { assertEquals(true, f.repo.chapterCommentsAllowed("book").getOrNull()) }
+            assertEquals(1, f.calls)
+            // 普通展示字段过期不应让每章的禁评检查重新请求整份详情。
+            advanceTimeBy(ComicCardMetadata.CACHE_MILLIS + 1)
+            val restored = f.repository()
+            f.fail = true
+            assertEquals(true, restored.chapterCommentsAllowed("book").getOrNull())
+            assertEquals(1, f.calls)
+            assertEquals(false, restored.metadata.value["book"]?.closeRoast)
+        } finally { f.close() }
+    }
+
+    @Test fun detailRefreshAndExplicitPermissionRetryUpdatePersistedSwitch() = runTest {
+        val f = Fixture(this)
+        try {
+            assertEquals(true, f.repo.chapterCommentsAllowed("book").getOrNull())
+            f.closed = true
+            assertEquals(true, f.repo.chapterCommentsAllowed("book").getOrNull())
+            assertEquals(1, f.calls)
+            advanceTimeBy(1)
+            assertTrue(f.repo.detail("book").isSuccess)
+            assertEquals(false, f.repo.chapterCommentsAllowed("book").getOrNull())
+            assertEquals(2, f.calls)
+            f.closed = false
+            advanceTimeBy(1)
+            assertEquals(true, f.repo.chapterCommentsAllowed("book", forceRefresh = true).getOrNull())
+            assertEquals(3, f.calls)
+            assertEquals(true, f.repository().chapterCommentsAllowed("book").getOrNull())
+            assertEquals(3, f.calls)
+        } finally { f.close() }
+    }
+
+    @Test fun oldCacheWithoutPermissionFetchesOnceAndConcurrentChecksShareResponse() = runTest {
+        val f = Fixture(this)
+        try {
+            PortableComicCardCache(f.storage).save("public|book", ComicCardMetadata("book", emptyList(), null, null, null, 10_000))
+            f.wait = CompletableDeferred()
+            val first = async { f.repo.chapterCommentsAllowed("book") }
+            runCurrent()
+            val second = async { f.repo.chapterCommentsAllowed("book") }
+            runCurrent()
+            assertEquals(1, f.calls)
+            f.wait!!.complete(Unit)
+            assertEquals(true, first.await().getOrNull())
+            assertEquals(true, second.await().getOrNull())
+            assertEquals(true, f.repo.chapterCommentsAllowed("book").getOrNull())
             assertEquals(1, f.calls)
         } finally { f.close() }
     }

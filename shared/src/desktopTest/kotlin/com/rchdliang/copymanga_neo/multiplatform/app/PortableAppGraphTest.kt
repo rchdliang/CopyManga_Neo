@@ -630,7 +630,7 @@ class PortableAppGraphTest {
         val sessions = object : ReadingSessionRepository by r.sessions {
             override fun getReadingSessionSync() = owner
         }
-        val pool = ReaderCommentModels(r.comments, r.users, r.manga, r.downloads, sessions)
+        val pool = ReaderCommentModels(r.comments, r.users, r.manga, sessions)
         val store = ViewModelStore().also { it.put("pool", pool) }
         try {
             val first = pool.inline("0")

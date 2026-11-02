@@ -6,7 +6,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicCardMetadata
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 
-/** 仅保存公开展示字段，沿用各平台的原子文档存储。损坏文件不覆盖。 */
+/** 仅保存公开展示字段和禁评开关，沿用各平台的原子文档存储。损坏文件不覆盖。 */
 class PortableComicCardCache(storage: DocumentStorage) {
     private val store = DocumentStore(storage, "comic-card-metadata",
         MapSerializer(String.serializer(), ComicCardMetadata.serializer()), emptyMap(),

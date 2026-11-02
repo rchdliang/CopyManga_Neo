@@ -235,6 +235,9 @@ class PortableMangaRepository(
     override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> =
         metadata.detail(pathWord).map { it.toDetail() }
 
+    override suspend fun getChapterCommentPostingAllowed(pathWord: String, forceRefresh: Boolean): Result<Boolean> =
+        metadata.chapterCommentsAllowed(pathWord, forceRefresh)
+
     override suspend fun getChapters(
         pathWord: String,
         group: String,

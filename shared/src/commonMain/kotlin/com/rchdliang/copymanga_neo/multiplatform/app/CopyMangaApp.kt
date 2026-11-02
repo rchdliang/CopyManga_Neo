@@ -468,7 +468,7 @@ private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppReposito
     val profile = { nav.select(MainTab.PROFILE) }
     val toast = LocalToastHost.current
     val back = { nav.back(); Unit }
-    fun comments(key: String) = models.get(route.id, "comments:$key") { CommentsViewModel(r.comments, r.users, r.manga, r.downloads) }
+    fun comments(key: String) = models.get(route.id, "comments:$key") { CommentsViewModel(r.comments, r.users, r.manga) }
     fun export() = models.get(route.id, "export") { ComicExportViewModel(r.export, it) }
     when (route.destination) {
         "export-chapters" -> ComicExportSelectionScreen(
@@ -507,7 +507,7 @@ private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppReposito
             viewModel = models.get(route.id) { ReaderViewModel(r.manga, r.readerPreferences, r.downloads, r.readingProgress, r.readerTools, r.localReading, r.sessions, r.shelfReading) },
             services = ReaderUiServices(p.reader, p.imageLoader,
                 models.get(route.id) { ReaderImageActionsViewModel(r.images, it) },
-                models.get(route.id) { ReaderCommentModels(r.comments, r.users, r.manga, r.downloads, r.sessions) },
+                models.get(route.id) { ReaderCommentModels(r.comments, r.users, r.manga, r.sessions) },
                 modalComments = { comments(ReaderCommentModelKeys.modal) }))
         "tab" -> when (MainTab.valueOf(route.id.substringAfter(':'))) {
             MainTab.HOME -> HomeScreen(

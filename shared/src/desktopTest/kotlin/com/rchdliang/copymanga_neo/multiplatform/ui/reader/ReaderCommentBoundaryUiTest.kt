@@ -340,6 +340,8 @@ class ReaderCommentBoundaryUiTest {
                     if (n > 1) (n - 1).toString() else null,
                     if (n < 3 && !(missingNext && n == 2)) (n + 1).toString() else null, "Chapter $n"))
             }
+            override suspend fun getChapterCommentPostingAllowed(pathWord: String, forceRefresh: Boolean): Result<Boolean> =
+                Result.failure(IllegalStateException("Offline fixture: no posting permission"))
             override suspend fun getComicDetail(pathWord: String): Result<ComicDetail> =
                 Result.failure(IllegalStateException("Offline fixture: no posting permission"))
         }
@@ -358,9 +360,9 @@ class ReaderCommentBoundaryUiTest {
         }
         val reader = ReaderViewModel(manga, r.readerPreferences, r.downloads, r.readingProgress,
             r.readerTools, r.localReading, r.sessions, r.shelfReading)
-        val comments = ReaderCommentModels(repository, r.users, manga, r.downloads, r.sessions)
+        val comments = ReaderCommentModels(repository, r.users, manga, r.sessions)
         private val actions = ReaderImageActionsViewModel(r.images, SavedStateHandle())
-        private val modal = CommentsViewModel(repository, r.users, manga, r.downloads)
+        private val modal = CommentsViewModel(repository, r.users, manga)
         private val models = ViewModelStore().apply {
             put("reader", reader); put("comments", comments); put("actions", actions); put("modal", modal)
         }

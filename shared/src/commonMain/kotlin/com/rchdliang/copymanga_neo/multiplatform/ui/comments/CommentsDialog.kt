@@ -54,8 +54,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -99,6 +100,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -291,7 +294,6 @@ internal fun CommentsPanel(
             onRefresh = { viewModel.load(refresh = true, fromPullToRefresh = true) },
             onRetry = { viewModel.load(refresh = state.feed.items.isEmpty() || state.feed.refreshFailed) },
             onRetryPermission = viewModel::retryPermission,
-            onDownloadComments = viewModel::downloadComments,
             onLoadReplyPreview = viewModel::loadReplyPreview,
             onShowReplies = viewModel::showReplies,
             onDraftChange = viewModel::setDraft, onPost = viewModel::post,
@@ -397,7 +399,6 @@ internal fun CommentsContent(
     onReport: (MangaComment) -> Unit = {},
     onLogin: (() -> Unit)? = null,
     embedded: Boolean = false,
-    onDownloadComments: () -> Unit = {},
     canDelete: (MangaComment) -> Boolean = { false },
     onDelete: (MangaComment) -> Unit = {}
 ) {
@@ -516,52 +517,6 @@ internal fun CommentsContent(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (state.canDownloadComments) Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        when {
-                            state.downloadingComments -> "正在下载评论…"
-                            state.feed.downloaded && !state.feed.downloadComplete -> "已下载 ${state.feed.items.size} 条评论，尚未完整"
-                            state.feed.downloaded -> "显示已下载评论"
-                            else -> "下载评论后可离线查看"
-                        },
-                        modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    TextButton(
-                        onClick = onDownloadComments,
-                        enabled = !state.downloadingComments && !state.posting && !state.reporting
-                    ) {
-                        Text(
-                            if (state.feed.downloaded) "更新下载" else "下载评论",
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                if (!state.postingAllowed) Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        when {
-                            state.checkingPermission -> "正在确认评论权限…"
-                            state.permissionError != null -> state.permissionError
-                            target.kind == CommentKind.NOVEL -> "该小说暂不允许发表评论"
-                            else -> "这部漫画已关闭评论发表"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    if (state.permissionError != null) TextButton(onClick = onRetryPermission) {
-                        Text("重试", color = MaterialTheme.colorScheme.primary)
-                    }
-                }
                 Box(
                     Modifier
                         .weight(1f)
@@ -727,7 +682,7 @@ internal fun CommentsContent(
                         }
                     }
                 }
-                if (embedded && state.target == target) {
+                if ((embedded || (!state.postingAllowed && !composerOpen)) && state.target == target) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     CommentComposer(
                         state = state,
@@ -735,6 +690,7 @@ internal fun CommentsContent(
                         onPost = onPost,
                         onClose = onCloseComposer,
                         onLogin = onLogin,
+                        onRetryPermission = onRetryPermission,
                         compact = true
                     )
                 }
@@ -768,7 +724,8 @@ internal fun CommentsContent(
                     onDraftChange = onDraftChange,
                     onPost = onPost,
                     onClose = onCloseComposer,
-                    onLogin = onLogin
+                    onLogin = onLogin,
+                    onRetryPermission = onRetryPermission
                 )
             }
         }
@@ -996,6 +953,7 @@ private fun CommentComposer(
     onPost: () -> Unit,
     onClose: () -> Unit,
     onLogin: (() -> Unit)?,
+    onRetryPermission: () -> Unit,
     compact: Boolean = false
 ) {
     val reply = state.replyTo ?: state.parent
@@ -1023,83 +981,83 @@ private fun CommentComposer(
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            IconButton(onClick = onClose, enabled = !state.posting) {
-                Icon(
-                    Icons.Default.Close,
-                    "收起输入框，保留草稿"
-                )
-            }
+//            IconButton(onClick = onClose, enabled = !state.posting) {
+//                Icon(
+//                    Icons.Default.Close,
+//                    "收起输入框，保留草稿"
+//                )
+//            }
         }
-        when {
-            !state.postingAllowed -> Text(
-                "这部漫画已关闭评论发表",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            !state.loggedIn -> {
+        val length = CommentText.length(state.draft)
+        val canEdit = state.loggedIn && state.postingAllowed && !state.checkingPermission && state.permissionError == null
+        val canPost = canEdit && !state.posting && CommentText.isValid(state.draft)
+        val placeholderText = when {
+            state.checkingPermission -> "正在确认评论权限…"
+            state.permissionError != null -> state.permissionError
+            !state.postingAllowed -> if (state.target?.kind == CommentKind.NOVEL)
+                "该小说暂不允许发表评论" else "这部漫画已关闭评论发表"
+            !state.loggedIn -> if (onLogin == null) "请先在“我的”登录后再发表评论" else "登录后可以发表评论"
+            else -> "说说你的看法…（${CommentText.MIN_LENGTH}–${CommentText.MAX_LENGTH} 字）"
+        }
+        TextField(
+            value = state.draft, onValueChange = onDraftChange,
+            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+            enabled = canEdit && !state.posting,
+            minLines = if (compact) 1 else 3,
+            maxLines = if (compact) 3 else 4,
+            shape = MaterialTheme.shapes.medium,
+            colors = TextFieldDefaults.colors(
+                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+            ),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            placeholder = {
                 Text(
-                    if (onLogin == null) "请先在“我的”登录后再发表评论" else "登录后可以发表评论",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    placeholderText,
+                    color = if (state.permissionError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (onLogin != null) TextButton(onClick = onLogin) {
-                    Text(
-                        "去登录",
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            else -> {
-                TextField(
-                    value = state.draft, onValueChange = onDraftChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester),
-                    enabled = !state.posting,
-                    minLines = if (compact) 1 else 3,
-                    maxLines = if (compact) 3 else 4,
-                    shape = MaterialTheme.shapes.medium,
-                    colors = TextFieldDefaults.colors(
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
-                    ),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                    placeholder = {
-                        Text(
-                            "说说你的看法…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    isError = CommentText.length(state.draft) > CommentText.MAX_LENGTH,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
-                )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "3–200 字",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+            },
+            supportingText = {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Spacer(Modifier.weight(1f))
                     Text(
-                        "${CommentText.length(state.draft)} / 200",
-                        color = if (CommentText.length(state.draft) > CommentText.MAX_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
+                        "$length / ${CommentText.MAX_LENGTH}",
+                        color = if (length > CommentText.MAX_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Button(
-                        onClick = onPost,
-                        enabled = !state.posting && CommentText.isValid(state.draft)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (state.posting) "正在发表…" else "发表",
-                            color = if (!state.posting && CommentText.isValid(state.draft)) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface.copy(
-                                alpha = 0.38f
-                            )
+                }
+            },
+            trailingIcon = {
+                IconButton(
+                    onClick = onPost,
+                    enabled = canPost,
+                    modifier = Modifier.semantics {
+                        contentDescription = if (state.posting) "正在发表" else "发表评论"
+                    }
+                ) {
+                    if (state.posting || state.checkingPermission) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            tint = if (canPost) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     }
                 }
+            },
+            isError = state.permissionError != null || length > CommentText.MAX_LENGTH,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
+        )
+        if ((state.permissionError != null && !state.checkingPermission) || (!state.loggedIn && onLogin != null)) Row(
+            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (state.permissionError != null && !state.checkingPermission) TextButton(onClick = onRetryPermission) {
+                Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("重试", color = MaterialTheme.colorScheme.primary)
+            }
+            if (!state.loggedIn && onLogin != null) TextButton(onClick = onLogin) {
+                Text("去登录", color = MaterialTheme.colorScheme.primary)
             }
         }
         state.message?.let {

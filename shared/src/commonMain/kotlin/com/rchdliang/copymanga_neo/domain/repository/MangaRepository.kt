@@ -32,6 +32,10 @@ interface MangaRepository {
      */
     suspend fun getComicDetail(pathWord: String): Result<ComicDetail>
 
+    /** 优先复用本地详情中的章节禁评开关；显式重试才强制刷新。 */
+    suspend fun getChapterCommentPostingAllowed(pathWord: String, forceRefresh: Boolean = false): Result<Boolean> =
+        getComicDetail(pathWord).map { !it.comic.closeRoast }
+
     /** 获取完整题材信息，复用详情标签缓存；空列表表示详情确认没有题材。 */
     suspend fun getComicThemes(pathWord: String): Result<List<Theme>>
 

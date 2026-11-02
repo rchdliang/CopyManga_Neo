@@ -4,7 +4,6 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
-import com.rchdliang.copymanga_neo.domain.model.CommentPolicy
 import com.rchdliang.copymanga_neo.domain.model.CommentReplyPreview
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
 import com.rchdliang.copymanga_neo.domain.model.CommentText
@@ -12,7 +11,6 @@ import com.rchdliang.copymanga_neo.domain.model.DownloadedChapterComments
 import com.rchdliang.copymanga_neo.domain.model.MangaComment
 import com.rchdliang.copymanga_neo.domain.repository.CommentClosedException
 import com.rchdliang.copymanga_neo.domain.repository.CommentRepository
-import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -68,17 +66,14 @@ data class CommentsUiState(
     val message: String? = null,
     val replyPreviews: Map<String, CommentReplyPreview> = emptyMap(),
     val previewGeneration: Long = 0,
-    val closed: Boolean = false,
-    val canDownloadComments: Boolean = false,
-    val downloadingComments: Boolean = false
+    val closed: Boolean = false
 )
 
 /** 一个打开的评论窗口只有一个活动请求上下文，切章、退出和切账号都会失效旧请求。 */
 class CommentsViewModel constructor(
     private val repository: CommentRepository,
     private val users: UserRepository,
-    private val manga: MangaRepository,
-    private val downloads: DownloadRepository
+    private val manga: MangaRepository
 ) : ViewModel() {
     private val state = MutableStateFlow(CommentsUiState(loggedIn = users.isLoggedInSync()))
     val uiState = state.asStateFlow()
@@ -92,7 +87,6 @@ class CommentsViewModel constructor(
     private var deleteJob: Job? = null
     private var identityJob: Job? = null
     private var permissionJob: Job? = null
-    private var downloadJob: Job? = null
     private var permissionPathWord: String? = null
     private var revision = 0L
     private var previewGeneration = 0L
@@ -106,7 +100,6 @@ class CommentsViewModel constructor(
                 deleting = false,
                 reporting = false,
                 reportLoading = false,
-                downloadingComments = false,
                 reportError = if (it.reportTarget != null) "举报操作失败，请重试" else it.reportError,
                 feed = it.feed.copy(loading = false, refreshing = false),
                 message = "评论操作失败，请重试"
@@ -162,11 +155,13 @@ class CommentsViewModel constructor(
         pendingReaderDrafts = null
         load(refresh = true)
         refreshDeleteIdentity()
-        if (postingAllowed && permissionPathWord != null) retryPermission()
+        if (postingAllowed && permissionPathWord != null) checkPermission(forceRefresh = false)
     }
 
-    /** 阅读器按漫画详情的 close_roast 确认章节评论权限，不因未知状态放行发表。 */
-    fun retryPermission() {
+    /** 手动重试更新禁评开关；普通打开评论区只读取已有缓存。 */
+    fun retryPermission() = checkPermission(forceRefresh = true)
+
+    private fun checkPermission(forceRefresh: Boolean) {
         val pathWord = permissionPathWord ?: return
         val target = state.value.target ?: return
         permissionJob?.cancel()
@@ -178,18 +173,14 @@ class CommentsViewModel constructor(
             )
         }
         permissionJob = viewModelScope.launch(handler) {
-            (withTimeoutOrNull(15_000L.milliseconds) { manga.getComicDetail(pathWord) }
+            (withTimeoutOrNull(15_000L.milliseconds) { manga.getChapterCommentPostingAllowed(pathWord, forceRefresh) }
                 ?: Result.failure(com.rchdliang.copymanga_neo.domain.platform.PlatformIOException("确认评论权限超时"))).fold(
-                onSuccess = { detail ->
+                onSuccess = { allowed ->
                     ensureActive()
                     if (state.value.target == target) state.update {
                         it.copy(
                             checkingPermission = false,
-                            postingAllowed = CommentPolicy.postingAllowed(
-                                target.kind,
-                                detail.comic.closeComment,
-                                detail.comic.closeRoast
-                            )
+                            postingAllowed = allowed
                         )
                     }
                 },
@@ -211,13 +202,12 @@ class CommentsViewModel constructor(
         identityJob?.cancel()
         reportJob?.cancel()
         permissionJob?.cancel()
-        downloadJob?.cancel()
         permissionPathWord = null
         invalidatePreviews()
         revision++
         readJob?.cancel()
         postJob?.cancel()
-        state.update { it.copy(target = null, posting = false, deleting = false, downloadingComments = false) }
+        state.update { it.copy(target = null, posting = false, deleting = false) }
     }
 
     /** 作者 ID 来自当前会话的服务器资料；昵称相同不代表同一账号。 */
@@ -240,7 +230,7 @@ class CommentsViewModel constructor(
         val current = state.value
         val target = current.target ?: return false
         return current.loggedIn && !current.deleting && !current.posting && !current.reporting &&
-                !current.downloadingComments && !current.currentUserId.isNullOrBlank() &&
+                !current.currentUserId.isNullOrBlank() &&
                 current.currentUserId == comment.userId && repository.supportsDeletion(target)
     }
 
@@ -303,50 +293,6 @@ class CommentsViewModel constructor(
         items = comments, total = total, loading = loading,
         downloaded = true, downloadComplete = complete
     )
-
-    /** 旧下载可单独补齐评论；取消及失败均保留已有快照和草稿。 */
-    fun downloadComments() {
-        val current = state.value
-        val target = current.target ?: return
-        if (target.kind != CommentKind.CHAPTER || !current.canDownloadComments ||
-            current.posting || current.reporting || current.deleting || current.downloadingComments
-        ) return
-        readJob?.cancel()
-        val requestRevision = ++revision
-        state.update {
-            it.copy(
-                downloadingComments = true,
-                feed = it.feed.copy(loading = false, refreshing = false),
-                message = null
-            )
-        }
-        downloadJob = viewModelScope.launch(handler) {
-            repository.downloadChapterComments(target.id).fold(
-                onSuccess = { snapshot ->
-                    ensureActive()
-                    if (requestRevision == revision) state.update {
-                        it.copy(
-                            downloadingComments = false,
-                            feed = snapshot.toFeed(),
-                            message = "评论已下载"
-                        )
-                    }
-                },
-                onFailure = {
-                    ensureActive()
-                    val cached = repository.getDownloadedChapterComments(target.id).getOrNull()
-                    ensureActive()
-                    if (requestRevision == revision) state.update {
-                        it.copy(
-                            downloadingComments = false,
-                            feed = cached?.toFeed() ?: it.feed,
-                            message = "评论下载未完成，已保留现有内容，可重试"
-                        )
-                    }
-                }
-            )
-        }
-    }
 
     fun setDraft(value: String) {
         if (!state.value.posting) state.update { it.copy(draft = value) }
@@ -564,7 +510,7 @@ class CommentsViewModel constructor(
     fun load(refresh: Boolean, fromPullToRefresh: Boolean = false) {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.reporting || current.deleting || current.downloadingComments ||
+        if (current.posting || current.reporting || current.deleting ||
             ((!refresh || fromPullToRefresh) && current.feed.loading)
         ) return
         val offset = if (refresh) 0 else current.feed.nextOffset ?: return
@@ -584,14 +530,12 @@ class CommentsViewModel constructor(
         }
         readJob = viewModelScope.launch(handler) {
             if (target.kind == CommentKind.CHAPTER && parentId == null) {
-                val localChapter = downloads.getDownloadedChapter(target.id)
                 val cached = if (refresh && current.feed.items.isEmpty())
                     repository.getDownloadedChapterComments(target.id).getOrNull() else null
                 ensureActive()
                 if (requestRevision != revision) return@launch
                 state.update {
                     it.copy(
-                        canDownloadComments = localChapter != null,
                         feed = cached?.toFeed(loading = true)?.copy(refreshing = fromPullToRefresh)
                             ?: it.feed
                     )
@@ -649,7 +593,7 @@ class CommentsViewModel constructor(
     fun post() {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.deleting || current.downloadingComments || !current.postingAllowed) return
+        if (current.posting || current.deleting || !current.postingAllowed) return
         if (!current.loggedIn) {
             state.update { it.copy(message = "请先到“我的”登录") }; return
         }

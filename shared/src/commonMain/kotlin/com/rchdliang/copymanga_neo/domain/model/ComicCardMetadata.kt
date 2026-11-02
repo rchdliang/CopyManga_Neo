@@ -8,7 +8,9 @@ data class ComicCardMetadata(
     val brief: String?,
     val popular: Int?,
     val lastUpdate: String?,
-    val fetchedAt: Long
+    val fetchedAt: Long,
+    /** 公开的章节禁评开关；旧缓存缺失时需补取详情。 */
+    val closeRoast: Boolean? = null
 ) {
     fun isFresh(now: Long): Boolean = now - fetchedAt in 0 until CACHE_MILLIS
 

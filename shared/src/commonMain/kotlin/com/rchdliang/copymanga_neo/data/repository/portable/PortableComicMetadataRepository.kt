@@ -165,6 +165,26 @@ class PortableComicMetadataRepository(
     suspend fun detail(path: String): Result<ComicDetailResult> =
         load(path, true, true, client.state.snapshot)
 
+    /** 禁评开关随详情更新并落盘，查看另一章节或重启应用不重复请求详情。 */
+    suspend fun chapterCommentsAllowed(path: String, forceRefresh: Boolean = false): Result<Boolean> {
+        if (!forceRefresh) {
+            val snapshot = client.state.snapshot
+            try {
+                prepare(snapshot)
+                val closed = guard.withLock {
+                    client.state.requireCurrent(snapshot.generation)
+                    values.value[path]?.closeRoast
+                }
+                if (closed != null) return Result.success(!closed)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                return Result.failure(error)
+            }
+        }
+        return detail(path).map { !it.comicDetail.closeRoast }
+    }
+
     suspend fun themes(path: String, refresh: Boolean): Result<List<com.rchdliang.copymanga_neo.domain.model.Theme>> {
         val snapshot = client.state.snapshot
         try { prepare(snapshot) }
@@ -229,7 +249,7 @@ class PortableComicMetadataRepository(
                         val previous = values.value[path]
                         ComicCardMetadata(path, comic.theme?.map { it.toTheme() } ?: previous?.themes,
                             comic.brief ?: previous?.brief, comic.popular ?: result.popular,
-                            comic.lastUpdate, now()).also { value ->
+                            comic.lastUpdate, now(), closeRoast = comic.closeRoast).also { value ->
                             values.update { it + (path to value) }
                             errors.update { it - path }
                             retryAfter.remove(path); failureCount = 0

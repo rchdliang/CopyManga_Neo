@@ -92,4 +92,68 @@ class CommentsStaggeredLayoutUiTest {
         assertEquals(item(0).offset.y + item(0).size.height, item(1).offset.y)
         assertEquals(comments.size + 1, list.layoutInfo.totalItemsCount)
     }
+
+    @Test fun composerKeepsDraftAndDisablesPostingUntilPermissionIsConfirmed() = runSkikoComposeUiTest(size = Size(480f, 800f)) {
+        val target = CommentTarget(CommentKind.CHAPTER, "fixture")
+        var state by mutableStateOf(CommentsUiState(
+            target = target, loggedIn = true, draft = "保留章节评论草稿",
+            postingAllowed = false, checkingPermission = true
+        ))
+        var retries = 0
+        var posts = 0
+        setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CopyManga_NeoTheme(darkTheme = false, dynamicColor = false) {
+                    CommentsContent(target, "测试章节", state, CommentMoment.now(), rememberLazyStaggeredGridState(), false, false,
+                        onCompose = {}, onCloseComposer = {}, onDismiss = {}, onBackToComments = {},
+                        onRefresh = {}, onRetry = {}, onRetryPermission = { retries++ }, onLoadReplyPreview = {}, onShowReplies = {},
+                        onDraftChange = { state = state.copy(draft = it) }, onPost = { posts++ }, embedded = true)
+                }
+            }
+        }
+        onNodeWithText("正在确认评论权限…").assertDoesNotExist()
+        onNodeWithText("保留章节评论草稿").assertIsNotEnabled()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+        onNodeWithText("保留章节评论草稿").assertExists()
+        onNodeWithText("下载评论").assertDoesNotExist()
+
+        runOnIdle { state = state.copy(checkingPermission = false, permissionError = "无法确认评论权限，请重试") }
+        onNodeWithText("无法确认评论权限，请重试").assertDoesNotExist()
+        onNodeWithText("保留章节评论草稿").assertIsNotEnabled()
+        onNodeWithText("重试").performClick()
+        runOnIdle { assertEquals(1, retries); assertEquals(0, posts) }
+
+        runOnIdle { state = state.copy(permissionError = null) }
+        onNodeWithText("这部漫画已关闭评论发表").assertDoesNotExist()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+        runOnIdle { state = state.copy(postingAllowed = true) }
+        onNode(hasSetTextAction()).assertIsEnabled()
+        onNodeWithText("说说你的看法…（3–200 字）").assertDoesNotExist()
+        onNodeWithContentDescription("发表评论").assertIsEnabled().performClick()
+        runOnIdle { assertEquals(1, posts); assertEquals("保留章节评论草稿", state.draft); state = state.copy(posting = true) }
+        onNodeWithContentDescription("正在发表").assertIsNotEnabled()
+        runOnIdle { state = state.copy(posting = false) }
+
+        onNode(hasSetTextAction()).performTextReplacement("字".repeat(201))
+        onNodeWithText("201 / 200").assertExists()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+        runOnIdle { state = state.copy(loggedIn = false, draft = "保留章节评论草稿") }
+        onNodeWithText("保留章节评论草稿").assertIsNotEnabled()
+        onNodeWithText("请先在“我的”登录后再发表评论").assertDoesNotExist()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+
+        runOnIdle { state = state.copy(draft = "") }
+        onNodeWithText("请先在“我的”登录后再发表评论").assertExists()
+        onNodeWithText("0 / 200").assertExists()
+        runOnIdle { state = state.copy(loggedIn = true, postingAllowed = false, checkingPermission = true) }
+        onAllNodesWithText("正在确认评论权限…").assertCountEquals(1)
+        runOnIdle { state = state.copy(checkingPermission = false, permissionError = "无法确认评论权限，请重试") }
+        onAllNodesWithText("无法确认评论权限，请重试").assertCountEquals(1)
+        runOnIdle { state = state.copy(permissionError = null) }
+        onAllNodesWithText("这部漫画已关闭评论发表").assertCountEquals(1)
+        runOnIdle { state = state.copy(postingAllowed = true) }
+        onNodeWithText("说说你的看法…（3–200 字）").assertExists()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+    }
+
 }
