@@ -998,6 +998,12 @@ fun ReaderSuccessContent(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
+            val pairingTarget = if (spreadEnabled) readerQuickPairingTarget(
+                pages, spreads.getOrNull(pager.currentPage), tools.pairingRestarts,
+                widePages.filterValues { it }.keys
+            ) else null
+            val pairingChapter = page?.chapterUuid
+            val pairingUndo = pairingTarget != null && pairingTarget in tools.pairingRestarts[pairingChapter].orEmpty()
             ReaderTopBar(
                 page?.chapterName ?: chapterName,
                 page?.let { current -> bookmarks.any { it.chapterUuid == current.chapterUuid && it.page == current.page } }
@@ -1006,6 +1012,22 @@ fun ReaderSuccessContent(
                     if (page?.source == null) toast.showToast("返回图片页后可添加书签")
                     else onToggleBookmark(page.chapterUuid, page.page, anchorFraction)
                 }, onSettings = { showSettings = true },
+                onAdjustPairing = if (spreadEnabled) ({
+                    if (pairingTarget != null && pairingChapter != null) {
+                        automatic = false
+                        onToolsChange { current ->
+                            val boundaries = current.pairingRestarts[pairingChapter].orEmpty()
+                            val updated = if (pairingTarget in boundaries) boundaries - pairingTarget
+                                else (boundaries + pairingTarget).distinct().sorted()
+                            current.copy(pairingRestarts = if (updated.isEmpty()) current.pairingRestarts - pairingChapter
+                                else current.pairingRestarts + (pairingChapter to updated))
+                        }
+                        toast.showToast(if (pairingUndo) "已撤销第 ${pairingTarget + 1} 页的配页调整"
+                            else "已从第 ${pairingTarget + 1} 页重新配对")
+                    }
+                }) else null,
+                pairingEnabled = pairingTarget != null && !restoring && !dragging && !pager.isScrollInProgress,
+                pairingUndo = pairingUndo,
                 shareTarget = page?.let { current ->
                     shareComicPathWord?.let { comic ->
                         ShareTarget.chapter(comic, current.chapterUuid, current.chapterName)

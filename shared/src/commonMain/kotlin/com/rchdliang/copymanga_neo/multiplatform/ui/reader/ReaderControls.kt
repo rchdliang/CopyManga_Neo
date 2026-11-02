@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.FilterChip
@@ -71,7 +72,10 @@ import kotlin.math.roundToInt
 fun ReaderTopBar(
     chapterName: String, bookmarked: Boolean, onBack: () -> Unit,
     onBookmark: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier,
-    shareTarget: ShareTarget? = null
+    shareTarget: ShareTarget? = null,
+    onAdjustPairing: (() -> Unit)? = null,
+    pairingEnabled: Boolean = false,
+    pairingUndo: Boolean = false
 ) {
     Surface(modifier, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)) {
         Row(
@@ -97,6 +101,16 @@ fun ReaderTopBar(
                 overflow = TextOverflow.Ellipsis
             )
             shareTarget?.let { ShareAction(it) }
+            if (onAdjustPairing != null) TextButton(
+                onClick = onAdjustPairing,
+                enabled = pairingEnabled,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("reader-quick-pairing")
+            ) {
+                val color = if (pairingEnabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                Icon(Icons.Outlined.ViewWeek, contentDescription = null, tint = color, modifier = Modifier.padding(end = 6.dp))
+                Text(if (pairingUndo) "撤销配页" else "调整配页", color = color)
+            }
             IconButton(onClick = onBookmark) {
                 Icon(
                     if (bookmarked) Icons.Filled.BookmarkAdded else Icons.Outlined.BookmarkAdd,

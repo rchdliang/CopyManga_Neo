@@ -71,4 +71,35 @@ class ReaderSpreadTest {
             assertEquals(restart, plan[plan.spreadIndex(restart)].indices.first())
         }
     }
+
+    @Test fun quickPairingChangesCurrentGroupAndCanUndoFromEitherOriginalAnchor() {
+        val entries = pages(8)
+        val original = readerSpreads(entries, true)
+        val target = readerQuickPairingTarget(entries, original[1], emptyMap(), emptySet())
+        assertEquals(2, target)
+        val restarts = mapOf("chapter" to listOf(2, 6), "other" to listOf(3))
+        val adjusted = readerSpreads(entries, true, restarts = restarts)
+        assertEquals(listOf(1), adjusted[adjusted.spreadIndex(1)].indices)
+        assertEquals(listOf(2, 3), adjusted[adjusted.spreadIndex(2)].indices)
+        for (anchor in listOf(1, 2)) {
+            val current = adjusted[adjusted.spreadIndex(anchor)]
+            assertEquals(target, readerQuickPairingTarget(entries, current, restarts, emptySet()))
+            assertEquals(anchor, adjusted.rawIndex(adjusted.spreadIndex(anchor), anchor))
+        }
+        assertEquals(listOf(listOf(0), listOf(1, 2), listOf(3, 4), listOf(5), listOf(6, 7)), groups(8, listOf(6)))
+    }
+
+    @Test fun quickPairingHandlesCoverAndRejectsWideTailCommentsAndChapterEdges() {
+        val entries = pages(4)
+        assertEquals(0, readerQuickPairingTarget(entries, ReaderSpread(listOf(0)), emptyMap(), emptySet()))
+        assertEquals(0, readerQuickPairingTarget(entries, ReaderSpread(listOf(0, 1)), mapOf("chapter" to listOf(0)), emptySet()))
+        assertNull(readerQuickPairingTarget(entries, ReaderSpread(listOf(3)), emptyMap(), emptySet()))
+        assertNull(readerQuickPairingTarget(entries, ReaderSpread(listOf(0)), emptyMap(), setOf(entries[0].key)))
+        assertNull(readerQuickPairingTarget(entries, ReaderSpread(listOf(0)), emptyMap(), setOf(entries[1].key)))
+        assertNull(readerQuickPairingTarget(entries, null, emptyMap(), emptySet()))
+        val mixed = pages(1, "a") + ReaderPageEntry("a:comments", "a", "A", null, 0, 1) + pages(2, "b")
+        assertNull(readerQuickPairingTarget(mixed, ReaderSpread(listOf(0)), emptyMap(), emptySet()))
+        assertNull(readerQuickPairingTarget(mixed, ReaderSpread(listOf(1)), emptyMap(), emptySet()))
+        assertNull(readerQuickPairingTarget(pages(1, "a") + pages(2, "b"), ReaderSpread(listOf(0)), emptyMap(), emptySet()))
+    }
 }

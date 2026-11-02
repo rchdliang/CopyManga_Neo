@@ -41,3 +41,24 @@ internal fun List<ReaderSpread>.rawIndex(groupIndex: Int, preferred: Int): Int =
 
 internal fun readerWideImage(width: Float, height: Float) =
     width.isFinite() && height.isFinite() && height > 0 && width > height
+
+/** 按原图顺序选择当前组的调整边界；再次点击可撤销，不受 RTL 视觉顺序影响。 */
+internal fun readerQuickPairingTarget(
+    pages: List<ReaderPageEntry>, spread: ReaderSpread?,
+    restarts: Map<String, List<Int>>, wideKeys: Set<String>
+): Int? {
+    val firstIndex = spread?.indices?.firstOrNull() ?: return null
+    val first = pages.getOrNull(firstIndex)?.takeIf { it.source != null && it.key !in wideKeys } ?: return null
+    val boundaries = restarts[first.chapterUuid].orEmpty()
+    if (first.page in boundaries) return first.page
+    val next = pages.getOrNull(firstIndex + 1)?.takeIf {
+        it.source != null && it.chapterUuid == first.chapterUuid &&
+            it.page == first.page + 1 && it.key !in wideKeys
+    } ?: return null
+    return when {
+        spread.indices.size == 2 -> next.page
+        next.page in boundaries -> next.page
+        first.page == 0 -> 0
+        else -> null
+    }
+}
