@@ -37,7 +37,9 @@ data class CommentFeed(
     val refreshing: Boolean = false,
     val refreshFailed: Boolean = false,
     val downloaded: Boolean = false,
-    val downloadComplete: Boolean = false
+    val downloadComplete: Boolean = false,
+    val downloadClosed: Boolean = false,
+    val localOnly: Boolean = false
 )
 
 /** 阅读器裁剪窗口时仅保存文字和回复 ID，避免草稿持有整份评论数据。 */
@@ -88,6 +90,7 @@ class CommentsViewModel constructor(
     private var identityJob: Job? = null
     private var permissionJob: Job? = null
     private var permissionPathWord: String? = null
+    private var initialPostingAllowed = true
     private var revision = 0L
     private var previewGeneration = 0L
     private val previewJobs = mutableMapOf<String, Job>()
@@ -138,11 +141,13 @@ class CommentsViewModel constructor(
         close()
         permissionPathWord =
             comicPathWord?.takeIf { it.isNotBlank() && target.kind == CommentKind.CHAPTER }
+        initialPostingAllowed = postingAllowed
         state.value = CommentsUiState(
             target = target,
+            feed = CommentFeed(localOnly = target.kind == CommentKind.CHAPTER),
             loggedIn = users.isLoggedInSync(),
             postingAllowed = postingAllowed && permissionPathWord == null,
-            checkingPermission = postingAllowed && permissionPathWord != null
+            checkingPermission = false
         )
         rootFeed = CommentFeed()
         rootDraft = ""
@@ -153,15 +158,26 @@ class CommentsViewModel constructor(
             state.update { it.copy(draft = saved.root) }
         }
         pendingReaderDrafts = null
-        load(refresh = true)
-        refreshDeleteIdentity()
-        if (postingAllowed && permissionPathWord != null) checkPermission(forceRefresh = false)
+        load(refresh = true, preferDownloaded = true)
+        if (target.kind != CommentKind.CHAPTER) refreshDeleteIdentity()
     }
 
     /** 手动重试更新禁评开关；普通打开评论区只读取已有缓存。 */
     fun retryPermission() = checkPermission(forceRefresh = true)
 
+    /** 仅在确认需要在线内容后恢复写操作及身份、权限查询。 */
+    private fun activateOnline() {
+        state.update { it.copy(
+            feed = it.feed.copy(localOnly = false),
+            postingAllowed = initialPostingAllowed && permissionPathWord == null,
+            permissionError = null
+        ) }
+        if (initialPostingAllowed && permissionPathWord != null) checkPermission(forceRefresh = false)
+        refreshDeleteIdentity()
+    }
+
     private fun checkPermission(forceRefresh: Boolean) {
+        if (state.value.feed.localOnly) return
         val pathWord = permissionPathWord ?: return
         val target = state.value.target ?: return
         permissionJob?.cancel()
@@ -215,7 +231,7 @@ class CommentsViewModel constructor(
         identityJob?.cancel()
         state.update { it.copy(currentUserId = null) }
         val target = state.value.target ?: return
-        if (!users.isLoggedInSync() || !repository.supportsDeletion(target)) return
+        if (state.value.feed.localOnly || !users.isLoggedInSync() || !repository.supportsDeletion(target)) return
         val session = users.sessionVersionSync()
         identityJob = viewModelScope.launch(handler) {
             val member = users.getMemberInfo().getOrNull()
@@ -229,7 +245,7 @@ class CommentsViewModel constructor(
     fun canDelete(comment: MangaComment): Boolean {
         val current = state.value
         val target = current.target ?: return false
-        return current.loggedIn && !current.deleting && !current.posting && !current.reporting &&
+        return !current.feed.localOnly && current.loggedIn && !current.deleting && !current.posting && !current.reporting &&
                 !current.currentUserId.isNullOrBlank() &&
                 current.currentUserId == comment.userId && repository.supportsDeletion(target)
     }
@@ -291,7 +307,7 @@ class CommentsViewModel constructor(
 
     private fun DownloadedChapterComments.toFeed(loading: Boolean = false) = CommentFeed(
         items = comments, total = total, loading = loading,
-        downloaded = true, downloadComplete = complete
+        downloaded = true, downloadComplete = complete, downloadClosed = closed, localOnly = true
     )
 
     fun setDraft(value: String) {
@@ -317,7 +333,7 @@ class CommentsViewModel constructor(
     fun openReport(comment: MangaComment) {
         val current = state.value
         val target = current.target ?: return
-        if (current.reporting || current.posting || current.deleting) return
+        if (current.feed.localOnly || current.reporting || current.posting || current.deleting) return
         if (!current.loggedIn) {
             state.update { it.copy(message = "请先到“我的”登录后举报") }
             return
@@ -360,7 +376,7 @@ class CommentsViewModel constructor(
         val current = state.value
         val target = current.target ?: return
         val comment = current.reportTarget ?: return
-        if (current.reporting || current.deleting || current.reportLoading || !current.loggedIn ||
+        if (current.feed.localOnly || current.reporting || current.deleting || current.reportLoading || !current.loggedIn ||
             CommentText.length(reason) > CommentText.MAX_LENGTH ||
             current.reportConfig?.types?.none { it.type == type } != false
         ) return
@@ -507,10 +523,10 @@ class CommentsViewModel constructor(
         }
     }
 
-    fun load(refresh: Boolean, fromPullToRefresh: Boolean = false) {
+    fun load(refresh: Boolean, fromPullToRefresh: Boolean = false, preferDownloaded: Boolean = false) {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.reporting || current.deleting ||
+        if ((!refresh && current.feed.localOnly) || current.posting || current.reporting || current.deleting ||
             ((!refresh || fromPullToRefresh) && current.feed.loading)
         ) return
         val offset = if (refresh) 0 else current.feed.nextOffset ?: return
@@ -529,22 +545,30 @@ class CommentsViewModel constructor(
             )
         }
         readJob = viewModelScope.launch(handler) {
-            if (target.kind == CommentKind.CHAPTER && parentId == null) {
-                val cached = if (refresh && current.feed.items.isEmpty())
-                    repository.getDownloadedChapterComments(target.id).getOrNull() else null
+            if (preferDownloaded && target.kind == CommentKind.CHAPTER && parentId == null) {
+                val cachedResult = repository.getDownloadedChapterComments(target.id)
+                val cached = cachedResult.getOrNull()
+                val downloaded = cached != null || cachedResult.isFailure ||
+                    repository.hasDownloadedChapter(target.id).getOrElse { true }
                 ensureActive()
                 if (requestRevision != revision) return@launch
-                state.update {
-                    it.copy(
-                        feed = cached?.toFeed(loading = true)?.copy(refreshing = fromPullToRefresh)
-                            ?: it.feed
-                    )
+                if (downloaded) {
+                    state.update { it.copy(
+                        postingAllowed = false, checkingPermission = false, permissionError = null,
+                        feed = cached?.toFeed() ?: CommentFeed(
+                            localOnly = true,
+                            error = cachedResult.exceptionOrNull()?.let { "离线评论读取失败，请稍后重试" }
+                        )
+                    ) }
+                    return@launch
                 }
+                activateOnline()
             }
             repository.getComments(target, offset, parentId).fold(
                 onSuccess = { page ->
                     ensureActive()
                     if (requestRevision != revision) return@fold
+                    val wasLocal = state.value.feed.localOnly
                     state.update {
                         val items =
                             (if (refresh) page.comments else it.feed.items + page.comments).distinctBy { comment -> comment.id }
@@ -570,18 +594,22 @@ class CommentsViewModel constructor(
                             } else it.replyPreviews
                         )
                     }
+                    if (wasLocal) activateOnline()
                 },
                 onFailure = { error ->
                     ensureActive()
                     if (requestRevision == revision) state.update {
                         it.copy(
                             postingAllowed = it.postingAllowed && error !is CommentClosedException,
-                            closed = error is CommentClosedException,
+                            closed = !it.feed.localOnly && error is CommentClosedException,
                             feed = it.feed.copy(
                                 loading = false,
                                 refreshing = false,
                                 refreshFailed = refresh,
-                                error = error.message ?: "评论加载失败"
+                                error = if (it.feed.localOnly) {
+                                    if (error is CommentClosedException) "线上已关闭评论，仍可查看已保存内容"
+                                    else "联网刷新失败，仍可查看已保存内容"
+                                } else error.message ?: "评论加载失败"
                             )
                         )
                     }
@@ -593,7 +621,7 @@ class CommentsViewModel constructor(
     fun post() {
         val current = state.value
         val target = current.target ?: return
-        if (current.posting || current.deleting || !current.postingAllowed) return
+        if (current.feed.localOnly || current.posting || current.deleting || !current.postingAllowed) return
         if (!current.loggedIn) {
             state.update { it.copy(message = "请先到“我的”登录") }; return
         }

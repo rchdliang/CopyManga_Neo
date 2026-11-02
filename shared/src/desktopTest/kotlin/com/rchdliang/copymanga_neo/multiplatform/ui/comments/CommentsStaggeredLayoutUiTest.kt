@@ -156,4 +156,34 @@ class CommentsStaggeredLayoutUiTest {
         onNodeWithContentDescription("发表评论").assertIsNotEnabled()
     }
 
+
+    @Test fun offlineCommentsShowPartialSnapshotAndOnlyOfferExplicitOnlineRefresh() = runSkikoComposeUiTest(size = Size(480f, 800f)) {
+        val target = CommentTarget(CommentKind.CHAPTER, "offline")
+        val comment = MangaComment("local", "读者", "https://invalid.test/avatar.png", "离线评论示例", "2026-11-03")
+        val state = CommentsUiState(target = target, loggedIn = true, postingAllowed = false,
+            feed = CommentFeed(items = listOf(comment), total = 10, downloaded = true, localOnly = true))
+        var refreshes = 0
+        setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CopyManga_NeoTheme(darkTheme = false, dynamicColor = false) {
+                    CommentsContent(target, "离线章节", state, CommentMoment.now(), rememberLazyStaggeredGridState(), false, false,
+                        onCompose = {}, onCloseComposer = {}, onDismiss = {}, onBackToComments = {},
+                        onRefresh = { refreshes++ }, onRetry = {}, onRetryPermission = {}, onLoadReplyPreview = {}, onShowReplies = {},
+                        onDraftChange = {}, onPost = {}, embedded = true)
+                }
+            }
+        }
+        onNodeWithText("离线章节 · 离线评论").assertExists()
+        onNodeWithText("离线评论未完整保存，当前可查看 1 条").assertExists()
+        onNodeWithText("正在查看离线评论，联网刷新后可发表评论").assertExists()
+        onNodeWithContentDescription("发表评论").assertIsNotEnabled()
+        onNodeWithText("0 / 200").assertExists()
+        onNodeWithText("下载评论").assertDoesNotExist()
+        onNodeWithText("联网查看最新评论").performClick()
+        runOnIdle { assertEquals(1, refreshes) }
+        onNodeWithText("离线评论示例").performTouchInput { longClick() }
+        onNodeWithText("复制").assertExists()
+        onNodeWithText("举报").assertDoesNotExist()
+    }
+
 }

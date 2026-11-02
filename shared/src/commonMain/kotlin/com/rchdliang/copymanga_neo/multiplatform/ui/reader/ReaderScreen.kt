@@ -133,6 +133,9 @@ fun ReaderScreen(
                 ?: chapterName,
             comicPathWord = comicPathWord,
             viewModel = services.modalComments(),
+            onFeedChanged = { feed ->
+                commentChapter?.let { services.chapterComments(it).updateFeed(it, feed) }
+            },
             onDismiss = { commentChapter = null; commentRefreshVersion++ }
         )
     }

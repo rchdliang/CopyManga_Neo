@@ -12,12 +12,15 @@ import org.junit.Assert.*
 class ReaderChapterCommentsTest {
     private class FakeComments : CommentRepository {
         val calls = mutableListOf<String>()
+        var cached: DownloadedChapterComments? = null
+        var downloaded = false
         var answer: suspend (CommentTarget) -> Result<CommentPage> = { Result.success(CommentPage(emptyList(), 7, null)) }
         override suspend fun getComments(target: CommentTarget, offset: Int, replyId: String?): Result<CommentPage> {
             calls += target.id
             return answer(target)
         }
-        override suspend fun getDownloadedChapterComments(uuid: String) = Result.success<DownloadedChapterComments?>(null)
+        override suspend fun getDownloadedChapterComments(uuid: String) = Result.success(cached)
+        override suspend fun hasDownloadedChapter(uuid: String) = Result.success(downloaded || cached != null)
         override suspend fun downloadChapterComments(uuid: String): Result<DownloadedChapterComments> = error("unused")
         override suspend fun getReportConfig(target: CommentTarget): Result<CommentReportConfig> = error("unused")
         override suspend fun reportComment(target: CommentTarget, commentId: String, type: Int, reason: String): Result<Unit> = error("unused")
@@ -83,4 +86,32 @@ class ReaderChapterCommentsTest {
             assertEquals(2, model.uiState.value.page!!.total)
         } finally { store.clear(); Dispatchers.resetMain() }
     }
+
+    @Test fun downloadedSummaryNeverFetchesAutomaticallyIncludingEmptyAndPartialSnapshots() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val repo = FakeComments().apply { downloaded = true }
+        val model = ReaderChapterCommentsViewModel(repo)
+        val store = ViewModelStore().apply { put("comments", model) }
+        try {
+            val comment = MangaComment("local", "reader", null, "离线评论", "2026-11-03")
+            listOf(null, DownloadedChapterComments(listOf(comment), 10, false, savedAt = 1),
+                DownloadedChapterComments(emptyList(), 0, true, closed = true, savedAt = 1)).forEachIndexed { index, snapshot ->
+                repo.cached = snapshot
+                model.load("chapter-$index"); runCurrent()
+                model.load("chapter-$index", refresh = true); runCurrent()
+                assertTrue(model.uiState.value.localOnly)
+                assertFalse(model.uiState.value.loading)
+                assertNull(model.uiState.value.error)
+                assertFalse(model.uiState.value.closed)
+                assertEquals(snapshot?.comments.orEmpty(), model.uiState.value.page!!.comments)
+            }
+            assertTrue(repo.calls.isEmpty())
+            model.updateFeed("chapter-2", com.rchdliang.copymanga_neo.multiplatform.ui.comments.CommentFeed(total = 8))
+            assertFalse(model.uiState.value.localOnly)
+            model.load("chapter-2", refresh = true); runCurrent()
+            assertEquals(listOf("chapter-2"), repo.calls)
+            assertEquals(7, model.uiState.value.page!!.total)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
 }

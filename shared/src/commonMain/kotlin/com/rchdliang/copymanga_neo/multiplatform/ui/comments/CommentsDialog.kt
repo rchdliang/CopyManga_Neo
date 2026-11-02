@@ -135,10 +135,12 @@ fun CommentsDialog(
     onLogin: (() -> Unit)? = null,
     comicPathWord: String? = null,
     viewModel: CommentsViewModel,
-    initialReport: MangaComment? = null
+    initialReport: MangaComment? = null,
+    onFeedChanged: (CommentFeed) -> Unit = {}
 ) {
     CommentsPanel(
-        target, title, onDismiss, postingAllowed, onLogin, comicPathWord, viewModel, initialReport
+        target, title, onDismiss, postingAllowed, onLogin, comicPathWord, viewModel, initialReport,
+        onFeedChanged = onFeedChanged
     )
 }
 
@@ -505,7 +507,8 @@ internal fun CommentsContent(
                             }
                         }
                         Text(
-                            title, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            if (state.feed.localOnly) "$title · 离线评论" else title,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
@@ -552,6 +555,7 @@ internal fun CommentsContent(
                                                 comment = parent,
                                                 currentTime = currentTime,
                                                 onReport = onReport,
+                                                onlineActions = !state.feed.localOnly,
                                                 canDelete = canDelete,
                                                 onDelete = onDelete,
                                                 onReply = if (state.postingAllowed) ({
@@ -592,6 +596,7 @@ internal fun CommentsContent(
                                             previewTotal = preview?.total,
                                             threadUsername = state.parent?.username,
                                             onReport = onReport,
+                                            onlineActions = !state.feed.localOnly,
                                             canDelete = canDelete,
                                             onDelete = onDelete,
                                             onClick = if (state.parent == null && target.kind != CommentKind.CHAPTER &&
@@ -621,6 +626,24 @@ internal fun CommentsContent(
                                         when {
                                             state.feed.refreshing -> Unit
                                             state.feed.loading -> LoadingIndicator()
+
+                                            state.feed.localOnly -> {
+                                                Text(
+                                                    when {
+                                                        state.feed.error != null -> state.feed.error
+                                                        state.feed.downloadClosed -> "下载时该章节已关闭评论"
+                                                        !state.feed.downloaded -> "该章节尚未保存离线评论"
+                                                        !state.feed.downloadComplete -> "离线评论未完整保存，当前可查看 ${state.feed.items.size} 条"
+                                                        state.feed.items.isEmpty() -> "下载时还没有评论"
+                                                        else -> "已显示全部已保存评论"
+                                                    },
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                                TextButton(onClick = onRefresh, enabled = !state.feed.loading) {
+                                                    Text("联网查看最新评论", color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
 
                                             state.feed.error != null -> {
                                                 Text(
@@ -752,6 +775,7 @@ internal fun CommentCard(
     onClick: (() -> Unit)? = null,
     onReport: (MangaComment) -> Unit = {},
     enabled: Boolean = true,
+    onlineActions: Boolean = true,
     canDelete: (MangaComment) -> Boolean = { false },
     onDelete: (MangaComment) -> Unit = {}
 ) {
@@ -772,7 +796,7 @@ internal fun CommentCard(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (comment.avatar.isNullOrBlank()) {
+            if (comment.avatar.isNullOrBlank() || !onlineActions) {
                 Icon(
                     Icons.Default.AccountCircle,
                     null,
@@ -850,7 +874,7 @@ internal fun CommentCard(
                     menuComment = null
                 }
             )
-            DropdownMenuItem(
+            if (onlineActions) DropdownMenuItem(
                 text = { Text("举报", color = MaterialTheme.colorScheme.onSurface) },
                 onClick = { menuComment?.let(onReport); menuComment = null }
             )
@@ -960,8 +984,8 @@ private fun CommentComposer(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val inspectionMode = LocalInspectionMode.current
-    ActiveRouteLaunchedEffect(state.loggedIn, state.postingAllowed, inspectionMode) {
-        if (!compact && !inspectionMode && state.loggedIn && state.postingAllowed) {
+    ActiveRouteLaunchedEffect(state.loggedIn, state.postingAllowed, state.feed.localOnly, inspectionMode) {
+        if (!compact && !inspectionMode && !state.feed.localOnly && state.loggedIn && state.postingAllowed) {
             focusRequester.requestFocus()
             keyboard?.show()
         }
@@ -989,9 +1013,10 @@ private fun CommentComposer(
 //            }
         }
         val length = CommentText.length(state.draft)
-        val canEdit = state.loggedIn && state.postingAllowed && !state.checkingPermission && state.permissionError == null
+        val canEdit = !state.feed.localOnly && state.loggedIn && state.postingAllowed && !state.checkingPermission && state.permissionError == null
         val canPost = canEdit && !state.posting && CommentText.isValid(state.draft)
         val placeholderText = when {
+            state.feed.localOnly -> "正在查看离线评论，联网刷新后可发表评论"
             state.checkingPermission -> "正在确认评论权限…"
             state.permissionError != null -> state.permissionError
             !state.postingAllowed -> if (state.target?.kind == CommentKind.NOVEL)
@@ -1048,7 +1073,7 @@ private fun CommentComposer(
             isError = state.permissionError != null || length > CommentText.MAX_LENGTH,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default)
         )
-        if ((state.permissionError != null && !state.checkingPermission) || (!state.loggedIn && onLogin != null)) Row(
+        if (!state.feed.localOnly && ((state.permissionError != null && !state.checkingPermission) || (!state.loggedIn && onLogin != null))) Row(
             Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically
         ) {
             if (state.permissionError != null && !state.checkingPermission) TextButton(onClick = onRetryPermission) {

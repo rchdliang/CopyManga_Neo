@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
 
 data class ReaderChapterCommentsUiState(
     val page: CommentPage? = null, val loading: Boolean = false,
-    val closed: Boolean = false, val error: String? = null, val rateLimited: Boolean = false
+    val closed: Boolean = false, val localOnly: Boolean = false, val error: String? = null, val rateLimited: Boolean = false
 )
 
 /** 底栏与章末评论共用状态，首次显示任一入口时加载；禁评响应移除章末评论页。 */
@@ -45,7 +45,7 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
         job?.cancel()
         chapter = uuid
         state.value = ReaderChapterCommentsUiState(
-            page = CommentPage(feed.items, feed.total, feed.nextOffset)
+            page = CommentPage(feed.items, feed.total, feed.nextOffset), localOnly = feed.localOnly
         )
     }
 
@@ -57,7 +57,7 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
             state.value = ReaderChapterCommentsUiState()
         }
         // 展开工具栏、重组及返回评论页都不是重试；失败仅由明确刷新操作恢复。
-        if (job?.isActive == true || state.value.closed || (!refresh && state.value.error != null) ||
+        if (job?.isActive == true || state.value.closed || state.value.localOnly || (!refresh && state.value.error != null) ||
             (!more && !refresh && state.value.page != null)
         ) return
         val old = state.value.page
@@ -66,10 +66,15 @@ class ReaderChapterCommentsViewModel constructor(private val repository: Comment
         job = viewModelScope.launch(handler) {
             if (!more && old == null) {
                 val cached = repository.getDownloadedChapterComments(uuid).getOrNull()
+                val downloaded = cached != null || repository.hasDownloadedChapter(uuid).getOrNull() == true
                 ensureActive()
-                if (cached != null) state.value = state.value.copy(
-                    page = CommentPage(cached.comments, cached.total, null)
-                )
+                if (downloaded) {
+                    state.value = ReaderChapterCommentsUiState(
+                        page = CommentPage(cached?.comments.orEmpty(), cached?.total ?: 0, null),
+                        localOnly = true
+                    )
+                    return@launch
+                }
             }
             repository.getComments(CommentTarget(CommentKind.CHAPTER, uuid), offset).fold(
                 onSuccess = { page ->
@@ -114,7 +119,8 @@ fun ReaderChapterComments(
     onBackward: () -> Unit = {}
 ) {
     LaunchedEffect(refreshVersion) {
-        if (refreshVersion > 0 && commentsViewModel.uiState.value.target?.id == page.chapterUuid) {
+        if (refreshVersion > 0 && commentsViewModel.uiState.value.target?.id == page.chapterUuid &&
+            !viewModel.uiState.value.localOnly) {
             commentsViewModel.load(refresh = true)
         }
     }

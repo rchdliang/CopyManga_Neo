@@ -21,6 +21,10 @@ interface CommentRepository {
         comment: com.rchdliang.copymanga_neo.domain.model.MangaComment
     ): Result<Unit> = Result.failure(IllegalStateException("当前模式不支持删除评论"))
 
+    /** 区分已下载章节缺少评论快照与普通在线章节；不发起网络请求。 */
+    suspend fun hasDownloadedChapter(uuid: String): Result<Boolean> =
+        getDownloadedChapterComments(uuid).map { it != null }
+
     suspend fun getDownloadedChapterComments(uuid: String): Result<com.rchdliang.copymanga_neo.domain.model.DownloadedChapterComments?>
 
     /** 保存所有可获取的章节评论；失败保留已获取页，不影响已完成的图片。 */

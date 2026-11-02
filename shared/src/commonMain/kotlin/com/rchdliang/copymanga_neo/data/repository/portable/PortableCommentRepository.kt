@@ -70,6 +70,10 @@ class PortableCommentRepository(
             }
         }
     }
+    override suspend fun hasDownloadedChapter(uuid: String): Result<Boolean> = result {
+        downloads?.hasCompleteChapter(uuid) == true
+    }
+
     override suspend fun getDownloadedChapterComments(uuid:String):Result<DownloadedChapterComments?> = result {
         if(downloads?.hasCompleteChapter(uuid)!=true) null else downloads.read(uuid)
     }
