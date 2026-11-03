@@ -121,7 +121,8 @@ function api(existing = null, tagSha = null) {
   const build = buildApi();
   const state = {release: existing, assets: [], writes: [], tagSha};
   const repos = {
-    getCommit: async () => {
+    getCommit: async args => {
+      if (args?.ref) assert.equal(args.ref, meta.tag, 'GitHub commits API accepts the tag name, not tags/name');
       if (!state.tagSha) throw Object.assign(new Error('missing'), {status: 404});
       return {data: {sha: state.tagSha}};
     },
@@ -144,7 +145,11 @@ function api(existing = null, tagSha = null) {
   };
   return {
     state, build: build.state, github: {
-      rest: {repos, git: {getRef: repos.getCommit}, actions: build.github.rest.actions},
+      rest: {repos, git: {getRef: async args => {
+        assert.equal(args.ref, 'tags/' + meta.tag);
+        if (!state.tagSha) throw Object.assign(new Error('missing'), {status: 404});
+        return {data: {object: {sha: state.tagSha}}};
+      }}, actions: build.github.rest.actions},
       paginate: async (method, args) => method === 'releases' ? (state.release ? [state.release] : []) :
         method === 'assets' ? state.assets : build.github.paginate(method, args),
     },
@@ -164,6 +169,25 @@ test('version and optional hotfix come only from version.properties', () => {
   assert.throws(() => release.metadata(source.replace('40', '0'), context), /version/);
   assert.throws(() => release.metadata(source + 'COPYMANGA_VERSION_CODE=41\n', context), /Invalid/);
   assert.throws(() => release.metadata(source.replace('1.2.3', '1.2.3; echo secret'), context), /version/);
+});
+
+test('tagged release metadata uses the tag commit instead of newer workflow code', t => {
+  const {root} = fixture(t);
+  const taggedCommit = 'b'.repeat(40);
+  const taggedContext = {...context, payload: {inputs: {release_tag: 'v1.2.3'}}};
+  const taggedGit = (command, args) => {
+    if (args.join(' ') === 'rev-parse --verify refs/tags/v1.2.3^{commit}') return taggedCommit;
+    if (args.join(' ') === 'rev-list --count ' + taggedCommit) return '200';
+    if (args.join(' ') === 'show ' + taggedCommit + ':version.properties') return source;
+    return git(command, args);
+  };
+  const tagged = release.readMetadata(root, taggedContext, taggedGit);
+  assert.equal(tagged.commit, taggedCommit);
+  assert.equal(tagged.commitCount, 200);
+  assert.equal(tagged.buildVersion, '1.2.3+200');
+  assert.throws(() => release.readMetadata(root, {...context, payload: {inputs: {release_tag: '../other'}}}, git), /Invalid release tag/);
+  assert.throws(() => release.readMetadata(root, taggedContext, (command, args) =>
+    args[0] === 'show' ? source.replace('1.2.3', '1.2.4') : taggedGit(command, args)), /does not match/);
 });
 
 test('only manual CMP runs are eligible', () => {

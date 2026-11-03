@@ -40,8 +40,17 @@ function readMetadata(root, context, git = execFileSync) {
   if (git('git', ['rev-parse', '--is-shallow-repository'], options).trim() !== 'false') {
     throw new Error('Full Git history is required for artifact naming.');
   }
-  const commitCount = Number(git('git', ['rev-list', '--count', 'HEAD'], options).trim());
-  return metadata(fs.readFileSync(path.join(root, 'version.properties'), 'utf8'), context, commitCount);
+  const releaseTag = (context.payload?.inputs?.release_tag || '').trim();
+  if (releaseTag && !/^v[0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?$/.test(releaseTag)) {
+    throw new Error('Invalid release tag.');
+  }
+  const commit = releaseTag ? git('git', ['rev-parse', '--verify', 'refs/tags/' + releaseTag + '^{commit}'], options).trim() : context.sha;
+  const commitCount = Number(git('git', ['rev-list', '--count', releaseTag ? commit : 'HEAD'], options).trim());
+  const source = releaseTag ? git('git', ['show', commit + ':version.properties'], options) :
+    fs.readFileSync(path.join(root, 'version.properties'), 'utf8');
+  const meta = metadata(source, {...context, sha: commit}, commitCount);
+  if (releaseTag && meta.tag !== releaseTag) throw new Error('Release tag does not match version.properties at its commit.');
+  return meta;
 }
 
 function assertDraft(release, meta) {
@@ -60,7 +69,7 @@ async function destination(github, context, meta) {
     if (error.status !== 404) throw error;
   }
   if (tag) {
-    const {data} = await github.rest.repos.getCommit({...context.repo, ref: 'tags/' + meta.tag});
+    const {data} = await github.rest.repos.getCommit({...context.repo, ref: meta.tag});
     if (data.sha !== meta.commit) throw new Error('Release tag points to another commit.');
   }
   const releases = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});

@@ -196,6 +196,8 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 手动发布只允许选择 `CMP` 分支，复用运行开始时同一提交已成功的 Android/Windows 自动构建和 iOS 手动构建产物，不再编译或打包。本流程不包含 Linux、Wasm；原 Android 自动工作流和多平台手动测试工作流保持独立。
 
+如已创建 `v<数字发布版本>` 标签，手动运行时可填写 `release_tag`。此时发布工具仍取自选定的 CMP 提交，但版本配置、提交数和三端产物均固定取自该标签对应提交，并验证标签名称与其版本配置一致；不会移动标签或改用较新的应用产物。留空时沿用运行开始时的 CMP 提交。此功能用于在更新发布工具后继续发布已经完成构建的标签版本。
+
 1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交并推送到 CMP；等待 Android/Windows 自动构建成功，并在手动多平台工作流选择同一 CMP 提交构建 iOS。然后可将 `v<数字发布版本>` 标签推送到该提交，在 Actions → CMP builds and release draft → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
 2. 工作流固定运行开始时的提交，选择本仓库最新可用的成功 Android/Windows `push` 运行和 iOS `workflow_dispatch` 运行。三个平台任务必须实际成功，Artifact 完整且未过期；Android/Windows 必须来自同一次自动构建，iOS 来自同一提交的多平台工作流当前重跑次数。找不到时直接失败，提示等待或重跑对应来源构建，不会回退到其他提交或自动重新构建。
 3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用四个 Android Release APK、Windows x64 EXE/ZIP 和 iOS ARM64 IPA；核对 iOS 清单的提交、版本、构建号、架构、未签名状态及 SHA-256 后，创建 `v<数字发布版本>` 的 **GitHub Release 草稿**。来源构建已执行各平台配置及打包检查；手动发布保持安装包字节不变，生成汇总清单。草稿不设为 Latest，也不会自动公开发布。
