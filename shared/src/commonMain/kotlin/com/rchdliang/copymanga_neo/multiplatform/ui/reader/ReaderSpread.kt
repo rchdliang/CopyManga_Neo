@@ -17,7 +17,8 @@ internal fun readerUsesSpreads(mode: String, widthDp: Float, heightDp: Float): B
 /** A restart creates a boundary before that original page; multiple boundaries are independent. */
 internal fun readerSpreads(
     pages: List<ReaderPageEntry>, enabled: Boolean,
-    wideKeys: Set<String> = emptySet(), restarts: Map<String, List<Int>> = emptyMap()
+    wideKeys: Set<String> = emptySet(), restarts: Map<String, List<Int>> = emptyMap(),
+    firstPageSingle: Boolean = true
 ): List<ReaderSpread> = buildList {
     var index = 0
     while (index < pages.size) {
@@ -26,7 +27,7 @@ internal fun readerSpreads(
         val breaks = restarts[page.chapterUuid].orEmpty()
         val pair = enabled && page.source != null && next?.source != null &&
             page.chapterUuid == next.chapterUuid && next.page == page.page + 1 &&
-            (page.page != 0 || 0 in breaks) && next.page !in breaks &&
+            (!firstPageSingle || page.page != 0 || 0 in breaks) && next.page !in breaks &&
             page.key !in wideKeys && next.key !in wideKeys
         add(ReaderSpread(if (pair) listOf(index, index + 1) else listOf(index)))
         index += if (pair) 2 else 1

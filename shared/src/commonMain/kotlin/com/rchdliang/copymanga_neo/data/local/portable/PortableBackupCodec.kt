@@ -10,6 +10,8 @@ object PortableBackupCodec {
     private fun JsonObject.string(key: String): String = (this[key] as? JsonPrimitive)?.also { require(it.isString) }?.content ?: error("备份缺少字段：$key")
     private fun JsonObject.integer(key: String): Int = (this[key] as? JsonPrimitive)?.also { require(!it.isString) }?.intOrNull ?: error("备份整数字段无效：$key")
     private fun JsonObject.boolean(key: String): Boolean = (this[key] as? JsonPrimitive)?.also { require(!it.isString) }?.booleanOrNull ?: error("备份布尔字段无效：$key")
+    private fun JsonObject.firstPageSingle(): Boolean? =
+        this["firstPageSingle"]?.takeUnless { it == JsonNull }?.let { boolean("firstPageSingle") }
     private fun JsonObject.long(key: String): Long = (this[key] as? JsonPrimitive)?.also { require(!it.isString) }?.longOrNull ?: error("备份时间无效：$key")
     fun reading(snapshot: LocalReadingSnapshot): JsonObject = buildJsonObject {
         put("version", 1)
@@ -92,7 +94,12 @@ object PortableBackupCodec {
         put("readerTools", storageJson.parseToJsonElement(value.readerTools))
         put("comicPreferences", buildJsonObject { value.comicPreferences.forEach { (path, p) ->
             require(path.isNotBlank() && p == p.normalized())
-            put(path, buildJsonObject { put("direction", p.readingDirection); put("scale", p.pageScale); put("orientation", p.screenOrientation) })
+            put(path, buildJsonObject {
+                put("direction", p.readingDirection)
+                put("scale", p.pageScale)
+                put("orientation", p.screenOrientation)
+                p.firstPageSingle?.let { put("firstPageSingle", it) }
+            })
         } })
     }.toString().also { require(it.encodeToByteArray().size <= SettingsBackupRepository.MAX_BYTES) { "设置文件过大" } }
     fun decode(raw: String): SettingsBackup {
@@ -100,7 +107,10 @@ object PortableBackupCodec {
         val o = storageJson.parseToJsonElement(raw).jsonObject
         require(o.string("format") == "copymanga-neo-settings" && o.integer("version") == 2) { "不支持的设置备份" }
         val app = o.getValue("settings").jsonObject
-        val reader = o.getValue("readerDefaults").jsonObject.let { ReaderPreferences(it.string("readingDirection"), it.string("pageScale"), it.string("screenOrientation")) }
+        val reader = o.getValue("readerDefaults").jsonObject.let {
+            ReaderPreferences(it.string("readingDirection"), it.string("pageScale"), it.string("screenOrientation"),
+                firstPageSingle = it.firstPageSingle())
+        }
         require(reader == reader.normalized())
         val rank = o.getValue("homeRank").jsonObject.let { HomeRankPreferences(it.string("audience"), it.string("period")) }
         require(rank == rank.normalized())
@@ -108,7 +118,10 @@ object PortableBackupCodec {
         val tools = o.getValue("readerTools").jsonObject.also { tools(it) }
         val comics = o.getValue("comicPreferences").jsonObject.mapValues { (path, v) ->
             require(path.isNotBlank())
-            v.jsonObject.let { ReaderPreferences(it.string("direction"), it.string("scale"), it.string("orientation")) }.also { require(it == it.normalized()) }
+            v.jsonObject.let {
+                ReaderPreferences(it.string("direction"), it.string("scale"), it.string("orientation"),
+                    firstPageSingle = it.firstPageSingle())
+            }.also { require(it == it.normalized()) }
         }
         val concurrency = if ("comicImageConcurrency" in app) app.integer("comicImageConcurrency") else 3
         val limit = if ("comicDownloadLimitKiB" in app) app.integer("comicDownloadLimitKiB") else 0

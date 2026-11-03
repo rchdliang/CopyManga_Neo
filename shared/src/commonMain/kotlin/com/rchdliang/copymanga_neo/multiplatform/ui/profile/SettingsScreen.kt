@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -89,7 +90,6 @@ internal fun SettingsScreen(
         onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
-        onAutoCheckUpdatesChange = viewModel::setAutoCheckUpdates,
         onSimplifyChineseChange = viewModel::setSimplifyChinese,
         onDictionaryUpdate = viewModel::updateChineseDictionary,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
@@ -102,6 +102,7 @@ internal fun SettingsScreen(
         onDirectionChange = viewModel::setReadingDirection,
         onScaleChange = viewModel::setPageScale,
         onOrientationChange = viewModel::setScreenOrientation,
+        onFirstPageSingleChange = viewModel::setFirstPageSingle,
         onReaderReset = viewModel::resetReaderDefaults,
         onRefreshStorage = viewModel::refreshStorage,
         onManageDownloads = onManageDownloads,
@@ -124,7 +125,6 @@ private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
-    onAutoCheckUpdatesChange: (Boolean) -> Unit = {},
     onSimplifyChineseChange: (Boolean) -> Unit = {},
     onDictionaryUpdate: () -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
@@ -137,6 +137,7 @@ internal fun SettingsPage(
     onDirectionChange: (String) -> Unit = {},
     onScaleChange: (String) -> Unit = {},
     onOrientationChange: (String) -> Unit = {},
+    onFirstPageSingleChange: (Boolean) -> Unit = {},
     onReaderReset: () -> Unit = {},
     onRefreshStorage: () -> Unit = {},
     onManageDownloads: () -> Unit = {},
@@ -229,15 +230,6 @@ internal fun SettingsPage(
                                 }
                             }
                         )
-                        ProfileSectionTitle("更新")
-                        ProfileListItem(
-                            Icons.Outlined.Refresh, "自动检查更新", "启动时检查新版本",
-                            index = 0, count = 1, enabled = enabled,
-                            onClick = { onAutoCheckUpdatesChange(!state.settings.autoCheckUpdates) },
-                            trailingContent = {
-                                Switch(checked = state.settings.autoCheckUpdates, onCheckedChange = null, enabled = enabled)
-                            }
-                        )
                         ProfileSectionTitle("应用管理")
                         ProfileListItem(
                             Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",
@@ -274,7 +266,7 @@ internal fun SettingsPage(
 
             SettingsDestination.READING -> {
                 Text(
-                    "全局默认设置，不更改已有设置",
+                    "全局阅读默认值，漫画单独保存的设置优先",
                     Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -285,7 +277,7 @@ internal fun SettingsPage(
                     "阅读方向",
                     direction,
                     index = 0,
-                    count = 3,
+                    count = 4,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.DIRECTION })
                 ProfileListItem(
@@ -293,7 +285,7 @@ internal fun SettingsPage(
                     "页面缩放",
                     scale,
                     index = 1,
-                    count = 3,
+                    count = 4,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.SCALE })
                 ProfileListItem(
@@ -301,9 +293,15 @@ internal fun SettingsPage(
                     "屏幕方向",
                     orientation,
                     index = 2,
-                    count = 3,
+                    count = 4,
                     enabled = enabled,
                     onClick = { picker = SettingsPicker.ORIENTATION })
+                ProfileListItem(
+                    Icons.Outlined.ViewWeek, "每章首张单页", "双页布局下，每章第一张图单独显示",
+                    index = 3, count = 4, enabled = enabled,
+                    onClick = { onFirstPageSingleChange(!reader.keepFirstPageSingle) },
+                    trailingContent = { Switch(reader.keepFirstPageSingle, onCheckedChange = null, enabled = enabled) }
+                )
                 ProfileSectionTitle("轻小说插图")
                 ProfileListItem(
                     Icons.Outlined.VisibilityOff, "模糊插图预览",

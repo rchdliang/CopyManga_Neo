@@ -37,11 +37,17 @@ internal fun ReaderSpreadOptions(
 
 @Composable
 internal fun ReaderPairingOption(tools: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
-    chapter: String?, page: Int, count: Int) {
+    chapter: String?, page: Int, count: Int,
+    firstPageSingle: () -> Boolean = { true }, onFirstPageSingleChange: (Boolean) -> Unit = {}) {
     val navigate = LocalReaderSettingsNavigation.current
     val currentTools by rememberUpdatedState(tools)
     ReaderSettingsLink(Icons.Outlined.ViewWeek, "本章配页", index = 0, count = 2, enabled = !chapter.isNullOrBlank()) {
-        navigate(ReaderSettingsPage("本章配页") { ReaderPairingEditor(currentTools, onChange, chapter, page, count) { navigate(null) } })
+        navigate(ReaderSettingsPage("本章配页") {
+            ReaderSettingSwitch("每章首张单页", firstPageSingle(), change = onFirstPageSingleChange)
+            Text("此开关应用于当前漫画的所有章节。", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ReaderPairingEditor(currentTools, onChange, chapter, page, count) { navigate(null) }
+        })
     }
 }
 

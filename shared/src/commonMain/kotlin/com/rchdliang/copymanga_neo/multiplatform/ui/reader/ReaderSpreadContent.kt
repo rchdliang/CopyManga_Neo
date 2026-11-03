@@ -8,13 +8,18 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import coil3.ImageLoader
@@ -31,6 +36,8 @@ internal fun ReaderSpreadContent(
     onZoomAvailable: (ReaderZoomState) -> Unit,
     commentContent: @Composable (ReaderPageEntry) -> Unit,
     imageQuality: ReaderImageQuality? = null,
+    pageShapes: Map<String, Boolean>? = null,
+    onSpreadDisplayReady: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val zooms = remember { mutableMapOf<String, ReaderZoomState>() }
@@ -83,7 +90,17 @@ internal fun ReaderSpreadContent(
                 if (index == activeIndex || (pager.isScrollInProgress && (visible || index == pager.settledPage))) {
                     commentContent(first)
                 }
+                if (index == activeIndex) SideEffect { onSpreadDisplayReady(activeKey) }
             } else {
+                val preview = LocalInspectionMode.current
+                var failedLeaves by remember { mutableStateOf(emptySet<String>()) }
+                // 先让候选页解码，等宽高确认后再绘制双页，避免把横图短暂画进半屏。
+                val pairingReady = preview || pageShapes == null || spread.indices.size == 1 ||
+                    spread.indices.all {
+                        val key = pages[it].key
+                        pageShapes[key] == false || (key in failedLeaves && pageShapes[key] == null)
+                    }
+                if (index == activeIndex && pairingReady) SideEffect { onSpreadDisplayReady(activeKey) }
                 val state = zooms.getOrPut(groupKey(spread)) { ReaderZoomState() }
                 Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged(state::updateViewport)
                     .readerImageZoomable(state, scope, false, READER_MAX_SCALE, isContentScrolling = { pager.isScrollInProgress })
@@ -99,7 +116,7 @@ internal fun ReaderSpreadContent(
                             val leaf = if (visual.size == 2 && scene.x >= center.x) visual[1] else visual[0]
                             onLongPress(pages[leaf])
                         })) {
-                    Row(Modifier.fillMaxSize().graphicsLayer {
+                    Row(Modifier.fillMaxSize().drawWithContent { if (pairingReady) drawContent() }.graphicsLayer {
                         scaleX = state.scale; scaleY = state.scale
                         translationX = state.offset.x; translationY = state.offset.y
                     }) {
@@ -114,12 +131,17 @@ internal fun ReaderSpreadContent(
                                         imageAlignment = readerSpreadImageAlignment(spread.indices.size, visualIndex),
                                         onReady = { onReady(leaf.key) },
                                         onDimensions = { width, height -> onDimensions(leaf.key, width, height) },
+                                        onImageError = { failedLeaves = failedLeaves + leaf.key },
                                         imageQuality = imageQuality,
                                         enhancementPageKey = leaf.key,
+                                        paired = spread.indices.size == 2,
                                     )
                                 }
                             }
                         }
+                    }
+                    if (!pairingReady) {
+                        CircularWavyProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
                     }
                 }
             }

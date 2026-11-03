@@ -265,7 +265,11 @@ private fun ProfileScreenContent(
                 onNavigateToAbout = { currentPage = ProfilePage.ABOUT }
             )
 
-            ProfilePage.ABOUT -> AboutScreen(viewModel = services.about, onNavigateBack = { currentPage = ProfilePage.MAIN })
+            ProfilePage.ABOUT -> AboutScreen(
+                viewModel = services.about,
+                settingsViewModel = services.settings,
+                onNavigateBack = { currentPage = ProfilePage.MAIN }
+            )
 
             ProfilePage.DATA -> DataSettingsScreen(
                 settings = services.settings,

@@ -146,6 +146,9 @@ class SettingsViewModel constructor(
     fun setScreenOrientation(value: String) =
         save { readerPreferences.updateGlobal { it.copy(screenOrientation = value) } }
 
+    fun setFirstPageSingle(value: Boolean) =
+        save { readerPreferences.updateGlobal { it.copy(firstPageSingle = value) } }
+
     fun resetReaderDefaults() = save { readerPreferences.resetGlobal() }
     fun resetGlobalDefaults() = save {
         repository.resetDefaults().fold(

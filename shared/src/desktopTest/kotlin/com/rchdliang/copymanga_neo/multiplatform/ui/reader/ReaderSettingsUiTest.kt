@@ -16,6 +16,7 @@ class ReaderSettingsUiTest {
     @Composable private fun Settings(onDismiss: () -> Unit = {}) {
         var tools by remember { mutableStateOf(ReaderToolsSettings()) }
         var layout by remember { mutableStateOf("AUTO") }
+        var firstPageSingle by remember { mutableStateOf(true) }
         MaterialTheme {
             ReaderSettingsDialog(ReadingDirection.RIGHT_TO_LEFT, PageScale.FIT_SCREEN,
                 ScreenOrientationSetting.SYSTEM_DEFAULT, {}, {}, {}, onDismiss,
@@ -32,7 +33,10 @@ class ReaderSettingsUiTest {
                 },
                 turnSettings = { ReaderToolsOptions(tools, { tools = it(tools) }) },
                 loadingSettings = { ReaderLoadingOptions(tools, { tools = it(tools) }) },
-                pairingSettings = { ReaderPairingOption(tools, { tools = it(tools) }, "chapter", 2, 20) },
+                pairingSettings = {
+                    ReaderPairingOption(tools, { tools = it(tools) }, "chapter", 2, 20,
+                        { firstPageSingle }, { firstPageSingle = it })
+                },
                 helpSettings = { ReaderOperationHelp() })
         }
     }
@@ -65,8 +69,10 @@ class ReaderSettingsUiTest {
         onNodeWithText("显示设置").performClick()
         onNodeWithTag("reader-option-页面布局-双页").performClick()
         onNodeWithText("双页").assertExists()
+        onNodeWithTag("reader-setting-每章首张单页").assertDoesNotExist()
         onNodeWithText("返回").performClick()
         onNodeWithText("本章配页").performScrollTo().performClick()
+        onNodeWithTag("reader-setting-每章首张单页").assertIsOn().performClick().assertIsOff()
         onNodeWithText("起始页").performTextReplacement("0")
         onNodeWithText("请输入 1–19 的页码").assertExists()
         onNodeWithText("应用配页").assertIsNotEnabled()

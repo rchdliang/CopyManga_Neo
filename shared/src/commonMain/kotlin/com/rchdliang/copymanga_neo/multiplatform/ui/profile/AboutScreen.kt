@@ -23,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -39,9 +40,11 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 @Composable
 internal fun AboutScreen(
     onNavigateBack: () -> Unit,
-    viewModel: AboutViewModel
+    viewModel: AboutViewModel,
+    settingsViewModel: SettingsViewModel
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val settings by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
     LaunchedEffect(state.message) {
         state.message?.let { toast.showToast(it); viewModel.clearMessage() }
@@ -51,7 +54,11 @@ internal fun AboutScreen(
         onNavigateBack,
         state,
         { viewModel.checkForUpdate(current) },
-        viewModel::dismissUpdate
+        viewModel::dismissUpdate,
+        autoCheckUpdates = settings.settings.autoCheckUpdates,
+        autoCheckEnabled = !settings.isLoading && !settings.isSaving,
+        autoCheckError = settings.error,
+        onAutoCheckUpdatesChange = settingsViewModel::setAutoCheckUpdates
     )
 }
 
@@ -60,7 +67,11 @@ internal fun AboutPage(
     onNavigateBack: () -> Unit = {},
     state: AboutUiState = AboutUiState(),
     onCheckUpdate: () -> Unit = {},
-    onDismissUpdate: () -> Unit = {}
+    onDismissUpdate: () -> Unit = {},
+    autoCheckUpdates: Boolean = true,
+    autoCheckEnabled: Boolean = true,
+    autoCheckError: String? = null,
+    onAutoCheckUpdatesChange: (Boolean) -> Unit = {}
 ) {
     var libraries by rememberSaveable { mutableStateOf(false) }
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
@@ -75,17 +86,25 @@ internal fun AboutPage(
     }
     ProfileSettingsScaffold("关于", onNavigateBack) {
         AppIdentityCard()
-        ProfileSectionTitle("应用与开源")
+        ProfileSectionTitle("版本更新")
         ProfileListItem(
             Icons.Outlined.Refresh, "检查更新",
             if (state.checking) "正在检查最新版本…" else "获取最新发布版本",
-            0, 3, enabled = !state.checking, onClick = onCheckUpdate
+            0, 2, enabled = !state.checking, onClick = onCheckUpdate
         )
         ProfileListItem(
-            Icons.AutoMirrored.Outlined.OpenInNew, "GitHub", "项目源码、发布与反馈", 1, 3,
+            Icons.Outlined.Refresh, "自动检查更新", "启动时检查新版本",
+            1, 2, enabled = autoCheckEnabled,
+            onClick = { onAutoCheckUpdatesChange(!autoCheckUpdates) },
+            trailingContent = { Switch(autoCheckUpdates, onAutoCheckUpdatesChange, enabled = autoCheckEnabled) }
+        )
+        autoCheckError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        ProfileSectionTitle("应用与开源")
+        ProfileListItem(
+            Icons.AutoMirrored.Outlined.OpenInNew, "GitHub", "项目源码、发布与反馈", 0, 2,
             onClick = { open(ProjectLinks.GITHUB) })
         ProfileListItem(
-            Icons.Outlined.Code, "第三方库", "使用的库、许可证与开源致谢", 2, 3,
+            Icons.Outlined.Code, "第三方库", "使用的库、许可证与开源致谢", 1, 2,
             onClick = { libraries = true })
     }
     state.update?.let { release ->

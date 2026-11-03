@@ -1,5 +1,17 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
+internal data class ReaderDisplayedPosition(val page: ReaderPageEntry, val rangeLabel: String?)
+
+/** 只有下标、实际测量的分组和可绘制的分组一致时，才发布新页码。 */
+internal fun ReaderSpread.displayedPosition(
+    pages: List<ReaderPageEntry>, measuredKey: Any?, displayReadyKey: String?, preferredIndex: Int
+): ReaderDisplayedPosition? {
+    val groupKey = key(pages)
+    if (measuredKey != groupKey || displayReadyKey != groupKey) return null
+    return ReaderDisplayedPosition(pages[anchor(preferredIndex)],
+        readerPageRangeLabel(indices.mapNotNull { index -> pages[index].takeIf { it.source != null }?.page?.plus(1) }))
+}
+
 /** 优先保留稳定页标识；刷新页数减少时停在原章节的最后一张图片。 */
 internal fun resolveReaderPageIndex(
     pages: List<ReaderPageEntry>,

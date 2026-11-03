@@ -5,9 +5,29 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 
 class PortableAppSettingsTest {
+    @Test fun comicFirstPageSettingInheritsUntilOverriddenAndCanReset() = runTest {
+        val documents = Documents()
+        documents.values["comic-reader-settings.json"] = """{"comics":{"legacy":{"pageScale":"FIT_WIDTH"}}}"""
+        val settings = PortableReaderPreferences(documents)
+        assertTrue(settings.initializeComic("legacy").getOrThrow().keepFirstPageSingle)
+        settings.updateGlobal { it.copy(firstPageSingle = false) }.getOrThrow()
+        assertFalse(settings.comicPreferences("legacy").first().keepFirstPageSingle)
+        assertFalse(settings.initializeComic("new").getOrThrow().keepFirstPageSingle)
+        settings.updateComic("new") { it.copy(pageScale = "FIT_HEIGHT") }.getOrThrow()
+        settings.updateComic("legacy") { it.copy(firstPageSingle = true) }.getOrThrow()
+        val restored = PortableReaderPreferences(documents)
+        assertTrue(restored.comicPreferences("legacy").first().keepFirstPageSingle)
+        assertFalse(restored.comicPreferences("new").first().keepFirstPageSingle)
+        restored.resetComic("legacy").getOrThrow()
+        assertFalse(restored.comicPreferences("legacy").first().keepFirstPageSingle)
+        restored.resetGlobal().getOrThrow()
+        assertTrue(restored.comicPreferences("new").first().keepFirstPageSingle)
+    }
+
     @Test fun bookshelfSortSurvivesRestartAndFallsBackForMissingOrUnknownValues() = runTest {
         val documents = Documents()
         for (stored in listOf("{}", """{"favoritesOrdering":"unknown"}""")) {

@@ -16,11 +16,61 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
+import org.jetbrains.skia.Bitmap
 import kotlin.test.*
 
 /** Exercises the production screen's restoration/reporting; preview images avoid network/services. */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
 class ReaderSpreadPositionUiTest {
+    @Test fun firstFrameUsesTheRequestedSpread() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }
+        try {
+            for (mode in listOf("AUTO", "DOUBLE")) {
+                val pending = mutableStateOf<Int?>(4)
+                val scene = ImageComposeScene(1100, 700, coroutineContext = coroutineContext) {
+                    CompositionLocalProvider(LocalLifecycleOwner provides owner, LocalInspectionMode provides true) {
+                        CopyManga_NeoTheme {
+                            ReaderSuccessContent(
+                                images = (0..8).map { "fixture-$it" }, chapterName = "Fixture",
+                                readingDirection = "RIGHT_TO_LEFT", pageScale = "FIT_SCREEN",
+                                screenOrientation = "SYSTEM_DEFAULT", onPrevChapter = {}, onNextChapter = {},
+                                hasPrevChapter = false, hasNextChapter = false, onRefresh = {},
+                                onReadingDirectionChange = {}, onPageScaleChange = {}, onScreenOrientationChange = {},
+                                pendingInitialPage = pending,
+                                tools = ReaderToolsSettings(pageLayout = mode, inlineComments = false)
+                            )
+                        }
+                    }
+                }
+                try {
+                    var time = 0L
+                    fun frame(): List<Int> {
+                        runCurrent()
+                        time += 16_000_000
+                        return scene.render(time).use { image ->
+                            Bitmap.makeFromImage(image).use { bitmap ->
+                                (60..1040 step 35).flatMap { x ->
+                                    (60..640 step 35).map { y -> bitmap.getColor(x, y) }
+                                }
+                            }
+                        }
+                    }
+                    val first = frame()
+                    repeat(6) { frame() }
+                    val settled = frame()
+                    assertTrue(settled.any { it != 0xff000000.toInt() }, "The spread must contain visible images")
+                    assertTrue(first == settled, "The first frame must show the settled spread in $mode mode")
+                } finally {
+                    scene.close()
+                }
+            }
+        } finally {
+            owner.destroy()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun exactSecondLeafSurvivesModeDirectionWindowAndLocalRePairing() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }

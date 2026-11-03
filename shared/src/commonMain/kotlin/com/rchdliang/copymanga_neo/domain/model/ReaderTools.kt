@@ -10,7 +10,7 @@ data class ReaderToolsSettings(
     val imageRetries: Int = 2,
     val imageTimeoutSeconds: Int = 15,
     val preloadPages: Int = 2,
-    val pageLayout: String = "SINGLE",
+    val pageLayout: String = DEFAULT_READER_PAGE_LAYOUT,
     val pageAnimation: Boolean = true,
     val pairingRestarts: Map<String, List<Int>> = emptyMap(),
     val sharpness: Float = 0f,
@@ -31,7 +31,7 @@ data class ReaderToolsSettings(
         restorationLastMode = restorationLastMode.takeIf { it in setOf("RESTORE", "SOFT") } ?: "RESTORE",
         restoreLevel = restoreLevel.takeIf { it in RESTORE_LEVEL_NAMES } ?: "M",
         restoreSoftLevel = restoreSoftLevel.takeIf { it in RESTORE_LEVEL_NAMES } ?: "M",
-        pageLayout = pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: "SINGLE",
+        pageLayout = pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: DEFAULT_READER_PAGE_LAYOUT,
         pairingRestarts = pairingRestarts.mapValues { (_, pages) -> pages.filter { it >= 0 }.distinct().sorted() }.filterValues { it.isNotEmpty() }
     )
 }

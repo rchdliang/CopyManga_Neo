@@ -17,6 +17,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,8 +55,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -82,6 +82,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.request.ImageRequest
 import com.rchdliang.copymanga_neo.domain.model.CommentKind
 import com.rchdliang.copymanga_neo.domain.model.CommentTarget
+import com.rchdliang.copymanga_neo.domain.model.DEFAULT_READER_PAGE_LAYOUT
 import com.rchdliang.copymanga_neo.domain.model.LocalReadingRecord
 import com.rchdliang.copymanga_neo.domain.model.ReaderBookmark
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
@@ -235,8 +236,10 @@ fun ReaderScreen(
                 pendingInitialChapter = pendingInitialChapter,
                 activeChapterUuid = state.chapterUuid,
                 sessionChapters = if (tools.continuousChapters) state.chapters else state.chapters.filter { it.uuid == state.chapterUuid },
-                tools = tools.copy(pageLayout = preferences?.pageLayout ?: "SINGLE"), onToolsChange = viewModel::updateTools,
+                tools = tools.copy(pageLayout = preferences?.pageLayout ?: DEFAULT_READER_PAGE_LAYOUT), onToolsChange = viewModel::updateTools,
                 onPageLayoutChange = viewModel::setPageLayout,
+                firstPageSingle = preferences?.keepFirstPageSingle ?: true,
+                onFirstPageSingleChange = viewModel::setFirstPageSingle,
                 commentsAllowed = commentsAllowed, closedChapters = closedChapters,
                 commentRefreshVersion = commentRefreshVersion,
                 onCloseComments = viewModel::closeChapterComments,
@@ -314,8 +317,10 @@ fun ReaderSuccessContent(
     pendingInitialChapter: MutableState<String?>? = null,
     activeChapterUuid: String? = null,
     services: ReaderUiServices? = null,
-    externalModalVisible: Boolean = false
-) {
+    externalModalVisible: Boolean = false,
+    firstPageSingle: Boolean = true,
+    onFirstPageSingleChange: (Boolean) -> Unit = {}
+) = BoxWithConstraints(modifier.fillMaxSize()) {
     val context = LocalPlatformContext.current
     val owner = LocalLifecycleOwner.current
     val preview = LocalInspectionMode.current
@@ -373,15 +378,26 @@ fun ReaderSuccessContent(
         0,
         pages.lastIndex.coerceAtLeast(0)
     )
-    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
-    val density = LocalDensity.current.density
-    val spreadEnabled = !isContinuous && readerUsesSpreads(tools.pageLayout,
-        viewportSize.width / density, viewportSize.height / density)
+    // 第一次测量就按可用空间配页，避免先用零尺寸创建单页 Pager。
+    val viewportWidth = maxWidth
+    val viewportHeight = maxHeight
+    val spreadEnabled = !isContinuous && constraints.hasBoundedWidth && constraints.hasBoundedHeight &&
+        readerUsesSpreads(tools.pageLayout, viewportWidth.value, viewportHeight.value)
     val widePages = remember { mutableStateMapOf<String, Boolean>() }
-    val spreads = remember(pages, spreadEnabled, widePages.toMap(), tools.pairingRestarts) {
-        readerSpreads(pages, spreadEnabled, widePages.filterValues { it }.keys, tools.pairingRestarts)
+    val spreads = remember(pages, spreadEnabled, widePages.toMap(), tools.pairingRestarts, firstPageSingle) {
+        readerSpreads(pages, spreadEnabled, widePages.filterValues { it }.keys, tools.pairingRestarts, firstPageSingle)
     }
-    var preferredRawKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val explicitInitial = pendingInitialPage.value
+    val initialTarget = remember(pages, explicitInitial, pendingInitialChapter?.value, activeChapterUuid, savedPosition) {
+        resolveReaderPageIndex(
+            pages, null,
+            if (explicitInitial != null) pendingInitialChapter?.value ?: activeChapterUuid ?: pages.firstOrNull()?.chapterUuid
+            else savedPosition?.chapter,
+            explicitInitial ?: savedPosition?.page ?: 0,
+            initial
+        )
+    }
+    var preferredRawKey by rememberSaveable { mutableStateOf(pages.getOrNull(initialTarget)?.key) }
     val preferredIndex = pages.indexOfFirst { it.key == preferredRawKey }
     var activeZoom by remember { mutableStateOf<ReaderZoomState?>(null) }
     androidx.compose.runtime.SideEffect {
@@ -389,8 +405,8 @@ fun ReaderSuccessContent(
         widePages.keys.toList().filter { it !in keys }.forEach { widePages.remove(it) }
     }
     val pager =
-        rememberPagerState(initialPage = spreads.spreadIndex(initial), pageCount = { spreads.size.coerceAtLeast(1) })
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = initial)
+        rememberPagerState(initialPage = spreads.spreadIndex(initialTarget), pageCount = { spreads.size.coerceAtLeast(1) })
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = initialTarget)
     val visibleIndex by remember(
         isContinuous,
         list,
@@ -517,7 +533,7 @@ fun ReaderSuccessContent(
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
     LaunchedEffect(
-        pages, spreads, isContinuous, dir, pendingInitialPage.value, pendingInitialChapter?.value,
+        pages, spreads, isContinuous, spreadEnabled, dir, pendingInitialPage.value, pendingInitialChapter?.value,
         if (pendingInitialChapter?.value != null) activeChapterUuid else null
     ) {
         // Explicit navigation, chapter changes and mode changes supersede an old viewport anchor.
@@ -533,10 +549,17 @@ fun ReaderSuccessContent(
         // 预取或横图解码可能在手势中改变分组。等待落定，避免恢复滚动被手势取消后永久阻塞预取。
         if (explicit == null && (isContinuous || windowChanged || groupingChanged) && (list.isScrollInProgress || pager.isScrollInProgress)) {
             snapshotFlow { !list.isScrollInProgress && !pager.isScrollInProgress }.first { it }
-            val index = if (isContinuous) list.firstVisibleItemIndex else spreads.rawIndex(pager.settledPage, pages.indexOfFirst { it.key == preferredRawKey })
-            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-            val key = if (isContinuous) item?.key else pages.getOrNull(index)?.key
-            ReaderWindowPolicy.pageAt(pages, index, key)?.let {
+            val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == list.firstVisibleItemIndex }
+            val settledPage = if (isContinuous) pages.firstOrNull { it.key == item?.key } else {
+                val key = pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pager.settledPage }?.key
+                val index = spreads.rawIndexForKey(pages, key, pages.indexOfFirst { it.key == preferredRawKey })
+                val previousIndex = restoredSpreads.rawIndexForKey(restoredPages, key,
+                    restoredPages.indexOfFirst { it.key == preferredRawKey })
+                index?.let { pages[it] } ?: previousIndex?.let { old ->
+                    pages.firstOrNull { it.key == restoredPages[old].key }
+                }
+            }
+            settledPage?.let {
                 anchor = it.key; anchorChapter = it.chapterUuid; anchorPage = it.page
                 anchorFraction = if (isContinuous) ReadingPositionPolicy.fraction(list.firstVisibleItemScrollOffset, item?.size ?: 0) else 0.0
             }
@@ -550,15 +573,8 @@ fun ReaderSuccessContent(
                 anchor = current.key; anchorChapter = current.chapterUuid; anchorPage = current.page; anchorFraction = 0.0
             }
         }
-        val target = if (explicit != null)
-            resolveReaderPageIndex(
-                pages,
-                null,
-                requestedChapter ?: activeChapterUuid ?: pages.first().chapterUuid,
-                explicit,
-                initial
-            )
-        else resolveReaderPageIndex(pages, anchor, anchorChapter, anchorPage, initial)
+        val target = if (explicit != null) initialTarget
+            else resolveReaderPageIndex(pages, anchor, anchorChapter, anchorPage, initial)
         val fraction =
             if (!isContinuous) 0.0 else if (explicit != null) pendingInitialFraction?.value
                 ?: 0.0 else anchorFraction
@@ -808,6 +824,24 @@ fun ReaderSuccessContent(
     // 只对完成布局与锚点恢复的停稳页面预取；中间下标不能触发章节加载。
     val boundaryReady = !restoring && restoredPages == pages && restoredSpreads == spreads &&
         !pager.isScrollInProgress && !list.isScrollInProgress
+    var displayReadySpreadKey by remember { mutableStateOf<String?>(null) }
+    var lastDisplayedPosition by remember { mutableStateOf<ReaderDisplayedPosition?>(null) }
+    val measuredPosition = if (!restoring && restoredPages == pages && restoredSpreads == spreads &&
+        restoredLayout == Triple(isContinuous, spreadEnabled, dir) &&
+        pendingInitialPage.value == null && pendingInitialChapter?.value == null
+    ) {
+        if (isContinuous) {
+            val key = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == list.firstVisibleItemIndex }?.key
+            pages.firstOrNull { it.key == key }?.let { ReaderDisplayedPosition(it, null) }
+        } else if (!pager.isScrollInProgress) {
+            val index = pager.settledPage
+            val key = pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == index }?.key
+            spreads.getOrNull(index)?.displayedPosition(pages, key, displayReadySpreadKey, preferredIndex)
+        } else null
+    } else null
+    if (measuredPosition != null) androidx.compose.runtime.SideEffect { lastDisplayedPosition = measuredPosition }
+    val displayedPosition = measuredPosition ?: lastDisplayedPosition
+    val displayedPage = displayedPosition?.page
     ActiveRouteLaunchedEffect(
         boundaryReady,
         page?.key,
@@ -888,10 +922,9 @@ fun ReaderSuccessContent(
     }
     val nested = remember { object : NestedScrollConnection {} }
     Box(
-        modifier
+        Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .onSizeChanged { viewportSize = it }
             .readerContextClick(
                 enabled = routeActive && !externalModalVisible && !showSettings && !qualityAdjustment.active &&
                     !showImageMenu && !showBookmarks && !showCatalog && !restoring
@@ -948,6 +981,22 @@ fun ReaderSuccessContent(
             LocalReaderSharpenStatus provides { key, applied -> sharpenStatuses[key] = applied }) {
         ReaderContent(
             pages = pages, spreads = spreads,
+            pageShapes = widePages,
+            onSpreadDisplayReady = { displayReadySpreadKey = it },
+            modifier = Modifier.drawWithContent {
+                // 重排后旧下标可能指向别组，等锚点所在组完成测量再绘制。
+                val expectedIndex = when {
+                    isContinuous || pages.isEmpty() || pager.isScrollInProgress -> -1
+                    restoredPages.isEmpty() && pendingInitialPage.value != null -> initialTarget
+                    restoredPages.isEmpty() -> pages.indexOfFirst { it.key == anchor }.takeIf { it >= 0 } ?: initialTarget
+                    restoredPages == pages && restoredSpreads != spreads -> pages.indexOfFirst { it.key == anchor }
+                    else -> -1
+                }
+                val expectedKey = if (expectedIndex < 0) null else spreads[spreads.spreadIndex(expectedIndex)].key(pages)
+                if (expectedKey == null || pager.layoutInfo.visiblePagesInfo.any {
+                    it.index == pager.currentPage && it.key == expectedKey
+                }) drawContent()
+            },
             onDimensions = { key, width, height ->
                 val wide = readerWideImage(width, height)
                 if (widePages[key] != wide) widePages[key] = wide
@@ -1001,14 +1050,14 @@ fun ReaderSuccessContent(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            val pairingTarget = if (spreadEnabled) readerQuickPairingTarget(
+            val pairingTarget = if (spreadEnabled && measuredPosition != null) readerQuickPairingTarget(
                 pages, spreads.getOrNull(pager.currentPage), tools.pairingRestarts,
                 widePages.filterValues { it }.keys
             ) else null
             val pairingChapter = page?.chapterUuid
             val pairingUndo = pairingTarget != null && pairingTarget in tools.pairingRestarts[pairingChapter].orEmpty()
             ReaderTopBar(
-                page?.chapterName ?: chapterName,
+                displayedPage?.chapterName ?: chapterName,
                 page?.let { current -> bookmarks.any { it.chapterUuid == current.chapterUuid && it.page == current.page } }
                     ?: false,
                 onBack = onBack, onBookmark = {
@@ -1037,36 +1086,33 @@ fun ReaderSuccessContent(
                     }
                 })
         }
-        if (!showControls && !qualityAdjustment.active && page?.source != null) {
-            val pageLabel = if (!isContinuous && spreads.getOrNull(pager.currentPage)?.indices?.size == 2) {
-                val visible = spreads[pager.currentPage].indices.map { pages[it].page + 1 }
-                readerRestingPageLabel("${visible.first()}–${visible.last()}", page.imageCount)
-            } else readerRestingPageLabel("${page.page + 1}", page.imageCount)
+        if (!showControls && !qualityAdjustment.active && displayedPage?.source != null) {
+            val pageLabel = readerRestingPageLabel(
+                displayedPosition.rangeLabel ?: "${displayedPage.page + 1}", displayedPage.imageCount
+            )
             if (routeActive && reportingState.isAtLeast(Lifecycle.State.RESUMED)) {
                 ReaderDeviceStatusOverlay(services?.platform, pageLabel, Modifier.align(Alignment.TopCenter))
             }
             ReaderRestingOverlay(
-                page.chapterName,
+                displayedPage.chapterName,
                 Modifier.align(Alignment.BottomCenter)
             )
         }
         AnimatedVisibility(
-            showControls && !qualityAdjustment.active && page != null,
+            showControls && !qualityAdjustment.active && displayedPage != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             ReaderBottomBar(
-                page?.imageCount ?: 0, sliderPreview,
-                visiblePageLabel = if (dragging) null else if (!isContinuous) {
-                    val raw = spreads.getOrNull(pager.currentPage)?.indices.orEmpty().map { pages[it] }.filter { it.source != null && it.chapterUuid == page?.chapterUuid }.map { it.page + 1 }
-                    readerPageRangeLabel(raw)
-                } else null,
+                displayedPage?.imageCount ?: 0,
+                if (dragging) sliderPreview else displayedPage?.page?.toFloat() ?: 0f,
+                visiblePageLabel = displayedPosition?.rangeLabel.takeUnless { dragging },
                 onSliderValueChange = { automatic = false; dragging = true; sliderPreview = it },
                 onSliderValueChangeFinished = {
                     dragging = false
                     val target =
-                        pages.indexOfFirst { it.chapterUuid == page?.chapterUuid && it.source != null && it.page == sliderPreview.roundToInt() }
+                        pages.indexOfFirst { it.chapterUuid == displayedPage?.chapterUuid && it.source != null && it.page == sliderPreview.roundToInt() }
                     if (target >= 0) jump(target)
                 },
                 onPrevious = { automatic = false; previousChapter() },
@@ -1086,11 +1132,11 @@ fun ReaderSuccessContent(
         }
         if (qualityAdjustment.active) ReaderQualityPreviewPanel(
             onBack = ::returnFromQualityAdjustment,
-            modifier = if (viewportSize.width / density >= 900f)
+            modifier = if (viewportWidth >= 900.dp)
                 Modifier.align(Alignment.CenterEnd).padding(16.dp).width(420.dp)
-                    .heightIn(max = (viewportSize.height / density - 32f).coerceAtLeast(120f).dp)
+                    .heightIn(max = (viewportHeight - 32.dp).coerceAtLeast(120.dp))
             else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).widthIn(max = 460.dp).fillMaxWidth()
-                .heightIn(max = (viewportSize.height / density * .7f).coerceAtLeast(120f).dp)
+                .heightIn(max = (viewportHeight * .7f).coerceAtLeast(120.dp))
         ) {
             ReaderQualityControls(tools, restoreEngine.unavailableReason, restoreStatusText, onToolsChange,
                 sharpnessStatus = if (sharpness > 0f && readerSharpnessAvailable()) {
@@ -1106,6 +1152,7 @@ fun ReaderSuccessContent(
                 .padding(12.dp)
         )
     }
+    val currentFirstPageSingle by rememberUpdatedState(firstPageSingle)
     if (showSettings) ReaderSettingsDialog(
         dir,
         PageScale.fromName(pageScale),
@@ -1118,13 +1165,16 @@ fun ReaderSuccessContent(
         leadingSettings = {
             ReaderSpreadOptions(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0,
                 page?.imageCount ?: 0, spreadEnabled, isContinuous, tools.pageLayout, onPageLayoutChange)
-
         },
         onQualitySelected = { beginQualityAdjustment() },
         qualityEnabled = page?.source != null,
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
-        pairingSettings = { ReaderPairingOption(tools, onToolsChange, page?.chapterUuid, page?.page ?: 0, page?.imageCount ?: 0) },
+        pairingSettings = {
+            val current = displayedPage ?: page
+            ReaderPairingOption(tools, onToolsChange, current?.chapterUuid, current?.page ?: 0,
+                current?.imageCount ?: 0, { currentFirstPageSingle }, onFirstPageSingleChange)
+        },
         helpSettings = { ReaderOperationHelp() })
     if (showBookmarks) ReaderBookmarksDialog(
         bookmarks,

@@ -91,6 +91,8 @@ internal fun ReaderContent(
     trackedPageKeys: Set<String> = pages.map { it.key }.toSet(),
     imageQuality: ReaderImageQuality? = null,
     qualityAdjusting: Boolean = false,
+    pageShapes: Map<String, Boolean>? = null,
+    onSpreadDisplayReady: (String) -> Unit = {},
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -194,7 +196,7 @@ internal fun ReaderContent(
         } else {
             ReaderSpreadContent(pages, spreads, pagerState, isRtl, contentScale, imageLoader, tools,
                 onForward, onBackward, onShowMenu, onImageLongPress, onUserInteraction,
-                onImageReady, onDimensions, onZoomAvailable, commentContent, imageQuality)
+                onImageReady, onDimensions, onZoomAvailable, commentContent, imageQuality, pageShapes, onSpreadDisplayReady)
         }
     }
 }
@@ -217,6 +219,8 @@ internal fun ReaderImageItem(
     trackReadiness: Boolean = true,
     enhancementPageKey: String = path,
     imageAlignment: Alignment = Alignment.Center,
+    onImageError: () -> Unit = {},
+    paired: Boolean = false,
 ) {
     if (LocalInspectionMode.current) {
         PreviewImage(
@@ -301,6 +305,7 @@ internal fun ReaderImageItem(
                     is AsyncImagePainter.State.Error -> {
                         val error = result
                         LaunchedEffect(path, retryKey, isActivePage) {
+                            onImageError()
                             val riskControlled = generateSequence(error.result.throwable) { it.cause }
                                 .any { it is com.rchdliang.copymanga_neo.domain.repository.RiskControlException }
                             if (isActivePage && !riskControlled && automaticRetries < tools.imageRetries) {
@@ -332,8 +337,13 @@ internal fun ReaderImageItem(
                                 onReady()
                             }
                         }
-                        val intrinsic = result.painter.intrinsicSize
-                        LaunchedEffect(path, intrinsic) { onDimensions(intrinsic.width, intrinsic.height) }
+                        val image = result.result.image
+                        LaunchedEffect(path, image.width, image.height) {
+                            onDimensions(image.width.toFloat(), image.height.toFloat())
+                        }
+                        if (paired && readerWideImage(image.width.toFloat(), image.height.toFloat())) {
+                            return@SubcomposeAsyncImage
+                        }
                         val currentPainter = readerRestorePainter(
                             original = if (imageQuality != null) result.painter else painter,
                             source = result.result.image, pageKey = enhancementPageKey, active = isActivePage)

@@ -6,17 +6,24 @@ data class ReaderPreferences(
     val readingDirection: String = "RIGHT_TO_LEFT",
     val pageScale: String = "FIT_SCREEN",
     val screenOrientation: String = "SYSTEM_DEFAULT",
-    val pageLayout: String = "SINGLE"
+    val pageLayout: String = DEFAULT_READER_PAGE_LAYOUT,
+    val firstPageSingle: Boolean? = null
 ) {
+    // 未设置的漫画继承全局偏好；全局也未设置时默认开启。
+    val keepFirstPageSingle: Boolean get() = firstPageSingle ?: true
+
     fun normalized() = ReaderPreferences(
         readingDirection.takeIf { it in setOf("LEFT_TO_RIGHT", "RIGHT_TO_LEFT", "TOP_TO_BOTTOM") }
             ?: "RIGHT_TO_LEFT",
         pageScale.takeIf { it in setOf("FIT_SCREEN", "FIT_HEIGHT", "FIT_WIDTH") } ?: "FIT_SCREEN",
         screenOrientation.takeIf { it in setOf("AUTO", "LANDSCAPE", "PORTRAIT", "SYSTEM_DEFAULT") }
             ?: "SYSTEM_DEFAULT",
-        pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: "SINGLE"
+        pageLayout.takeIf { it in setOf("SINGLE", "DOUBLE", "AUTO") } ?: DEFAULT_READER_PAGE_LAYOUT,
+        firstPageSingle
     )
 }
+
+internal const val DEFAULT_READER_PAGE_LAYOUT = "AUTO"
 
 /** Raw per-book import delta; rollback retains edits made after the import. */
 @kotlinx.serialization.Serializable

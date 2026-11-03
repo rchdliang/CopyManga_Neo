@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.Test
 
 /** Original stable-anchor fixtures now exercise the shared production helper. */
@@ -33,5 +34,16 @@ class ReaderPositionTest {
             1,
             resolveReaderPageIndex(pages.filter { it.source != null }, "a:comments", "a", 1, 0)
         )
+    }
+
+    @Test
+    fun indicatorRejectsStaleChapterAndProvisionalPair() {
+        val provisional = ReaderSpread(listOf(0, 1))
+        val actual = ReaderSpread(listOf(1))
+        val previousChapterKey = ReaderSpread(listOf(3)).key(pages)
+        assertNull(provisional.displayedPosition(pages, previousChapterKey, provisional.key(pages), 1))
+        assertNull(provisional.displayedPosition(pages, provisional.key(pages), null, 1))
+        assertEquals(ReaderDisplayedPosition(pages[1], "2"),
+            actual.displayedPosition(pages, actual.key(pages), actual.key(pages), 1))
     }
 }

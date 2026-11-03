@@ -3,9 +3,9 @@ import com.rchdliang.copymanga_neo.domain.model.ReaderPreferences
 import kotlin.test.Test
 import kotlin.test.*
 class ReaderComicLayoutTest {
-    @Test fun defaultsAndInvalidValuesUseSinglePage() {
-        assertEquals("SINGLE",ReaderPreferences().normalized().pageLayout)
+    @Test fun defaultsAndInvalidValuesUseAutoLayout() {
+        assertEquals("AUTO",ReaderPreferences().normalized().pageLayout)
         assertEquals("SINGLE",ReaderPreferences(pageLayout="SINGLE").normalized().pageLayout)
-        assertEquals("SINGLE",ReaderPreferences(pageLayout="broken").normalized().pageLayout)
+        assertEquals("AUTO",ReaderPreferences(pageLayout="broken").normalized().pageLayout)
     }
 }

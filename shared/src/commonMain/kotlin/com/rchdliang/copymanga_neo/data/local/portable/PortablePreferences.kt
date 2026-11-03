@@ -91,18 +91,24 @@ class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRep
 internal data class ComicPreferenceDocument(
     val global: ReaderPreferences = ReaderPreferences(),
     val comics: Map<String, ReaderPreferences> = emptyMap()
-)
+) {
+    fun effectivePreferences(comicPathWord: String): ReaderPreferences {
+        val comic = comics[comicPathWord] ?: return global
+        return comic.copy(firstPageSingle = comic.firstPageSingle ?: global.firstPageSingle)
+    }
+}
 class PortableReaderPreferences(storage: DocumentStorage) : ReaderPreferencesRepository {
     private val document = DocumentStore(storage, "comic-reader-settings.json", ComicPreferenceDocument.serializer(), ComicPreferenceDocument())
     override val globalPreferences: Flow<ReaderPreferences> = document.loadedState().map { it.global }
-    override fun comicPreferences(comicPathWord: String) = document.loadedState().map { it.comics[comicPathWord] ?: it.global }
+    override fun comicPreferences(comicPathWord: String) = document.loadedState().map { it.effectivePreferences(comicPathWord) }
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun initializeComic(comicPathWord: String): Result<ReaderPreferences> = document.update {
-        if (comicPathWord in it.comics) it else it.copy(comics = it.comics + (comicPathWord to it.global))
-    }.map { document.state.value.comics.getValue(comicPathWord) }
+        if (comicPathWord in it.comics) it else it.copy(comics = it.comics + (comicPathWord to it.global.copy(firstPageSingle = null)))
+    }.map { document.state.value.effectivePreferences(comicPathWord) }
     override suspend fun updateGlobal(transform: (ReaderPreferences) -> ReaderPreferences) = document.update { it.copy(global = transform(it.global).normalized()) }
     override suspend fun updateComic(comicPathWord: String, transform: (ReaderPreferences) -> ReaderPreferences) = document.update {
-        it.copy(comics = it.comics + (comicPathWord to transform(it.comics[comicPathWord] ?: it.global).normalized()))
+        val comic = it.comics[comicPathWord] ?: it.global.copy(firstPageSingle = null)
+        it.copy(comics = it.comics + (comicPathWord to transform(comic).normalized()))
     }
     override suspend fun exportComicPreferences(): Result<Map<String, ReaderPreferences>> = document.ensureLoaded().map { document.state.value.comics }
     override suspend fun mergeComicPreferences(values: Map<String, ReaderPreferences>): Result<ComicPreferencesChange> {
@@ -121,7 +127,9 @@ class PortableReaderPreferences(storage: DocumentStorage) : ReaderPreferencesRep
         })
     }
     override suspend fun resetGlobal() = document.update { it.copy(global = ReaderPreferences()) }
-    override suspend fun resetComic(comicPathWord: String) = document.update { it.copy(comics = it.comics + (comicPathWord to it.global.copy(pageLayout = "SINGLE"))) }
+    override suspend fun resetComic(comicPathWord: String) = document.update {
+        it.copy(comics = it.comics + (comicPathWord to it.global.copy(firstPageSingle = null)))
+    }
 }
 
 class PortableNovelPreferences(storage: DocumentStorage) : NovelReaderPreferencesRepository {

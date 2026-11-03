@@ -36,9 +36,10 @@ class PortableBackupCodecTest {
         assertFails { PortableBackupCodec.reading(PortableBackupCodec.reading(LocalReadingSnapshot(records = listOf(record)))) }
     }
     @Test fun fullVersionTwoBackupRoundTripsWithoutCredentials() {
-        val value = SettingsBackup(AppSettings(), ReaderPreferences(), HomeRankPreferences(),
+        val value = SettingsBackup(AppSettings(), ReaderPreferences(firstPageSingle = false), HomeRankPreferences(),
             PortableBackupCodec.reading(LocalReadingSnapshot()).toString(), PortableBackupCodec.tools(ReaderToolsSettings()).toString(),
-            mapOf("book" to ReaderPreferences("LEFT_TO_RIGHT", "FIT_WIDTH", "AUTO")))
+            mapOf("book" to ReaderPreferences("LEFT_TO_RIGHT", "FIT_WIDTH", "AUTO", firstPageSingle = true),
+                "inherited" to ReaderPreferences()))
         val text = PortableBackupCodec.encode(value)
         assertEquals(value, PortableBackupCodec.decode(text))
         assertFalse(text.contains("password", ignoreCase = true))

@@ -18,6 +18,7 @@ import coil3.PlatformContext
 import coil3.intercept.Interceptor
 import coil3.request.*
 import com.rchdliang.copymanga_neo.domain.model.ReaderToolsSettings
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,11 +27,78 @@ import java.awt.image.BufferedImage
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.imageio.ImageIO
+import org.jetbrains.skia.Bitmap
 import kotlin.test.*
 
 /** Software-rendered production components with synthetic local pages, not device screenshots. */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
 class ReaderSpreadRenderTest {
+    @Test fun decodedNeighborNeverAppearsWhileTheTargetMayBeWide() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val directory = Files.createTempDirectory("spread-shapes")
+        val paths = listOf(
+            Triple(80, 120, java.awt.Color.YELLOW),
+            Triple(160, 80, java.awt.Color.BLUE),
+            Triple(80, 120, java.awt.Color.RED)
+        ).mapIndexed { index, (width, height, color) ->
+            directory.resolve("$index.png").also { path ->
+                val bitmap = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+                val graphics = bitmap.createGraphics()
+                graphics.color = color
+                graphics.fillRect(0, 0, width, height)
+                graphics.dispose()
+                ImageIO.write(bitmap, "png", path.toFile())
+            }
+        }
+        val allowWideDecode = CompletableDeferred<Unit>()
+        val loader = ImageLoader.Builder(PlatformContext.INSTANCE).coroutineContext(dispatcher).components {
+            add(object : Interceptor {
+                override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
+                    if (chain.request.data.toString().endsWith("1.png")) allowWideDecode.await()
+                    return chain.proceed()
+                }
+            })
+        }.build()
+        val entries = paths.mapIndexed { index, path -> ReaderPageEntry("c:$index", "c", "Fixture", path.toString(), index, 3) }
+        val shapes = mutableStateMapOf<String, Boolean>()
+        var scene: ImageComposeScene? = null
+        try {
+            val raster = ImageComposeScene(1100, 700, coroutineContext = coroutineContext) {
+                val spreads = readerSpreads(entries, true, shapes.filterValues { it }.keys)
+                val pager = rememberPagerState(initialPage = 1) { spreads.size }
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    ReaderSpreadContent(entries, spreads, pager, true, ContentScale.Fit,
+                        loader, ReaderToolsSettings(), {}, {}, {}, {}, {}, {},
+                        { key, width, height -> shapes[key] = readerWideImage(width, height) },
+                        {}, {}, pageShapes = shapes)
+                }
+            }
+            scene = raster
+            var time = 0L
+            fun frame(): List<Int> {
+                runCurrent()
+                time += 16_000_000
+                return raster.render(time).use { image ->
+                    Bitmap.makeFromImage(image).use { bitmap ->
+                        listOf(bitmap.getColor(250, 350), bitmap.getColor(550, 350), bitmap.getColor(850, 350))
+                    }
+                }
+            }
+            repeat(10) { assertTrue(java.awt.Color.RED.rgb !in frame(), "Provisional neighbor became visible") }
+            assertEquals(false, shapes["c:2"], "The neighbor must finish decoding first")
+            allowWideDecode.complete(Unit)
+            repeat(10) { assertTrue(java.awt.Color.RED.rgb !in frame(), "Neighbor flashed during regrouping") }
+            assertEquals(List(3) { java.awt.Color.BLUE.rgb }, frame())
+        } finally {
+            scene?.close()
+            loader.shutdown()
+            Dispatchers.resetMain()
+            paths.forEach(Files::deleteIfExists)
+            Files.deleteIfExists(directory)
+        }
+    }
+
     @Test fun spreadUsesEachLeafDecodeBoundsRetainsDiskIdentityAndRenders() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

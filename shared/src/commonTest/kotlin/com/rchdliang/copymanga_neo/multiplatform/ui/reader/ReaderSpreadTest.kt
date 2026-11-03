@@ -22,6 +22,11 @@ class ReaderSpreadTest {
         assertEquals(1, plan.spreadIndex(2))
         assertEquals(2, plan.rawIndex(1, 2))
     }
+    @Test fun firstPageCanPairInEachChapterWithoutPairingWideImages() {
+        val entries = pages(3, "a") + pages(3, "b")
+        val plan = readerSpreads(entries, true, wideKeys = setOf(entries[3].key), firstPageSingle = false)
+        assertEquals(listOf(listOf(0, 1), listOf(2), listOf(3), listOf(4, 5)), plan.map { it.indices })
+    }
     @Test fun wideImagesAreNeverPairedOnEitherSide() {
         assertEquals(listOf(listOf(0), listOf(1), listOf(2), listOf(3, 4), listOf(5)), groups(6, wide = setOf(2)))
         assertEquals(listOf(listOf(0), listOf(1), listOf(2, 3)), groups(4, wide = setOf(1)))
