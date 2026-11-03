@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -45,33 +48,167 @@ internal fun ReaderPairingOption(tools: ReaderToolsSettings, onChange: ((ReaderT
 internal fun validPairingInput(input: String, count: Int): Int? = input.toIntOrNull()?.minus(1)?.takeIf { it in 0 until (count - 1) }
 
 @Composable
-internal fun ReaderPairingEditor(tools: ReaderToolsSettings, onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
-    chapter: String?, page: Int, count: Int, done: () -> Unit) {
-    if (chapter.isNullOrBlank() || count < 2) { Text("本章没有可调整的配页"); return }
+internal fun ReaderPairingEditor(
+    tools: ReaderToolsSettings,
+    onChange: ((ReaderToolsSettings) -> ReaderToolsSettings) -> Unit,
+    chapter: String?,
+    page: Int,
+    count: Int,
+    done: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
+    if (chapter.isNullOrBlank() || count < 2) {
+        Text("本章没有可调整的配页", color = colors.onSurfaceVariant)
+        return
+    }
+
     var input by remember(chapter, page) { mutableStateOf((page + 1).toString()) }
     val target = validPairingInput(input, count)
     val boundaries = tools.pairingRestarts[chapter].orEmpty()
     val duplicate = target in boundaries
-    Text("从指定页重新两两配对，横图保持完整。", style = MaterialTheme.typography.bodySmall)
-    OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true,
-        label = { Text("起始页") }, modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = target == null,
-        supportingText = { if (target == null) Text("请输入 1–${count - 1} 的页码") else if (duplicate) Text("此处已调整") })
-    TextButton(enabled = target != null && !duplicate, onClick = {
-        val start = target ?: return@TextButton
-        onChange { it.copy(pairingRestarts = it.pairingRestarts + (chapter to (it.pairingRestarts[chapter].orEmpty() + start).distinct().sorted())) }
-        done()
-    }) { Text("应用配页") }
-    boundaries.forEach { start ->
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("从第 ${start + 1} 页起")
-            TextButton(onClick = { onChange { current ->
-                val remaining = current.pairingRestarts[chapter].orEmpty() - start
-                current.copy(pairingRestarts = if (remaining.isEmpty()) current.pairingRestarts - chapter else current.pairingRestarts + (chapter to remaining))
-            }; done() }) { Text("移除") }
+    val currentPage = input.toIntOrNull()
+    val canStepBack = currentPage != null && currentPage in 2..count
+    val canStepForward = target != null && target < count - 2
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.secondaryContainer,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.ViewWeek, contentDescription = null)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "当前原图 ${page + 1} / $count",
+                    style = typography.titleMedium,
+                    color = colors.onSecondaryContainer
+                )
+                Text(
+                    "从指定原图开始重新两两配对。横图保持单页，调整仅对本章生效。",
+                    style = typography.bodySmall,
+                    color = colors.onSecondaryContainer
+                )
+            }
         }
     }
-    TextButton(enabled = boundaries.isNotEmpty(), onClick = { onChange { it.copy(pairingRestarts = it.pairingRestarts - chapter) }; done() }) { Text("恢复默认配页") }
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("新增起始页", style = typography.titleMedium, color = colors.onSurface)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    singleLine = true,
+                    label = { Text("起始页") },
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    isError = target == null
+                )
+                IconButton(
+                    enabled = canStepBack,
+                    onClick = { currentPage?.let { input = (it - 1).toString() } }
+                ) {
+                    Icon(Icons.Outlined.Remove, contentDescription = "起始页减一")
+                }
+                IconButton(
+                    enabled = canStepForward,
+                    onClick = { currentPage?.let { input = (it + 1).toString() } }
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = "起始页加一")
+                }
+            }
+            Text(
+                text = when {
+                    target == null -> "请输入 1–${count - 1} 的页码"
+                    duplicate -> "此处已调整"
+                    else -> "可用原图页码 1–${count - 1}"
+                },
+                style = typography.bodySmall,
+                color = if (target == null) colors.error else colors.onSurfaceVariant
+            )
+            Button(
+                enabled = target != null && !duplicate,
+                modifier = Modifier.align(Alignment.End),
+                onClick = {
+                    val start = target ?: return@Button
+                    onChange { current ->
+                        val updated = (current.pairingRestarts[chapter].orEmpty() + start).distinct().sorted()
+                        current.copy(pairingRestarts = current.pairingRestarts + (chapter to updated))
+                    }
+                    done()
+                }
+            ) {
+                Text("应用配页")
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = colors.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                if (boundaries.isEmpty()) "已保存的调整" else "已保存的调整 · ${boundaries.size}",
+                style = typography.titleMedium,
+                color = colors.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            if (boundaries.isEmpty()) {
+                Text("本章使用默认配页", style = typography.bodyMedium, color = colors.onSurfaceVariant)
+            } else {
+                boundaries.forEach { start ->
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "从第 ${start + 1} 页起",
+                            modifier = Modifier.weight(1f),
+                            style = typography.bodyMedium,
+                            color = colors.onSurface
+                        )
+                        TextButton(onClick = {
+                            onChange { current ->
+                                val remaining = current.pairingRestarts[chapter].orEmpty() - start
+                                val restarts = if (remaining.isEmpty()) {
+                                    current.pairingRestarts - chapter
+                                } else {
+                                    current.pairingRestarts + (chapter to remaining)
+                                }
+                                current.copy(pairingRestarts = restarts)
+                            }
+                            done()
+                        }) {
+                            Text("移除")
+                        }
+                    }
+                }
+                HorizontalDivider()
+                TextButton(
+                    modifier = Modifier.align(Alignment.End),
+                    onClick = {
+                        onChange { it.copy(pairingRestarts = it.pairingRestarts - chapter) }
+                        done()
+                    }
+                ) {
+                    Text("恢复默认配页")
+                }
+            }
+        }
+    }
 }
 
 @Composable

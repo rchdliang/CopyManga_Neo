@@ -71,7 +71,13 @@ private fun ReaderDisplayPreviewContent() {
 
 @Preview(name = "阅读设置-配页输入错误", showBackground = true, widthDp = 390, heightDp = 560)
 @Composable private fun ReaderPairingErrorPreview() = ReaderPreviewFrame("本章配页") {
-    ReaderPairingEditor(ReaderToolsSettings(), {}, "preview", -1, 20, {})
+    ReaderPairingEditor(ReaderToolsSettings(), {}, "preview", 19, 20, {})
+}
+
+@Preview(name = "阅读设置-配页已调整-深色", showBackground = true, widthDp = 480, heightDp = 660)
+@Composable private fun ReaderPairingSavedPreview() = ReaderPreviewFrame("本章配页", dark = true) {
+    val tools = ReaderToolsSettings(pairingRestarts = mapOf("preview" to listOf(2, 7)))
+    ReaderPairingEditor(tools, {}, "preview", 3, 20, {})
 }
 
 @Preview(name = "阅读器-描边文字-白底", showBackground = true, widthDp = 390, heightDp = 180)
