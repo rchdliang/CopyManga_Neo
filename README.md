@@ -193,3 +193,5 @@ Web/Wasm 的具体边界：
 - [Anime4K](https://github.com/bloc97/Anime4K)：Restore / RestoreSoft 五档画质修复模型，Copyright (c) 2019–2021 bloc97，采用 MIT 许可证。保留原始权重，纹理绑定包装由本项目适配为 Vulkan compute；完整许可证、版权及改动说明随模型分发。
 - [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers)：画质修复使用的 Vulkan 接口头文件，Copyright 2014–2024 The Khronos Group Inc.；本项目纳入的头文件均采用 Apache-2.0，保留原始文件头与随包许可证、版权说明。
 - [Kixyu Book](https://github.com/kkyu9527/kixyubook)（kkyu9527）：轻小说阅读器的分页、目录快速滚动及文本选择菜单部分代码改编自该项目，采用 [MIT License](https://github.com/kkyu9527/kixyubook/blob/main/LICENSE)。原版权与许可声明保留在源码及随包许可证中。
+
+This project is tested with BrowserStack

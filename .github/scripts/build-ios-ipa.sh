@@ -3,6 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 export ORG_GRADLE_PROJECT_enableAndroid=false
+stage="${1:-all}"
+case "$stage" in
+  all|framework|package) ;;
+  *) echo "Usage: $0 [all|framework|package]" >&2; exit 2 ;;
+esac
 config="$(mktemp)"
 trap 'rm -f -- "$config"' EXIT
 python3 - "$config" <<'PY'
@@ -13,11 +18,25 @@ if not re.fullmatch(r"[0-9a-fA-F]{32}", value):
 with open(sys.argv[1], "w", encoding="utf-8") as target:
     target.write("COPYMANGA_TAP_STRING = " + value + "\n")
 PY
+if [[ "$stage" != package ]]; then
+  # 先在 Xcode 外完成同一 ARM64 Release 链接，避免长时间看不到 Gradle 输出。
+  python3 .github/scripts/ios-build-stage.py kotlin-framework \
+    ./gradlew :shared:linkReleaseFrameworkIosArm64 \
+    --console=plain --stacktrace --profile --build-cache
+fi
+if [[ "$stage" == framework ]]; then exit 0; fi
+if [[ ! -f shared/build/bin/iosArm64/releaseFramework/CopyMangaShared.framework/CopyMangaShared ]]; then
+  echo 'Missing ARM64 Release framework; run the framework stage before packaging.' >&2
+  exit 1
+fi
 xcodebuild -version
-xcodebuild -project iosApp/iosApp.xcodeproj -scheme CopyMangaNeo \
+# 保留 Xcode 内的 Gradle 钩子进行资源同步和装配；链接任务复用刚生成的框架。
+python3 .github/scripts/ios-build-stage.py xcode \
+  xcodebuild -project iosApp/iosApp.xcodeproj -scheme CopyMangaNeo \
   -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
   -derivedDataPath build/ios-device -resultBundlePath build/ios-device-build.xcresult \
   -xcconfig "$config" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
-python3 .github/scripts/package-ios-ipa.py \
+python3 .github/scripts/ios-build-stage.py ipa \
+  python3 .github/scripts/package-ios-ipa.py \
   build/ios-device/Build/Products/Release-iphoneos/CopyMangaNeo.app build

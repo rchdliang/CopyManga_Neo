@@ -276,17 +276,36 @@ jobs:
       - name: Show Java and Gradle versions
         run: ./gradlew --version
       - name: Verify ARM64 runner and inspect Xcode project
+        id: xcode
         run: |
           test "$(uname -m)" = arm64
           xcodebuild -version
+          echo "build=$(xcodebuild -version | awk '/Build version/ {print $3}')" >> "$GITHUB_OUTPUT"
           xcodebuild -list -project iosApp/iosApp.xcodeproj
+      - name: Restore Kotlin Native toolchain and caches
+        id: konan-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.konan
+          key: ios-konan-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
       - name: Validate IPA packaging checks
         run: python3 -m unittest discover -s tests/ci -p 'test_*.py'
-      - name: Build and validate unsigned device IPA
+      - name: Compile ARM64 Release Kotlin framework
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
           ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: bash .github/scripts/build-ios-ipa.sh
+        run: bash .github/scripts/build-ios-ipa.sh framework
+      - name: Save Kotlin Native toolchain and caches
+        if: steps.konan-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.konan
+          key: ${{ steps.konan-cache.outputs.cache-primary-key }}
+      - name: Build Xcode app and validate unsigned device IPA
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
+        run: bash .github/scripts/build-ios-ipa.sh package
       - name: Verify iOS packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
@@ -311,3 +330,5 @@ jobs:
           path: |
             build/ios-device-build.xcresult/
             build/ios-device/Build/Products/Release-iphoneos/*.dSYM/
+            build/ios-build-timings/
+            build/reports/profile/

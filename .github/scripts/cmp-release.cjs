@@ -70,6 +70,60 @@ async function destination(github, context, meta) {
   return matching[0];
 }
 
+// 只接受本仓库、同一工作流、同一提交的成功 push 构建，禁止跨提交或混用运行产物。
+async function inspectBuild(github, context, meta, workflowId, run) {
+  const repository = context.repo.owner + '/' + context.repo.repo;
+  if (run.workflow_id !== workflowId || run.event !== 'push' || run.head_branch !== 'CMP' ||
+      run.head_sha !== meta.commit || run.status !== 'completed' || run.conclusion !== 'success' ||
+      run.repository?.full_name !== repository || run.head_repository?.full_name !== repository) return null;
+  const params = {...context.repo, run_id: run.id, per_page: 100};
+  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {...params, filter: 'latest'});
+  if (!['android', 'windows'].every(name =>
+    jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) return null;
+  const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, params);
+  const selected = ['android', 'windows'].map(platform => {
+    const matches = artifacts.filter(artifact => artifact.name === 'cmp-release-' + platform + '-' + run.id);
+    if (matches.length !== 1) return null;
+    const artifact = matches[0];
+    return Number.isSafeInteger(artifact.id) && artifact.id > 0 && artifact.expired === false &&
+      Date.parse(artifact.expires_at) > Date.now() && artifact.size_in_bytes > 0 &&
+      artifact.workflow_run?.id === run.id && artifact.workflow_run?.head_sha === meta.commit ? artifact : null;
+  });
+  if (selected.some(artifact => !artifact)) return null;
+  return {
+    runId: run.id, runAttempt: run.run_attempt, workflowId,
+    url: 'https://github.com/' + repository + '/actions/runs/' + run.id,
+    androidArtifactId: selected[0].id, windowsArtifactId: selected[1].id,
+  };
+}
+
+async function findBuild(github, context, meta) {
+  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'cmp-release.yml'});
+  const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+    ...context.repo, workflow_id: workflow.id, branch: 'CMP', event: 'push',
+    head_sha: meta.commit, status: 'success', per_page: 100,
+  });
+  for (const run of runs.sort((a, b) => b.id - a.id)) {
+    const build = await inspectBuild(github, context, meta, workflow.id, run);
+    if (build) return build;
+  }
+  throw new Error('No successful CMP push build with complete, unexpired Android and Windows artifacts for ' +
+    meta.commit + '. Wait for the automatic build or rerun it, then run this release workflow again. No rebuild was started.');
+}
+
+async function verifyBuild(github, context, meta, sourceBuild) {
+  if (!sourceBuild || !Number.isSafeInteger(sourceBuild.runId) || sourceBuild.runId < 1) {
+    throw new Error('A pinned source build is required.');
+  }
+  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'cmp-release.yml'});
+  const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: sourceBuild.runId});
+  const current = await inspectBuild(github, context, meta, workflow.id, run);
+  if (!current || Object.keys(current).some(key => current[key] !== sourceBuild[key])) {
+    throw new Error('Source build or artifacts changed or expired; run the release workflow again.');
+  }
+  return current;
+}
+
 function binaries(meta) {
   return [
     ...['armeabi-v7a', 'arm64-v8a', 'x86_64', 'universal'].map(
@@ -79,7 +133,7 @@ function binaries(meta) {
   ];
 }
 
-function prepareAssets(directory, meta) {
+function prepareAssets(directory, meta, sourceBuild) {
   const names = binaries(meta);
   const windows = names.filter(name => name.endsWith('.exe') || name.endsWith('.zip'));
   const expected = [...names, ...windows.map(name => name + '.sha256')].sort();
@@ -101,7 +155,7 @@ function prepareAssets(directory, meta) {
     fs.writeFileSync(path.join(directory, name + '.sha256'), hashes[name] + '  ' + name + '\n');
   }
   fs.writeFileSync(path.join(directory, 'release-manifest.json'), JSON.stringify({
-    ...meta, platforms: ['android', 'windows-x64'], sha256: hashes,
+    ...meta, sourceBuild, platforms: ['android', 'windows-x64'], sha256: hashes,
   }, null, 2) + '\n');
   return [...names.flatMap(name => [name, name + '.sha256']), 'release-manifest.json'];
 }
@@ -109,15 +163,22 @@ function prepareAssets(directory, meta) {
 async function prepare({github, context, core, root = process.cwd(), git = execFileSync}) {
   const meta = readMetadata(root, context, git);
   await destination(github, context, meta);
+  const sourceBuild = await findBuild(github, context, meta);
+  core.setOutput('source_build', sourceBuild);
+  core.setOutput('source_run_id', sourceBuild.runId);
+  core.setOutput('android_artifact_id', sourceBuild.androidArtifactId);
+  core.setOutput('windows_artifact_id', sourceBuild.windowsArtifactId);
+  core.info('Reuse automatic build: ' + sourceBuild.url);
   core.info('CMP ' + meta.version + ' (' + meta.versionCode + '), commit ' + meta.commit);
   return meta;
 }
 
-async function publish({github, context, core, root = process.cwd(), git = execFileSync}) {
+async function publish({github, context, core, sourceBuild, root = process.cwd(), git = execFileSync}) {
   const meta = readMetadata(root, context, git);
   let release = await destination(github, context, meta);
+  sourceBuild = await verifyBuild(github, context, meta, sourceBuild);
   const directory = path.join(root, 'release-assets');
-  const files = prepareAssets(directory, meta);
+  const files = prepareAssets(directory, meta, sourceBuild);
   if (!release) {
     const {data} = await github.rest.repos.createRelease({
       ...context.repo,
@@ -137,6 +198,7 @@ async function publish({github, context, core, root = process.cwd(), git = execF
         '',
         '版本：' + meta.buildVersion + '；平台升级编号：' + meta.versionCode,
         '源码提交：' + meta.commit,
+        '复用自动构建：' + sourceBuild.url,
         '',
         '发布前请补充更新说明，并用本页附件完成 Android 覆盖安装、数据保留及 Windows 安装、启动、升级验收。',
         '构建通过不代表设备验收完成。本工作流不会自动公开发布。',
@@ -170,7 +232,8 @@ async function publish({github, context, core, root = process.cwd(), git = execF
   }
   await core.summary.addHeading('CMP Release 草稿')
     .addLink(meta.tag, finalRelease.html_url)
+    .addRaw('\n\n复用自动构建：' + sourceBuild.url)
     .addRaw('\n\n仅创建草稿；请验收附件、补充更新说明后手动发布。\n').write();
 }
 
-module.exports = {metadata, readMetadata, assertDraft, destination, binaries, prepareAssets, prepare, publish};
+module.exports = {metadata, readMetadata, assertDraft, destination, findBuild, verifyBuild, binaries, prepareAssets, prepare, publish};

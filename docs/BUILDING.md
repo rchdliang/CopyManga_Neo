@@ -146,6 +146,10 @@ App 模式配置可通过复制 `iosApp/LocalSecrets.xcconfig.example` 为被 Gi
 
 `:shared:compileKotlinIosArm64` 只验证共享 KLIB；Swift 编译、框架链接、签名、系统选择器和设备运行需要 Xcode 环境验证。
 
+发行包构建先在 Xcode 外执行 `:shared:linkReleaseFrameworkIosArm64`，开启 Gradle 构建缓存和任务耗时报告，再由 Xcode 完成资源同步、框架装配及 Swift 编译。保留 Release 优化；不编译模拟器框架。Xcode 内原有 Gradle 钩子仍会检查输入，未变化的链接产物应显示 `UP-TO-DATE`，不能通过跳过钩子省略资源同步。
+
+CI 将共享框架编译和 Xcode/IPA 打包显示为两个独立步骤，按操作系统、架构、Xcode 构建版本及依赖配置缓存 `~/.konan`，共享框架成功后立即保存缓存。`build-ios-ipa.sh` 默认依次执行两阶段，也可分别传入 `framework`、`package`；后者要求已有 ARM64 Release 框架。每个阶段每分钟输出存活提示，提示仅表示进程尚未退出，不表示编译百分比。各阶段耗时和退出码保存在 `build/ios-build-timings/`，Gradle 任务耗时报告位于 `build/reports/profile/`；CI 无论成功失败均尝试随 `ios-build-result` 上传。首次缓存未命中仍需下载和初始化，实际加速幅度须比较后续同环境构建的报告。
+
 未签名真机发行包（JDK 21、macOS/Xcode，在仓库根运行）：
 
 ```sh
@@ -190,11 +194,11 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 自动构建只监听 `push.branches: [CMP]`，不监听标签或 PR：同时推送 CMP 分支和 `v*` 标签只启动一次自动构建；之后给同一提交补推标签也不会再次构建。标签本身不会创建 Release。普通推送不校验已有发布目标，也不创建或更新发布草稿，因此同一主版本可以持续提交构建。
 
-手动运行仍只允许选择 `CMP` 分支，用于重新构建并创建发布草稿。不构建 Linux、Wasm、iOS；原 Android 自动工作流和多平台手动测试工作流保持独立。
+手动运行仍只允许选择 `CMP` 分支，只复用运行开始时同一提交已成功的自动构建产物创建发布草稿，不再编译或打包。不包含 Linux、Wasm、iOS；原 Android 自动工作流和多平台手动测试工作流保持独立。
 
-1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交到 CMP 后，在 Actions → CMP Android + Windows → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
-2. 工作流固定运行开始时的提交，构建 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal），以及 Windows x64 Native Image 安装程序和免安装 ZIP。Android 会验证 APK 签名与非调试标志；两个平台都必须通过 App 协议配置核对。
-3. 两个平台均成功后，汇总附件并创建 `v<数字发布版本>` 的 **GitHub Release 草稿**（标签不含 `+提交数`），附带每个安装包的 SHA-256 文件和记录版本、提交、校验值的 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
+1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交并推送到 CMP，等待该提交的自动构建成功后，在 Actions → CMP Android + Windows → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
+2. 工作流固定运行开始时的提交，选择本仓库同一工作流下最新可用的成功 `push` 运行。Android 和 Windows 两个任务必须实际成功，且两份 Artifact 完整、未过期并属于同一次运行和同一提交；不会混用不同运行或回退到其他提交。找不到时直接失败，提示等待或重跑该提交的自动构建，不会自动重新构建。
+3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal）、Windows x64 Native Image 安装程序和免安装 ZIP，校验后创建 `v<数字发布版本>` 的 **GitHub Release 草稿**（标签不含 `+提交数`）。自动构建已验证 APK 签名、非调试标志和两端 App 协议配置；手动发布保持安装包字节不变，只生成 SHA-256 文件及 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
 4. 从草稿下载最终安装包，在 Android 验证覆盖安装、数据保留、登录、阅读和下载，在 Windows 验证安装、启动及升级；补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
 
 附件命名示例（发布版本 `1.2.3`、Git 提交数 `234`、短哈希 `1a2b3c4`）：
@@ -208,13 +212,13 @@ CopyMangaNeo_windows_1.2.3+234_x64_setup.exe
 CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
 ```
 
-六个产物各有 `.sha256` 文件，加上 `release-manifest.json` 共上传 13 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希；缺少 ZIP、校验不符或附件属于其他构建时拒绝发布。
+六个产物各有 `.sha256` 文件，加上 `release-manifest.json` 共上传 13 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录来源自动构建的运行 ID、重跑次数、链接和两份 Artifact ID；缺少 ZIP、校验不符或附件属于其他构建时拒绝发布。
 
-工作流使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，正式流程执行 `:app:assembleRelease`。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
+自动构建使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，自动构建执行 `:app:assembleRelease`。手动发布不读取这些 Secrets，只使用 `GITHUB_TOKEN` 的 Actions 读取权限下载产物及 Contents 写入权限维护草稿。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 
 若本地签名文件位于另一个 checkout，本地打包时需单独准备 CMP 的被忽略配置，并按原文件所在目录解析相对 `storeFile`；不能直接假设相对路径在 CMP 目录仍有效。这与 Actions 使用仓库 Secrets 是两条独立路径。
 
-工作流不改写 `version.properties`；应用版本的 `+提交数` 由构建脚本自动生成。手动发布阶段不移动现有标签、不覆盖已公开 Release：相同数字发布版本的已有标签必须指向同一提交，已有草稿也必须固定到同一提交，才能重跑草稿任务恢复上传并保留人工编辑的发布说明。要从不同提交创建草稿，需要新发布版本，或由维护者检查并处理未发布草稿；不要删除已公开版本来重用版本号。这些发布目标限制不影响普通分支推送的自动构建。若构建失败，不会进入草稿任务；若附件上传中断，草稿可能不完整，应重跑失败任务并等待成功后再验收。中间 Actions 产物保留七天，过期后需重新构建。
+工作流不改写 `version.properties`；应用版本的 `+提交数` 由构建脚本自动生成。手动发布阶段不移动现有标签、不覆盖已公开 Release：相同数字发布版本的已有标签必须指向同一提交，已有草稿也必须固定到同一提交，才能重跑草稿任务恢复上传并保留人工编辑的发布说明。要从不同提交创建草稿，需要新发布版本，或由维护者检查并处理未发布草稿；不要删除已公开版本来重用版本号。这些发布目标限制不影响普通分支推送的自动构建。若没有可用的成功自动构建，不会进入草稿任务；若附件上传中断，草稿可能不完整，应重跑失败任务并等待成功后再验收。中间 Actions 产物保留七天，过期后需先重跑同一提交的自动构建，再重新启动手动发布。选择来源后若自动构建被重跑或附件被替换，本次发布会失败，需重新启动手动发布以固定新的来源。
 
 发布自动化的本地检查（不会访问 GitHub 或创建 Release）：
 
@@ -229,7 +233,7 @@ python -m unittest discover -s tests/ci -p 'test_app_config.py'
 README 的实机图片与设置组件渲染分别维护，设备来源、渲染命令和输出路径见 [截图说明](../screenshots/cmp/README.md)。设置图更新后逐张检查，不能用控件渲染替代设备或 GPU 验收。
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
-- [CMP Android + Windows](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建两个平台的正式安装包，标签推送不重复触发；手动运行可创建发布草稿。
+- [CMP Android + Windows](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建两个平台的正式安装包，标签推送不重复触发；手动运行复用同一提交的成功自动构建产物创建发布草稿。
 - [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
 - 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 设备 IPA，仍须用户重签名及真机验收。
 - 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。

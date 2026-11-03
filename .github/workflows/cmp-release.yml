@@ -2,7 +2,7 @@ name: CMP Android + Windows
 run-name: CMP Android + Windows ${{ github.event_name == 'push' && 'build' || 'release draft' }} (${{ github.sha }})
 
 # 仅分支推送自动构建，不监听标签，避免同一提交的分支和标签各构建一次。
-# 手动运行才创建发布草稿；草稿仍由维护者验收后公开。
+# 手动运行复用同一提交的成功自动构建，只创建草稿；草稿仍由维护者验收后公开。
 on:
   push:
     branches: [CMP]
@@ -25,6 +25,14 @@ jobs:
     if: github.ref == 'refs/heads/CMP'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_build: ${{ steps.source.outputs.source_build }}
+      source_run_id: ${{ steps.source.outputs.source_run_id }}
+      android_artifact_id: ${{ steps.source.outputs.android_artifact_id }}
+      windows_artifact_id: ${{ steps.source.outputs.windows_artifact_id }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -34,6 +42,7 @@ jobs:
       - name: Check release automation
         run: node --test tests/ci/test_cmp_release.cjs
       - name: Validate version and destination
+        id: source
         if: github.event_name == 'workflow_dispatch'
         uses: actions/github-script@v9
         with:
@@ -41,6 +50,7 @@ jobs:
             await require('./.github/scripts/cmp-release.cjs').prepare({github, context, core});
 
   android:
+    if: github.event_name == 'push'
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -104,6 +114,7 @@ jobs:
           overwrite: true
 
   windows:
+    if: github.event_name == 'push'
     needs: prepare
     runs-on: windows-2022
     timeout-minutes: 90
@@ -156,11 +167,12 @@ jobs:
 
   draft:
     if: github.event_name == 'workflow_dispatch'
-    needs: [android, windows]
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -169,14 +181,24 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: cmp-release-android-${{ github.run_id }}
+          artifact-ids: ${{ needs.prepare.outputs.android_artifact_id }}
+          run-id: ${{ needs.prepare.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
           path: release-assets
       - uses: actions/download-artifact@v8
         with:
-          name: cmp-release-windows-${{ github.run_id }}
+          artifact-ids: ${{ needs.prepare.outputs.windows_artifact_id }}
+          run-id: ${{ needs.prepare.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
           path: release-assets
       - name: Validate assets and create or resume draft
         uses: actions/github-script@v9
+        env:
+          CMP_SOURCE_BUILD: ${{ needs.prepare.outputs.source_build }}
         with:
           script: |
-            await require('./.github/scripts/cmp-release.cjs').publish({github, context, core});
+            await require('./.github/scripts/cmp-release.cjs').publish({
+              github, context, core, sourceBuild: JSON.parse(process.env.CMP_SOURCE_BUILD),
+            });
