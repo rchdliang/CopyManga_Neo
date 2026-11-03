@@ -243,7 +243,8 @@ test('successful run creates only a draft with complete assets and commit manife
   assert.equal(request.prerelease, false);
   assert.equal(request.make_latest, 'false');
   assert.equal(request.target_commitish, context.sha);
-  assert.equal(mock.state.assets.length, 16);
+  assert.equal(mock.state.assets.length, 9);
+  assert.ok(mock.state.assets.every(asset => !asset.name.endsWith('.sha256')));
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'release-manifest.json'), 'utf8'));
   assert.equal(manifest.commit, context.sha);
   assert.equal(manifest.commitCount, 234);
@@ -253,7 +254,7 @@ test('successful run creates only a draft with complete assets and commit manife
   for (const [name, bytes] of originalBytes) assert.deepEqual(fs.readFileSync(path.join(directory, name)), bytes);
   assert.deepEqual(manifest.platforms, ['android', 'windows-x64', 'ios-arm64']);
   for (const [name, hash] of Object.entries(manifest.sha256)) {
-    assert.equal(fs.readFileSync(path.join(directory, name + '.sha256'), 'utf8'), hash + '  ' + name + '\n');
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, name))).digest('hex'), hash);
   }
 });
 

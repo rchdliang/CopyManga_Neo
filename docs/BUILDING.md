@@ -198,7 +198,7 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交并推送到 CMP；等待 Android/Windows 自动构建成功，并在手动多平台工作流选择同一 CMP 提交构建 iOS。然后可将 `v<数字发布版本>` 标签推送到该提交，在 Actions → CMP builds and release draft → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
 2. 工作流固定运行开始时的提交，选择本仓库最新可用的成功 Android/Windows `push` 运行和 iOS `workflow_dispatch` 运行。三个平台任务必须实际成功，Artifact 完整且未过期；Android/Windows 必须来自同一次自动构建，iOS 来自同一提交的多平台工作流当前重跑次数。找不到时直接失败，提示等待或重跑对应来源构建，不会回退到其他提交或自动重新构建。
-3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用四个 Android Release APK、Windows x64 EXE/ZIP 和 iOS ARM64 IPA；核对 iOS 清单的提交、版本、构建号、架构、未签名状态及 SHA-256 后，创建 `v<数字发布版本>` 的 **GitHub Release 草稿**。来源构建已执行各平台配置及打包检查；手动发布保持安装包字节不变，生成校验文件和汇总清单。草稿不设为 Latest，也不会自动公开发布。
+3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用四个 Android Release APK、Windows x64 EXE/ZIP 和 iOS ARM64 IPA；核对 iOS 清单的提交、版本、构建号、架构、未签名状态及 SHA-256 后，创建 `v<数字发布版本>` 的 **GitHub Release 草稿**。来源构建已执行各平台配置及打包检查；手动发布保持安装包字节不变，生成汇总清单。草稿不设为 Latest，也不会自动公开发布。
 4. 从草稿下载最终安装包，验证三端安装、启动、阅读、下载及升级后的数据保留；iOS 需自行侧载签名。补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
 
 附件命名示例（发布版本 `1.2.3`、Git 提交数 `234`、短哈希 `1a2b3c4`）：
@@ -213,7 +213,7 @@ CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
 CopyMangaNeo_ios_1.2.3+234_arm64_unsigned.ipa
 ```
 
-七个产物各有 `.sha256` 文件，加上 `ios-device-build.json` 和 `release-manifest.json` 共上传 16 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
+Release 上传七个安装产物、`ios-device-build.json` 和 `release-manifest.json`，共 9 个附件，不上传单独的 `.sha256` 文件，附件摘要由 GitHub 提供。来源 Artifact 中的校验文件仍用于发布前核对。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
 
 自动构建使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，自动构建执行 `:app:assembleRelease`。手动发布不读取这些 Secrets，只使用 `GITHUB_TOKEN` 的 Actions 读取权限下载产物及 Contents 写入权限维护草稿。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 

@@ -114,7 +114,7 @@ CMP 的最新开发构建可在 [Actions](https://github.com/rchdliang/CopyManga
 
 iOS 使用 `CopyMangaNeo_ios_<版本+提交数>_arm64_unsigned.ipa`，为未签名真机包，需要通过 SideStore / AltStore 等工具自行签名安装。覆盖更新时保持相同的签名身份和应用标识，并先备份数据；iOS 下载需保持应用在前台。
 
-正式发布使用 `v<版本号>` 标签。维护者先取得同一提交的 Android、Windows 和 iOS 成功构建，再手动运行 **CMP builds and release draft** 汇总原产物及校验文件，不重复编译。标签本身不触发 CMP 构建或公开发布；草稿仍需验收后手动公开，详细流程见[发布说明](docs/BUILDING.md#cmp-自动构建及三端发布草稿)。
+正式发布使用 `v<版本号>` 标签。维护者先取得同一提交的 Android、Windows 和 iOS 成功构建，再手动运行 **CMP builds and release draft** 汇总原产物与构建清单，不重复编译。附件 SHA-256 摘要由 GitHub 提供，不另附校验文件。标签本身不触发 CMP 构建或公开发布；草稿仍需验收后手动公开，详细流程见[发布说明](docs/BUILDING.md#cmp-自动构建及三端发布草稿)。
 
 Android 覆盖更新需要包名与签名一致。CMP 与独立 Android 不能相互覆盖更新；更新前可在应用内备份数据。
 

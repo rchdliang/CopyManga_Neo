@@ -170,13 +170,10 @@ function prepareAssets(directory, meta, sourceBuild, sourceIosBuild) {
       ios.architecture !== 'arm64' || ios.signed !== false || ios.artifact !== iosName || ios.sha256 !== hashes[iosName]) {
     throw new Error('iOS manifest does not match release commit, version, device platform or IPA checksum.');
   }
-  for (const name of names) {
-    fs.writeFileSync(path.join(directory, name + '.sha256'), hashes[name] + '  ' + name + '\n');
-  }
   fs.writeFileSync(path.join(directory, 'release-manifest.json'), JSON.stringify({
     ...meta, sourceBuild, sourceIosBuild, platforms: ['android', 'windows-x64', 'ios-arm64'], sha256: hashes,
   }, null, 2) + '\n');
-  return [...names.flatMap(name => [name, name + '.sha256']), 'ios-device-build.json', 'release-manifest.json'];
+  return [...names, 'ios-device-build.json', 'release-manifest.json'];
 }
 
 async function prepare({github, context, core, root = process.cwd(), git = execFileSync}) {
@@ -220,7 +217,7 @@ async function publish({github, context, core, sourceBuild, sourceIosBuild, root
         '- Windows：x64 安装程序及免安装 ZIP，无需另装 Java；ZIP 解压后运行 CopyMangaNeo.exe，保留同目录运行库和资源。',
         '- 免安装 ZIP 仍使用当前用户的数据目录，与安装版共用资料及单实例锁。',
         '- iOS：未签名真机 IPA，需要通过 SideStore / AltStore 等工具自行签名安装，不是 App Store 安装包。',
-        '- 每个安装包附带 SHA-256 校验文件；release-manifest.json 记录构建提交和文件校验值。',
+        '- GitHub 附件提供 SHA-256 摘要；构建清单记录来源提交、构建运行及校验值，不另附 .sha256 文件。',
         '',
         '版本：' + meta.buildVersion + '；平台升级编号：' + meta.versionCode,
         '源码提交：' + meta.commit,
