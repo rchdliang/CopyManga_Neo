@@ -267,7 +267,9 @@ test('successful run creates only a draft with complete assets and commit manife
   assert.equal(request.prerelease, false);
   assert.equal(request.make_latest, 'false');
   assert.equal(request.target_commitish, context.sha);
-  assert.equal(mock.state.assets.length, 9);
+  assert.equal(mock.state.assets.length, 8);
+  assert.ok(mock.state.assets.every(asset => asset.name !== 'ios-device-build.json'));
+  assert.ok(fs.existsSync(path.join(directory, 'ios-device-build.json')));
   assert.ok(mock.state.assets.every(asset => !asset.name.endsWith('.sha256')));
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'release-manifest.json'), 'utf8'));
   assert.equal(manifest.commit, context.sha);
@@ -447,5 +449,13 @@ test('iOS source is revalidated before publication', async t => {
   const mock = api();
   mock.build.artifacts[200][0].id++;
   await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /Source build/);
+  assert.equal(mock.state.writes.length, 0);
+});
+
+test('iOS validation manifest remains mandatory even though it is not a release attachment', async t => {
+  const {root, directory} = fixture(t);
+  fs.unlinkSync(path.join(directory, 'ios-device-build.json'));
+  const mock = api();
+  await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /exactly/);
   assert.equal(mock.state.writes.length, 0);
 });

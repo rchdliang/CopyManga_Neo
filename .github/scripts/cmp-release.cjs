@@ -182,7 +182,8 @@ function prepareAssets(directory, meta, sourceBuild, sourceIosBuild) {
   fs.writeFileSync(path.join(directory, 'release-manifest.json'), JSON.stringify({
     ...meta, sourceBuild, sourceIosBuild, platforms: ['android', 'windows-x64', 'ios-arm64'], sha256: hashes,
   }, null, 2) + '\n');
-  return [...names, 'ios-device-build.json', 'release-manifest.json'];
+  // iOS 专用清单仅作为 Actions 输入参与校验，不上传到 Release。
+  return [...names, 'release-manifest.json'];
 }
 
 async function prepare({github, context, core, root = process.cwd(), git = execFileSync}) {

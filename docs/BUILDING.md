@@ -215,7 +215,7 @@ CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
 CopyMangaNeo_ios_1.2.3+234_arm64_unsigned.ipa
 ```
 
-Release 上传七个安装产物、`ios-device-build.json` 和 `release-manifest.json`，共 9 个附件，不上传单独的 `.sha256` 文件，附件摘要由 GitHub 提供。来源 Artifact 中的校验文件仍用于发布前核对。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
+Release 上传七个安装产物和 `release-manifest.json`，共 8 个附件，不上传单独的 `.sha256` 文件，附件摘要由 GitHub 提供。`ios-device-build.json` 只保留在 iOS Actions Artifact 中，与来源 Artifact 中的校验文件一起用于发布前核对；缺少 iOS 清单时仍拒绝发布。汇总清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
 
 自动构建使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，自动构建执行 `:app:assembleRelease`。手动发布不读取这些 Secrets，只使用 `GITHUB_TOKEN` 的 Actions 读取权限下载产物及 Contents 写入权限维护草稿。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 
