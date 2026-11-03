@@ -15,7 +15,7 @@ import kotlinx.serialization.json.*
 import kotlin.time.Clock
 
 @Serializable
-private data class NetworkLogSettings(val enabled: Boolean = false, val activeSlot: Int = 0)
+private data class NetworkLogSettings(val enabled: Boolean = true, val activeSlot: Int = 0)
 
 /** 诊断事件以 JSONL 追加，开关独立保存；启动只读小型设置和文件大小，不解析历史正文。 */
 class PortableNetworkLog(private val storage: DocumentStorage, scope: CoroutineScope) : NetworkLogRepository {
@@ -66,8 +66,8 @@ class PortableNetworkLog(private val storage: DocumentStorage, scope: CoroutineS
             val prefix = try { storage.readPrefix(LEGACY_KEY, 1024).orEmpty() }
                 catch (cancel: CancellationException) { throw cancel }
                 catch (_: Exception) { "" }
-            val enabled = Regex("\"enabled\"\\s*:\\s*(true|false)").find(prefix)?.groupValues?.get(1) == "true"
-            settings.update { it.copy(enabled = enabled) }.fold({}, { throw it })
+            val legacyEnabled = Regex("\"enabled\"\\s*:\\s*(true|false)").find(prefix)?.groupValues?.get(1)?.toBooleanStrict()
+            settings.update { it.copy(enabled = legacyEnabled ?: it.enabled) }.fold({}, { throw it })
         } else settings.ensureLoaded().fold({}, { throw it })
         for (slot in sizes.indices) sizes[slot] = storage.size(key(slot))
         storage.remove(LEGACY_KEY)

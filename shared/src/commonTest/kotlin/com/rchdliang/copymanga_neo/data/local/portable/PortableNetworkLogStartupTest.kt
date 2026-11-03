@@ -57,10 +57,8 @@ class PortableNetworkLogStartupTest {
         assertEquals("100", row.getValue("query").jsonObject.getValue("offset").jsonPrimitive.content)
     }
 
-    @Test fun earlyRequestsQueueAndLaterWritesOnlyAppendWithoutReadingHistory() = runTest {
+    @Test fun freshInstallRecordsQueuedAndLaterRequestsWithoutReadingHistory() = runTest {
         val disk = Disk()
-        PortableNetworkLog(disk, backgroundScope).setEnabled(true)
-        disk.reads = 0
         val logs = PortableNetworkLog(disk, backgroundScope)
         logs.record(event())
         runCurrent()
@@ -83,13 +81,13 @@ class PortableNetworkLogStartupTest {
         assertEquals("/目录/😀", entries.last().getValue("endpoint").jsonPrimitive.content)
     }
 
-    @Test fun oldLogIsDiscardedWithoutParsingItsBodyAndSwitchIsRetained() = runTest {
+    @Test fun oldLogIsDiscardedWithoutParsingItsBodyAndRemainsDisabled() = runTest {
         val disk = Disk()
-        disk.rows["network-diagnostics.json"] = "{\"enabled\":true,\"lines\":[" + "broken".repeat(100_000)
+        disk.rows["network-diagnostics.json"] = "{\"enabled\":false,\"lines\":[" + "broken".repeat(100_000)
         disk.rows["reading-library.json"] = "keep personal data"
         val logs = PortableNetworkLog(disk, backgroundScope)
         logs.initialize().getOrThrow()
-        assertTrue(logs.state.value.enabled)
+        assertFalse(logs.state.value.enabled)
         assertEquals(0, disk.historyReads)
         assertFalse(disk.rows.containsKey("network-diagnostics.json"))
         assertEquals("keep personal data", disk.rows["reading-library.json"])
