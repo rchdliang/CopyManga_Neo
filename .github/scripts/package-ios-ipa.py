@@ -57,7 +57,12 @@ def package(app, output):
         version += "." + hotfix
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2,3}", version):
         raise ValueError("Invalid release version")
-    ipa = output / ("CopyMangaNeo-v" + version + "-ios-arm64-unsigned.ipa")
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    commit_count = int(subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip())
+    if not re.fullmatch(r"[0-9a-f]{40}", commit) or commit_count < 1:
+        raise ValueError("Invalid Git build identity")
+    build_version = version + "+" + str(commit_count)
+    ipa = output / ("CopyMangaNeo_ios_" + build_version + "_arm64_unsigned.ipa")
     with tempfile.TemporaryDirectory() as temporary:
         payload = Path(temporary) / "Payload"
         payload.mkdir()
@@ -70,9 +75,9 @@ def package(app, output):
             raise ValueError("IPA archive integrity failure")
     digest = hashlib.sha256(ipa.read_bytes()).hexdigest()
     ipa.with_suffix(".ipa.sha256").write_text(digest + "  " + ipa.name + "\n", encoding="utf-8")
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     (output / "ios-device-build.json").write_text(json.dumps({
         "commit": commit, "bundleId": BUNDLE_ID, "version": version,
+        "commitCount": commit_count, "buildVersion": build_version,
         "build": info["CFBundleVersion"], "platform": "iphoneos", "architecture": "arm64",
         "signed": False, "sha256": digest, "artifact": ipa.name,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -17,6 +17,10 @@ const sourceBuild = {
   url: 'https://github.com/example/example/actions/runs/100',
   androidArtifactId: 201, windowsArtifactId: 202,
 };
+const sourceIosBuild = {
+  runId: 200, runAttempt: 1, workflowId: 20,
+  url: 'https://github.com/example/example/actions/runs/200', iosArtifactId: 301,
+};
 const git = (command, args) => {
   assert.equal(command, 'git');
   switch (args.join(' ')) {
@@ -48,10 +52,11 @@ test('push builds cannot validate release destinations or write release drafts',
   const draft = workflow.slice(workflow.indexOf('\n  draft:'));
   assert.doesNotMatch(draft, /gradlew|setup-java|secrets\./);
   assert.match(draft, /actions: read/);
-  assert.equal((draft.match(/github-token: \$\{\{ github.token \}\}/g) || []).length, 2);
+  assert.equal((draft.match(/github-token: \$\{\{ github.token \}\}/g) || []).length, 3);
   assert.equal((draft.match(/run-id: \$\{\{ needs.prepare.outputs.source_run_id \}\}/g) || []).length, 2);
-  assert.equal((draft.match(/digest-mismatch: error/g) || []).length, 2);
-  for (const platform of ['android', 'windows']) {
+  assert.equal((draft.match(/digest-mismatch: error/g) || []).length, 3);
+  assert.ok(draft.includes('run-id: ${{ needs.prepare.outputs.ios_run_id }}'));
+  for (const platform of ['android', 'windows', 'ios']) {
     assert.ok(draft.includes('artifact-ids: ${{ needs.prepare.outputs.' + platform + '_artifact_id }}'));
   }
 });
@@ -63,10 +68,17 @@ function fixture(t) {
   const directory = path.join(root, 'release-assets');
   fs.mkdirSync(directory);
   for (const name of release.binaries(meta)) fs.writeFileSync(path.join(directory, name), 'fixture-' + name);
-  for (const name of release.binaries(meta).filter(name => /\.(zip|exe)$/.test(name))) {
+  for (const name of release.binaries(meta).filter(name => /\.(zip|exe|ipa)$/.test(name))) {
     const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, name))).digest('hex');
     fs.writeFileSync(path.join(directory, name + '.sha256'), hash + '  ' + name + '\r\n');
   }
+  const iosName = release.binaries(meta).find(name => name.endsWith('.ipa'));
+  fs.writeFileSync(path.join(directory, 'ios-device-build.json'), JSON.stringify({
+    commit: meta.commit, version: meta.version, build: String(meta.versionCode),
+    commitCount: meta.commitCount, buildVersion: meta.buildVersion,
+    bundleId: 'com.rchdliang.copymanga-neo', platform: 'iphoneos', architecture: 'arm64', signed: false,
+    artifact: iosName, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, iosName))).digest('hex'),
+  }));
   return {root, directory};
 }
 
@@ -82,11 +94,15 @@ function buildApi() {
     workflow_run: {id: 100, head_sha: meta.commit},
   }));
   const jobs = ['android', 'windows'].map(name => ({name, status: 'completed', conclusion: 'success'}));
-  const state = {runs: [run], artifacts: {100: artifacts}, jobs: {100: jobs}, requests: []};
+  const iosRun = {...run, id: 200, workflow_id: 20, event: 'workflow_dispatch'};
+  const iosArtifact = {...artifacts[0], id: 301, name: 'ios-device-ipa-' + meta.commit + '-1',
+    workflow_run: {id: 200, head_sha: meta.commit}};
+  const state = {runs: [run, iosRun], artifacts: {100: artifacts, 200: [iosArtifact]},
+    jobs: {100: jobs, 200: [{name: 'ios', status: 'completed', conclusion: 'success'}]}, requests: []};
   const actions = {
     getWorkflow: async args => {
-      assert.equal(args.workflow_id, 'cmp-release.yml');
-      return {data: {id: 10}};
+      assert.ok(['cmp-release.yml', 'multiplatform-manual.yml'].includes(args.workflow_id));
+      return {data: {id: args.workflow_id === 'cmp-release.yml' ? 10 : 20}};
     },
     getWorkflowRun: async args => ({data: state.runs.find(item => item.id === args.run_id)}),
     listWorkflowRuns: 'runs', listJobsForWorkflowRun: 'jobs', listWorkflowRunArtifacts: 'build-artifacts',
@@ -163,6 +179,7 @@ test('asset names include Git identity and both Windows package types', () => {
     'CopyMangaNeo_android_1.2.3-1a2b3c4+234_universal.apk',
     'CopyMangaNeo_windows_1.2.3+234_x64_portable.zip',
     'CopyMangaNeo_windows_1.2.3+234_x64_setup.exe',
+    'CopyMangaNeo_ios_1.2.3+234_arm64_unsigned.ipa',
   ]);
   for (const value of [undefined, 0, -1, 2.5, NaN]) {
     assert.throws(() => release.metadata(source, context, value), /commit count/);
@@ -212,7 +229,7 @@ test('missing platform, unexpected files and corrupt installer checksum are reje
   fs.writeFileSync(path.join(directory, 'private.jks'), 'must never upload');
   assert.throws(() => release.prepareAssets(directory, meta), /exactly/);
   fs.unlinkSync(path.join(directory, 'private.jks'));
-  fs.appendFileSync(path.join(directory, release.binaries(meta).at(-1)), 'corrupt');
+  fs.appendFileSync(path.join(directory, release.binaries(meta).find(name => name.endsWith('.exe'))), 'corrupt');
   assert.throws(() => release.prepareAssets(directory, meta), /checksum mismatch/);
 });
 
@@ -220,20 +237,21 @@ test('successful run creates only a draft with complete assets and commit manife
   const {root, directory} = fixture(t);
   const mock = api();
   const originalBytes = new Map(release.binaries(meta).map(name => [name, fs.readFileSync(path.join(directory, name))]));
-  await release.publish({github: mock.github, context, core: core(), sourceBuild, root, git});
+  await release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git});
   const request = mock.state.writes[0][1];
   assert.equal(request.draft, true);
   assert.equal(request.prerelease, false);
   assert.equal(request.make_latest, 'false');
   assert.equal(request.target_commitish, context.sha);
-  assert.equal(mock.state.assets.length, 13);
+  assert.equal(mock.state.assets.length, 16);
   const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'release-manifest.json'), 'utf8'));
   assert.equal(manifest.commit, context.sha);
   assert.equal(manifest.commitCount, 234);
   assert.equal(manifest.versionCode, 40);
   assert.deepEqual(manifest.sourceBuild, sourceBuild);
+  assert.deepEqual(manifest.sourceIosBuild, sourceIosBuild);
   for (const [name, bytes] of originalBytes) assert.deepEqual(fs.readFileSync(path.join(directory, name)), bytes);
-  assert.deepEqual(manifest.platforms, ['android', 'windows-x64']);
+  assert.deepEqual(manifest.platforms, ['android', 'windows-x64', 'ios-arm64']);
   for (const [name, hash] of Object.entries(manifest.sha256)) {
     assert.equal(fs.readFileSync(path.join(directory, name + '.sha256'), 'utf8'), hash + '  ' + name + '\n');
   }
@@ -246,7 +264,7 @@ test('retry resumes a matching draft without creating or publishing another rele
     body: 'Maintainer edited notes', html_url: 'https://example.invalid/draft',
   }, meta.commit);
   mock.state.assets.push({id: 99, name: release.binaries(meta)[0]});
-  await release.publish({github: mock.github, context, core: core(), sourceBuild, root, git});
+  await release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git});
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'create').length, 0);
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'delete').length, 1);
   assert.equal(mock.state.release.body, 'Maintainer edited notes');
@@ -261,7 +279,7 @@ test('publishing a draft during upload stops further writes', async t => {
     await upload(args);
     mock.state.release.draft = false;
   };
-  await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, root, git}), /already published/);
+  await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /already published/);
   assert.equal(mock.state.writes.filter(([kind]) => kind === 'upload').length, 1);
 });
 
@@ -271,6 +289,9 @@ test('manual preparation pins a successful push run and both immutable artifact 
   const outputs = {};
   await release.prepare({github: mock.github, context, core: {...core(), setOutput: (key, value) => outputs[key] = value}, root, git});
   assert.deepEqual(outputs.source_build, sourceBuild);
+  assert.deepEqual(outputs.source_ios_build, sourceIosBuild);
+  assert.equal(outputs.ios_run_id, sourceIosBuild.runId);
+  assert.equal(outputs.ios_artifact_id, sourceIosBuild.iosArtifactId);
   assert.equal(outputs.source_run_id, sourceBuild.runId);
   assert.equal(outputs.android_artifact_id, sourceBuild.androidArtifactId);
   assert.equal(outputs.windows_artifact_id, sourceBuild.windowsArtifactId);
@@ -356,8 +377,50 @@ test('publication rechecks pinned run, attempt and artifact identity before any 
     const {root} = fixture(t);
     const mock = api();
     change(mock);
-    await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, root, git}), /Source build/);
+    await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /Source build/);
     assert.equal(mock.state.writes.length, 0);
   }
   await assert.rejects(release.verifyBuild(buildApi().github, context, meta, null), /pinned source build/);
+});
+
+test('iOS selection requires same commit, successful iOS job and current attempt artifact', async () => {
+  const mock = buildApi();
+  assert.deepEqual(await release.findBuild(mock.github, context, meta, 'ios'), sourceIosBuild);
+  for (const change of [
+    state => state.runs[1].head_sha = 'b'.repeat(40),
+    state => state.runs[1].event = 'push',
+    state => state.jobs[200][0].conclusion = 'skipped',
+    state => state.artifacts[200][0].expired = true,
+    state => state.artifacts[200][0].name = 'ios-device-ipa-' + meta.commit + '-2',
+  ]) {
+    const bad = buildApi();
+    change(bad.state);
+    await assert.rejects(release.findBuild(bad.github, context, meta, 'ios'), /No successful/);
+  }
+});
+
+test('iOS manifest mismatches and corrupted IPA prevent any draft writes', async t => {
+  for (const change of [
+    {commit: 'b'.repeat(40)}, {version: '9.9.9'}, {build: '999'}, {commitCount: 1}, {buildVersion: '1.2.3+1'},
+    {bundleId: 'wrong.app'}, {platform: 'iphonesimulator'}, {architecture: 'x86_64'}, {signed: true},
+    {artifact: '../other.ipa'}, {sha256: '0'.repeat(64)},
+  ]) {
+    const {root, directory} = fixture(t);
+    const manifest = path.join(directory, 'ios-device-build.json');
+    fs.writeFileSync(manifest, JSON.stringify({...JSON.parse(fs.readFileSync(manifest)), ...change}));
+    const mock = api();
+    await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /iOS manifest/);
+    assert.equal(mock.state.writes.length, 0);
+  }
+  const {directory} = fixture(t);
+  fs.appendFileSync(path.join(directory, release.binaries(meta).find(name => name.endsWith('.ipa'))), 'corrupt');
+  assert.throws(() => release.prepareAssets(directory, meta), /checksum mismatch/);
+});
+
+test('iOS source is revalidated before publication', async t => {
+  const {root} = fixture(t);
+  const mock = api();
+  mock.build.artifacts[200][0].id++;
+  await assert.rejects(release.publish({github: mock.github, context, core: core(), sourceBuild, sourceIosBuild, root, git}), /Source build/);
+  assert.equal(mock.state.writes.length, 0);
 });

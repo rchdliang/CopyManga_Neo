@@ -110,7 +110,11 @@
 
 从 [Releases](https://github.com/rchdliang/CopyManga_Neo/releases) 选择对应分支、平台和架构的安装包。Android 使用 APK；Windows 安装包及其他平台产物以对应版本实际提供的文件为准。Windows x64 的正式安装包采用 Nucleus Tao + GraalVM Native Image，交付的原生程序无需安装 Java；日常开发使用 JVM 快速运行，工具链与 IDE 运行方式见 [构建说明](docs/BUILDING.md#桌面)。
 
-CMP 的最新开发构建可在 [Actions](https://github.com/rchdliang/CopyManga_Neo/actions/workflows/cmp-release.yml?query=branch%3ACMP) 中选择成功的运行，从 **Artifacts** 下载。每次推送到 CMP 分支会生成 Android 签名 Release APK（分架构及通用包）和 Windows x64 安装程序和免安装 ZIP
+CMP 的最新开发构建可在 [Actions](https://github.com/rchdliang/CopyManga_Neo/actions/workflows/cmp-release.yml?query=branch%3ACMP) 中选择成功的运行，从 **Artifacts** 下载。每次推送到 CMP 分支会生成 Android 签名 Release APK（分架构及通用包）和 Windows x64 安装程序、免安装 ZIP；iOS ARM64 IPA 由[手动多平台工作流](https://github.com/rchdliang/CopyManga_Neo/actions/workflows/multiplatform-manual.yml)生成。
+
+iOS 使用 `CopyMangaNeo_ios_<版本+提交数>_arm64_unsigned.ipa`，为未签名真机包，需要通过 SideStore / AltStore 等工具自行签名安装。覆盖更新时保持相同的签名身份和应用标识，并先备份数据；iOS 下载需保持应用在前台。
+
+正式发布使用 `v<版本号>` 标签。维护者先取得同一提交的 Android、Windows 和 iOS 成功构建，再手动运行 **CMP builds and release draft** 汇总原产物及校验文件，不重复编译。标签本身不触发 CMP 构建或公开发布；草稿仍需验收后手动公开，详细流程见[发布说明](docs/BUILDING.md#cmp-自动构建及三端发布草稿)。
 
 Android 覆盖更新需要包名与签名一致。CMP 与独立 Android 不能相互覆盖更新；更新前可在应用内备份数据。
 
@@ -124,8 +128,10 @@ CMP 更新弹窗中，Android 的“GitHub”按钮会按设备支持的架构�
 
 | 项目 | CMP 分支 | Android 分支 |
 | --- | --- | --- |
-| 平台 | Android、Windows、Linux；另有 iOS 与 Web/Wasm 构建目标 | Android |
+| 平台 | Android、Windows、Linux、iOS；另有 Web/Wasm 构建目标 | Android |
 | 画质修复（实验） | Android、Windows、Linux 的 Vulkan GPU | 暂无 |
+
+当前 Windows、Android 和 iOS 均已确认可在实机运行。Windows 与 Android 已经过较完善的测试；iOS 已通过云端真机的基础运行测试，测试覆盖仍有限。
 
 两个分支的 Android 应用均要求 Android 12 及以上，使用不同包名，可以并存；应用数据分别保存，完整用户数据备份不能直接互导；轻量设置备份的覆盖范围见各分支 [PERSISTENCE.md](PERSISTENCE.md)。iOS、Web/Wasm 及桌面平台的构建条件和系统能力差异见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)与[架构说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/ARCHITECTURE.md)。
 

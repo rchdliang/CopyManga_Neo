@@ -1,5 +1,5 @@
-name: CMP Android + Windows
-run-name: CMP Android + Windows ${{ github.event_name == 'push' && 'build' || 'release draft' }} (${{ github.sha }})
+name: CMP builds and release draft
+run-name: CMP ${{ github.event_name == 'push' && 'Android + Windows build' || 'Android + Windows + iOS release draft' }} (${{ github.sha }})
 
 # 仅分支推送自动构建，不监听标签，避免同一提交的分支和标签各构建一次。
 # 手动运行复用同一提交的成功自动构建，只创建草稿；草稿仍由维护者验收后公开。
@@ -33,6 +33,9 @@ jobs:
       source_run_id: ${{ steps.source.outputs.source_run_id }}
       android_artifact_id: ${{ steps.source.outputs.android_artifact_id }}
       windows_artifact_id: ${{ steps.source.outputs.windows_artifact_id }}
+      source_ios_build: ${{ steps.source.outputs.source_ios_build }}
+      ios_run_id: ${{ steps.source.outputs.ios_run_id }}
+      ios_artifact_id: ${{ steps.source.outputs.ios_artifact_id }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -193,12 +196,21 @@ jobs:
           github-token: ${{ github.token }}
           digest-mismatch: error
           path: release-assets
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.ios_artifact_id }}
+          run-id: ${{ needs.prepare.outputs.ios_run_id }}
+          github-token: ${{ github.token }}
+          digest-mismatch: error
+          path: release-assets
       - name: Validate assets and create or resume draft
         uses: actions/github-script@v9
         env:
           CMP_SOURCE_BUILD: ${{ needs.prepare.outputs.source_build }}
+          CMP_SOURCE_IOS_BUILD: ${{ needs.prepare.outputs.source_ios_build }}
         with:
           script: |
             await require('./.github/scripts/cmp-release.cjs').publish({
               github, context, core, sourceBuild: JSON.parse(process.env.CMP_SOURCE_BUILD),
+              sourceIosBuild: JSON.parse(process.env.CMP_SOURCE_IOS_BUILD),
             });

@@ -70,19 +70,27 @@ async function destination(github, context, meta) {
   return matching[0];
 }
 
-// 只接受本仓库、同一工作流、同一提交的成功 push 构建，禁止跨提交或混用运行产物。
-async function inspectBuild(github, context, meta, workflowId, run) {
+// 桌面/Android 复用自动构建，iOS 复用手动多平台构建；所有产物必须属于同一提交。
+const buildKinds = {
+  desktop: {workflow: 'cmp-release.yml', event: 'push', jobs: ['android', 'windows']},
+  ios: {workflow: 'multiplatform-manual.yml', event: 'workflow_dispatch', jobs: ['ios']},
+};
+
+async function inspectBuild(github, context, meta, workflowId, run, kind = 'desktop') {
+  const spec = buildKinds[kind];
   const repository = context.repo.owner + '/' + context.repo.repo;
-  if (run.workflow_id !== workflowId || run.event !== 'push' || run.head_branch !== 'CMP' ||
+  if (run.workflow_id !== workflowId || run.event !== spec.event || run.head_branch !== 'CMP' ||
       run.head_sha !== meta.commit || run.status !== 'completed' || run.conclusion !== 'success' ||
       run.repository?.full_name !== repository || run.head_repository?.full_name !== repository) return null;
   const params = {...context.repo, run_id: run.id, per_page: 100};
   const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {...params, filter: 'latest'});
-  if (!['android', 'windows'].every(name =>
+  if (!spec.jobs.every(name =>
     jobs.some(job => job.name === name && job.status === 'completed' && job.conclusion === 'success'))) return null;
   const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, params);
-  const selected = ['android', 'windows'].map(platform => {
-    const matches = artifacts.filter(artifact => artifact.name === 'cmp-release-' + platform + '-' + run.id);
+  const selected = spec.jobs.map(platform => {
+    const name = platform === 'ios' ? 'ios-device-ipa-' + meta.commit + '-' + run.run_attempt :
+      'cmp-release-' + platform + '-' + run.id;
+    const matches = artifacts.filter(artifact => artifact.name === name);
     if (matches.length !== 1) return null;
     const artifact = matches[0];
     return Number.isSafeInteger(artifact.id) && artifact.id > 0 && artifact.expired === false &&
@@ -93,31 +101,33 @@ async function inspectBuild(github, context, meta, workflowId, run) {
   return {
     runId: run.id, runAttempt: run.run_attempt, workflowId,
     url: 'https://github.com/' + repository + '/actions/runs/' + run.id,
-    androidArtifactId: selected[0].id, windowsArtifactId: selected[1].id,
+    ...(kind === 'ios' ? {iosArtifactId: selected[0].id} :
+      {androidArtifactId: selected[0].id, windowsArtifactId: selected[1].id}),
   };
 }
 
-async function findBuild(github, context, meta) {
-  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'cmp-release.yml'});
+async function findBuild(github, context, meta, kind = 'desktop') {
+  const spec = buildKinds[kind];
+  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: spec.workflow});
   const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-    ...context.repo, workflow_id: workflow.id, branch: 'CMP', event: 'push',
+    ...context.repo, workflow_id: workflow.id, branch: 'CMP', event: spec.event,
     head_sha: meta.commit, status: 'success', per_page: 100,
   });
   for (const run of runs.sort((a, b) => b.id - a.id)) {
-    const build = await inspectBuild(github, context, meta, workflow.id, run);
+    const build = await inspectBuild(github, context, meta, workflow.id, run, kind);
     if (build) return build;
   }
-  throw new Error('No successful CMP push build with complete, unexpired Android and Windows artifacts for ' +
+  throw new Error('No successful CMP ' + spec.event + ' build with complete, unexpired ' + spec.jobs.join('/') + ' artifacts for ' +
     meta.commit + '. Wait for the automatic build or rerun it, then run this release workflow again. No rebuild was started.');
 }
 
-async function verifyBuild(github, context, meta, sourceBuild) {
+async function verifyBuild(github, context, meta, sourceBuild, kind = 'desktop') {
   if (!sourceBuild || !Number.isSafeInteger(sourceBuild.runId) || sourceBuild.runId < 1) {
     throw new Error('A pinned source build is required.');
   }
-  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: 'cmp-release.yml'});
+  const {data: workflow} = await github.rest.actions.getWorkflow({...context.repo, workflow_id: buildKinds[kind].workflow});
   const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: sourceBuild.runId});
-  const current = await inspectBuild(github, context, meta, workflow.id, run);
+  const current = await inspectBuild(github, context, meta, workflow.id, run, kind);
   if (!current || Object.keys(current).some(key => current[key] !== sourceBuild[key])) {
     throw new Error('Source build or artifacts changed or expired; run the release workflow again.');
   }
@@ -130,16 +140,17 @@ function binaries(meta) {
       abi => 'CopyMangaNeo_android_' + meta.androidArtifactVersion + '_' + abi + '.apk'),
     'CopyMangaNeo_windows_' + meta.buildVersion + '_x64_portable.zip',
     'CopyMangaNeo_windows_' + meta.buildVersion + '_x64_setup.exe',
+    'CopyMangaNeo_ios_' + meta.buildVersion + '_arm64_unsigned.ipa',
   ];
 }
 
-function prepareAssets(directory, meta, sourceBuild) {
+function prepareAssets(directory, meta, sourceBuild, sourceIosBuild) {
   const names = binaries(meta);
-  const windows = names.filter(name => name.endsWith('.exe') || name.endsWith('.zip'));
-  const expected = [...names, ...windows.map(name => name + '.sha256')].sort();
+  const checksummed = names.filter(name => /\.(exe|zip|ipa)$/.test(name));
+  const expected = [...names, ...checksummed.map(name => name + '.sha256'), 'ios-device-build.json'].sort();
   const actual = fs.readdirSync(directory).sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error('Release assets must contain exactly four release APKs, the Windows installer/portable ZIP and their checksums.');
+    throw new Error('Release assets must contain exactly four APKs, Windows EXE/ZIP, iOS IPA, their supplied checksums and the iOS manifest.');
   }
   const hashes = {};
   for (const name of names) {
@@ -147,38 +158,52 @@ function prepareAssets(directory, meta, sourceBuild) {
     if (!fs.lstatSync(file).isFile() || fs.statSync(file).size === 0) throw new Error('Empty or invalid asset: ' + name);
     hashes[name] = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   }
-  for (const name of windows) {
+  for (const name of checksummed) {
     const checksum = fs.readFileSync(path.join(directory, name + '.sha256'), 'utf8').trim();
-    if (checksum !== hashes[name] + '  ' + name) throw new Error('Windows artifact checksum mismatch: ' + name);
+    if (checksum !== hashes[name] + '  ' + name) throw new Error('Artifact checksum mismatch: ' + name);
+  }
+  const iosName = names.find(name => name.endsWith('.ipa'));
+  const ios = JSON.parse(fs.readFileSync(path.join(directory, 'ios-device-build.json'), 'utf8'));
+  if (ios.commit !== meta.commit || ios.version !== meta.version || String(ios.build) !== String(meta.versionCode) ||
+      ios.commitCount !== meta.commitCount || ios.buildVersion !== meta.buildVersion ||
+      ios.bundleId !== 'com.rchdliang.copymanga-neo' || ios.platform !== 'iphoneos' ||
+      ios.architecture !== 'arm64' || ios.signed !== false || ios.artifact !== iosName || ios.sha256 !== hashes[iosName]) {
+    throw new Error('iOS manifest does not match release commit, version, device platform or IPA checksum.');
   }
   for (const name of names) {
     fs.writeFileSync(path.join(directory, name + '.sha256'), hashes[name] + '  ' + name + '\n');
   }
   fs.writeFileSync(path.join(directory, 'release-manifest.json'), JSON.stringify({
-    ...meta, sourceBuild, platforms: ['android', 'windows-x64'], sha256: hashes,
+    ...meta, sourceBuild, sourceIosBuild, platforms: ['android', 'windows-x64', 'ios-arm64'], sha256: hashes,
   }, null, 2) + '\n');
-  return [...names.flatMap(name => [name, name + '.sha256']), 'release-manifest.json'];
+  return [...names.flatMap(name => [name, name + '.sha256']), 'ios-device-build.json', 'release-manifest.json'];
 }
 
 async function prepare({github, context, core, root = process.cwd(), git = execFileSync}) {
   const meta = readMetadata(root, context, git);
   await destination(github, context, meta);
   const sourceBuild = await findBuild(github, context, meta);
+  const sourceIosBuild = await findBuild(github, context, meta, 'ios');
+  core.setOutput('source_ios_build', sourceIosBuild);
+  core.setOutput('ios_run_id', sourceIosBuild.runId);
+  core.setOutput('ios_artifact_id', sourceIosBuild.iosArtifactId);
   core.setOutput('source_build', sourceBuild);
   core.setOutput('source_run_id', sourceBuild.runId);
   core.setOutput('android_artifact_id', sourceBuild.androidArtifactId);
   core.setOutput('windows_artifact_id', sourceBuild.windowsArtifactId);
   core.info('Reuse automatic build: ' + sourceBuild.url);
+  core.info('Reuse iOS build: ' + sourceIosBuild.url);
   core.info('CMP ' + meta.version + ' (' + meta.versionCode + '), commit ' + meta.commit);
   return meta;
 }
 
-async function publish({github, context, core, sourceBuild, root = process.cwd(), git = execFileSync}) {
+async function publish({github, context, core, sourceBuild, sourceIosBuild, root = process.cwd(), git = execFileSync}) {
   const meta = readMetadata(root, context, git);
   let release = await destination(github, context, meta);
   sourceBuild = await verifyBuild(github, context, meta, sourceBuild);
+  sourceIosBuild = await verifyBuild(github, context, meta, sourceIosBuild, 'ios');
   const directory = path.join(root, 'release-assets');
-  const files = prepareAssets(directory, meta, sourceBuild);
+  const files = prepareAssets(directory, meta, sourceBuild, sourceIosBuild);
   if (!release) {
     const {data} = await github.rest.repos.createRelease({
       ...context.repo,
@@ -189,18 +214,20 @@ async function publish({github, context, core, sourceBuild, root = process.cwd()
       prerelease: false,
       make_latest: 'false',
       body: [
-        '本次提供 Android 和 Windows x64。',
+        '本次提供 Android、Windows x64 和 iOS ARM64。',
         '',
         '- Android：正式签名 Release APK；普通 ARM64 手机选择 arm64-v8a，不确定时选择 universal。',
         '- Windows：x64 安装程序及免安装 ZIP，无需另装 Java；ZIP 解压后运行 CopyMangaNeo.exe，保留同目录运行库和资源。',
         '- 免安装 ZIP 仍使用当前用户的数据目录，与安装版共用资料及单实例锁。',
+        '- iOS：未签名真机 IPA，需要通过 SideStore / AltStore 等工具自行签名安装，不是 App Store 安装包。',
         '- 每个安装包附带 SHA-256 校验文件；release-manifest.json 记录构建提交和文件校验值。',
         '',
         '版本：' + meta.buildVersion + '；平台升级编号：' + meta.versionCode,
         '源码提交：' + meta.commit,
         '复用自动构建：' + sourceBuild.url,
+        '复用 iOS 构建：' + sourceIosBuild.url,
         '',
-        '发布前请补充更新说明，并用本页附件完成 Android 覆盖安装、数据保留及 Windows 安装、启动、升级验收。',
+        '发布前请补充更新说明，并用本页附件完成三端安装、启动、阅读及升级后的数据保留验收。',
         '构建通过不代表设备验收完成。本工作流不会自动公开发布。',
       ].join('\n'),
     });
@@ -233,6 +260,7 @@ async function publish({github, context, core, sourceBuild, root = process.cwd()
   await core.summary.addHeading('CMP Release 草稿')
     .addLink(meta.tag, finalRelease.html_url)
     .addRaw('\n\n复用自动构建：' + sourceBuild.url)
+    .addRaw('\n\n复用 iOS 构建：' + sourceIosBuild.url)
     .addRaw('\n\n仅创建草稿；请验收附件、补充更新说明后手动发布。\n').write();
 }
 

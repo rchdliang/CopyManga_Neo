@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """直接转发构建输出，定时报告存活状态，并记录各阶段耗时与退出码。"""
 import datetime
+import codecs
 import json
 import os
 from pathlib import Path
@@ -10,24 +11,36 @@ import threading
 import time
 
 
-def run_stage(stage, command, output_dir, heartbeat_seconds=60):
+def run_stage(stage, command, output_dir, heartbeat_seconds=60, relay_log=None, poll_seconds=1):
     started = datetime.datetime.now(datetime.timezone.utc).isoformat()
     clock = time.monotonic()
     stopped = threading.Event()
+    log = open(relay_log, "rb") if relay_log else None
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def relay(final=False):
+        if log:
+            text = decoder.decode(log.read(), final=final)
+            if text:
+                print(text, end="", flush=True)
 
     def report(message):
         print(f"[iOS {stage}] {message}; elapsed={time.monotonic() - clock:.1f}s", flush=True)
 
     def heartbeat():
-        while not stopped.wait(heartbeat_seconds):
-            report("still running (not a progress estimate)")
+        next_report = clock + heartbeat_seconds
+        while not stopped.wait(min(poll_seconds, heartbeat_seconds)):
+            relay()
+            if time.monotonic() >= next_report:
+                report("still running (not a progress estimate)")
+                next_report = time.monotonic() + heartbeat_seconds
 
     report("started")
     monitor = threading.Thread(target=heartbeat, daemon=True)
     monitor.start()
     code = 1
     try:
-        # 继承标准输出，不把 Gradle 日志缓存在 Xcode 的脚本构建阶段。
+        # Xcode 自身输出直接透传；钩子内的 Gradle 输出从日志文件实时转发。
         code = subprocess.run(command, check=False).returncode
         if code < 0:
             code = 128 - code
@@ -35,6 +48,9 @@ def run_stage(stage, command, output_dir, heartbeat_seconds=60):
     finally:
         stopped.set()
         monitor.join()
+        relay(final=True)
+        if log:
+            log.close()
         elapsed = round(time.monotonic() - clock, 3)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -51,4 +67,5 @@ def run_stage(stage, command, output_dir, heartbeat_seconds=60):
 if __name__ == "__main__":
     if len(sys.argv) < 3 or sys.argv[1] not in ("kotlin-framework", "xcode", "ipa"):
         raise SystemExit("Usage: ios-build-stage.py <kotlin-framework|xcode|ipa> <command> [args...]")
-    raise SystemExit(run_stage(sys.argv[1], sys.argv[2:], "build/ios-build-timings"))
+    log = os.environ.get("COPYMANGA_IOS_BUILD_LOG") if sys.argv[1] == "xcode" else None
+    raise SystemExit(run_stage(sys.argv[1], sys.argv[2:], "build/ios-build-timings", relay_log=log))

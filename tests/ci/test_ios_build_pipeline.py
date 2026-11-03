@@ -3,12 +3,14 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -51,6 +53,35 @@ class StageReportingTests(unittest.TestCase):
                 stage.run_stage("ipa", [str(Path(directory) / "missing-executable")], directory)
             self.assertEqual(json.loads((Path(directory) / "ipa.json").read_text())["exitCode"], 1)
 
+    def test_log_is_relayed_before_command_finishes_and_failure_drains_utf8_tail(self):
+        received = threading.Event()
+
+        class Stream(io.StringIO):
+            def write(self, text):
+                result = super().write(text)
+                if "live output" in text:
+                    received.set()
+                return result
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""}):
+            log = Path(directory) / "framework.log"
+            log.touch()
+
+            def build(command, **kwargs):
+                with log.open("ab") as output:
+                    output.write(b"live output\n\xe4")
+                    output.flush()
+                    self.assertTrue(received.wait(3), "framework output must appear while Xcode is still running")
+                    output.write(b"\xb8\xad\nlast failure\n")
+                return subprocess.CompletedProcess(command, 7)
+
+            messages = Stream()
+            with patch.object(stage.subprocess, "run", side_effect=build), contextlib.redirect_stdout(messages):
+                code = stage.run_stage("xcode", ["fake-xcode"], directory, relay_log=log, poll_seconds=0.01)
+            self.assertEqual(code, 7)
+            self.assertIn("live output\n中\nlast failure\n", messages.getvalue())
+            self.assertEqual(json.loads((Path(directory) / "xcode.json").read_text())["exitCode"], 7)
+
 
 @unittest.skipUnless(BASH and Path(BASH).is_file(), "Requires Bash for build orchestration tests")
 class IosBuildOrchestrationTests(unittest.TestCase):
@@ -61,6 +92,11 @@ class IosBuildOrchestrationTests(unittest.TestCase):
         scripts = self.root / ".github/scripts"
         scripts.mkdir(parents=True)
         shutil.copyfile(ROOT / ".github/scripts/build-ios-ipa.sh", scripts / "build-ios-ipa.sh")
+        shutil.copyfile(ROOT / ".github/scripts/build-ios-framework.sh", scripts / "build-ios-framework.sh")
+        project = (ROOT / "iosApp/iosApp.xcodeproj/project.pbxproj").read_text()
+        phase = json.loads(re.search(r'shellScript = ("(?:\\.|[^"\\])*");', project).group(1))
+        (scripts / "test-xcode-phase.sh").write_text(phase, encoding="utf-8", newline="\n")
+        (self.root / "iosApp").mkdir()
         # 外部工具桩只验证调度；计时器另用真实 Python 子进程测试。
         (scripts / "package-ios-ipa.py").write_text("from pathlib import Path\nwith Path('trace.txt').open('a') as f: f.write('ipa\\n')\n")
         self.bin = self.root / "bin"
@@ -72,9 +108,18 @@ if [[ "$1" == .github/scripts/ios-build-stage.py ]]; then
   exec "$@"
 fi
 exec """ + shlex.quote(Path(sys.executable).as_posix()) + ' "$@"\n')
-        self.write_executable(self.bin / "xcodebuild", '#!/bin/bash\nprintf "xcode:%s\\n" "$*" >> trace.txt\nif [[ "$1" == -version ]]; then exit 0; fi\nexit "${FAKE_XCODE_EXIT:-0}"\n')
+        self.write_executable(self.bin / "xcodebuild", """#!/bin/bash
+set -e
+printf 'xcode:%s\n' "$*" >> trace.txt
+if [[ "$1" == -version ]]; then exit 0; fi
+export SRCROOT="$PWD/iosApp" CONFIGURATION=Release SDK_NAME=iphoneos ARCHS=arm64
+# 执行项目中真实的脚本阶段；不能用空 Xcode 桩漏掉第二次 Gradle 调用。
+bash .github/scripts/test-xcode-phase.sh
+exit "${FAKE_XCODE_EXIT:-0}"
+""")
         self.write_executable(self.root / "gradlew", """#!/bin/bash
 printf 'gradle:%s\n' "$*" >> trace.txt
+printf 'gradle-env:%s,%s,%s\n' "${CONFIGURATION:-}" "${SDK_NAME:-}" "${ARCHS:-}" >> trace.txt
 if [[ "${FAKE_GRADLE_EXIT:-0}" != 0 ]]; then exit "$FAKE_GRADLE_EXIT"; fi
 mkdir -p shared/build/bin/iosArm64/releaseFramework/CopyMangaShared.framework
 touch shared/build/bin/iosArm64/releaseFramework/CopyMangaShared.framework/CopyMangaShared
@@ -94,33 +139,29 @@ touch shared/build/bin/iosArm64/releaseFramework/CopyMangaShared.framework/CopyM
         file = self.root / "trace.txt"
         return file.read_text() if file.exists() else ""
 
-    def test_default_build_links_release_once_then_runs_xcode_and_packages(self):
+    def test_xcode_runs_the_only_full_framework_build_before_packaging(self):
         result = self.run_build()
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = self.trace()
         self.assertEqual(trace.count("gradle:"), 1)
-        self.assertIn(":shared:linkReleaseFrameworkIosArm64 --console=plain --stacktrace --profile --build-cache", trace)
-        self.assertLess(trace.index("stage:kotlin-framework"), trace.index("stage:xcode"))
-        self.assertLess(trace.index("stage:xcode"), trace.index("stage:ipa"))
+        self.assertIn(":shared:embedAndSignAppleFrameworkForXcode --console=plain --stacktrace --profile --build-cache", trace)
+        self.assertIn("gradle-env:Release,iphoneos,arm64", trace)
+        self.assertNotIn(":shared:linkReleaseFrameworkIosArm64", trace)
+        self.assertLess(trace.index("stage:xcode"), trace.index("stage:kotlin-framework"))
+        self.assertLess(trace.index("stage:kotlin-framework"), trace.index("stage:ipa"))
         self.assertIn("-configuration Release -sdk iphoneos", trace)
         self.assertIn("CODE_SIGNING_ALLOWED=NO", trace)
 
-    def test_ci_stages_are_separate_and_missing_framework_blocks_packaging(self):
-        result = self.run_build("package")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Missing ARM64 Release framework", result.stderr)
+    def test_old_split_modes_are_rejected_before_build(self):
+        for mode in ("framework", "package"):
+            self.assertEqual(self.run_build(mode).returncode, 2)
         self.assertEqual(self.trace(), "")
-        result = self.run_build("framework")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("xcode:", self.trace())
-        result = self.run_build("package")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.trace().count("gradle:"), 1)
 
-    def test_failed_framework_never_starts_xcode_and_failed_xcode_never_packages(self):
+    def test_failed_framework_or_xcode_never_packages(self):
         result = self.run_build(FAKE_GRADLE_EXIT="7")
         self.assertEqual(result.returncode, 7, result.stderr)
-        self.assertNotIn("stage:xcode", self.trace())
+        self.assertIn("stage:xcode", self.trace())
+        self.assertNotIn("stage:ipa", self.trace())
         result = self.run_build(FAKE_XCODE_EXIT="8")
         self.assertEqual(result.returncode, 8, result.stderr)
         self.assertIn("stage:xcode", self.trace())
@@ -131,6 +172,20 @@ touch shared/build/bin/iosArm64/releaseFramework/CopyMangaShared.framework/CopyM
         self.assertNotEqual(self.run_build(COPYMANGA_TAP_STRING="invalid").returncode, 0)
         self.assertEqual(self.trace(), "")
 
+    def test_local_xcode_hook_and_ide_override_remain_supported(self):
+        env = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+               "COPYMANGA_IOS_BUILD_LOG": "", "OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED": "NO"}
+        result = subprocess.run([BASH, ".github/scripts/build-ios-framework.sh"], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("gradle::shared:embedAndSignAppleFrameworkForXcode\n", self.trace())
+        self.assertNotIn("stage:kotlin-framework", self.trace())
+        env["OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED"] = "YES"
+        result = subprocess.run([BASH, ".github/scripts/build-ios-framework.sh"], cwd=self.root,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.trace().count("gradle:"), 1)
+
 
 class IosWorkflowTests(unittest.TestCase):
     def test_native_cache_and_reports_are_scoped_to_ios_and_xcode_hook_is_preserved(self):
@@ -139,13 +194,14 @@ class IosWorkflowTests(unittest.TestCase):
         self.assertNotIn("~/.konan", before)
         for value in ("runner.os", "runner.arch", "steps.xcode.outputs.build", "gradle/libs.versions.toml", "gradle/wrapper/gradle-wrapper.properties"):
             self.assertIn(value, ios)
-        self.assertLess(ios.index("actions/cache/restore@"), ios.index("build-ios-ipa.sh framework"))
-        self.assertLess(ios.index("build-ios-ipa.sh framework"), ios.index("actions/cache/save@"))
-        self.assertLess(ios.index("actions/cache/save@"), ios.index("build-ios-ipa.sh package"))
+        self.assertLess(ios.index("actions/cache/restore@"), ios.index("run: bash .github/scripts/build-ios-ipa.sh\n"))
+        self.assertLess(ios.index("run: bash .github/scripts/build-ios-ipa.sh\n"), ios.index("actions/cache/save@"))
+        self.assertEqual(ios.count("run: bash .github/scripts/build-ios-ipa.sh"), 1)
         self.assertIn("build/ios-build-timings/", ios)
         self.assertIn("build/reports/profile/", ios)
+        self.assertIn("build/ios-build-logs/", ios)
         project = (ROOT / "iosApp/iosApp.xcodeproj/project.pbxproj").read_text()
-        self.assertIn(":shared:embedAndSignAppleFrameworkForXcode", project)
+        self.assertIn("bash .github/scripts/build-ios-framework.sh", project)
 
 
 if __name__ == "__main__":

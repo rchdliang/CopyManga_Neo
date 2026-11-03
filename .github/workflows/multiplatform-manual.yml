@@ -290,26 +290,21 @@ jobs:
           key: ios-konan-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
       - name: Validate IPA packaging checks
         run: python3 -m unittest discover -s tests/ci -p 'test_*.py'
-      - name: Compile ARM64 Release Kotlin framework
+      - name: Build Kotlin framework, Xcode app and unsigned device IPA
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
           ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: bash .github/scripts/build-ios-ipa.sh framework
+        run: bash .github/scripts/build-ios-ipa.sh
       - name: Save Kotlin Native toolchain and caches
         if: steps.konan-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
           path: ~/.konan
           key: ${{ steps.konan-cache.outputs.cache-primary-key }}
-      - name: Build Xcode app and validate unsigned device IPA
-        env:
-          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
-          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
-        run: bash .github/scripts/build-ios-ipa.sh package
       - name: Verify iOS packaged configuration
         env:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
-        run: python3 .github/scripts/verify-app-config.py ios 'build/*-ios-arm64-unsigned.ipa'
+        run: python3 .github/scripts/verify-app-config.py ios 'build/CopyMangaNeo_ios_*_arm64_unsigned.ipa'
       - name: Upload ios-device-ipa
         uses: actions/upload-artifact@v6
         with:
@@ -317,8 +312,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
           path: |
-            build/*-ios-arm64-unsigned.ipa
-            build/*-ios-arm64-unsigned.ipa.sha256
+            build/CopyMangaNeo_ios_*_arm64_unsigned.ipa
+            build/CopyMangaNeo_ios_*_arm64_unsigned.ipa.sha256
             build/ios-device-build.json
       - name: Upload ios-build-result
         if: ${{ always() }}
@@ -331,4 +326,5 @@ jobs:
             build/ios-device-build.xcresult/
             build/ios-device/Build/Products/Release-iphoneos/*.dSYM/
             build/ios-build-timings/
+            build/ios-build-logs/
             build/reports/profile/

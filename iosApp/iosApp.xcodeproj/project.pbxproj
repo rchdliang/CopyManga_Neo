@@ -25,7 +25,7 @@
    name = "Build shared Kotlin framework";
    runOnlyForDeploymentPostprocessing = 0;
    shellPath = /bin/sh;
-   shellScript = "set -e\nif [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then exit 0; fi\ncd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+   shellScript = "set -e\ncd \"$SRCROOT/..\"\nbash .github/scripts/build-ios-framework.sh\n";
   };
   00000000000000000000000C = {
    isa = PBXNativeTarget;

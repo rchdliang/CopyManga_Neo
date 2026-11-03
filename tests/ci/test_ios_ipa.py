@@ -108,6 +108,10 @@ class IosIpaTests(unittest.TestCase):
         self.assertEqual("arm64", manifest["architecture"])
         self.assertEqual("iphoneos", manifest["platform"])
         self.assertFalse(manifest["signed"])
+        self.assertGreater(manifest["commitCount"], 0)
+        self.assertEqual(manifest["buildVersion"], "1.2.3+" + str(manifest["commitCount"]))
+        self.assertEqual(archive_path.name, "CopyMangaNeo_ios_" + manifest["buildVersion"] + "_arm64_unsigned.ipa")
+        self.assertEqual(manifest["artifact"], archive_path.name)
         self.assertEqual(digest + "  " + archive_path.name + "\n",
                          archive_path.with_suffix(".ipa.sha256").read_text(encoding="utf-8"))
 

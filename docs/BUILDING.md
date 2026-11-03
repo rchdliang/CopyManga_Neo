@@ -146,9 +146,9 @@ App 模式配置可通过复制 `iosApp/LocalSecrets.xcconfig.example` 为被 Gi
 
 `:shared:compileKotlinIosArm64` 只验证共享 KLIB；Swift 编译、框架链接、签名、系统选择器和设备运行需要 Xcode 环境验证。
 
-发行包构建先在 Xcode 外执行 `:shared:linkReleaseFrameworkIosArm64`，开启 Gradle 构建缓存和任务耗时报告，再由 Xcode 完成资源同步、框架装配及 Swift 编译。保留 Release 优化；不编译模拟器框架。Xcode 内原有 Gradle 钩子仍会检查输入，未变化的链接产物应显示 `UP-TO-DATE`，不能通过跳过钩子省略资源同步。
+发行包构建只在真实 Xcode 脚本阶段调用一次 `:shared:embedAndSignAppleFrameworkForXcode`，完成 ARM64 Release 框架链接、资源同步及装配，再进行 Swift 编译。开启 Gradle 构建缓存和任务耗时报告，保留 Release 优化；不再在 Xcode 外预先执行独立链接任务，避免两套任务环境造成重复链接，也不通过跳过钩子省略资源同步。
 
-CI 将共享框架编译和 Xcode/IPA 打包显示为两个独立步骤，按操作系统、架构、Xcode 构建版本及依赖配置缓存 `~/.konan`，共享框架成功后立即保存缓存。`build-ios-ipa.sh` 默认依次执行两阶段，也可分别传入 `framework`、`package`；后者要求已有 ARM64 Release 框架。每个阶段每分钟输出存活提示，提示仅表示进程尚未退出，不表示编译百分比。各阶段耗时和退出码保存在 `build/ios-build-timings/`，Gradle 任务耗时报告位于 `build/reports/profile/`；CI 无论成功失败均尝试随 `ios-build-result` 上传。首次缓存未命中仍需下载和初始化，实际加速幅度须比较后续同环境构建的报告。
+CI 使用 `build-ios-ipa.sh` 完成一次构建，旧 `framework`、`package` 分阶段参数不再接受。按操作系统、架构、Xcode 构建版本及依赖配置缓存 `~/.konan`，打包成功后保存缓存。通过 `COPYMANGA_IOS_BUILD_LOG` 将钩子内的 Gradle 输出写入 `build/ios-build-logs/kotlin-framework.log`，外层计时器实时转发，避免等待 Xcode 脚本阶段结束才显示日志。每个阶段每分钟输出存活提示，提示仅表示进程尚未退出，不表示编译百分比。各阶段耗时和退出码保存在 `build/ios-build-timings/`；其中 Xcode 总耗时包含内部 Kotlin 框架耗时，两者不能相加。Gradle 任务耗时报告位于 `build/reports/profile/`；CI 无论成功失败均尝试随 `ios-build-result` 上传日志与报告。首次缓存未命中仍需下载和初始化，实际加速幅度须比较后续同环境构建的报告。日常 Xcode/IDE 构建继续使用原框架任务及 IDE 已完成构建时的跳过约定，不要求设置 CI 日志路径。
 
 未签名真机发行包（JDK 21、macOS/Xcode，在仓库根运行）：
 
@@ -156,7 +156,7 @@ CI 将共享框架编译和 Xcode/IPA 打包显示为两个独立步骤，按操
 bash .github/scripts/build-ios-ipa.sh
 ```
 
-脚本构建 Release / iphoneos / arm64，验证 Mach-O 平台、Bundle ID、版本和随包资源，再生成 `build/CopyMangaNeo-v<版本>-ios-arm64-unsigned.ipa`、SHA-256 与提交/版本清单。不会上传、签名或发布。CI 的 iOS 选项执行相同脚本，Artifact 可下载后交给 SideStore / AltStore Classic 重签名安装；模拟器包不能改名充当 IPA。
+脚本构建 Release / iphoneos / arm64，验证 Mach-O 平台、Bundle ID、版本和随包资源，再生成 `build/CopyMangaNeo_ios_<版本+提交数>_arm64_unsigned.ipa`、SHA-256 与提交/版本清单。不会上传、签名或发布。CI 的 iOS 选项执行相同脚本，Artifact 可下载后交给 SideStore / AltStore Classic 重签名安装；模拟器包不能改名充当 IPA。
 
 首次发布前在真实 iPhone 验证安装、登录、阅读、离线重开，以及两个版本覆盖安装后历史/书签/小说标注/下载保持。刷新签名与更换 Apple Account 分别验证；不要卸载原应用来更新。当前下载引擎要求保持前台。
 
@@ -188,18 +188,18 @@ node .github/scripts/serve-wasm.mjs shared/build/dist/wasmJs/developmentExecutab
 
 `gradle.properties` 中的 Wasm 增量链接配置及堆大小用于当前工具链。遇到旧链接缓存错误时，先停止构建，再只清理相关的生成链接缓存；不要删除源文件、账号数据或其他平台产物。
 
-## CMP Android 与 Windows 自动构建及发布草稿
+## CMP 自动构建及三端发布草稿
 
-[CMP Android + Windows](../.github/workflows/cmp-release.yml) 在每次推送到 `CMP` 分支时自动构建 Android 签名 Release APK、Windows x64 Native Image 安装程序和免安装 ZIP，产物可从该次 Actions 的 Artifacts 下载，保留七天。一次推送包含多个提交时构建分支的最新提交；不同提交的推送不会互相取消。
+[CMP builds and release draft](../.github/workflows/cmp-release.yml) 在每次推送到 `CMP` 分支时自动构建 Android 签名 Release APK、Windows x64 Native Image 安装程序和免安装 ZIP，产物可从该次 Actions 的 Artifacts 下载，保留七天。iOS ARM64 未签名 IPA 由手动多平台工作流选择 iOS 生成。一次推送包含多个提交时构建分支的最新提交；不同提交的推送不会互相取消。
 
 自动构建只监听 `push.branches: [CMP]`，不监听标签或 PR：同时推送 CMP 分支和 `v*` 标签只启动一次自动构建；之后给同一提交补推标签也不会再次构建。标签本身不会创建 Release。普通推送不校验已有发布目标，也不创建或更新发布草稿，因此同一主版本可以持续提交构建。
 
-手动运行仍只允许选择 `CMP` 分支，只复用运行开始时同一提交已成功的自动构建产物创建发布草稿，不再编译或打包。不包含 Linux、Wasm、iOS；原 Android 自动工作流和多平台手动测试工作流保持独立。
+手动发布只允许选择 `CMP` 分支，复用运行开始时同一提交已成功的 Android/Windows 自动构建和 iOS 手动构建产物，不再编译或打包。本流程不包含 Linux、Wasm；原 Android 自动工作流和多平台手动测试工作流保持独立。
 
-1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交并推送到 CMP，等待该提交的自动构建成功后，在 Actions → CMP Android + Windows → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
-2. 工作流固定运行开始时的提交，选择本仓库同一工作流下最新可用的成功 `push` 运行。Android 和 Windows 两个任务必须实际成功，且两份 Artifact 完整、未过期并属于同一次运行和同一提交；不会混用不同运行或回退到其他提交。找不到时直接失败，提示等待或重跑该提交的自动构建，不会自动重新构建。
-3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用 Android 签名 Release APK（armeabi-v7a、arm64-v8a、x86_64 和 universal）、Windows x64 Native Image 安装程序和免安装 ZIP，校验后创建 `v<数字发布版本>` 的 **GitHub Release 草稿**（标签不含 `+提交数`）。自动构建已验证 APK 签名、非调试标志和两端 App 协议配置；手动发布保持安装包字节不变，只生成 SHA-256 文件及 `release-manifest.json`。草稿不设为 Latest，也不会自动公开发布。
-4. 从草稿下载最终安装包，在 Android 验证覆盖安装、数据保留、登录、阅读和下载，在 Windows 验证安装、启动及升级；补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
+1. 在 `version.properties` 确定版本名和递增构建号，将准备发布的修改提交并推送到 CMP；等待 Android/Windows 自动构建成功，并在手动多平台工作流选择同一 CMP 提交构建 iOS。然后可将 `v<数字发布版本>` 标签推送到该提交，在 Actions → CMP builds and release draft → Run workflow 选择 CMP。工作流文件须已存在于默认分支才能显示手动入口。
+2. 工作流固定运行开始时的提交，选择本仓库最新可用的成功 Android/Windows `push` 运行和 iOS `workflow_dispatch` 运行。三个平台任务必须实际成功，Artifact 完整且未过期；Android/Windows 必须来自同一次自动构建，iOS 来自同一提交的多平台工作流当前重跑次数。找不到时直接失败，提示等待或重跑对应来源构建，不会回退到其他提交或自动重新构建。
+3. 按固定的来源运行 ID 和 Artifact ID 下载原文件，摘要不匹配时失败；上传前再次核对来源运行、重跑次数和附件 ID。复用四个 Android Release APK、Windows x64 EXE/ZIP 和 iOS ARM64 IPA；核对 iOS 清单的提交、版本、构建号、架构、未签名状态及 SHA-256 后，创建 `v<数字发布版本>` 的 **GitHub Release 草稿**。来源构建已执行各平台配置及打包检查；手动发布保持安装包字节不变，生成校验文件和汇总清单。草稿不设为 Latest，也不会自动公开发布。
+4. 从草稿下载最终安装包，验证三端安装、启动、阅读、下载及升级后的数据保留；iOS 需自行侧载签名。补充更新说明后，维护者手动发布。工作流只做构建及产物检查，不替代实机验收。
 
 附件命名示例（发布版本 `1.2.3`、Git 提交数 `234`、短哈希 `1a2b3c4`）：
 
@@ -210,9 +210,10 @@ CopyMangaNeo_android_1.2.3-1a2b3c4+234_x86_64.apk
 CopyMangaNeo_android_1.2.3-1a2b3c4+234_universal.apk
 CopyMangaNeo_windows_1.2.3+234_x64_setup.exe
 CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
+CopyMangaNeo_ios_1.2.3+234_arm64_unsigned.ipa
 ```
 
-六个产物各有 `.sha256` 文件，加上 `release-manifest.json` 共上传 13 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录来源自动构建的运行 ID、重跑次数、链接和两份 Artifact ID；缺少 ZIP、校验不符或附件属于其他构建时拒绝发布。
+七个产物各有 `.sha256` 文件，加上 `ios-device-build.json` 和 `release-manifest.json` 共上传 16 个附件。清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
 
 自动构建使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，自动构建执行 `:app:assembleRelease`。手动发布不读取这些 Secrets，只使用 `GITHUB_TOKEN` 的 Actions 读取权限下载产物及 Contents 写入权限维护草稿。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 
@@ -233,7 +234,7 @@ python -m unittest discover -s tests/ci -p 'test_app_config.py'
 README 的实机图片与设置组件渲染分别维护，设备来源、渲染命令和输出路径见 [截图说明](../screenshots/cmp/README.md)。设置图更新后逐张检查，不能用控件渲染替代设备或 GPU 验收。
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
-- [CMP Android + Windows](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建两个平台的正式安装包，标签推送不重复触发；手动运行复用同一提交的成功自动构建产物创建发布草稿。
+- [CMP builds and release draft](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建 Android/Windows 安装包，标签推送不重复触发；手动运行汇总同一提交的成功自动构建及 iOS 手动构建产物，创建三端发布草稿。
 - [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
 - 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 设备 IPA，仍须用户重签名及真机验收。
 - 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。
