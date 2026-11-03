@@ -23,7 +23,8 @@ class IosIpaTests(unittest.TestCase):
         self.app.mkdir()
         self.info = dict(CFBundleIdentifier=ipa.BUNDLE_ID, CFBundleShortVersionString="1.2.3",
                          CFBundleVersion="10", DTPlatformName="iphoneos",
-                         CFBundleSupportedPlatforms=["iPhoneOS"], CFBundleExecutable="CopyMangaNeo")
+                         CFBundleSupportedPlatforms=["iPhoneOS"], CFBundleExecutable="CopyMangaNeo",
+                         CADisableMinimumFrameDurationOnPhone=True)
         self.versions = {"COPYMANGA_VERSION_BASE": "1.2.3", "COPYMANGA_VERSION_CODE": "10"}
         (self.app / "CopyMangaNeo").write_bytes(b"fixture; not a real executable")
         for resource in ("licenses/CopyMangaNeo-GPL-3.0.txt", "licenses/kixyubook-MIT.txt", "opencc/LICENSE"):
@@ -38,6 +39,18 @@ class IosIpaTests(unittest.TestCase):
 
     def test_device_metadata_and_resources(self):
         self.assertEqual(ipa.validate_app(self.app, self.versions, "    platform IOS\n")["CFBundleVersion"], "10")
+
+    def test_compose_startup_requires_enabled_frame_duration_setting(self):
+        key = "CADisableMinimumFrameDurationOnPhone"
+        for invalid in (None, False, "true"):
+            with self.subTest(value=invalid):
+                if invalid is None:
+                    self.info.pop(key)
+                else:
+                    self.info[key] = invalid
+                self.save()
+                with self.assertRaisesRegex(ValueError, key):
+                    ipa.validate_app(self.app, self.versions, "platform IOS\n")
 
     def test_version_properties_with_whitespace_validate_app(self):
         versions_file = Path(self.temp.name) / "version.properties"

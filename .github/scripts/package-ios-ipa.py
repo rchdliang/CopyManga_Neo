@@ -28,6 +28,8 @@ def validate_app(app, versions, macho_info):
     for key, value in expected.items():
         if str(info.get(key, "")) != value:
             raise ValueError("iOS app metadata does not match: " + key)
+    if info.get("CADisableMinimumFrameDurationOnPhone") is not True:
+        raise ValueError("CADisableMinimumFrameDurationOnPhone must be true for Compose startup")
     if info.get("CFBundleSupportedPlatforms") != ["iPhoneOS"]:
         raise ValueError("A device app is required; simulator apps cannot be packaged")
     if not re.search(r"(?m)^\s*platform IOS\s*$", macho_info) or "IOSSIMULATOR" in macho_info:
