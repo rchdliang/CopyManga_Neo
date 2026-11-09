@@ -73,7 +73,7 @@ CMP Debug 与 Release 使用相同安装标识；签名相同且版本满足要�
 
 ## 桌面
 
-Windows x64 默认使用 Nucleus Tao 窗口，日常验证直接在 JVM 上运行，发布时再编译 GraalVM Native Image。两者使用同一个 `NativeMainKt` 入口、窗口/托盘集成和共享业务代码；文件夹名 `src/native` 不表示只能生成原生 EXE。
+Windows x64 和 macOS 使用 Nucleus/Tao 窗口。Windows 发布时编译 GraalVM Native Image，macOS 交付随包 JVM；日常开发直接运行 JVM。两者使用同一个 `NativeMainKt` 入口、窗口/托盘集成和共享业务代码；文件夹名 `src/native` 不表示只能生成原生 EXE。
 
 在 IntelliJ IDEA / Android Studio 同步项目后，选择 **Windows Desktop**，点击 ▶ Run，执行 `:desktopApp:run`。它只编译变化的代码和准备资源，不生成 Native Image 或安装包。需要验证原生版时选择 **Windows Desktop Native**，执行 `:desktopApp:runGraalvmNativeDistributable`。
 
@@ -113,7 +113,7 @@ Windows x64 原生安装包在 Windows x64 上构建：
 
 免安装 ZIP 解压到独立目录后运行 `CopyMangaNeo.exe`，无需安装 Java；不要只复制 EXE。这里的“便携”指免安装，用户资料仍位于 `%LOCALAPPDATA%\CopyMangaNeo`，与安装版共用 DPAPI 凭据和实例锁，不会自动在解压目录保存数据。测试独立资料时传入 `-Dcopymanga.dataDir=<目录>`；ZIP 的打包测试不替代真实机器解压启动验收。
 
-Linux 和 Windows ARM64 使用 JVM 构建。Windows x64 默认通过 Nucleus 窗口快速运行；`-PdesktopRuntime=jvm` 会选择 `desktopApp/build-jvm.gradle.kts` 和 `MainKt` 窗口入口，用于跨平台及便携 JAR 构建。切换构建脚本后应重新同步 IDE。
+Linux 和 Windows ARM64 使用 JVM 构建。Windows x64 默认通过 Nucleus 窗口快速运行；在 Windows/Linux 上，`-PdesktopRuntime=jvm` 会选择 `desktopApp/build-jvm.gradle.kts` 和 `MainKt` 窗口入口，用于跨平台及便携 JAR 构建。macOS 的 JVM 模式继续使用 Nucleus/Tao。切换构建脚本后应重新同步 IDE。
 
 JVM 应用目录位于 `compose/binaries/main/app`，原生应用目录位于 `compose/binaries/main/graalvm-app`。重新打包前退出从相应构建目录启动的应用，否则 Windows 可能锁住 EXE、DLL 或 `icudtl.dat`，导致复制失败。日常使用 JVM `run` 可避免占用原生分发目录。两种运行方式默认共用用户资料和实例锁；已有实例运行时，新启动会请求打开已有窗口。
 
@@ -134,6 +134,24 @@ ARM64 改用 `windows-arm64`。输出位于 `desktopApp/build/compose/jars`，�
 打包前置任务会检查重复类、服务描述符、签名块和多版本 JAR 语义；不要绕过检查来强行合并依赖。诊断文件位于 `desktopApp/build/reports/portable-jar`。
 
 桌面默认关闭开发专用行为。需要调试界面时，把 `-Dcopymanga.debug=true` 传给应用进程，而不是仅传给 Gradle。Native Image EXE 和 JVM 都接受 `-Dcopymanga.dataDir=...`；不要让多个运行时同时写入同一目录。图片转换与普通剪贴板仍使用兼容的 AWT/ImageIO 适配层；Tao 窗口、敏感剪贴板、文件对话框、托盘、通知和任务栏使用原生接口。Native Image 所需的项目 JNA 代理登记位于 `desktopApp/src/main/resources/META-INF/native-image`。
+
+### macOS
+
+Apple Silicon 与 Intel 分别在对应架构的 macOS 和完整 JDK 21 上构建，需要 Xcode Command Line Tools 与可用的 Node.js。使用 Nucleus/Tao 原生窗口和 Metal 渲染，DMG / ZIP 中包含精简 JVM，使用者无需另装 Java。依赖版本仍统一由版本目录管理。
+
+```sh
+./gradlew :desktopApp:run -PenableAndroid=false
+./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageDmg :desktopApp:packageZip -PenableAndroid=false
+python3 .github/scripts/collect-macos-artifacts.py --architecture arm64
+```
+
+Intel 最后一行改为 `--architecture x64`。`.app` 位于 `desktopApp/build/compose/binaries/main/app/CopyMangaNeo.app`，原始安装包在同级 `dmg` / `zip` 目录；收集脚本核对 Bundle ID、数字安装版本、构建号、启动器与随包 JVM 的架构、Tao 的 `-XstartOnFirstThread` 以及内置协议配置，再输出 `desktopApp/build/installer/CopyMangaNeo_macos_<版本+提交数>_<arm64或x64>.dmg/.zip` 和 SHA-256。配置核对需要设置 `COPYMANGA_TAP_STRING`，规则与其他安装包相同。
+
+支持目标为 macOS 12 及以上。资料保存在 `~/Library/Application Support/CopyMangaNeo`，登录信息通过 Security.framework 写入用户默认钥匙串；钥匙串被锁定或拒绝访问时报告失败。曾手动运行旧桌面启动器的用户可以用 `-Dcopymanga.dataDir=<旧资料目录>` 继续访问原资料，首次迁移前先导出备份。
+
+文件选择与保存使用 FileKit 的 Cocoa 面板，分享与敏感文本复制使用原生剪贴板。传输入口位于系统菜单栏，进度通过 Nucleus 显示在 Dock；后台传输要求应用进程继续运行。全屏支持 `⌃⌘F` 和 F11，退出支持 `⌘Q`，进行中的传输与未保存进度仍进入现有退出确认流程。macOS 暂无 Vulkan 画质修复后端，保持原图。
+
+[手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 新增 macOS 选项，同时使用 Apple Silicon 和 Intel runner 生成 DMG/ZIP。当前默认产物没有 Developer ID 签名和 Apple 公证，尚待 macOS 真机完成启动、文件访问、钥匙串授权、菜单栏、通知和退出保存验收。正式分发可通过 Nucleus 的 `macOS.signing` / `macOS.notarization` 与私密构建参数配置签名、公证；[官方 macOS 打包说明](https://nucleusframework.dev/en/docs/packaging/macos/)列出了配置。macOS 产物暂通过该工作流的 Artifacts 获取，不加入现有三端 Release 汇总。
 
 ## iOS
 
@@ -237,7 +255,7 @@ README 的实机图片与设置组件渲染分别维护，设备来源、渲染�
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
 - [CMP builds and release draft](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建 Android/Windows 安装包，标签推送不重复触发；手动运行汇总同一提交的成功自动构建及 iOS 手动构建产物，创建三端发布草稿。
-- [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
+- [手动多平台工作流](../.github/workflows/multiplatform-manual.yml) 仅由 `workflow_dispatch` 触发，可选 Android、Windows、macOS、Linux、Wasm 和 iOS；产物保留七天，不负责发布、部署或设备安装。
 - 手动工作流须先存在于默认分支，之后才能选择其他分支运行。Android 签名任务只应运行可信代码，使用现有签名 Secrets；iOS 产物为未签名 ARM64 设备 IPA，仍须用户重签名及真机验收。
 - 平台和工具版本、任务与产物路径以工作流源码为准，不在文档中复制一套版本表。
 

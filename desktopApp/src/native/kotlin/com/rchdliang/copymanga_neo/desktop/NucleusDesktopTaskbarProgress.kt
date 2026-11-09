@@ -9,7 +9,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.awt.Taskbar
 
-/** 复用传输进度规则，通过 Tao 窗口更新 Windows 任务栏。 */
+/** 复用传输进度规则，通过 Tao 窗口更新 Windows 任务栏或 macOS Dock。 */
 internal class NucleusDesktopTaskbarProgress(
     applicationScope: CoroutineScope,
     window: NucleusWindow,

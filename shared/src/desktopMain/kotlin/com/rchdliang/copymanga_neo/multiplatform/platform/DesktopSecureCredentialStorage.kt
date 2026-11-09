@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Windows: DPAPI CurrentUser protected bytes only on disk. Linux: Secret Service via libsecret's
+ * macOS: 用户默认钥匙串。Windows: DPAPI CurrentUser protected bytes only on disk. Linux: Secret Service via libsecret's
  * secret-tool, never a preferences/file fallback. Missing/locked stores raise actionable failures.
  * Passwords/tokens are sent over child stdin, never command arguments or environment variables.
  */
@@ -25,9 +25,11 @@ class DesktopSecureCredentialStorage(
 ) : SecureCredentialStorage {
     private val windows = System.getProperty("os.name").startsWith("Windows", true)
     private val linux = System.getProperty("os.name").startsWith("Linux", true)
+    private val mac = System.getProperty("os.name").startsWith("Mac", true)
+    private val keychain by lazy { MacKeychain(applicationId) }
     private val secretTool = findExecutable("secret-tool")
     private val powershell = findExecutable("powershell.exe")
-    override val persistent: Boolean = (windows && powershell != null) || (linux && secretTool != null)
+    override val persistent: Boolean = mac || (windows && powershell != null) || (linux && secretTool != null)
 
     init { require(applicationId.matches(Regex("[A-Za-z0-9._-]+"))) }
 
@@ -41,6 +43,7 @@ class DesktopSecureCredentialStorage(
 
     private suspend fun readProtected(account: String, filename: String): String? = withContext(Dispatchers.IO) {
         check(persistent) { "系统没有可用的安全凭据存储，请安装并解锁Secret Service/libsecret；不会明文保存登录信息" }
+        if (mac) return@withContext keychain.read(account)
         if (windows) {
             val protected = try {
                 Files.newInputStream(directory.resolve(filename)).use { it.readNBytes(MAX_TRANSPORT_BYTES + 1) }
@@ -67,6 +70,7 @@ class DesktopSecureCredentialStorage(
 
     private suspend fun writeProtected(value: String): Unit = withContext(Dispatchers.IO) {
         check(persistent) { "系统没有可用的安全凭据存储，不能记住密码或自动登录" }
+        if (mac) return@withContext keychain.write("sessions-v2", value)
         if (windows) {
             val plaintext = value.toByteArray(Charsets.UTF_8)
             require(plaintext.size <= MAX_BYTES) { "凭据数据过大" }

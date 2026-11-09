@@ -166,6 +166,7 @@ kotlin {
             implementation(libs.kotlinx.coroutines.swing)
             implementation(libs.ktor.client.cio)
             implementation(libs.jna)
+            implementation(libs.filekit.dialogs)
         }
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreModelsDirectory"] as File)
         getByName("desktopMain").resources.srcDir(rootProject.extra["readerRestoreDesktopDirectory"] as File)

@@ -54,7 +54,7 @@ import javax.swing.text.html.HTMLEditorKit
 import javax.swing.text.html.parser.ParserDelegator
 
 /**
- * Native Windows/Linux UI IO. Sharing copies directly and reports completion through app Toasts.
+ * 桌面系统能力；Tao 下的 macOS 对话框与剪贴板直接调用 Cocoa。
  * Failures remain failures in Result.
  * Desktop clipboards cannot universally disable history/previews of sensitive text.
  */
@@ -69,6 +69,7 @@ class DesktopPlatformHost(
     override val backDispatcher: UiBackDispatcher = UiBackDispatcher(),
 ) : UiPlatform, ReaderPlatform, DesktopReaderKeyboard, NovelReaderPlatform, ComicExportPlatform,
     ProfilePlatform, DownloadNotificationPlatform {
+    private val macOS = System.getProperty("os.name").startsWith("Mac", true)
     override val appReleaseTarget = desktopAppReleaseTarget(System.getProperty("os.name"), System.getProperty("os.arch"))
     override val imageQuality = if (System.getProperty("os.name").startsWith("Windows", true))
         com.rchdliang.copymanga_neo.multiplatform.ui.reader.windowsReaderImageQuality else null
@@ -165,6 +166,11 @@ class DesktopPlatformHost(
     }
 
     override suspend fun shareText(title: String, text: String): Result<Unit> = result {
+        if (macOS) {
+            withContext(nativeUiDispatcher) { MacClipboard.put(text.toByteArray(Charsets.UTF_8), "public.utf8-plain-text") }
+            pendingToasts.trySend("链接已复制到剪贴板")
+            return@result
+        }
         withContext(Dispatchers.Swing) {
             requireGui()
             currentCoroutineContext().ensureActive()
@@ -174,6 +180,7 @@ class DesktopPlatformHost(
     }
 
     override suspend fun readClipboardText(): Result<String?> = result {
+        if (macOS) return@result withContext(nativeUiDispatcher) { MacClipboard.text() }
         withContext(Dispatchers.Swing) {
             requireGui()
             val clipboard = Toolkit.getDefaultToolkit().systemClipboard
@@ -181,6 +188,13 @@ class DesktopPlatformHost(
         }
     }
     override suspend fun copySensitiveText(label: String, text: String): Result<Unit> = result {
+        if (macOS) {
+            withContext(nativeUiDispatcher) {
+                MacClipboard.put(text.toByteArray(Charsets.UTF_8), "public.utf8-plain-text", sensitive = true)
+            }
+            warn("已请求 macOS 将此剪贴板内容标记为敏感且临时；其他应用仍可能读取，请使用后及时清除")
+            return@result
+        }
         withContext(if (nativeWindowHandle != null) nativeUiDispatcher else Dispatchers.Swing) {
             requireGui()
             if (System.getProperty("os.name").startsWith("Windows", true)) {
@@ -204,6 +218,21 @@ class DesktopPlatformHost(
         }
         var published = false
         try {
+            if (macOS) {
+                val png = withContext(Dispatchers.IO) {
+                    java.io.ByteArrayOutputStream().use { output ->
+                        check(javax.imageio.ImageIO.write(picture.image, "png", output)) { "图片无法转换为 PNG" }
+                        output.toByteArray()
+                    }
+                }
+                withContext(nativeUiDispatcher) {
+                    currentCoroutineContext().ensureActive()
+                    MacClipboard.put(png, "public.png")
+                }
+                pendingToasts.trySend(if (picture.firstFrameOnly)
+                    "图片首帧已复制到剪贴板；保存原图可保留动画" else "图片已复制到剪贴板")
+                return@result
+            }
             withContext(Dispatchers.Swing) {
                 requireGui()
                 currentCoroutineContext().ensureActive()
@@ -235,6 +264,7 @@ class DesktopPlatformHost(
     }
 
     private suspend fun nativeDialog(kind: String, name: String, mimeTypes: List<String>, archive: Boolean): String? {
+        if (macOS) return MacFileDialogs.choose(kind, name, mimeTypes, archive)
         val handle = withContext(nativeUiDispatcher) { requireNotNull(nativeWindowHandle).invoke() }
         return WindowsFileDialogs.choose(handle, kind, name, mimeTypes, archive)
     }

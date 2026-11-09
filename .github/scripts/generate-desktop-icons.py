@@ -1,4 +1,4 @@
-"""Render the desktop SVG to PNG and Windows ICO (requires resvg-py==0.5.0)."""
+"""Render the desktop SVG to PNG, Windows ICO and macOS ICNS (requires resvg-py==0.5.0)."""
 
 from pathlib import Path
 import struct
@@ -31,6 +31,16 @@ def main() -> None:
         offset += len(image)
     icon = struct.pack("<HHH", 0, 1, len(sizes)) + b"".join(entries) + b"".join(images)
     (ROOT / "desktopApp/icons/copymanga-neo.ico").write_bytes(icon)
+    # ICNS 复用同一组 PNG，包含普通和 Retina 分辨率。
+    mac_images = dict(zip(sizes, images))
+    mac_images[512] = (ROOT / "desktopApp/src/main/resources/copymanga-neo.png").read_bytes()
+    chunks = []
+    for key, size in (("icp4", 16), ("icp5", 32), ("icp6", 64), ("ic07", 128), ("ic08", 256),
+                      ("ic09", 512), ("ic11", 32), ("ic12", 64), ("ic13", 256), ("ic14", 512)):
+        image = mac_images[size]
+        chunks.append(key.encode("ascii") + struct.pack(">I", len(image) + 8) + image)
+    body = b"".join(chunks)
+    (ROOT / "desktopApp/icons/copymanga-neo.icns").write_bytes(b"icns" + struct.pack(">I", len(body) + 8) + body)
 
 
 if __name__ == "__main__":

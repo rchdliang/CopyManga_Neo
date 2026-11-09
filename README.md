@@ -130,7 +130,7 @@ CMP 更新弹窗中，Android 的“GitHub”按钮会按设备支持的架构�
 
 | 项目 | CMP 分支 | Android 分支 |
 | --- | --- | --- |
-| 平台 | Android、Windows、Linux、iOS；另有 Web/Wasm 构建目标 | Android |
+| 平台 | Android、Windows、macOS、Linux、iOS；另有 Web/Wasm 构建目标 | Android |
 | 画质修复（实验） | Android、Windows、Linux 的 Vulkan GPU | 暂无 |
 
 当前 Windows、Android 和 iOS 均已确认可在实机运行。Windows 与 Android 已经过较完善的测试；iOS 已通过云端真机的基础运行测试，测试覆盖仍有限。
@@ -151,7 +151,7 @@ CMP 更新弹窗中，Android 的“GitHub”按钮会按设备支持的架构�
 .\gradlew.bat :desktopApp:run -PenableAndroid=false
 ```
 
-macOS/Linux 使用 `./gradlew`。CMP Android、Windows、Linux 的普通构建会编译并打包 Vulkan 修复运行库和十组模型；全新环境需要准备 Python、CMake 与 C++ 编译器。桌面跨平台打包需要提供匹配目标的预编译库。
+macOS/Linux 使用 `./gradlew`。macOS 默认使用 Nucleus/Tao，可在[手动多平台工作流](https://github.com/rchdliang/CopyManga_Neo/actions/workflows/multiplatform-manual.yml)选择 macOS 生成两种架构的 DMG / ZIP，详见[macOS 构建说明](docs/BUILDING.md#macos)。CMP Android、Windows、Linux 的普通构建会编译并打包 Vulkan 修复运行库和十组模型；全新环境需要准备 Python、CMake 与 C++ 编译器。桌面跨平台打包需要提供匹配目标的预编译库。
 
 平台打包、签名、版本配置与网络配置见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)，同尺寸 GPU 修复原型的模型来源与限制见 [画质修复说明](docs/READER-RESTORATION.md)。请勿提交本地签名材料、账号凭据或私有配置。
 
@@ -172,6 +172,7 @@ Release 构建需要本地 `keystore.properties` 和对应签名密钥库。SDK 
 | --- | --- |
 | Android | 日常功能已进行较充分的实机测试，整体可用，仍可能存在缺陷。新 Vulkan 画质修复已通过编译，尚未进行真机验收。 |
 | Windows | 桌面验证主要在 Windows 进行，已检查启动、阅读器及部分原生增强功能；部分界面仍需优化，部分功能尚未充分测试。 |
+| macOS | 已接入 Nucleus/Tao，提供 Apple Silicon / Intel 的 DMG 与 ZIP 构建目标，随包包含 JVM；尚待 macOS 构建与真机验收，默认没有 Developer ID 签名或公证，暂无 Vulkan 画质修复。 |
 | Linux | 画质修复已通过软件 Vulkan 计算与 JNI 验证，尚未经过硬件 GPU 或完整界面实机验证。 |
 | iOS | 尚未经过 iPhone/iPad 实机验证；构建成功不代表安装、系统交互与日常功能已验证可用。工程最低部署目标为 iOS 16。 |
 | Web/Wasm | 测试有限，尚未完成全面功能验证；受浏览器跨域、后台执行、文件与存储能力限制。 |

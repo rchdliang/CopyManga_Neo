@@ -18,6 +18,10 @@ on:
         description: Linux x64 DEB/RPM and desktop tests
         type: boolean
         default: false
+      macos:
+        description: macOS Apple Silicon + Intel Nucleus/Tao DMG and ZIP (unsigned)
+        type: boolean
+        default: false
       wasm:
         description: Optimized Wasm browser distribution
         type: boolean
@@ -255,6 +259,71 @@ jobs:
           if-no-files-found: error
           path: |
             shared/build/dist/wasmJs/productionExecutable/
+
+  macos:
+    if: ${{ inputs.macos }}
+    name: macOS ${{ matrix.arch }} Nucleus/Tao
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            machine: arm64
+          - runner: macos-15-intel
+            arch: x64
+            machine: x86_64
+    env:
+      # 无开发者证书时只生成本地测试包，签名/公证由维护者另行配置。
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          architecture: ${{ matrix.arch }}
+          cache: gradle
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check runner architecture and packaging helpers
+        run: |
+          test "$(uname -m)" = '${{ matrix.machine }}'
+          python3 -m unittest discover -s tests/ci -p 'test_macos_packaging.py'
+      - name: Test desktop and package macOS Nucleus/Tao app
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+          ORG_GRADLE_PROJECT_requireOfficialAppConfig: 'true'
+        run: ./gradlew :shared:desktopTest :desktopApp:test :desktopApp:packageDmg :desktopApp:packageZip -PenableAndroid=false -PdesktopRuntime=jvm --no-daemon --stacktrace --max-workers=1
+      - name: Verify macOS bundle and collect named installers
+        env:
+          COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
+        run: python3 .github/scripts/collect-macos-artifacts.py --architecture '${{ matrix.arch }}'
+      - name: Upload macOS installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-installers-${{ github.sha }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 7
+          path: desktopApp/build/installer/CopyMangaNeo_macos_*
+      - name: Upload macOS test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-test-reports-${{ github.sha }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            shared/build/reports/tests/desktopTest/
+            shared/build/test-results/desktopTest/
+            desktopApp/build/reports/tests/
+            desktopApp/build/test-results/
 
   ios:
     if: ${{ inputs.ios }}

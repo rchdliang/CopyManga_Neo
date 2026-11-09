@@ -2,7 +2,7 @@
 
 ## 平台与模型
 
-CMP Android、Windows 和 Linux 共用 Vulkan compute 后端，执行 Anime4K 的同尺寸修复，不增加输出分辨率。iOS 和 Web/Wasm 暂无后端，保留原图并显示不可用。独立 Android 项目不接入此方案。
+CMP Android、Windows 和 Linux 共用 Vulkan compute 后端，执行 Anime4K 的同尺寸修复，不增加输出分辨率。macOS、iOS 和 Web/Wasm 暂无后端，保留原图并显示不可用。独立 Android 项目不接入此方案。
 
 固定上游为 [Anime4K](https://github.com/bloc97/Anime4K/tree/7684e9586f8dcc738af08a1cdceb024cc184f426)。Restore 与 RestoreSoft 各有 S、M、L、VL、UL 五个网络，分别包含 4、8、9、17、25 个计算阶段。它们是不同规模的网络，不是给同一张图重复锐化。原始 GLSL、权重、许可证及来源摘要保存在 `native/reader-restore/models`；构建时改写纹理绑定包装并编译为随包分发的 SPIR-V，不修改训练权重。
 

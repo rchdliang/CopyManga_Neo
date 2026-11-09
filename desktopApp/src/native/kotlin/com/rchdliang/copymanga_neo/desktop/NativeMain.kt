@@ -35,13 +35,9 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlin.coroutines.ContinuationInterceptor
 import kotlinx.coroutines.CoroutineDispatcher
 
-private fun dataDirectory(): Path {
-    System.getProperty("copymanga.dataDir")?.takeIf(String::isNotBlank)?.let { return Path.of(it) }
-    val home = System.getProperty("user.home")
-    return if (System.getProperty("os.name").startsWith("Windows", true))
-        Path.of(System.getenv("LOCALAPPDATA") ?: home, "CopyMangaNeo")
-    else Path.of(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "copymanga-neo")
-}
+private fun dataDirectory(): Path = desktopDataDirectory()
+
+private val isMacOS = System.getProperty("os.name").startsWith("Mac", true)
 
 @OptIn(ExperimentalFoundationApi::class)
 fun main(args: Array<String>) {
@@ -70,7 +66,7 @@ fun main(args: Array<String>) {
             return
         }
         com.rchdliang.copymanga_neo.data.logging.JvmErrorLog.install(
-            dataDirectory().resolve("diagnostics").toFile(), "Desktop Native Image"
+            dataDirectory().resolve("diagnostics").toFile(), "Desktop Nucleus/Tao"
         )
         try { runPrimary(instance, args) }
         catch (failure: Exception) {
@@ -84,7 +80,9 @@ fun main(args: Array<String>) {
 
 private fun showLaunchFailure(message: String) {
     System.err.println(message)
-    runCatching { showWindowsLaunchFailure(message) }
+    runCatching {
+        if (isMacOS) showMacLaunchFailure(message) else showWindowsLaunchFailure(message)
+    }
 }
 
 private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
@@ -174,9 +172,21 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
             state = windowState,
             visible = phase.visible && !quitHidden,
             onPreviewKeyEvent = fullscreenKey@ { event ->
+                if (isMacOS && event.key == Key.Q && event.isMetaPressed &&
+                    !event.isAltPressed && !event.isCtrlPressed && !event.isShiftPressed && event.type == KeyEventType.KeyDown) {
+                    if (!phase.flushing) phase = desktopCloseRequest(activeTransfers())
+                    return@fullscreenKey true
+                }
                 if (phase.showApplication) escapeKeys.observe(event)
-                if (phase.showApplication && event.key == Key.F11 &&
-                    !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) {
+                // 修饰键可能先于 F 松开；无论当前修饰状态如何都解除按键去重。
+                if (event.type == KeyEventType.KeyUp && (event.key == Key.F11 || isMacOS && event.key == Key.F)) {
+                    fullscreenKeyPressed = false
+                }
+                val toggleFullscreen = (event.key == Key.F11 && !event.isCtrlPressed &&
+                    !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) ||
+                    (isMacOS && event.key == Key.F && event.isMetaPressed && event.isCtrlPressed &&
+                        !event.isAltPressed && !event.isShiftPressed)
+                if (phase.showApplication && toggleFullscreen) {
                     when (event.type) {
                         KeyEventType.KeyDown -> if (!fullscreenKeyPressed) {
                             fullscreenKeyPressed = true
@@ -240,7 +250,13 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                 window.show()
                 window.toFront()
             }
-            DisposableEffect(instance) {
+            DisposableEffect(instance, window) {
+                // Dock 重新打开已隐藏的原生窗口时，业务 UI 也必须恢复到 OPEN。
+                val dockRequests = if (isMacOS) scope.launch {
+                    window.focusFlow.collect { focused ->
+                        if (focused && phase in setOf(DesktopWindowPhase.BACKGROUND, DesktopWindowPhase.FLUSH_BACKGROUND)) reopen()
+                    }
+                } else null
                 val requests = scope.launch {
                     // 窗口最小化时 scene 的调度会暂停；实例检查必须属于应用级作用域。
                     while (isActive) {
@@ -254,7 +270,7 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                         delay(150)
                     }
                 }
-                onDispose { requests.cancel() }
+                onDispose { requests.cancel(); dockRequests?.cancel() }
             }
             LaunchedEffect(phase) {
                 if (!phase.flushing) return@LaunchedEffect
@@ -346,7 +362,7 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
                             controlButtonIconColor = MaterialTheme.colorScheme.onSurface,
                         ))) {
                             Row(
-                                modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
+                                modifier = Modifier.align(if (isMacOS) Alignment.CenterHorizontally else Alignment.Start).padding(start = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {

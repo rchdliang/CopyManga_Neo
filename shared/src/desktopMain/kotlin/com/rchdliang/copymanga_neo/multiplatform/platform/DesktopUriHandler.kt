@@ -26,6 +26,15 @@ fun DesktopUriHandlerProvider(content: @Composable () -> Unit) {
                     }
                 }
             }
+        } else if (System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
+            object : UriHandler {
+                override fun openUri(uri: String) {
+                    val parsed = URI(uri)
+                    require(parsed.scheme.equals("http", true) || parsed.scheme.equals("https", true)) { "不支持的外部链接" }
+                    require(!parsed.host.isNullOrBlank()) { "Invalid web address" }
+                    ProcessBuilder("/usr/bin/open", parsed.toASCIIString()).start()
+                }
+            }
         } else fallback
     }
     CompositionLocalProvider(LocalUriHandler provides handler, content = content)

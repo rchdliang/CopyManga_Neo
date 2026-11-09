@@ -5,6 +5,8 @@ import com.rchdliang.copymanga_neo.domain.repository.ComicExportRepository
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.multiplatform.platform.*
 import dev.nucleusframework.composenativetray.tray.impl.WindowsTrayInitializer
+import dev.nucleusframework.composenativetray.tray.impl.MacTrayInitializer
+import dev.nucleusframework.composenativetray.menu.api.TrayMenuBuilder
 import dev.nucleusframework.composenativetray.utils.TrayClickTracker
 import dev.nucleusframework.notification.common.NotificationManager
 import dev.nucleusframework.notification.common.NotificationResult
@@ -32,14 +34,16 @@ internal class NucleusDesktopTransferNotifications(
     val status = mutableStatus.asStateFlow()
     private val id = "copymanga-" + UUID.randomUUID()
     private val tracker = DesktopTransferNotificationTracker()
+    private val macOS = System.getProperty("os.name").startsWith("Mac", true)
 
     init {
         scope.launch {
             var icon: Path? = null
             try {
                 withContext(Dispatchers.IO) {
-                    icon = Files.createTempFile("copymanga-tray-", ".ico")
-                    checkNotNull(javaClass.getResourceAsStream("/copymanga-neo.ico")).use { source ->
+                    icon = Files.createTempFile("copymanga-tray-", if (macOS) ".png" else ".ico")
+                    val resource = if (macOS) "/icons/copymanga-neo-32.png" else "/copymanga-neo.ico"
+                    checkNotNull(javaClass.getResourceAsStream(resource)).use { source ->
                         Files.newOutputStream(requireNotNull(icon)).use(source::copyTo)
                     }
                 }
@@ -47,10 +51,16 @@ internal class NucleusDesktopTransferNotifications(
                     launch {
                         var missed = 0
                         while (isActive) {
-                            val before = TrayClickTracker.lastClick(id)
-                            withContext(Dispatchers.IO) { WindowsTrayInitializer.refreshPosition(id) }
-                            val after = TrayClickTracker.lastClick(id)
-                            if (after != null && after !== before) {
+                            val available = withContext(Dispatchers.IO) {
+                                if (macOS) MacTrayInitializer.statusItemPositionFor(id, IntArray(2))
+                                else {
+                                    val before = TrayClickTracker.lastClick(id)
+                                    WindowsTrayInitializer.refreshPosition(id)
+                                    val after = TrayClickTracker.lastClick(id)
+                                    after != null && after !== before
+                                }
+                            }
+                            if (available) {
                                 missed = 0
                                 mutableStatus.value = DesktopNotificationStatus.Available
                             } else if (++missed >= 3) {
@@ -64,7 +74,7 @@ internal class NucleusDesktopTransferNotifications(
                     }.collect { (progress, hasTasks, export) ->
                         val presentation = desktopTransferPresentation(progress, export)
                         withContext(Dispatchers.IO) {
-                            WindowsTrayInitializer.update(id, icon.toString(), presentation.take(120),
+                            updateTray(icon.toString(), presentation.take(120),
                                 onLeftClick = { action { onOpenDownloads() } }, menuContent = {
                                     Item("打开应用") { action { onOpenApplication() } }
                                     Item("打开下载") { action { onOpenDownloads() } }
@@ -111,9 +121,9 @@ internal class NucleusDesktopTransferNotifications(
             catch (failure: LinkageError) { unavailable("系统托盘组件不可用：${failure.message.orEmpty()}") }
             finally {
                 withContext(NonCancellable + Dispatchers.IO) {
-                    try { WindowsTrayInitializer.dispose(id) }
+                    try { if (macOS) MacTrayInitializer.dispose(id) else WindowsTrayInitializer.dispose(id) }
                     finally {
-                        WindowsNotificationCenter.uninitialize()
+                        if (!macOS) WindowsNotificationCenter.uninitialize()
                         icon?.let { Files.deleteIfExists(it) }
                     }
                 }
@@ -125,6 +135,11 @@ internal class NucleusDesktopTransferNotifications(
     private fun unavailable(message: String) {
         if (mutableStatus.value !is DesktopNotificationStatus.Unavailable) onWarning(message)
         mutableStatus.value = DesktopNotificationStatus.Unavailable(message)
+    }
+
+    private fun updateTray(icon: String, tooltip: String, onLeftClick: () -> Unit, menuContent: TrayMenuBuilder.() -> Unit) {
+        if (macOS) MacTrayInitializer.update(id, icon, tooltip, onLeftClick, menuContent)
+        else WindowsTrayInitializer.update(id, icon, tooltip, onLeftClick, menuContent)
     }
 
     private fun action(block: suspend () -> Unit) {

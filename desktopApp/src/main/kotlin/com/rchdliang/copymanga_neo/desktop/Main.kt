@@ -24,13 +24,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 import java.nio.file.Path
 
-private fun dataDirectory(): Path {
-    System.getProperty("copymanga.dataDir")?.takeIf(String::isNotBlank)?.let { return Path.of(it) }
-    val home = System.getProperty("user.home")
-    return if (System.getProperty("os.name").startsWith("Windows", true))
-        Path.of(System.getenv("LOCALAPPDATA") ?: home, "CopyMangaNeo")
-    else Path.of(System.getenv("XDG_DATA_HOME") ?: "$home/.local/share", "copymanga-neo")
-}
+private fun dataDirectory(): Path = desktopDataDirectory()
 
 @OptIn(ExperimentalFoundationApi::class)
 fun main() {
