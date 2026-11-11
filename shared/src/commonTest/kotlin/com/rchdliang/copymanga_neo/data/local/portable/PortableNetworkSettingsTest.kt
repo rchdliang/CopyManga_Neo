@@ -13,14 +13,14 @@ import kotlin.test.*
 class PortableNetworkSettingsTest {
     @Test fun legacyAppVersionMigratesOnRestartAndRollbackAndIsPersisted() = runTest {
         val storage = Storage()
-        val settings = """{"officialApp":{"version":"3.0.9","versionCode":"83","pseudoId":"saved-pseudo","umString":"saved-um"},"version":"custom-web","proxyMode":"DIRECT"}"""
-        storage.files["network-settings.json"] = """{"current":$settings,"previous":$settings}"""
+        fun settings(version: String, code: String) = """{"officialApp":{"version":"$version","versionCode":"$code","pseudoId":"saved-pseudo","umString":"saved-um"},"version":"custom-web","proxyMode":"DIRECT"}"""
+        storage.files["network-settings.json"] = """{"current":${settings("3.1.0", "84")},"previous":${settings("3.0.9", "83")}}"""
         val state = PortableNetworkState()
         val repo = repository(storage, state)
         repo.initialize().getOrThrow()
         val app = state.snapshot.settings.officialApp
-        assertEquals("3.1.0", app.version)
-        assertEquals("84", app.versionCode)
+        assertEquals("3.1.1", app.version)
+        assertEquals("85", app.versionCode)
         assertEquals("saved-pseudo", app.pseudoId)
         assertEquals("saved-um", app.umString)
         assertEquals("custom-web", state.snapshot.settings.version)
@@ -34,7 +34,7 @@ class PortableNetworkSettingsTest {
     }
 
     @Test fun customAppVersionPairsSurviveNormalizationAndIdentityImport() {
-        for ((version, code) in listOf("3.0.9" to "99", "custom" to "83", "3.1.0" to "84")) {
+        for ((version, code) in listOf("3.0.9" to "99", "custom" to "83", "3.1.0" to "99", "custom" to "84", "3.1.1" to "85")) {
             val app = OfficialAppSettings(version = version, versionCode = code, pseudoId = "saved-pseudo")
             assertEquals(app, PortableNetworkValidation.normalize(NetworkSettings(officialApp = app)).officialApp)
             val imported = AppCredentialIdentity(version, code, app.pseudoId, app.umString,

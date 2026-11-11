@@ -22,7 +22,7 @@ data class OfficialAppSettings(
 ) {
     /** 仅迁移已发布的旧默认版本组合，保留自定义版本及设备身份。 */
     fun migrateLegacyVersion(): OfficialAppSettings =
-        if (version == "3.0.9" && versionCode == "83") {
+        if ((version == "3.0.9" && versionCode == "83") || (version == "3.1.0" && versionCode == "84")) {
             copy(version = NetworkDefaults.APP_VERSION, versionCode = NetworkDefaults.APP_VERSION_CODE)
         } else this
 }
@@ -45,8 +45,8 @@ data class AppCredentialIdentity(
 }
 
 object NetworkDefaults {
-    const val APP_VERSION = "3.1.0"
-    const val APP_VERSION_CODE = "84"
+    const val APP_VERSION = "3.1.1"
+    const val APP_VERSION_CODE = "85"
     const val API_HOST = "api.copy4000.com"
     const val WWW_HOST = "www.copy3000.com"
     const val WEB_VERSION = "2026.10.16"
