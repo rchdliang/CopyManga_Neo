@@ -7,6 +7,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -14,15 +17,20 @@ class ToastState internal constructor(
     private val scope: CoroutineScope,
     private val snackbarHostState: SnackbarHostState
 ) {
-    /** Queue messages; Material applies the platform's recommended reading timeout. */
+    private val pendingMessages = MutableStateFlow<Set<String>>(emptySet())
+
     fun showToast(message: String) {
         scope.launch {
-            snackbarHostState.showSnackbar(
-                message = message,
-                withDismissAction = true,
-                duration = if (listOf("失败", "未完成", "无法", "请先登录", "已过期").any { it in message }) SnackbarDuration.Indefinite
-                    else if (message.length > 24) SnackbarDuration.Long else SnackbarDuration.Short
-            )
+            if (message in pendingMessages.getAndUpdate { it + message }) return@launch
+            try {
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    withDismissAction = true,
+                    duration = if (message.length > 24) SnackbarDuration.Long else SnackbarDuration.Short
+                )
+            } finally {
+                pendingMessages.update { it - message }
+            }
         }
     }
 
