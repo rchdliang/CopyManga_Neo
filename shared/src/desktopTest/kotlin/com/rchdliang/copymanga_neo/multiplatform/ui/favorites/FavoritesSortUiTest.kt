@@ -117,7 +117,7 @@ class FavoritesSortUiTest {
         val expandedTop = grid.fetchSemanticsNode().boundsInRoot.top
         grid.performTouchInput { swipeUp() }
         sort.assertIsNotDisplayed()
-        toTop.assertIsDisplayed()
+        toTop.assertDoesNotExist()
         val collapsedTop = grid.fetchSemanticsNode().boundsInRoot.top
         onRoot().performTouchInput {
             down(center)
@@ -134,6 +134,23 @@ class FavoritesSortUiTest {
         grid.performTouchInput { swipe(center, center + Offset(0f, 90f), durationMillis = 500) }
         sort.assertIsDisplayed()
         assertEquals(expandedTop, grid.fetchSemanticsNode().boundsInRoot.top)
+        toTop.assertIsDisplayed()
+        val visibleButtonTop = toTop.fetchSemanticsNode().boundsInRoot.top
+        mainClock.autoAdvance = false
+        try {
+            onRoot().performTouchInput {
+                down(center)
+                moveBy(Offset(0f, -70f))
+            }
+            mainClock.advanceTimeBy(112)
+            assertTrue(toTop.fetchSemanticsNode().boundsInRoot.top > visibleButtonTop)
+            onRoot().performTouchInput { advanceEventTime(200); up() }
+        } finally {
+            mainClock.autoAdvance = true
+        }
+        toTop.assertDoesNotExist()
+        grid.performTouchInput { swipe(center, center + Offset(0f, 90f), durationMillis = 500) }
+        toTop.assertIsDisplayed()
         toTop.performClick()
         onNodeWithText("漫画 0").assertIsDisplayed()
         toTop.assertDoesNotExist()

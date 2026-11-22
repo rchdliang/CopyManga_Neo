@@ -7,6 +7,11 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDia
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -23,6 +28,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
@@ -80,12 +86,14 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlin.math.abs
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
@@ -183,9 +191,6 @@ fun FavoritesContent(
     val comicSortBar = key(uiState.sort, uiState.isLoggedIn, uiState.favorites.isEmpty()) { rememberTopAppBarState() }
     val novelSortBar = key(uiState.sort, uiState.isLoggedIn, uiState.novels.isEmpty()) { rememberTopAppBarState() }
     val sortBarState = if (showingNovels) novelSortBar else comicSortBar
-    val showReturnToTop by remember(activeGrid, sortBarState) {
-        derivedStateOf { activeGrid.canScrollBackward || sortBarState.heightOffset < 0f }
-    }
     val scrollScope = rememberCoroutineScope()
     GridLoadMoreEffect(
         novelGrid,
@@ -375,14 +380,21 @@ fun FavoritesContent(
                             }
                         }
 
-                        if (showReturnToTop && !uiState.isDeleting) {
+                        val showReturnToTop = rememberReturnToTopVisibility(activeGrid, sortBarState)
+                        val fabBottomPadding = bottomPadding + 16.dp
+                        val fabBottomInset = with(LocalDensity.current) { fabBottomPadding.roundToPx() }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showReturnToTop && !uiState.isDeleting,
+                            modifier = Modifier.align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = fabBottomPadding),
+                            enter = slideInVertically(tween(250, easing = LinearOutSlowInEasing)) { it + fabBottomInset },
+                            exit = slideOutVertically(tween(200, easing = FastOutLinearInEasing)) { it + fabBottomInset }
+                        ) {
                             FloatingActionButton(
                                 onClick = {
                                     sortBarState.heightOffset = 0f
                                     scrollScope.launch { activeGrid.animateScrollToItem(0) }
-                                },
-                                modifier = Modifier.align(Alignment.BottomEnd)
-                                    .padding(end = 16.dp, bottom = bottomPadding + 16.dp)
+                                }
                             ) {
                                 Icon(Icons.Default.ArrowUpward, contentDescription = "返回顶部")
                             }
@@ -413,6 +425,31 @@ fun FavoritesContent(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun rememberReturnToTopVisibility(grid: LazyGridState, sortBar: TopAppBarState): Boolean {
+    val threshold = with(LocalDensity.current) { 8.dp.roundToPx() }
+    var visible by remember(grid, sortBar) { mutableStateOf(false) }
+    LaunchedEffect(grid, sortBar, threshold) {
+        // 排序栏先消费拖动距离，把它的偏移计入书架的实际滚动位置。
+        fun scrollOffset() = grid.firstVisibleItemScrollOffset - sortBar.heightOffset.roundToInt()
+        var lastIndex = grid.firstVisibleItemIndex
+        var lastOffset = scrollOffset()
+        snapshotFlow { Triple(grid.firstVisibleItemIndex, scrollOffset(), grid.isScrollInProgress) }
+            .collect { (index, offset, scrolling) ->
+                if (index == 0 && offset == 0) {
+                    visible = false
+                } else if (scrolling) {
+                    if (index == lastIndex && abs(offset - lastOffset) < threshold) return@collect
+                    visible = index < lastIndex || (index == lastIndex && offset < lastOffset)
+                }
+                lastIndex = index
+                lastOffset = offset
+            }
+    }
+    return visible
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
