@@ -133,7 +133,7 @@ CMP 更新弹窗中，Android 的“GitHub”按钮会按设备支持的架构�
 | 平台 | Android、Windows、macOS、Linux、iOS；另有 Web/Wasm 构建目标 | Android |
 | 画质修复（实验） | Android、Windows、Linux 的 Vulkan GPU | 暂无 |
 
-当前 Windows、Android 和 iOS 均已确认可在实机运行。Windows 与 Android 已经过较完善的测试；iOS 已通过云端真机的基础运行测试，测试覆盖仍有限。
+Windows 与 Android 已经过较完善的实机测试。iOS 仅确认应用能在云端真机上成功启动，尚未进行进一步验证。
 
 两个分支的 Android 应用均要求 Android 12 及以上，使用不同包名，可以并存；应用数据分别保存，完整用户数据备份不能直接互导；轻量设置备份的覆盖范围见各分支 [PERSISTENCE.md](PERSISTENCE.md)。iOS、Web/Wasm 及桌面平台的构建条件和系统能力差异见 [构建说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/BUILDING.md)与[架构说明](https://github.com/rchdliang/CopyManga_Neo/blob/CMP/docs/ARCHITECTURE.md)。
 
@@ -174,7 +174,7 @@ Release 构建需要本地 `keystore.properties` 和对应签名密钥库。SDK 
 | Windows | 桌面验证主要在 Windows 进行，已检查启动、阅读器及部分原生增强功能；部分界面仍需优化，部分功能尚未充分测试。 |
 | macOS | 已接入 Nucleus/Tao，提供 Apple Silicon / Intel 的 DMG 与 ZIP 构建目标，随包包含 JVM；尚待 macOS 构建与真机验收，默认没有 Developer ID 签名或公证，暂无 Vulkan 画质修复。 |
 | Linux | 画质修复已通过软件 Vulkan 计算与 JNI 验证，尚未经过硬件 GPU 或完整界面实机验证。 |
-| iOS | 尚未经过 iPhone/iPad 实机验证；构建成功不代表安装、系统交互与日常功能已验证可用。工程最低部署目标为 iOS 16。 |
+| iOS | 已在云端真机上成功启动。登录、阅读、下载等功能及系统交互均未验证。工程最低部署目标为 iOS 16。 |
 | Web/Wasm | 测试有限，尚未完成全面功能验证；受浏览器跨域、后台执行、文件与存储能力限制。 |
 
 Web/Wasm 的具体边界：
