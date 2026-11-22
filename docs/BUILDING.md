@@ -13,7 +13,7 @@
 - 浏览器打包需要 Node.js、Yarn Classic 和生产优化所用的 Binaryen `wasm-opt`。可参考 [手动 CI](../.github/workflows/multiplatform-manual.yml) 的工具安装步骤。
 - 内存与并发默认值见 [gradle.properties](../gradle.properties)。内存受限时使用 `--max-workers=1`，不要同时运行多个平台构建。
 
-使用 IntelliJ IDEA 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行配置。修改构建脚本后重新同步；不要在仍运行的构建中改动输入文件。
+Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行配置。修改构建脚本后重新同步；不要在仍运行的构建中改动输入文件。
 
 画质修复构建由 `gradle/reader-restore.gradle.kts` 管理：`prepareReaderRestoreModels` 将十组模型编译到 `build/reader-restore/generated-resources`，Android assets 与桌面资源自动依赖该任务；`prepareReaderRestoreDesktop` 编译并打包宿主 JNI 库。Android 原生库由 externalNativeBuild 构建。普通构建不需要手工复制模型或运行库。桌面跨平台打包需用 `-PreaderRestoreNativeLibrary=<目标平台库路径>` 提供与 `copymanga.desktopTarget` 匹配的预编译库，不会自动跨平台编译。运行时需要可用的 Vulkan GPU 驱动；缺少驱动时应用保留原图。
 
@@ -75,7 +75,7 @@ CMP Debug 与 Release 使用相同安装标识；签名相同且版本满足要�
 
 Windows x64 和 macOS 使用 Nucleus/Tao 窗口。Windows 发布时编译 GraalVM Native Image，macOS 交付随包 JVM；日常开发直接运行 JVM。两者使用同一个 `NativeMainKt` 入口、窗口/托盘集成和共享业务代码；文件夹名 `src/native` 不表示只能生成原生 EXE。
 
-在 IntelliJ IDEA 同步项目后，选择 **Windows Desktop**，点击 ▶ Run，执行 `:desktopApp:run`。它只编译变化的代码和准备资源，不生成 Native Image 或安装包。需要验证原生版时选择 **Windows Desktop Native**，执行 `:desktopApp:runGraalvmNativeDistributable`。
+在 IntelliJ IDEA / Android Studio 同步项目后，选择 **Windows Desktop**，点击 ▶ Run，执行 `:desktopApp:run`。它只编译变化的代码和准备资源，不生成 Native Image 或安装包。需要验证原生版时选择 **Windows Desktop Native**，执行 `:desktopApp:runGraalvmNativeDistributable`。
 
 | 目的 | 任务 |
 | --- | --- |
