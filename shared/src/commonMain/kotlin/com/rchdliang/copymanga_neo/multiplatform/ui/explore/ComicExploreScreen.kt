@@ -40,9 +40,7 @@ import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -175,21 +173,12 @@ fun ComicExploreContent(
             )
         }
     ) { padding ->
-        val pullState = rememberPullToRefreshState()
-        PullToRefreshBox(
+        ExpressivePullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onPullToRefresh,
-            state = pullState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullState,
-                    isRefreshing = state.isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
-            }
         ) {
             BoxWithConstraints(
                 modifier = Modifier

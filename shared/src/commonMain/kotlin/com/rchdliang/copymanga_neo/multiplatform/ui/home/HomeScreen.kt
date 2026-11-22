@@ -39,7 +39,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -48,9 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -202,7 +200,6 @@ fun HomeContent(
     val finishContent = trace.begin("home_content_compose")
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(
         (uiState.recComicList + uiState.hotComics + uiState.newComics + uiState.finishComics + uiState.rankComics).map { it.pathWord })
-    val pullToRefreshState = rememberPullToRefreshState()
     // 横向分区的状态由页面持有，避免 LazyColumn 回收分区后丢失位置。
     val pageScroll = rememberLazyListState()
     val recommendedScroll = rememberLazyListState()
@@ -232,17 +229,9 @@ fun HomeContent(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
 
-        PullToRefreshBox(
+        ExpressivePullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefresh,
-            state = pullToRefreshState,
-            indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullToRefreshState,
-                    isRefreshing = isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
-            },
             modifier = Modifier.fillMaxSize()
         ) {
             when {
@@ -458,6 +447,7 @@ fun HomeContent(
                                 topics = uiState.topics,
                                 paging = uiState.topicPaging,
                                 initialLoading = awaitingComics,
+                                refreshing = isRefreshing,
                                 onLoadMore = onLoadMoreTopics,
                                 onTopicClick = { onNavigateToTopic(it.pathWord, it.title) },
                                 onMore = { onNavigateToExplore("topics") })
@@ -725,6 +715,7 @@ private fun HomeRankChoices(
 }
 
 /** 专题横向列表按窗口宽度展示，到达末尾时分页加载。 */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun HomeTopicsSection(
     listState: LazyListState = rememberLazyListState(),
@@ -733,7 +724,8 @@ private fun HomeTopicsSection(
     onLoadMore: () -> Unit,
     onTopicClick: (ComicTopic) -> Unit,
     onMore: () -> Unit,
-    initialLoading: Boolean = false
+    initialLoading: Boolean = false,
+    refreshing: Boolean = false
 ) {
     HomeSectionContainer {
         HomeSectionHeader("漫画专题", onMore)
@@ -777,14 +769,14 @@ private fun HomeTopicsSection(
                         modifier = Modifier.width(cardWidth)
                     )
                 }
-                if (paging.isLoading || paging.error != null) item(key = "topic-pagination") {
+                if (!refreshing && (paging.isLoading || paging.error != null)) item(key = "topic-pagination") {
                     Column(
                         Modifier
                             .width(128.dp)
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (paging.isLoading) CircularProgressIndicator(Modifier.size(28.dp))
+                        if (paging.isLoading) LoadingIndicator(Modifier.size(28.dp))
                         else TextButton(onClick = onLoadMore) {
                             Text("加载失败，重试", color = MaterialTheme.colorScheme.primary)
                         }

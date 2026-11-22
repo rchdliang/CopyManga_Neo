@@ -30,9 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,7 +98,6 @@ fun HistoryContent(
     onConfirmClear: () -> Unit
 ) {
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(uiState.items.map { it.pathWord })
-    val pullState = rememberPullToRefreshState()
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("浏览记录", color = MaterialTheme.colorScheme.onSurface) },
@@ -124,25 +121,18 @@ fun HistoryContent(
             // 主界面已处理状态栏边距。
             windowInsets = WindowInsets(0, 0, 0, 0)
         )
-        PullToRefreshBox(
+        ExpressivePullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
             onRefresh = {
                 if (uiState.isLoggedIn && !uiState.isClearing && !uiState.isRefreshing) onRefresh()
             },
-            state = pullState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullState,
-                    isRefreshing = uiState.isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
-            }
         ) {
             when {
-                uiState.isCheckingLogin || (uiState.isRefreshing && uiState.items.isEmpty()) -> {
+                uiState.isRefreshing && uiState.items.isEmpty() -> Unit
+                uiState.isCheckingLogin && !uiState.isRefreshing -> {
                     LoadingIndicator(Modifier.align(Alignment.Center))
                 }
 

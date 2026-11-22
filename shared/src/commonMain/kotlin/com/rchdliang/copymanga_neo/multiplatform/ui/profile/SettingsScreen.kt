@@ -38,7 +38,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -121,6 +122,7 @@ internal enum class SettingsDestination { OVERVIEW, READING, DOWNLOADS }
 private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
 
 /** 首页只呈现分类；阅读和下载进入各自页面，通知直接交给系统设置。 */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
@@ -211,10 +213,7 @@ internal fun SettingsPage(
                                         enabled = enabled && !state.dictionaryWorking && !state.isDictionaryDownloading
                                     ) {
                                         if (state.dictionaryWorking || state.isDictionaryDownloading) {
-                                            CircularProgressIndicator(
-                                                Modifier.size(20.dp),
-                                                strokeWidth = 2.dp
-                                            )
+                                            LoadingIndicator(Modifier.size(20.dp))
                                         } else Icon(
                                             Icons.Outlined.Refresh,
                                             contentDescription = state.dictionaryVersion?.let { "更新词典，当前版本 $it" }

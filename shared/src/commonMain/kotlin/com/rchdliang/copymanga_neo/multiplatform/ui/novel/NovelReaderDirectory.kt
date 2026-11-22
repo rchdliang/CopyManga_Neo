@@ -51,7 +51,8 @@ import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
@@ -174,7 +175,7 @@ private sealed interface NovelDirectoryRow {
 }
 
 /** 分卷与章节合并展示；只有当前卷已获取正文，因此其他分卷直接打开，不伪造章节目录。 */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun NovelReaderDirectory(
     state: NovelUiState,
@@ -315,7 +316,7 @@ internal fun NovelReaderDirectory(
                     Text("当前章节", color = MaterialTheme.colorScheme.primary)
                 }
             }
-            if (state.volumesLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.volumesLoading) LoadingIndicator(Modifier.align(Alignment.CenterHorizontally))
             state.volumesError?.let { error ->
                 Row(
                     Modifier.padding(start = 20.dp, end = 8.dp),

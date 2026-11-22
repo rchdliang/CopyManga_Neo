@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -126,7 +125,6 @@ fun DetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val detailGridState = rememberLazyGridState()
-    val pullToRefreshState = rememberPullToRefreshState()
     val toastHost = LocalToastHost.current
     var pendingTheme by remember(pathWord) { mutableStateOf<Theme?>(null) }
     var showComments by remember(pathWord) { mutableStateOf(false) }
@@ -220,7 +218,8 @@ fun DetailScreen(
     }
 
     BookDetailSurface(sharedTransitionKey, Modifier.fillMaxSize()) {
-        BookDetailRefresh(uiState.isLoading, onRefresh = { viewModel.refreshDetail() }) {
+        BookDetailRefresh(uiState.isLoading && !(isWaitingForDetail && transitionData != null),
+            onRefresh = { viewModel.refreshDetail() }) {
             when {
                 uiState.error != null && uiState.comicDetail == null -> {
                     Box(

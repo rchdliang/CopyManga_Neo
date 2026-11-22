@@ -44,7 +44,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderState
@@ -301,6 +301,7 @@ private fun ReaderChoiceRow(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ReaderCatalogDialog(
     state: ReaderCatalogUiState, current: String, onSelect: (String) -> Unit,
@@ -311,7 +312,7 @@ fun ReaderCatalogDialog(
         title = { Text("章节目录", color = MaterialTheme.colorScheme.onSurface) },
         text = {
             Column {
-                if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (state.loading) LoadingIndicator(Modifier.align(Alignment.CenterHorizontally))
                 if (state.downloadedOnly && state.chapters.isNotEmpty()) Text(
                     "已下载章节",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -71,9 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -404,7 +402,6 @@ internal fun CommentsContent(
     canDelete: (MangaComment) -> Boolean = { false },
     onDelete: (MangaComment) -> Unit = {}
 ) {
-    val pullState = rememberPullToRefreshState()
     BoxWithConstraints(
         modifier
             .fillMaxSize()
@@ -528,20 +525,12 @@ internal fun CommentsContent(
                     if (state.target != target) {
                         LoadingIndicator(Modifier.align(Alignment.Center))
                     } else {
-                        PullToRefreshBox(
+                        ExpressivePullToRefreshBox(
                             isRefreshing = state.feed.refreshing,
                             onRefresh = {
                                 if (!state.posting && !state.reporting && !state.feed.loading && !composerOpen) onRefresh()
                             },
-                            state = pullState,
                             modifier = Modifier.fillMaxSize(),
-                            indicator = {
-                                PullToRefreshDefaults.LoadingIndicator(
-                                    state = pullState,
-                                    isRefreshing = state.feed.refreshing,
-                                    modifier = Modifier.align(Alignment.TopCenter)
-                                )
-                            }
                         ) {
                             LazyVerticalStaggeredGrid(
                                 columns = StaggeredGridCells.Fixed(columnCount),

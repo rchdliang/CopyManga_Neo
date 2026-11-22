@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.toArgb
@@ -85,29 +87,34 @@ class FavoritesSortUiTest {
         saveRender("favorites-sort-logged-out")
     }
 
-    @Test fun scrollingHidesSortAndReturningToTopRestoresIt() = runSkikoComposeUiTest(size = Size(360f, 640f)) {
-        val favorites = List(60) { index ->
-            val comic = FavoriteComic(
-                uuid = "comic-$index", bDisplay = true, name = "漫画 $index", pathWord = "comic-$index",
-                author = null, theme = null, cover = null, status = 0, popular = null,
-                datetimeUpdated = null, lastChapterId = "", lastChapterName = "", browse = null
-            )
-            FavoriteItem(index, null, false, null, comic)
-        }
-        var refreshes = 0
+    private val favorites = List(60) { index ->
+        val comic = FavoriteComic(
+            uuid = "comic-$index", bDisplay = true, name = "漫画 $index", pathWord = "comic-$index",
+            author = null, theme = null, cover = null, status = 0, popular = null,
+            datetimeUpdated = null, lastChapterId = "", lastChapterName = "", browse = null
+        )
+        FavoriteItem(index, null, false, null, comic)
+    }
+
+    private fun ComposeUiTest.setShelfContent(content: @Composable () -> Unit) {
         setContent {
             val loader = remember { ImageLoader.Builder(PlatformContext.INSTANCE).build() }
             DisposableEffect(loader) { onDispose { loader.shutdown() } }
             CompositionLocalProvider(LocalUiPlatform provides platform, LocalAppImageLoader provides loader) {
-                CopyManga_NeoTheme {
-                    FavoritesContent(
-                        uiState = FavoritesUiState(isLoggedIn = true, favorites = favorites),
-                        onComicClick = {}, onNavigateToProfile = {}, onRefresh = { refreshes++ },
-                        onExitSelectionMode = {}, onSelectAll = {}, onInvertSelection = {},
-                        onToggleSelection = {}, onEnterSelectionMode = {}, onRemoveSelected = {}
-                    )
-                }
+                CopyManga_NeoTheme { content() }
             }
+        }
+    }
+
+    @Test fun scrollingHidesSortAndReturningToTopRestoresIt() = runSkikoComposeUiTest(size = Size(360f, 640f)) {
+        var refreshes = 0
+        setShelfContent {
+            FavoritesContent(
+                uiState = FavoritesUiState(isLoggedIn = true, favorites = favorites),
+                onComicClick = {}, onNavigateToProfile = {}, onRefresh = { refreshes++ },
+                onExitSelectionMode = {}, onSelectAll = {}, onInvertSelection = {},
+                onToggleSelection = {}, onEnterSelectionMode = {}, onRemoveSelected = {}
+            )
         }
         val grid = onNode(hasScrollToIndexAction())
         val sort = onNodeWithContentDescription("排序方式")
@@ -157,6 +164,61 @@ class FavoritesSortUiTest {
         runOnIdle { assertEquals(0, refreshes) }
         grid.performTouchInput { swipeDown() }
         runOnIdle { assertEquals(1, refreshes) }
+    }
+
+    @Test fun selectingAScrolledCardKeepsItsPositionAndShowsFixedActions() = runSkikoComposeUiTest(size = Size(360f, 640f)) {
+        var shelf by mutableStateOf(FavoritesUiState(isLoggedIn = true, favorites = favorites))
+        setShelfContent {
+            FavoritesContent(
+                uiState = shelf,
+                onComicClick = {}, onNavigateToProfile = {}, onRefresh = {},
+                onEnterSelectionMode = { shelf = shelf.copy(isSelectionMode = true, selectedIds = setOf(it)) },
+                onExitSelectionMode = { shelf = shelf.copy(isSelectionMode = false, selectedIds = emptySet()) },
+                onSelectAll = { shelf = shelf.copy(selectedIds = favorites.map { it.uuid }.toSet()) },
+                onInvertSelection = { shelf = shelf.copy(selectedIds = favorites.map { it.uuid }.toSet() - shelf.selectedIds) },
+                onToggleSelection = {}, onRemoveSelected = {}
+            )
+        }
+        onNode(hasScrollToIndexAction()).performScrollToIndex(32)
+        val card = onNodeWithText("漫画 32")
+        val bounds = card.fetchSemanticsNode().boundsInRoot
+        card.performTouchInput { longClick() }
+        onNodeWithText("轻小说").assertDoesNotExist()
+        onNodeWithText("已选 1 部").assertIsDisplayed()
+        onNodeWithText("移除 1 部").assertIsDisplayed()
+        assertEquals(bounds, card.fetchSemanticsNode().boundsInRoot)
+        val check = onNodeWithContentDescription("已选择", useUnmergedTree = true)
+        val checkCenter = check.fetchSemanticsNode().boundsInRoot.center
+        assertEquals(bounds.center.x, checkCenter.x, 1f)
+        assertEquals(bounds.center.y, checkCenter.y, 1f)
+        saveRender("favorites-selection")
+        onNodeWithContentDescription("全选").performClick()
+        onNodeWithText("已选 60 部").assertIsDisplayed()
+        onNodeWithContentDescription("反选").performClick()
+        onNodeWithText("移除 0 部").assertIsNotEnabled()
+        onNodeWithContentDescription("取消选择").performClick()
+        onNodeWithText("轻小说").assertIsDisplayed()
+        check.assertDoesNotExist()
+        assertEquals(bounds, card.fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Test fun emptyShelvesShowOneIndicatorUntilRefreshFinishes() = runSkikoComposeUiTest(size = Size(360f, 640f)) {
+        var shelf by mutableStateOf(FavoritesUiState(isLoggedIn = true, isLoading = true))
+        setShelfContent {
+            FavoritesContent(
+                uiState = shelf, onComicClick = {}, onNavigateToProfile = {}, onRefresh = {},
+                onExitSelectionMode = {}, onSelectAll = {}, onInvertSelection = {},
+                onToggleSelection = {}, onEnterSelectionMode = {}, onRemoveSelected = {}
+            )
+        }
+        val loading = SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate)
+        onAllNodes(loading).assertCountEquals(1)
+        onNodeWithText("还没有收藏").assertDoesNotExist()
+        runOnIdle { shelf = shelf.copy(selectedKind = FavoritesKind.NOVEL, isLoading = false, novelsLoading = true) }
+        onAllNodes(loading).assertCountEquals(1)
+        runOnIdle { shelf = shelf.copy(novelsLoading = false) }
+        onAllNodes(loading).assertCountEquals(0)
+        onNodeWithText("还没有收藏").assertIsDisplayed()
     }
 
     private fun ComposeUiTest.saveRender(name: String) {

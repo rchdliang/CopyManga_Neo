@@ -51,9 +51,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -106,16 +103,8 @@ fun BookDetailRefresh(
     onRefresh: () -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val pullState = rememberPullToRefreshState()
-    PullToRefreshBox(
-        isRefreshing = refreshing, onRefresh = onRefresh, state = pullState,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = pullState,
-                isRefreshing = refreshing,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-        },
+    ExpressivePullToRefreshBox(
+        isRefreshing = refreshing, onRefresh = onRefresh,
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),

@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +35,7 @@ internal fun OriginalWorkContent(
     Surface(Modifier.fillMaxSize().windowInsetsPadding(
         WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
         color = MaterialTheme.colorScheme.surface) {
-        PullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
+        ExpressivePullToRefreshBox(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
             ComicResultsGrid(state, onComic, onMore, onRefresh,
                 criteriaKey = path, transitionGroup = "original:$path", enableExpansion = true) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

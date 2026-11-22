@@ -24,7 +24,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -47,11 +48,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -69,9 +70,7 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -200,11 +199,16 @@ fun FavoritesContent(
         uiState.novels.size, onMoreNovels
     )
 
-    // 选择模式下底部留出 BottomAppBar 的空间
-    val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
-
     Column(modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal, divider = {}) {
+        if (uiState.isSelectionMode) {
+            SelectionTopBar(
+                selectedCount = uiState.selectedIds.size,
+                enabled = !uiState.isDeleting,
+                onClose = onExitSelectionMode,
+                onSelectAll = onSelectAll,
+                onInvert = onInvertSelection
+            )
+        } else PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal, divider = {}) {
             FavoritesKind.entries.forEach { kind ->
                 val selected = uiState.selectedKind == kind
                 val updates = if (kind == FavoritesKind.COMIC) uiState.updatedComicCount else uiState.updatedNovelCount
@@ -250,9 +254,7 @@ fun FavoritesContent(
                     )
                 }
 
-                isEmpty && isLoading -> {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                }
+                isEmpty && isLoading -> Unit
 
                 isEmpty -> {
                     EmptyContent(
@@ -275,8 +277,7 @@ fun FavoritesContent(
                             contentPadding = PaddingValues(
                                 start = 8.dp,
                                 end = 8.dp,
-                                top = 4.dp,
-                                bottom = bottomPadding
+                                top = 4.dp
                             ),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -293,18 +294,6 @@ fun FavoritesContent(
                                     )
                                 }
                             }
-                            // 选择模式顶栏
-                            if (uiState.isSelectionMode) {
-                                item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
-                                    SelectionTopBar(
-                                        selectedCount = uiState.selectedIds.size,
-                                        onClose = onExitSelectionMode,
-                                        onSelectAll = onSelectAll,
-                                        onInvert = onInvertSelection
-                                    )
-                                }
-                            }
-
                             if (showingNovels) {
                                 items(uiState.novels, key = { "novel:${it.collectId}" }) { entry ->
                                     val book = entry.book
@@ -340,7 +329,7 @@ fun FavoritesContent(
                                                 .padding(16.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            if (uiState.novelsLoadingMore) CircularProgressIndicator(
+                                            if (uiState.novelsLoadingMore) LoadingIndicator(
                                                 Modifier.size(28.dp)
                                             )
                                             else TextButton(onClick = onRetryMoreNovels) {
@@ -366,7 +355,7 @@ fun FavoritesContent(
                                     statusText = statusText,
                                     statusColor = statusColor,
                                     isSelected = isSelected,
-                                    sharedTransitionKey = "bookshelf:${comic.pathWord}",
+                                    sharedTransitionKey = if (uiState.isSelectionMode) null else "bookshelf:${comic.pathWord}",
                                     comicPathWord = comic.pathWord,
                                     onClick = {
                                         if (uiState.isSelectionMode) {
@@ -381,7 +370,7 @@ fun FavoritesContent(
                         }
 
                         val showReturnToTop = rememberReturnToTopVisibility(activeGrid, sortBarState)
-                        val fabBottomPadding = bottomPadding + 16.dp
+                        val fabBottomPadding = 16.dp
                         val fabBottomInset = with(LocalDensity.current) { fabBottomPadding.roundToPx() }
                         androidx.compose.animation.AnimatedVisibility(
                             visible = showReturnToTop && !uiState.isDeleting,
@@ -412,17 +401,16 @@ fun FavoritesContent(
                             }
                         }
 
-                        // 选择模式底栏
-                        if (uiState.isSelectionMode) {
-                            SelectionBottomBar(
-                                selectedCount = uiState.selectedIds.size,
-                                onDelete = onRemoveSelected,
-                                modifier = Modifier.align(Alignment.BottomCenter)
-                            )
-                        }
                     }
                 }
             }
+        }
+        if (uiState.isSelectionMode && uiState.isLoggedIn && !isEmpty) {
+            SelectionBottomBar(
+                selectedCount = uiState.selectedIds.size,
+                enabled = uiState.selectedIds.isNotEmpty() && !uiState.isDeleting,
+                onDelete = onRemoveSelected
+            )
         }
     }
 }
@@ -463,7 +451,6 @@ private fun FavoritesRefreshLayout(
     modifier: Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val refreshState = rememberPullToRefreshState()
     val sortScroll = remember(sortBarState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -474,18 +461,10 @@ private fun FavoritesRefreshLayout(
             }
         }
     }
-    PullToRefreshBox(
+    ExpressivePullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
         modifier = modifier,
-        state = refreshState,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = refreshState,
-                isRefreshing = isRefreshing,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-        }
     ) {
         Column(Modifier.fillMaxSize().then(if (showSortBar) Modifier.nestedScroll(sortScroll) else Modifier)) {
             if (showSortBar) {
@@ -627,6 +606,7 @@ private fun ErrorContent(error: String, onRetry: () -> Unit) {
 @Composable
 private fun SelectionTopBar(
     selectedCount: Int,
+    enabled: Boolean,
     onClose: () -> Unit,
     onSelectAll: () -> Unit,
     onInvert: () -> Unit
@@ -635,11 +615,11 @@ private fun SelectionTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .statusBarsPadding()
+            .heightIn(min = 48.dp)
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onClose) {
+        IconButton(onClick = onClose, enabled = enabled) {
             Icon(
                 Icons.Default.Close,
                 "取消选择",
@@ -652,14 +632,14 @@ private fun SelectionTopBar(
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = onSelectAll) {
+        IconButton(onClick = onSelectAll, enabled = enabled) {
             Icon(
                 Icons.Default.SelectAll,
                 "全选",
                 tint = MaterialTheme.colorScheme.onSurface
             )
         }
-        IconButton(onClick = onInvert) {
+        IconButton(onClick = onInvert, enabled = enabled) {
             Icon(
                 Icons.Default.Deselect,
                 "反选",
@@ -672,28 +652,29 @@ private fun SelectionTopBar(
 @Composable
 private fun SelectionBottomBar(
     selectedCount: Int,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    enabled: Boolean,
+    onDelete: () -> Unit
 ) {
-    BottomAppBar(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        actions = {
-            Button(
-                onClick = onDelete,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("移除 $selectedCount 部", color = MaterialTheme.colorScheme.onError)
-            }
+    Box(
+        Modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp)
+    ) {
+        Button(
+            onClick = onDelete,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
+            )
+        ) {
+            Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("移除 $selectedCount 部")
         }
-    )
+    }
 }
 
 /**

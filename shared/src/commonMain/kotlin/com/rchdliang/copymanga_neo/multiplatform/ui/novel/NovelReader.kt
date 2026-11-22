@@ -321,7 +321,7 @@ private fun NovelReaderContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun NovelReaderBody(
     state: NovelUiState, volume: NovelReadingVolume, preferences: NovelReaderPreferences,
@@ -499,7 +499,8 @@ private fun NovelReaderBody(
                         onSearch = { controlsVisible = false; actions.openSearch(null) }
                     )
                 }
-                if (state.caching || state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (state.refreshing) LoadingIndicator(Modifier.align(Alignment.CenterHorizontally))
+                else if (state.caching) LinearProgressIndicator(Modifier.fillMaxWidth())
                 state.error?.let { error ->
                     Surface(
                         Modifier

@@ -30,7 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -90,7 +90,7 @@ internal fun SearchPage(
                     .fillMaxSize()
             ) {
                 SearchInput(query, onQueryChange, onSearch, onClear, onBack, placeholder)
-                PullToRefreshBox(
+                ExpressivePullToRefreshBox(
                     isRefreshing = isRefreshing, onRefresh = onRefresh,
                     state = pullToRefreshState, modifier = Modifier.weight(1f)
                 ) { content() }

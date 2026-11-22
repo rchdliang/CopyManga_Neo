@@ -13,7 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.CheckCircleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,7 +51,7 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
  * @param subtitle 副标题（如作者、章节数）
  * @param statusText 可选的状态文本（如阅读进度/最新章节），为 null 时不显示
  * @param statusColor 状态文本颜色，默认使用主题 onSurfaceVariant
- * @param isSelected 是否处于选中状态（右上角显示对勾）
+ * @param isSelected 是否显示选中遮罩和居中勾选标记
  * @param sharedTransitionKey 当前卡片实例的唯一共享转场 key
  * @param comicPathWord 漫画路由 pathWord，用于详情页匹配导航快照
  * @param onClick 点击回调
@@ -147,62 +148,62 @@ fun ComicCard(
     ) {
         if (visibility == ComicCoverVisibility.PENDING && !allowPendingContent) {
             ComicPending(comicPathWord, Modifier.fillMaxSize())
-            return@Box
-        }
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            tonalElevation = 1.dp,
-            modifier = containerTransitionModifier
-                .matchParentSize()
-                .clip(MaterialTheme.shapes.large)
-        ) {}
+        } else {
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = 1.dp,
+                modifier = containerTransitionModifier
+                    .matchParentSize()
+                    .clip(MaterialTheme.shapes.large)
+            ) {}
 
-        ComicCoverImage(
-            path = comicPathWord,
-            model = ImageRequest
-                .Builder(LocalPlatformContext.current)
-                .crossfade(sharedTransitionKey == null)
-                .data(cover)
-                .build(),
-            contentDescription = metadataText(name),
-            contentScale = ContentScale.Crop,
-            modifier = coverTransitionModifier
-                .fillMaxSize()
-                .clip(MaterialTheme.shapes.large)
-        )
+            ComicCoverImage(
+                path = comicPathWord,
+                model = ImageRequest
+                    .Builder(LocalPlatformContext.current)
+                    .crossfade(sharedTransitionKey == null)
+                    .data(cover)
+                    .build(),
+                contentDescription = metadataText(name),
+                contentScale = ContentScale.Crop,
+                modifier = coverTransitionModifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.large)
+            )
 
-        Surface(
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(8.dp)) {
-                Text(
-text = metadataText(name),
-                    minLines = 2,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                subtitle?.takeUnless { blocked }?.let { sub ->
-                    Spacer(Modifier.height(4.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(8.dp)) {
                     Text(
-                        text = sub,
-                        maxLines = 1,
+                        text = metadataText(name),
+                        minLines = 2,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-                statusText?.takeUnless { blocked }?.let { status ->
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = status,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = statusColor
-                    )
+                    subtitle?.takeUnless { blocked }?.let { sub ->
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = sub,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    statusText?.takeUnless { blocked }?.let { status ->
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = status,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor
+                        )
+                    }
                 }
             }
         }
@@ -210,23 +211,17 @@ text = metadataText(name),
         if (isSelected) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(20.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .combinedClickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onClick
-                    ),
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Check,
+                    imageVector = Icons.Outlined.CheckCircleOutline,
                     contentDescription = "已选择",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(14.dp)
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), CircleShape)
+                        .padding(8.dp)
                 )
             }
         }

@@ -59,9 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ExpressivePullToRefreshBox
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -324,22 +322,15 @@ internal fun ProfileMainPage(
     onDismissProfile: () -> Unit = {},
     avatarViewModel: ProfileAvatarViewModel? = null
 ) {
-    val pullToRefreshState = rememberPullToRefreshState()
     val pageScroll = rememberLazyListState()
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
-        PullToRefreshBox(
+        ExpressivePullToRefreshBox(
             isRefreshing = uiState.isLoggedIn && uiState.isRefreshing,
             onRefresh = { if (uiState.isLoggedIn) onRefresh() },
-            state = pullToRefreshState,
             modifier = Modifier.fillMaxSize(),
-            indicator = {
-                if (uiState.isLoggedIn) PullToRefreshDefaults.LoadingIndicator(
-                    state = pullToRefreshState, isRefreshing = uiState.isRefreshing,
-                    modifier = Modifier.align(Alignment.TopCenter)
-                )
-            }
+            showIndicator = uiState.isLoggedIn,
         ) {
             MouseDragLazyColumn(
                 Modifier

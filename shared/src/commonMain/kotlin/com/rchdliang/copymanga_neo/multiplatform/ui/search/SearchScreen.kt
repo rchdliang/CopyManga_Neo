@@ -509,6 +509,7 @@ internal fun ComicResultsGrid(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     when {
+                        state.isRefreshing -> Unit
                         state.isLoading && state.searchResults.isEmpty() -> {
                             Spacer(Modifier.height(32.dp)); LoadingIndicator()
                         }

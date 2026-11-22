@@ -186,9 +186,6 @@ fun NovelScreen(
                             if (state.view == NovelView.BROWSE) Modifier.statusBarsPadding() else Modifier
                         )
                 ) {
-                    if (state.busy && state.view == NovelView.BROWSE) LinearProgressIndicator(
-                        Modifier.fillMaxWidth()
-                    )
                     state.error?.takeIf { state.view != NovelView.READER }?.let { error ->
                         Surface(
                             Modifier
@@ -485,9 +482,10 @@ private fun NovelDetailContent(
                     ?.let { subtitle -> listOf(NovelTag(subtitle, "")) }.orEmpty()
             )
         }
+        val refreshingDetail = state.busy && book != null
         BookDetailSurface(transitionKey, Modifier.fillMaxSize()) {
             BookDetailRefresh(
-                state.busy && book != null,
+                refreshingDetail,
                 onRefresh = { if (!state.busy && !state.applyingDownloads) onRefresh() }) {
                 BookDetailLayout(
                     bookKey = path, title = displayBookTitle(path, headerBook?.name),
@@ -645,7 +643,9 @@ private fun NovelDetailContent(
                             ascending
                         ) { ascending = !ascending }
                     }
-                    if ((state.volumesLoading && volumes.isEmpty()) || state.volumesError != null) {
+                    val showVolumesLoading = state.volumesLoading && volumes.isEmpty() &&
+                            !refreshingDetail && !(book == null && state.bookLoading)
+                    if (showVolumesLoading || (!state.volumesLoading && state.volumesError != null)) {
                         item(key = "volumes_status", span = { GridItemSpan(maxLineSpan) }) {
                             BookDetailStatus(
                                 state.volumesLoading, state.volumesError ?: "正在加载分卷目录…",

@@ -23,7 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -45,7 +46,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicFilterOption
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 
 /** 全部题材作为独立页面展示；标签检索只过滤本地列表，不请求漫画搜索。 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AllTagsScreen(
     tags: List<ComicFilterOption>,
@@ -100,7 +101,7 @@ fun AllTagsScreen(
                     .fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (isLoading) LoadingIndicator(Modifier.align(Alignment.CenterHorizontally))
                 error?.let {
                     TextButton(
                         onClick = { onRefresh?.invoke() },
