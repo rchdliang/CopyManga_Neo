@@ -8,6 +8,7 @@ import com.rchdliang.copymanga_neo.domain.model.RequestMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Base64
@@ -27,8 +28,8 @@ class DesktopSecureCredentialStorage(
     private val linux = System.getProperty("os.name").startsWith("Linux", true)
     private val mac = System.getProperty("os.name").startsWith("Mac", true)
     private val keychain by lazy { MacKeychain(applicationId) }
-    private val secretTool = findExecutable("secret-tool")
-    private val powershell = findExecutable("powershell.exe")
+    private val secretTool = if (linux) findExecutable("secret-tool") else null
+    private val powershell = if (windows) findExecutable("powershell.exe") else null
     override val persistent: Boolean = mac || (windows && powershell != null) || (linux && secretTool != null)
 
     init { require(applicationId.matches(Regex("[A-Za-z0-9._-]+"))) }
@@ -135,9 +136,18 @@ class DesktopSecureCredentialStorage(
     companion object {
         private const val MAX_BYTES = EnvelopeSecureCredentialStorage.MAX_BYTES
         private const val MAX_TRANSPORT_BYTES = 2 * MAX_BYTES
-        private fun findExecutable(name: String): String? = System.getenv("PATH").orEmpty()
-            .split(java.io.File.pathSeparator).map { Path.of(it).resolve(name) }
-            .firstOrNull { Files.isRegularFile(it) && Files.isExecutable(it) }?.toString()
+        internal fun findExecutable(name: String, searchPath: String = System.getenv("PATH").orEmpty()): String? {
+            for (entry in searchPath.splitToSequence(java.io.File.pathSeparatorChar)) {
+                if (entry.isEmpty()) continue
+                val candidate = try {
+                    Path.of(entry).resolve(name)
+                } catch (_: InvalidPathException) {
+                    continue
+                }
+                if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) return candidate.toString()
+            }
+            return null
+        }
     }
 }
 
