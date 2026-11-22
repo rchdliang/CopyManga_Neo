@@ -107,8 +107,7 @@ class ReaderSurfaceUiTest {
                     }
                     if(expanded) ReaderBottomBar(24,2f,{},{},{},{},{},{},{},true,null,false,{},Modifier.align(Alignment.BottomCenter))
                     else {
-                        ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(Alignment.TopCenter))
-                        ReaderRestingOverlay("连续测试图 · Chapter 12", "2–3 / 24", Modifier.align(Alignment.BottomCenter))
+                        ReaderInfoOverlay("连续测试图 · Chapter 12", "2–3 / 24", "09:41", ReaderBatteryStatus(85))
                     }
                 }
             }

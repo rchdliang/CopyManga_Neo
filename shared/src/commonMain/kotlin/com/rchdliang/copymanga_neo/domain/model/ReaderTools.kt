@@ -18,9 +18,11 @@ data class ReaderToolsSettings(
     val restorationMode: String = "OFF",
     val restorationLastMode: String = "RESTORE",
     val restoreLevel: String = "M",
-    val restoreSoftLevel: String = "M"
+    val restoreSoftLevel: String = "M",
+    val readingInfo: ReaderInfoSettings = ReaderInfoSettings()
 ) {
     fun normalized() = copy(
+        readingInfo = readingInfo.normalized(),
         autoIntervalSeconds = autoIntervalSeconds.coerceIn(2, 30),
         imageRetries = imageRetries.coerceIn(0, 3),
         imageTimeoutSeconds = imageTimeoutSeconds.coerceIn(5, 60),

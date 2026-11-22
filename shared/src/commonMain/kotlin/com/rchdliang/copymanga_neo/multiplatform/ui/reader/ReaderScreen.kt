@@ -1090,13 +1090,9 @@ fun ReaderSuccessContent(
             val pageLabel = readerRestingPageLabel(
                 displayedPosition.rangeLabel ?: "${displayedPage.page + 1}", displayedPage.imageCount
             )
-            if (routeActive && reportingState.isAtLeast(Lifecycle.State.RESUMED)) {
-                ReaderDeviceStatusOverlay(services?.platform, Modifier.align(Alignment.TopCenter))
-            }
-            ReaderRestingOverlay(
-                displayedPage.chapterName,
-                pageLabel,
-                Modifier.align(Alignment.BottomCenter)
+            ReaderLiveInfoOverlay(
+                displayedPage.chapterName, pageLabel, tools.readingInfo, services?.platform,
+                deviceStatusActive = routeActive && reportingState.isAtLeast(Lifecycle.State.RESUMED)
             )
         }
         AnimatedVisibility(
@@ -1169,6 +1165,7 @@ fun ReaderSuccessContent(
         },
         onQualitySelected = { beginQualityAdjustment() },
         qualityEnabled = page?.source != null,
+        infoSettings = { ReaderInfoOptions(tools.readingInfo, onToolsChange) },
         turnSettings = { ReaderToolsOptions(tools, onToolsChange) },
         loadingSettings = { ReaderLoadingOptions(tools, onToolsChange) },
         pairingSettings = {

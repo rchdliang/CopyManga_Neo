@@ -1,7 +1,9 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAbsoluteAlignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -9,14 +11,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.WindowInsetsRulers
-import androidx.compose.ui.layout.getDisplayCutoutBounds
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.rchdliang.copymanga_neo.domain.model.ReaderInfoItem
+import com.rchdliang.copymanga_neo.domain.model.ReaderInfoPosition
+import com.rchdliang.copymanga_neo.domain.model.ReaderInfoSettings
+import com.rchdliang.copymanga_neo.domain.model.ReaderInfoStyle
 import androidx.compose.ui.text.style.TextDirection
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
@@ -26,89 +31,110 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.math.ceil
 
-/** 填充与细描边使用同一文本布局；不绘制覆盖漫画的背景。 */
 @Composable
-internal fun ReaderOverlayText(text: String, modifier: Modifier = Modifier,
+internal fun ReaderOverlayText(
+    text: String, modifier: Modifier = Modifier,
     color: Color = Color.White, style: TextStyle = MaterialTheme.typography.titleMedium,
-    maxLines: Int = 1, overflow: TextOverflow = TextOverflow.Ellipsis) {
+    outlineColor: Color = Color.Black, outlineWidth: Dp = 1.dp
+) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     Text(text, modifier.drawBehind {
-        layout?.let { drawText(it, color = Color.Black.copy(alpha = 0.5f), drawStyle = Stroke(width = 1.dp.toPx())) }
-    }, color = color, style = style, maxLines = maxLines, overflow = overflow, onTextLayout = { layout = it })
-}
-
-@Composable
-internal fun ReaderRestingOverlay(chapter: String, pages: String, modifier: Modifier = Modifier) {
-    Row(
-        modifier.fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.displayCutout)
-                .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ReaderOverlayText(metadataText(chapter), Modifier.weight(1f))
-        ReaderOverlayText(pages, style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.Ltr))
-    }
-}
-
-/** 使用本地时区；每秒检查系统时间，分钟变化时才更新文字。 */
-@Composable
-internal fun ReaderDeviceStatusOverlay(platform: ReaderPlatform?, modifier: Modifier = Modifier) {
-    val time by produceState(readerClockLabel(Clock.System.now(), TimeZone.currentSystemDefault())) {
-        while (true) {
-            value = readerClockLabel(Clock.System.now(), TimeZone.currentSystemDefault())
-            delay(1_000.milliseconds)
+        if (outlineWidth > 0.dp) layout?.let {
+            drawText(it, color = outlineColor.copy(alpha = 0.5f), drawStyle = Stroke(width = outlineWidth.toPx()))
         }
-    }
-    val batteryFlow = remember(platform) { platform?.batteryStatuses() ?: flowOf(ReaderBatteryStatus()) }
-    val battery by batteryFlow.collectAsState(initial = ReaderBatteryStatus())
-    ReaderStatusOverlay(time, battery, modifier)
+    }, color = color, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, onTextLayout = { layout = it })
+}
+
+internal val ReaderInfoStyle.textColor get() = if (darkText) Color.Black else Color.White
+internal val ReaderInfoStyle.outlineColor get() = if (darkText) Color.White else Color.Black
+
+@Composable
+internal fun ReaderInfoLabel(text: String, appearance: ReaderInfoStyle, numeric: Boolean = false) {
+    val base = MaterialTheme.typography.titleMedium
+    ReaderOverlayText(text, color = appearance.textColor, outlineColor = appearance.outlineColor,
+        outlineWidth = appearance.outlineDp.dp, style = base.copy(fontSize = appearance.fontSizeSp.sp,
+            lineHeight = (appearance.fontSizeSp * 1.5f).sp,
+            textDirection = if (numeric) TextDirection.Ltr else base.textDirection))
 }
 
 @Composable
-internal fun ReaderStatusOverlay(time: String, battery: ReaderBatteryStatus, modifier: Modifier = Modifier) {
-    Row(
-        modifier.fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.waterfall.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val style = MaterialTheme.typography.titleMedium.copy(textDirection = TextDirection.Ltr)
-        ReaderOverlayText(time, Modifier.avoidTopCutout(), style = style)
-        ReaderBatteryIndicator(battery, Modifier.avoidTopCutout())
-    }
+internal fun ReaderLiveInfoOverlay(
+    chapter: String, pages: String, settings: ReaderInfoSettings, platform: ReaderPlatform?, deviceStatusActive: Boolean
+) {
+    val time = if (deviceStatusActive && settings[ReaderInfoItem.CLOCK].position != ReaderInfoPosition.HIDDEN) {
+        val clock by produceState(readerClockLabel(Clock.System.now(), TimeZone.currentSystemDefault())) {
+            while (true) {
+                value = readerClockLabel(Clock.System.now(), TimeZone.currentSystemDefault())
+                delay(1_000.milliseconds)
+            }
+        }
+        clock
+    } else null
+    val battery = if (deviceStatusActive && settings[ReaderInfoItem.BATTERY].position != ReaderInfoPosition.HIDDEN) {
+        val flow = remember(platform) { platform?.batteryStatuses() ?: flowOf(ReaderBatteryStatus()) }
+        flow.collectAsState(initial = ReaderBatteryStatus()).value
+    } else null
+    ReaderInfoOverlay(chapter, pages, time, battery, settings)
 }
 
-/** 边界由 Compose 转换到当前元素坐标；旋转或窗口位置变化时重新放置。 */
-private fun Modifier.avoidTopCutout(): Modifier = layout { measurable, constraints ->
-    val label = measurable.measure(constraints)
-    layout(label.width, label.height) {
-        val gap = 6.dp.roundToPx()
-        val cutouts = getDisplayCutoutBounds()
-        if (cutouts.isEmpty()) {
-            // 只有安全边距时也兼顾横屏下出现在左、右边缘的缺口。
-            val safe = WindowInsetsRulers.DisplayCutout.current
-            val left = (safe.left.current(-gap.toFloat()) + gap).coerceAtLeast(0f)
-            val right = (label.width + gap - safe.right.current((label.width + gap).toFloat())).coerceAtLeast(0f)
-            val top = (safe.top.current(-gap.toFloat()) + gap).coerceAtLeast(0f)
-            label.place(ceil(left).toInt() - ceil(right).toInt(), ceil(top).toInt())
-        } else {
-            var dy = 0f
-            for (cutout in cutouts) {
-                val left = cutout.left.current(Float.POSITIVE_INFINITY)
-                val right = cutout.right.current(Float.NEGATIVE_INFINITY)
-                val top = cutout.top.current(Float.POSITIVE_INFINITY)
-                val bottom = cutout.bottom.current(Float.NEGATIVE_INFINITY)
-                if (left < label.width + gap && right > -gap && top < label.height + gap && bottom > -gap) {
-                    dy = maxOf(dy, bottom + gap)
+@Composable
+internal fun ReaderInfoOverlay(
+    chapter: String, pages: String, time: String?, battery: ReaderBatteryStatus?,
+    settings: ReaderInfoSettings = ReaderInfoSettings(),
+    freeAreaModifier: Modifier = Modifier,
+    itemModifier: @Composable (ReaderInfoItem) -> Modifier = { Modifier }
+) {
+    val groups = remember(settings, time != null, battery != null) {
+        ReaderInfoItem.entries.filter {
+            (it != ReaderInfoItem.CLOCK || time != null) && (it != ReaderInfoItem.BATTERY || battery != null)
+        }.groupBy { settings[it].position }
+    }
+    Box(Modifier.fillMaxSize()) {
+        for (top in listOf(true, false)) {
+            val left = groups[if (top) ReaderInfoPosition.TOP_LEFT else ReaderInfoPosition.BOTTOM_LEFT].orEmpty()
+            val right = groups[if (top) ReaderInfoPosition.TOP_RIGHT else ReaderInfoPosition.BOTTOM_RIGHT].orEmpty()
+            val center = groups[if (top) ReaderInfoPosition.TOP_CENTER else ReaderInfoPosition.BOTTOM_CENTER].orEmpty()
+            if (left.isEmpty() && right.isEmpty() && center.isEmpty()) continue
+            val insets = if (top) WindowInsets.waterfall.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            else WindowInsets.navigationBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+            ReaderInfoCorners(Modifier.align(if (top) Alignment.TopCenter else Alignment.BottomCenter).fillMaxWidth()
+                .windowInsetsPadding(insets).padding(horizontal = 12.dp, vertical = 6.dp),
+                top = top, measureLeftFirst = ReaderInfoItem.CHAPTER in right,
+                bothVisible = left.isNotEmpty() && right.isNotEmpty(),
+                centerHasNeighbors = center.isNotEmpty() && (left.isNotEmpty() || right.isNotEmpty())) {
+                for ((alignment, items) in listOf(AbsoluteAlignment.Left to left, AbsoluteAlignment.Right to right,
+                    Alignment.CenterHorizontally to center)) {
+                    Column(horizontalAlignment = alignment) {
+                        for (item in items) key(item) {
+                            Box(itemModifier(item)) { ReaderInfoValue(item, settings[item], chapter, pages, time, battery) }
+                        }
+                    }
                 }
             }
-            label.place(0, ceil(dy).toInt())
         }
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 12.dp, vertical = 6.dp).then(freeAreaModifier)) {
+            for (item in groups[ReaderInfoPosition.CUSTOM].orEmpty()) key(item) {
+                val style = settings[item]
+                val alignment = BiasAbsoluteAlignment(style.horizontalFraction * 2 - 1, style.verticalFraction * 2 - 1)
+                Box(Modifier.align(alignment).then(itemModifier(item))) {
+                    ReaderInfoValue(item, style, chapter, pages, time, battery)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderInfoValue(
+    item: ReaderInfoItem, style: ReaderInfoStyle, chapter: String, pages: String, time: String?, battery: ReaderBatteryStatus?
+) {
+    when (item) {
+        ReaderInfoItem.CLOCK -> ReaderInfoLabel(time.orEmpty(), style, numeric = true)
+        ReaderInfoItem.BATTERY -> battery?.let { ReaderBatteryIndicator(it, appearance = style) }
+        ReaderInfoItem.CHAPTER -> ReaderInfoLabel(metadataText(chapter), style)
+        ReaderInfoItem.PAGES -> ReaderInfoLabel(pages, style, numeric = true)
     }
 }
 

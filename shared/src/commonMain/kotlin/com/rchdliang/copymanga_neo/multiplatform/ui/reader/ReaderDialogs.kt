@@ -64,7 +64,8 @@ fun ReaderSettingsDialog(
     helpSettings: @Composable () -> Unit = {},
     qualitySettings: (@Composable () -> Unit)? = null,
     onQualitySelected: (() -> Unit)? = null,
-    qualityEnabled: Boolean = true
+    qualityEnabled: Boolean = true,
+    infoSettings: (@Composable () -> Unit)? = null
 ) {
     var pages by remember { mutableStateOf<List<ReaderSettingsPage>>(emptyList()) }
     val section = pages.lastOrNull()
@@ -77,6 +78,7 @@ fun ReaderSettingsDialog(
         ReaderDisplaySettings(readingDirection, pageScale, screenOrientation,
             onReadingDirectionChange, onPageScaleChange, onScreenOrientationChange, onResetPreferences, leadingSettings)
     }
+    val info by rememberUpdatedState(infoSettings)
     val turns by rememberUpdatedState(turnSettings)
     val loading by rememberUpdatedState(loadingSettings)
     val quality by rememberUpdatedState(qualitySettings)
@@ -94,7 +96,10 @@ fun ReaderSettingsDialog(
                             turns = { navigate(ReaderSettingsPage("翻页设置") { turns() }) },
                             quality = { if (onQualitySelected != null) onQualitySelected() else navigate(ReaderSettingsPage("画质增强") { quality?.invoke() }) },
                             loading = { navigate(ReaderSettingsPage("图片加载") { loading() }) },
-                            pairing = pairingSettings, help = helpSettings, qualityEnabled = qualityEnabled)
+                            pairing = pairingSettings, help = helpSettings, qualityEnabled = qualityEnabled,
+                            info = if (infoSettings == null) null else {
+                                { navigate(ReaderSettingsPage("阅读信息") { info?.invoke() }) }
+                            })
                     }
                 }
             }

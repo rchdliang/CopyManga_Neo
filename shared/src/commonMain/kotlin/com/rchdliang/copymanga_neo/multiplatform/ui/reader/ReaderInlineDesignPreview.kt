@@ -60,9 +60,7 @@ internal fun ReaderInlineDesignContent(quality: Boolean, dark: Boolean = false) 
     CopyManga_NeoTheme(darkTheme = true) {
         Surface(color = androidx.compose.ui.graphics.Color(0xFF575454)) {
             Box(Modifier.fillMaxSize()) {
-                ReaderStatusOverlay("09:41", ReaderBatteryStatus(85), Modifier.align(androidx.compose.ui.Alignment.TopCenter))
-                ReaderRestingOverlay("示例章节", readerRestingPageLabel("7", 24),
-                    Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                ReaderInfoOverlay("示例章节", readerRestingPageLabel("7", 24), "09:41", ReaderBatteryStatus(85))
             }
         }
     }
