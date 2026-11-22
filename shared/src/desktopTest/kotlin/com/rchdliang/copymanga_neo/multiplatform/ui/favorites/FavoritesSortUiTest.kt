@@ -6,11 +6,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
+import coil3.ImageLoader
+import coil3.PlatformContext
+import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
+import com.rchdliang.copymanga_neo.domain.model.FavoriteItem
 import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
@@ -77,6 +82,48 @@ class FavoritesSortUiTest {
         onNodeWithText("升序").assertDoesNotExist()
         onNodeWithText("阅读时间").assertDoesNotExist()
         saveRender("favorites-sort-logged-out")
+    }
+
+    @Test fun scrollingHidesSortAndReturningToTopRestoresIt() = runSkikoComposeUiTest(size = Size(360f, 640f)) {
+        val favorites = List(60) { index ->
+            val comic = FavoriteComic(
+                uuid = "comic-$index", bDisplay = true, name = "漫画 $index", pathWord = "comic-$index",
+                author = null, theme = null, cover = null, status = 0, popular = null,
+                datetimeUpdated = null, lastChapterId = "", lastChapterName = "", browse = null
+            )
+            FavoriteItem(index, null, false, null, comic)
+        }
+        var refreshes = 0
+        setContent {
+            val loader = remember { ImageLoader.Builder(PlatformContext.INSTANCE).build() }
+            DisposableEffect(loader) { onDispose { loader.shutdown() } }
+            CompositionLocalProvider(LocalUiPlatform provides platform, LocalAppImageLoader provides loader) {
+                CopyManga_NeoTheme {
+                    FavoritesContent(
+                        uiState = FavoritesUiState(isLoggedIn = true, favorites = favorites),
+                        onComicClick = {}, onNavigateToProfile = {}, onRefresh = { refreshes++ },
+                        onExitSelectionMode = {}, onSelectAll = {}, onInvertSelection = {},
+                        onToggleSelection = {}, onEnterSelectionMode = {}, onRemoveSelected = {}
+                    )
+                }
+            }
+        }
+        val grid = onNode(hasScrollToIndexAction())
+        val sort = onNodeWithContentDescription("排序方式")
+        val toTop = onNodeWithContentDescription("返回顶部")
+        sort.assertIsDisplayed()
+        toTop.assertDoesNotExist()
+        grid.performTouchInput { swipeUp() }
+        sort.assertDoesNotExist()
+        toTop.assertIsDisplayed()
+        grid.performTouchInput { swipe(center, center + Offset(0f, 90f), durationMillis = 500) }
+        sort.assertIsDisplayed()
+        toTop.performClick()
+        onNodeWithText("漫画 0").assertIsDisplayed()
+        toTop.assertDoesNotExist()
+        runOnIdle { assertEquals(0, refreshes) }
+        grid.performTouchInput { swipeDown() }
+        runOnIdle { assertEquals(1, refreshes) }
     }
 
     private fun ComposeUiTest.saveRender(name: String) {

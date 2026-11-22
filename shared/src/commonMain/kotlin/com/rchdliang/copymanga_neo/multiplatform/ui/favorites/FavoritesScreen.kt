@@ -6,9 +6,13 @@ import androidx.compose.runtime.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -48,6 +52,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +78,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
@@ -157,7 +164,6 @@ fun FavoritesContent(
     onSortSelected: (FavoritesSort) -> Unit = {}
 ) {
     com.rchdliang.copymanga_neo.multiplatform.ui.components.ComicPreloadEffect(uiState.favorites.map { it.comic.pathWord })
-    val pullToRefreshState = rememberPullToRefreshState()
     BackHandler(enabled = uiState.isSelectionMode, isTransient = true, onBack = onExitSelectionMode)
     val showingNovels = uiState.selectedKind == FavoritesKind.NOVEL
     val isLoading = if (showingNovels) uiState.novelsLoading else uiState.isLoading
@@ -167,6 +173,9 @@ fun FavoritesContent(
     val comicGrid = key(uiState.sort) { rememberLazyGridState() }
     val novelGrid = key(uiState.sort) { rememberLazyGridState() }
     val activeGrid = if (showingNovels) novelGrid else comicGrid
+    val showSortBar = uiState.isLoggedIn &&
+            (isEmpty || !activeGrid.canScrollBackward || !activeGrid.lastScrolledForward)
+    val scrollScope = rememberCoroutineScope()
     GridLoadMoreEffect(
         novelGrid,
         showingNovels && uiState.isLoggedIn && uiState.novelsHaveMore &&
@@ -179,7 +188,7 @@ fun FavoritesContent(
     val bottomPadding = if (uiState.isSelectionMode) 80.dp else 0.dp
 
     Column(modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal) {
+        PrimaryTabRow(selectedTabIndex = uiState.selectedKind.ordinal, divider = {}) {
             FavoritesKind.entries.forEach { kind ->
                 val selected = uiState.selectedKind == kind
                 val updates = if (kind == FavoritesKind.COMIC) uiState.updatedComicCount else uiState.updatedNovelCount
@@ -205,26 +214,12 @@ fun FavoritesContent(
                 )
             }
         }
-        if (uiState.isLoggedIn) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                FavoritesSortControl(uiState.sort, !uiState.isDeleting, onSortSelected)
-            }
-        }
-        PullToRefreshBox(
+        FavoritesRefreshLayout(
             isRefreshing = isLoading,
             onRefresh = onRefresh,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            state = pullToRefreshState,
-            contentAlignment = Alignment.TopCenter,
-            indicator = {
-                PullToRefreshDefaults.LoadingIndicator(
-                    state = pullToRefreshState,
-                    isRefreshing = isLoading,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
-            },
+            showSortBar = showSortBar,
+            sortBar = { FavoritesSortControl(uiState.sort, !uiState.isDeleting, onSortSelected) },
+            modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
             when {
                 !uiState.isLoggedIn -> {
@@ -263,7 +258,7 @@ fun FavoritesContent(
                             contentPadding = PaddingValues(
                                 start = 8.dp,
                                 end = 8.dp,
-                                top = 8.dp,
+                                top = 4.dp,
                                 bottom = bottomPadding
                             ),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -368,6 +363,16 @@ fun FavoritesContent(
                             }
                         }
 
+                        if (activeGrid.canScrollBackward && !uiState.isDeleting) {
+                            FloatingActionButton(
+                                onClick = { scrollScope.launch { activeGrid.animateScrollToItem(0) } },
+                                modifier = Modifier.align(Alignment.BottomEnd)
+                                    .padding(end = 16.dp, bottom = bottomPadding + 16.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowUpward, contentDescription = "返回顶部")
+                            }
+                        }
+
                         // 删除中遮罩
                         if (uiState.isDeleting) {
                             Box(
@@ -391,6 +396,47 @@ fun FavoritesContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun FavoritesRefreshLayout(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    showSortBar: Boolean,
+    sortBar: @Composable () -> Unit,
+    modifier: Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val refreshState = rememberPullToRefreshState()
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier,
+        state = refreshState,
+        indicator = {
+            PullToRefreshDefaults.LoadingIndicator(
+                state = refreshState,
+                isRefreshing = isRefreshing,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = showSortBar,
+                enter = expandVertically(expandFrom = Alignment.Top),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top)
+            ) {
+                Box(Modifier.padding(horizontal = 8.dp)) {
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
+                        sortBar()
+                    }
+                }
+            }
+            Box(Modifier.fillMaxSize(), content = content)
         }
     }
 }
