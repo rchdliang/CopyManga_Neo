@@ -6,9 +6,6 @@ import androidx.compose.runtime.*
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ConfirmRemovalDialog
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +58,8 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarState
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
@@ -73,12 +72,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.rchdliang.copymanga_neo.domain.model.Author
 import com.rchdliang.copymanga_neo.domain.model.BrowseInfo
 import com.rchdliang.copymanga_neo.domain.model.FavoriteComic
@@ -173,8 +180,12 @@ fun FavoritesContent(
     val comicGrid = key(uiState.sort) { rememberLazyGridState() }
     val novelGrid = key(uiState.sort) { rememberLazyGridState() }
     val activeGrid = if (showingNovels) novelGrid else comicGrid
-    val showSortBar = uiState.isLoggedIn &&
-            (isEmpty || !activeGrid.canScrollBackward || !activeGrid.lastScrolledForward)
+    val comicSortBar = key(uiState.sort, uiState.isLoggedIn, uiState.favorites.isEmpty()) { rememberTopAppBarState() }
+    val novelSortBar = key(uiState.sort, uiState.isLoggedIn, uiState.novels.isEmpty()) { rememberTopAppBarState() }
+    val sortBarState = if (showingNovels) novelSortBar else comicSortBar
+    val showReturnToTop by remember(activeGrid, sortBarState) {
+        derivedStateOf { activeGrid.canScrollBackward || sortBarState.heightOffset < 0f }
+    }
     val scrollScope = rememberCoroutineScope()
     GridLoadMoreEffect(
         novelGrid,
@@ -217,7 +228,8 @@ fun FavoritesContent(
         FavoritesRefreshLayout(
             isRefreshing = isLoading,
             onRefresh = onRefresh,
-            showSortBar = showSortBar,
+            showSortBar = uiState.isLoggedIn,
+            sortBarState = sortBarState,
             sortBar = { FavoritesSortControl(uiState.sort, !uiState.isDeleting, onSortSelected) },
             modifier = Modifier.weight(1f).fillMaxWidth()
         ) {
@@ -363,9 +375,12 @@ fun FavoritesContent(
                             }
                         }
 
-                        if (activeGrid.canScrollBackward && !uiState.isDeleting) {
+                        if (showReturnToTop && !uiState.isDeleting) {
                             FloatingActionButton(
-                                onClick = { scrollScope.launch { activeGrid.animateScrollToItem(0) } },
+                                onClick = {
+                                    sortBarState.heightOffset = 0f
+                                    scrollScope.launch { activeGrid.animateScrollToItem(0) }
+                                },
                                 modifier = Modifier.align(Alignment.BottomEnd)
                                     .padding(end = 16.dp, bottom = bottomPadding + 16.dp)
                             ) {
@@ -406,11 +421,22 @@ private fun FavoritesRefreshLayout(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     showSortBar: Boolean,
+    sortBarState: TopAppBarState,
     sortBar: @Composable () -> Unit,
     modifier: Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
     val refreshState = rememberPullToRefreshState()
+    val sortScroll = remember(sortBarState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                val previous = sortBarState.heightOffset
+                sortBarState.heightOffset = previous + available.y
+                return Offset(0f, sortBarState.heightOffset - previous)
+            }
+        }
+    }
     PullToRefreshBox(
         isRefreshing = isRefreshing,
         onRefresh = onRefresh,
@@ -424,13 +450,21 @@ private fun FavoritesRefreshLayout(
             )
         }
     ) {
-        Column(Modifier.fillMaxSize()) {
-            AnimatedVisibility(
-                visible = showSortBar,
-                enter = expandVertically(expandFrom = Alignment.Top),
-                exit = shrinkVertically(shrinkTowards = Alignment.Top)
-            ) {
-                Box(Modifier.padding(horizontal = 8.dp)) {
+        Column(Modifier.fillMaxSize().then(if (showSortBar) Modifier.nestedScroll(sortScroll) else Modifier)) {
+            if (showSortBar) {
+                Box(
+                    Modifier.clipToBounds()
+                        .layout { measurable, constraints ->
+                            val bar = measurable.measure(constraints)
+                            val offset = sortBarState.heightOffset.roundToInt().coerceIn(-bar.height, 0)
+                            val visibleHeight = bar.height + offset
+                            layout(bar.width, visibleHeight) {
+                                if (visibleHeight > 0) bar.placeRelative(0, offset)
+                            }
+                        }
+                        .onSizeChanged { sortBarState.heightOffsetLimit = -it.height.toFloat() }
+                        .padding(horizontal = 8.dp)
+                ) {
                     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
                         sortBar()
                     }

@@ -24,6 +24,7 @@ import java.io.File
 import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class FavoritesSortUiTest {
@@ -113,11 +114,26 @@ class FavoritesSortUiTest {
         val toTop = onNodeWithContentDescription("返回顶部")
         sort.assertIsDisplayed()
         toTop.assertDoesNotExist()
+        val expandedTop = grid.fetchSemanticsNode().boundsInRoot.top
         grid.performTouchInput { swipeUp() }
-        sort.assertDoesNotExist()
+        sort.assertIsNotDisplayed()
         toTop.assertIsDisplayed()
+        val collapsedTop = grid.fetchSemanticsNode().boundsInRoot.top
+        onRoot().performTouchInput {
+            down(center)
+            moveBy(Offset(0f, 26f))
+        }
+        val partialTop = grid.fetchSemanticsNode().boundsInRoot.top
+        assertTrue(partialTop > collapsedTop && partialTop < expandedTop)
+        onRoot().performTouchInput { moveBy(Offset(0f, 6f)) }
+        assertEquals(partialTop + 6f, grid.fetchSemanticsNode().boundsInRoot.top, 1f)
+        onRoot().performTouchInput { moveBy(Offset(0f, -4f)) }
+        assertEquals(partialTop + 2f, grid.fetchSemanticsNode().boundsInRoot.top, 1f)
+        onRoot().performTouchInput { advanceEventTime(200); up() }
+        assertEquals(partialTop + 2f, grid.fetchSemanticsNode().boundsInRoot.top, 1f)
         grid.performTouchInput { swipe(center, center + Offset(0f, 90f), durationMillis = 500) }
         sort.assertIsDisplayed()
+        assertEquals(expandedTop, grid.fetchSemanticsNode().boundsInRoot.top)
         toTop.performClick()
         onNodeWithText("漫画 0").assertIsDisplayed()
         toTop.assertDoesNotExist()
