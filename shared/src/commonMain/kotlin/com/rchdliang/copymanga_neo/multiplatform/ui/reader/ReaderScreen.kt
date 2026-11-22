@@ -1091,10 +1091,11 @@ fun ReaderSuccessContent(
                 displayedPosition.rangeLabel ?: "${displayedPage.page + 1}", displayedPage.imageCount
             )
             if (routeActive && reportingState.isAtLeast(Lifecycle.State.RESUMED)) {
-                ReaderDeviceStatusOverlay(services?.platform, pageLabel, Modifier.align(Alignment.TopCenter))
+                ReaderDeviceStatusOverlay(services?.platform, Modifier.align(Alignment.TopCenter))
             }
             ReaderRestingOverlay(
                 displayedPage.chapterName,
+                pageLabel,
                 Modifier.align(Alignment.BottomCenter)
             )
         }

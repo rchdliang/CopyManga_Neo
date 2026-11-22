@@ -1,6 +1,11 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.reader
 
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.platform.PlatformInsets
+import androidx.compose.ui.platform.PlatformWindowInsets
+import androidx.compose.ui.test.v2.runInternalSkikoComposeUiTest
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.material.icons.Icons
@@ -66,10 +71,10 @@ class ReaderInlineDesignUiTest {
         kotlin.test.assertTrue(time.right < battery.left)
         kotlin.test.assertTrue(kotlin.math.abs(time.center.y - battery.center.y) < 1f)
         onNodeWithContentDescription("电池电量").assertIsDisplayed()
-        kotlin.test.assertTrue(kotlin.math.abs(time.center.y - pages.center.y) < 1f)
-        val root = onRoot().fetchSemanticsNode().boundsInRoot
-        kotlin.test.assertTrue(kotlin.math.abs(root.center.x - pages.center.x) < 1f)
-        kotlin.test.assertTrue(pages.bottom < onNodeWithText("示例章节").fetchSemanticsNode().boundsInRoot.top)
+        val chapter = onNodeWithText("示例章节").fetchSemanticsNode().boundsInRoot
+        kotlin.test.assertTrue(kotlin.math.abs(chapter.center.y - pages.center.y) < 1f)
+        kotlin.test.assertTrue(chapter.right < pages.left && time.bottom < pages.top)
+        kotlin.test.assertTrue(kotlin.math.abs(pages.right - battery.right) < 1f)
         onNodeWithText("画质修复已应用").assertDoesNotExist()
         capture("resting-overlay")
     }
@@ -78,6 +83,41 @@ class ReaderInlineDesignUiTest {
         onNodeWithText("00:05").assertIsDisplayed()
         onNodeWithContentDescription("电池状态未知").assertIsDisplayed()
         onAllNodes(hasText("%", substring = true)).assertCountEquals(0)
+    }
+    @OptIn(InternalTestApi::class, InternalComposeUiApi::class)
+    @Test fun onlyStatusLabelsOverlappingTheCutoutMoveDown() {
+        fun check(width: Int, height: Int, hole: Rect, timeTop: Float, batteryTop: Float) {
+            val insets = object : PlatformWindowInsets {
+                override val displayCutouts = listOf(hole)
+                override val displayCutout = PlatformInsets(top = hole.bottom.toInt())
+            }
+            runInternalSkikoComposeUiTest(width = width, height = height, windowInsets = insets) {
+                val chapter = "很长的章节名".repeat(20)
+                setContent {
+                    MaterialTheme {
+                        Box(Modifier.fillMaxSize()) {
+                            ReaderStatusOverlay("09:41", ReaderBatteryStatus(85))
+                            ReaderRestingOverlay(chapter, "112–113 / 240", Modifier.align(androidx.compose.ui.Alignment.BottomCenter))
+                        }
+                    }
+                }
+                val clock = onNodeWithText("09:41").fetchSemanticsNode().boundsInRoot
+                val battery = onNodeWithText("85%").fetchSemanticsNode().boundsInRoot
+                assertEquals(timeTop, clock.top, 1f)
+                assertEquals(batteryTop, battery.top, 1f)
+                val pages = onNodeWithText("112–113 / 240").fetchSemanticsNode().boundsInRoot
+                val title = onNodeWithText(chapter).fetchSemanticsNode().boundsInRoot
+                kotlin.test.assertTrue(title.right < pages.left && pages.bottom > height / 2)
+                onNodeWithText("112–113 / 240").assertTextEquals("112–113 / 240")
+                val layout = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                onNodeWithText("112–113 / 240").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+                kotlin.test.assertFalse(layout.single().isLineEllipsized(0))
+            }
+        }
+        check(390, 700, Rect(179f, 0f, 211f, 36f), 6f, 6f)
+        check(390, 700, Rect(8f, 0f, 42f, 36f), 42f, 6f)
+        check(390, 700, Rect(348f, 0f, 382f, 36f), 6f, 42f)
+        check(700, 390, Rect(0f, 172f, 36f, 218f), 6f, 6f)
     }
     @Test fun batteryIconVariantsRemainVisibleAcrossReaderBackgrounds() = runSkikoComposeUiTest(size=Size(780f,180f)) {
         val batteries = listOf(0, 15, 29, 43, 58, 72, 86, 100).map { ReaderBatteryStatus(it) } +
