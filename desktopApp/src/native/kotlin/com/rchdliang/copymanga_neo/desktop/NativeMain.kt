@@ -352,7 +352,10 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
             }
             PortableHostTheme(graph?.repositories?.appSettings, initialThemeMode = startupThemeMode) {
                 // 全屏时移除标题栏，并由窗口布局同步清除顶部占位和原生标题栏命中区域。
-                WindowScaffold(titleBar = if (windowState.placement == WindowPlacement.Fullscreen) null else {
+                WindowScaffold(modifier = Modifier.desktopMouseNavigation {
+                    if (phase.showApplication) escapeKeys.navigateBack(backDispatcher::dispatchBack,
+                        backDispatcher::dispatchTransientBack, ::exitFullscreen)
+                }, titleBar = if (windowState.placement == WindowPlacement.Fullscreen) null else {
                     {
                         val titleStyle = LocalTitleBarStyle.current
                         TitleBar(style = titleStyle.copy(colors = titleStyle.colors.copy(

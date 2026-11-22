@@ -50,13 +50,20 @@ class DesktopEscapeKeyHandler {
         event.key == Key.Escape && handle(
             event.escapeEvent(),
             event.isCtrlPressed || event.isAltPressed || event.isMetaPressed || event.isShiftPressed,
-            {
-                if (windowBackEnabled) {
-                    windowInput.back()
-                    true
-                } else dispatchTransientBack() || exitFullscreen() || dispatchBack()
-            }
+            { navigateBack(dispatchBack, dispatchTransientBack, exitFullscreen) }
         )
+
+    fun navigateBack(
+        dispatchBack: () -> Boolean,
+        dispatchTransientBack: () -> Boolean = { false },
+        exitFullscreen: () -> Boolean = { false }
+    ): Boolean {
+        if (windowBackEnabled) {
+            windowInput.back()
+            return true
+        }
+        return dispatchTransientBack() || exitFullscreen() || dispatchBack()
+    }
 
     /** Observe before children, without consuming or navigating. A consumed down still starts a press. */
     fun observe(event: DesktopEscapeEvent) {

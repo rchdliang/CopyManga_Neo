@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.multiplatform.platform
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerButton
+import java.awt.event.MouseEvent
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -20,6 +25,64 @@ import kotlin.test.*
 /** 覆盖窗口先观察、子控件处理、窗口兜底的真实 Compose 按键分发顺序。 */
 @OptIn(ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 class DesktopEscapeKeyHandlerSceneTest {
+    @Test fun sideButtonsOverClickableUseWindowBackAndNeverActivateTheChild() {
+        val keys = DesktopEscapeKeyHandler()
+        val back = UiBackDispatcher()
+        var clicks = 0
+        var pageBacks = 0
+        var transient = true
+        back.register { pageBacks++; true }
+        back.register(enabled = { transient }, isTransient = { true }) { transient = false; true }
+        val scene = ImageComposeScene(320, 480) {
+            keys.WindowNavigationEffect()
+            Box(Modifier.fillMaxSize().desktopMouseNavigation {
+                keys.navigateBack(back::dispatchBack, back::dispatchTransientBack)
+            }) {
+                Box(Modifier.fillMaxSize().clickable { clicks++ })
+            }
+        }
+        fun click(button: PointerButton) {
+            val position = Offset(100f, 100f)
+            scene.sendPointerEvent(PointerEventType.Press, position, button = button)
+            scene.sendPointerEvent(PointerEventType.Release, position, button = button)
+        }
+        try {
+            scene.settle()
+            click(PointerButton.Primary)
+            assertEquals(1, clicks)
+            click(PointerButton.Forward)
+            assertTrue(transient)
+            click(PointerButton.Back)
+            assertFalse(transient)
+            assertEquals(0, pageBacks)
+            click(PointerButton.Back)
+            assertEquals(1, pageBacks)
+            assertEquals(1, clicks)
+        } finally { scene.close() }
+    }
+
+    @Test fun x11SideButtonsNavigateWithoutTreatingHorizontalWheelAsBack() {
+        var backs = 0
+        val listener = X11MouseNavigation { backs++ }
+        val source = java.awt.Canvas()
+        fun click(number: Int, consumed: Boolean) {
+            for (id in listOf(MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_RELEASED)) {
+                val event = object : MouseEvent(source, id, 0L, 0, 0, 0, 1, false) {
+                    override fun getButton(): Int = number
+                }
+                if (id == MouseEvent.MOUSE_PRESSED) listener.mousePressed(event) else listener.mouseReleased(event)
+                assertEquals(consumed, event.isConsumed)
+            }
+        }
+        click(1, false)
+        click(4, false)
+        click(5, false)
+        click(7, true)
+        assertEquals(0, backs)
+        click(6, true)
+        assertEquals(1, backs)
+    }
+
     @Test fun escapeClosesPopupThenTemporaryUiThenFullscreenThenNavigates() {
         val keys = DesktopEscapeKeyHandler()
         val back = UiBackDispatcher()

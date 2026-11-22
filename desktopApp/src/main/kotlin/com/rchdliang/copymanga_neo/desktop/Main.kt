@@ -302,7 +302,9 @@ private fun runPrimary(instance: DesktopInstanceGuard) {
                 }
             }
             PortableHostTheme(graph?.repositories?.appSettings, initialThemeMode = startupThemeMode) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.fillMaxSize().awtMouseNavigation(window) {
+                    if (phase.showApplication) escapeKeys.navigateBack(backDispatcher::dispatchBack)
+                }.background(MaterialTheme.colorScheme.background)) {
                     val ready = graph
                     if (phase.flushing) Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(); Spacer(Modifier.height(16.dp)); Text("正在保存阅读记录…")
