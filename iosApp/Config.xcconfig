@@ -2,6 +2,7 @@
 #include "../version.properties"
 MARKETING_VERSION = $(COPYMANGA_VERSION_BASE)
 CURRENT_PROJECT_VERSION = $(COPYMANGA_VERSION_CODE)
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 
 // Safe default. A developer-supplied local file or explicit Xcode build setting may override it.
 COPYMANGA_TAP_STRING =

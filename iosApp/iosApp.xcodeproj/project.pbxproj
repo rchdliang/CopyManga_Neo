@@ -4,6 +4,8 @@
  classes = {};
  objectVersion = 56;
  objects = {
+  000000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+  000000000000000000000019 = {isa = PBXBuildFile; fileRef = 000000000000000000000018; };
   000000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
   000000000000000000000015 = {isa = PBXBuildFile; fileRef = 000000000000000000000016; };
   000000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHostingController.swift; sourceTree = "<group>"; };
@@ -12,11 +14,11 @@
   000000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
   000000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CopyMangaNeo.app; sourceTree = BUILT_PRODUCTS_DIR; };
   000000000000000000000005 = {isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000017, 000000000000000000000007); sourceTree = "<group>"; };
-  000000000000000000000006 = {isa = PBXGroup; children = (000000000000000000000002, 000000000000000000000016, 000000000000000000000003); path = iosApp; sourceTree = "<group>"; };
+  000000000000000000000006 = {isa = PBXGroup; children = (000000000000000000000002, 000000000000000000000016, 000000000000000000000003, 000000000000000000000018); path = iosApp; sourceTree = "<group>"; };
   000000000000000000000007 = {isa = PBXGroup; children = (000000000000000000000004); name = Products; sourceTree = "<group>"; };
   000000000000000000000008 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000001, 000000000000000000000015); runOnlyForDeploymentPostprocessing = 0; };
   000000000000000000000009 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-  00000000000000000000000A = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+  00000000000000000000000A = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000019); runOnlyForDeploymentPostprocessing = 0; };
   00000000000000000000000B = {
    isa = PBXShellScriptBuildPhase;
    alwaysOutOfDate = 1;
