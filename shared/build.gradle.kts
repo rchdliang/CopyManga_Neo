@@ -95,7 +95,11 @@ kotlin {
     compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
     android {
         namespace = "com.rchdliang.copymanga_neo.shared"
-        compileSdk = libs.versions.androidCompileSdk.get().toInt()
+        compileSdk {
+            version = release(libs.versions.androidCompileSdk.get().toInt()) {
+                minorApiLevel = libs.versions.androidCompileSdkMinor.get().toInt()
+            }
+        }
         buildToolsVersion = libs.versions.androidBuildTools.get()
         minSdk = libs.versions.androidMinSdk.get().toInt()
         androidResources { enable = true }

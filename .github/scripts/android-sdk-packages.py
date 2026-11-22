@@ -9,12 +9,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def sdk_packages(versions):
-    # 两个 Android 模块当前均使用基础 API（minor = 0）。
     sdk = int(versions["androidCompileSdk"])
     if sdk < 1:
         raise ValueError("androidCompileSdk must be positive")
+    minor = int(versions["androidCompileSdkMinor"])
+    if minor < 0:
+        raise ValueError("androidCompileSdkMinor must be non-negative")
     return [
-        f"platforms;android-{sdk}.0",
+        f"platforms;android-{sdk}.{minor}",
         f"build-tools;{versions['androidBuildTools']}",
         f"cmake;{versions['cmake']}",
         f"ndk;{versions['ndk']}",

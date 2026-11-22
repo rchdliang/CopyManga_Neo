@@ -63,7 +63,11 @@ android {
         if (enableStartupProbes) "src/startupProbes/java" else "src/startupNoop/java"
     )
     namespace = "com.rchdliang.copymanga_neo"
-    compileSdk = libs.versions.androidCompileSdk.get().toInt()
+    compileSdk {
+        version = release(libs.versions.androidCompileSdk.get().toInt()) {
+            minorApiLevel = libs.versions.androidCompileSdkMinor.get().toInt()
+        }
+    }
     buildToolsVersion = libs.versions.androidBuildTools.get()
     ndkVersion = libs.versions.ndk.get()
     externalNativeBuild {
@@ -129,7 +133,6 @@ android {
         compose = true
         buildConfig = true
     }
-    compileSdkMinor = 0
 }
 
 // 模型 assets 同时被资源合并及 Lint 的模型生成、分析任务读取。

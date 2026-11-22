@@ -12,11 +12,11 @@ SPEC.loader.exec_module(sdk)
 class AndroidSdkPackagesTest(unittest.TestCase):
     def test_catalog_upgrade_changes_all_ci_packages(self):
         versions = {
-            "androidCompileSdk": "38", "androidBuildTools": "38.0.1",
+            "androidCompileSdk": "38", "androidCompileSdkMinor": "1", "androidBuildTools": "38.0.1",
             "cmake": "3.31.6", "ndk": "31.0.12345678",
         }
         self.assertEqual(sdk.sdk_packages(versions), [
-            "platforms;android-38.0", "build-tools;38.0.1",
+            "platforms;android-38.1", "build-tools;38.0.1",
             "cmake;3.31.6", "ndk;31.0.12345678",
         ])
 
