@@ -31,6 +31,14 @@ dependencies {
 }
 tasks.processResources { from("icons/copymanga-neo.ico") }
 
+// Nucleus 直接扫描 shared 的资源目录，生成 Native Image 元数据前要先准备模型和 JNI 库。
+tasks.matching { it.name == "generateGraalvmProjectResourceMetadata" }.configureEach {
+    dependsOn(rootProject.tasks.named("prepareReaderRestoreModels"))
+    if (rootProject.extra["readerRestoreDesktopSupported"] == true) {
+        dependsOn(rootProject.tasks.named("prepareReaderRestoreDesktop"))
+    }
+}
+
 nucleus.application {
     mainClass = "com.rchdliang.copymanga_neo.desktop.NativeMainKt"
     graalvm {

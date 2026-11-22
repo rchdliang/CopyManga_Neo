@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.isCtrlPressed
@@ -143,7 +144,21 @@ fun Modifier.readerImageZoomable(
     val currentEnabled by rememberUpdatedState(enabledAt)
     val currentScrolling by rememberUpdatedState(isContentScrolling)
     val wheelPinchSteps by rememberUpdatedState(LocalReaderCtrlWheelPinchSteps.current)
-    pointerInput(state, isContinuous, maxScale) {
+    pointerInput(state, maxScale) {
+        // Tao 3 以独立的 ScaleChange 转发触控板捏合及 Windows Ctrl＋滚轮。
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type != PointerEventType.ScaleChange) continue
+                val change = event.changes.firstOrNull() ?: continue
+                if (change.isConsumed || !currentEnabled(change.position)) continue
+                val factor = readerPinchZoomFactor(change.scaleFactor, event.keyboardModifiers.isCtrlPressed, wheelPinchSteps)
+                state.stopFling()
+                state.transform(factor, change.position, Offset.Zero, maxScale)
+                change.consume()
+            }
+        }
+    }.pointerInput(state, isContinuous, maxScale) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             state.beginTouch(currentScrolling())
@@ -173,7 +188,7 @@ fun Modifier.readerImageZoomable(
                     dragStarted = false
                     tracker.resetTracking()
                     state.transform(
-                        readerPinchZoomFactor(event.calculateZoom(), event.keyboardModifiers.isCtrlPressed, wheelPinchSteps),
+                        event.calculateZoom(),
                         event.calculateCentroid(useCurrent = false),
                         event.calculatePan(), maxScale
                     )

@@ -93,7 +93,7 @@ private fun runPrimary(instance: DesktopInstanceGuard, args: Array<String>) {
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { AppThemeMode.SYSTEM }
     }
-    nucleusApplication(args, backend = NucleusBackend.Tao, enableSingleInstance = false) {
+    nucleusApplication(args, enableSingleInstance = false) {
         val appIcon = remember {
             checkNotNull(DesktopAppIcons::class.java.getResourceAsStream("/copymanga-neo.png")).use {
                 BitmapPainter(org.jetbrains.skia.Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap())

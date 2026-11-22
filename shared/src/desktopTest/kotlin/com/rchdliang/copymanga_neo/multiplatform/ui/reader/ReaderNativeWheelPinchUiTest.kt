@@ -25,7 +25,7 @@ import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** 重放 Nucleus Windows 实际产生的 Ctrl＋双指事件，不能仅用普通 Scroll 事件代替。 */
+/** 重放 Nucleus 3 的桌面 Scale 事件，核对阅读器倍率和焦点。 */
 @OptIn(ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class)
 class ReaderNativeWheelPinchUiTest {
     @Test
@@ -35,7 +35,7 @@ class ReaderNativeWheelPinchUiTest {
         verifyPinch(continuous = true, ctrl = true, native = true)
 
     @Test
-    fun ordinaryTouchPinchKeepsItsOriginalSensitivity() = verifyPinch(continuous = false, ctrl = false, native = true)
+    fun ordinaryTrackpadPinchKeepsItsOriginalSensitivity() = verifyPinch(continuous = false, ctrl = false, native = true)
     @Test
     fun nonNativeHostDoesNotRescaleTouchPinch() = verifyPinch(continuous = false, ctrl = true, native = false)
 
@@ -65,24 +65,19 @@ class ReaderNativeWheelPinchUiTest {
 
         val focal = Offset(500f, 250f)
         fun nativeTick(notches: Float) {
-            // TaoWheelPinchZoom.stepFromWheelDelta 与 Windows 宿主的 120px 初始半径。
-            val step = 2f.pow(notches / 12f)
-            fun send(type: PointerEventType, radius: Float) {
-                val pressed = type != PointerEventType.Release
+            fun send(type: PointerEventType, factor: Float = 1f) {
                 scene.sendPointerEvent(
                     type,
-                    pointers = listOf(
-                        ComposeScenePointer(PointerId(0xA001L), focal - Offset(radius, 0f), pressed, PointerType.Touch),
-                        ComposeScenePointer(PointerId(0xA002L), focal + Offset(radius, 0f), pressed, PointerType.Touch)
-                    ),
+                    pointers = listOf(ComposeScenePointer(PointerId(1), focal, false, PointerType.Mouse)),
                     keyboardModifiers = PointerKeyboardModifiers(isCtrlPressed = ctrl),
-                    timeMillis = time / 1_000_000L
+                    timeMillis = time / 1_000_000L,
+                    scaleGestureFactor = factor
                 )
                 frames()
             }
-            send(PointerEventType.Press, 120f)
-            send(PointerEventType.Move, 120f * step)
-            send(PointerEventType.Release, 120f * step)
+            send(PointerEventType.ScaleStart)
+            send(PointerEventType.ScaleChange, 2f.pow(notches / 12f))
+            send(PointerEventType.ScaleEnd)
         }
         try {
             frames()
