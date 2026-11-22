@@ -101,17 +101,8 @@ class IosPlatformHost(
     private fun decimal(value: Double): String = NSNumberFormatter().apply {
         minimumFractionDigits = 2u; maximumFractionDigits = 2u; usesGroupingSeparator = false; locale = NSLocale.currentLocale
     }.stringFromNumber(NSNumber(value)) ?: value.toString()
-    override fun plainTextFromHtml(html: String): String {
-        // Strip all resource-bearing markup before Foundation's HTML decoder can load it.
-        val text = html.replace(Regex("<(script|style)[^>]*>.*?</\\1\\s*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
-            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-            .replace(Regex("</(?:p|div|h[1-6]|blockquote)\\s*>", RegexOption.IGNORE_CASE), "\n\n")
-            .replace(Regex("<[^>]*>"), "")
-        val safe = text.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-        return NSAttributedString.create(data = safe.encodeToByteArray().asData(),
-            options = mapOf(NSDocumentTypeDocumentAttribute to NSHTMLTextDocumentType, NSCharacterEncodingDocumentAttribute to NSUTF8StringEncoding),
-            documentAttributes = null, error = null)?.string ?: text
-    }
+    // The API supplies plain text. UIKit's HTML importer can re-enter Compose while drawing.
+    override fun plainTextFromHtml(html: String): String = html
 
     override suspend fun shareText(title: String, text: String) = share(listOf(text), title)
     override suspend fun shareImage(image: ReaderExportImage) = share(listOf(fileUrl(image.filePath)), image.displayName)
