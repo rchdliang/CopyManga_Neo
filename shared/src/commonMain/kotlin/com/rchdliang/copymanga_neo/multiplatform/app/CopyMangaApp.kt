@@ -326,7 +326,9 @@ fun CopyMangaApp(
 @Composable
 internal fun MainNavigationShell(
     current: MainTab, onSelect: (MainTab) -> Unit,
-    loggedIn: Boolean, avatar: String?, updates: Int, content: @Composable () -> Unit
+    loggedIn: Boolean, avatar: String?, updates: Int,
+    bottomNavigationInsets: WindowInsets = NavigationBarDefaults.windowInsets,
+    content: @Composable () -> Unit
 ) {
     val trace = LocalStartupTrace.current
     val finish = trace.begin("navigation_shell_compose")
@@ -422,8 +424,13 @@ internal fun MainNavigationShell(
                 Box(Modifier.weight(1f).fillMaxSize().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surface)) { content() }
             }
         } else Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.surface)) { content() }
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+            Box(
+                Modifier.weight(1f).fillMaxWidth()
+                    .consumeWindowInsets(bottomNavigationInsets.only(WindowInsetsSides.Bottom))
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.surface)
+            ) { content() }
+            NavigationBar(windowInsets = bottomNavigationInsets, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 MainTab.entries.forEach { tab ->
                     NavigationBarItem(selected = current == tab, onClick = { onSelect(tab) },
                         icon = { TabIcon(tab, current == tab, updates) }, label = { Text(tab.title) })

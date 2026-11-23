@@ -125,7 +125,7 @@ fun DownloadsScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DownloadsContent(
+internal fun DownloadsContent(
     uiState: DownloadsUiState,
     onComicClick: (String) -> Unit,
     onExitSelectionMode: () -> Unit,
@@ -208,7 +208,7 @@ private fun DownloadsContent(
             verticalArrangement = Arrangement.spacedBy(gridSpacing)
         ) {
             if (uiState.isSelectionMode) {
-                item(span = { GridItemSpan(maxLineSpan) }, key = "selection_bar") {
+                stickyHeader(key = "selection_bar") {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainer,
                         shape = MaterialTheme.shapes.large,
