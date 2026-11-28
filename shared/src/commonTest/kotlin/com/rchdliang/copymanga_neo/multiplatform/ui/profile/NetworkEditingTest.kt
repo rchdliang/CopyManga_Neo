@@ -88,11 +88,14 @@ class NetworkEditingTest {
     }
 }
 
-internal class FakeNetwork : NetworkSettingsRepository {
+internal class FakeNetwork(
+    private val probeResults: List<NetworkProbe> = listOf(NetworkProbe("probe.example.test", 42))
+) : NetworkSettingsRepository {
     override val settings = MutableStateFlow(NetworkSettings())
     override val officialAppDefaults = OfficialAppSettings()
     var previous = NetworkSettings()
     var saves = 0
+    val testedDrafts = mutableListOf<NetworkSettings>()
     var fail = false
     var gate: CompletableDeferred<Unit>? = null
     override suspend fun previousSettings() = Result.success(previous)
@@ -107,6 +110,9 @@ internal class FakeNetwork : NetworkSettingsRepository {
     override suspend fun reset(): Result<Unit> = error("UI must not immediately reset persistence")
     override suspend fun rollback(): Result<Unit> = error("UI must not immediately roll back persistence")
     override suspend fun discover() = Result.success(Unit)
-    override suspend fun test(settings: NetworkSettings) = Result.success(emptyList<NetworkProbe>())
+    override suspend fun test(settings: NetworkSettings): Result<List<NetworkProbe>> {
+        testedDrafts += settings
+        return Result.success(probeResults)
+    }
     override suspend fun refreshIfNeeded() {}
 }

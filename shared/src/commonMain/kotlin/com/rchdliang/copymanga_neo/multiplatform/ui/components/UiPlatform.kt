@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.window.DialogProperties
+import com.rchdliang.copymanga_neo.domain.model.ProxyMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.emptyFlow
 interface UiPlatform {
     val backDispatcher: UiBackDispatcher
     val supportsPredictiveBack: Boolean get() = false
+    val supportedProxyModes: List<ProxyMode> get() = listOf(ProxyMode.SYSTEM, ProxyMode.DIRECT, ProxyMode.MANUAL)
     /** 没有兼容原生安装包的平台保留发布页入口。 */
     val appReleaseTarget: com.rchdliang.copymanga_neo.domain.model.AppReleaseTarget? get() = null
     /** 默认沿用图片库的封面解码，仅由指定平台覆盖。 */

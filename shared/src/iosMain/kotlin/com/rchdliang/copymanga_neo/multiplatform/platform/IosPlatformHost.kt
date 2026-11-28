@@ -11,6 +11,7 @@ import com.rchdliang.copymanga_neo.domain.model.ReaderExportImage
 import com.rchdliang.copymanga_neo.domain.platform.NetworkLogOutputStream
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogRepository
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackDispatcher
+import com.rchdliang.copymanga_neo.domain.model.ProxyMode
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.downloads.DownloadNotificationPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.export.ComicExportPlatform
@@ -46,6 +47,7 @@ class IosPlatformHost(
     ProfilePlatform, DownloadNotificationPlatform, AutoCloseable {
     override val notificationSettingsUnavailableReason: String? = null
     override val backDispatcher = UiBackDispatcher()
+    override val supportedProxyModes = listOf(ProxyMode.SYSTEM, ProxyMode.DIRECT)
     override val supportsPredictiveBack = true
     override fun batteryStatuses() = iosReaderBatteryStatuses()
     private val warnings = MutableStateFlow<List<String>>(emptyList())

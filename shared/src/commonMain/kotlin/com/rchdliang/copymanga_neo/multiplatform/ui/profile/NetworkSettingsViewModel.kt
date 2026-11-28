@@ -24,7 +24,8 @@ data class NetworkSettingsUiState(
     val error: String? = null,
     val probes: List<NetworkProbe> = emptyList(),
     val message: String? = null,
-    val diagnosticReport: String? = null
+    val diagnosticReport: String? = null,
+    val testing: Boolean = false
 ) {
     val dirty: Boolean get() = saved != draft && runCatching {
         PortableNetworkValidation.normalize(saved) != PortableNetworkValidation.normalize(draft)
@@ -130,9 +131,9 @@ class NetworkSettingsViewModel constructor(private val repository: NetworkSettin
         repository.discover().fold({ sync("线路已更新") }, { failure(it) })
     }
 
-    fun test() = operate {
+    fun test() = operate(testing = true) {
         repository.test(state.value.draft).fold(
-            { probes -> state.update { it.copy(probes = probes, message = "测速完成") } },
+            { probes -> state.update { it.copy(probes = probes) } },
             { failure(it) }
         )
     }
@@ -176,14 +177,14 @@ class NetworkSettingsViewModel constructor(private val repository: NetworkSettin
         state.update { it.copy(error = "操作失败，请检查连接后重试；当前编辑内容已保留") }
     }
 
-    private fun operate(block: suspend () -> Unit) {
+    private fun operate(testing: Boolean = false, block: suspend () -> Unit) {
         if (state.value.busy) return
-        state.update { it.copy(busy = true, message = null, error = null) }
+        state.update { it.copy(busy = true, testing = testing, message = null, error = null) }
         operation = viewModelScope.launch(handler) {
             try {
                 block()
             } finally {
-                state.update { it.copy(busy = false) }
+                state.update { it.copy(busy = false, testing = false) }
             }
         }
     }

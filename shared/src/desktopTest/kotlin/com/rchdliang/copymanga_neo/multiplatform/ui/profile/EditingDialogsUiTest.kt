@@ -1,6 +1,8 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.toArgb
@@ -22,9 +24,9 @@ class EditingDialogsUiTest {
         assertEquals(0, saved + discarded + continued)
         onNodeWithText("继续编辑").performClick()
         assertEquals(1, continued); assertEquals(0, discarded)
-        onNodeWithText("不保存").performScrollTo().performClick()
+        onNodeWithText("不保存").assertIsDisplayed().performClick()
         assertEquals(1, discarded); assertEquals(0, saved)
-        onNodeWithText("保存并返回").performScrollTo().performClick()
+        onNodeWithText("保存并返回").assertIsDisplayed().performClick()
         assertEquals(1, saved)
         saveRender("unsaved-dialog-desktop")
     }
@@ -33,6 +35,20 @@ class EditingDialogsUiTest {
         onNodeWithText("继续编辑").assertIsNotEnabled()
         onNodeWithText("不保存").assertIsNotEnabled()
         onNodeWithText("保存并返回").assertIsNotEnabled()
+    }
+
+    @Test fun actionsStayVisibleBelowALongChangeSummary() = runSkikoComposeUiTest(size = Size(360f, 440f)) {
+        setContent {
+            MaterialTheme {
+                UnsavedChangesDialog(onContinue = {}, onDiscard = {}, onSave = {}) {
+                    Column { repeat(30) { Text("更改 ${it + 1}") } }
+                }
+            }
+        }
+        onNodeWithText("更改 30").performScrollTo().assertIsDisplayed()
+        onNodeWithText("保存并返回").assertIsDisplayed()
+        onNodeWithText("不保存").assertIsDisplayed()
+        onNodeWithText("继续编辑").assertIsDisplayed()
     }
     @Test fun destructiveConfirmationDoesNotActOnCancel() = runSkikoComposeUiTest {
         var deleted = 0; var dismissed = 0

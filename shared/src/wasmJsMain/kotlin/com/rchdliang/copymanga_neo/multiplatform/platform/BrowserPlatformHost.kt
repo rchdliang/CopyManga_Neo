@@ -10,6 +10,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicExportLocation
 import com.rchdliang.copymanga_neo.domain.model.ReaderExportImage
 import com.rchdliang.copymanga_neo.domain.repository.NetworkLogRepository
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackDispatcher
+import com.rchdliang.copymanga_neo.domain.model.ProxyMode
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.downloads.DownloadNotificationPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.export.ComicExportPlatform
@@ -37,6 +38,7 @@ class BrowserPlatformHost : UiPlatform, ReaderPlatform, NovelReaderPlatform, Com
     override val notificationSettingsUnavailableReason: String?
         get() = if (browserNotificationsSupported()) null else "此浏览器不支持下载通知"
     override val backDispatcher = UiBackDispatcher()
+    override val supportedProxyModes = listOf(ProxyMode.SYSTEM)
     override fun batteryStatuses() = browserReaderBatteryStatuses()
     @Composable override fun ExternalUiThemeEffect(colors: ColorScheme) {
         val palette = listOf(colors.surfaceContainerHigh, colors.onSurface, colors.primary, colors.onPrimary, colors.outlineVariant)
