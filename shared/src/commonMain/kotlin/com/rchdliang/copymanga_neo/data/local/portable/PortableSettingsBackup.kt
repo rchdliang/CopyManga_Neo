@@ -95,6 +95,7 @@ class PortableSettingsBackup constructor(
 
     private suspend fun applyPreferences(value: SettingsBackup) {
         settings.setThemeMode(value.settings.themeMode).fold({}, { throw it })
+        settings.setPredictiveBackEnabled(value.settings.predictiveBackEnabled).fold({}, { throw it })
         settings.setSimplifyChinese(value.settings.simplifyChinese).fold({}, { throw it })
         settings.setWifiOnlyDownloads(value.settings.wifiOnlyDownloads).fold({}, { throw it })
         settings.setBlurNovelIllustrationPreviews(value.settings.blurNovelIllustrationPreviews).fold({}, { throw it })

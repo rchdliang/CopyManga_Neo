@@ -2,6 +2,7 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.components
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.emptyFlow
 /** Native operations required by the original UI. Hosts provide real platform adapters. */
 interface UiPlatform {
     val backDispatcher: UiBackDispatcher
+    val supportsPredictiveBack: Boolean get() = false
     /** 没有兼容原生安装包的平台保留发布页入口。 */
     val appReleaseTarget: com.rchdliang.copymanga_neo.domain.model.AppReleaseTarget? get() = null
     /** 默认沿用图片库的封面解码，仅由指定平台覆盖。 */
@@ -120,6 +122,7 @@ class UiBackDispatcher {
 }
 
 val LocalUiPlatform = staticCompositionLocalOf<UiPlatform?> { null }
+internal val LocalPredictiveBackEnabled = compositionLocalOf { true }
 
 /** Outgoing animated destinations must never consume input for the visible destination. */
 internal val LocalRouteActive = staticCompositionLocalOf { true }

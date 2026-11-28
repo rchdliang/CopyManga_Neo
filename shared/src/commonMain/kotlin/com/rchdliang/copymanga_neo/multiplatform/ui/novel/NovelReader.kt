@@ -6,6 +6,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.routeProgressAllowed
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.AppModalBottomSheet
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -48,9 +49,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,7 +57,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -651,13 +649,9 @@ private fun NovelReaderBody(
         onDeleteBookmark = actions.removeBookmark,
         onDismiss = { sheet = null }
     )
-    if (sheet != null && sheet != "directory" && sheet != "bookmarks") if (LocalRouteActive.current) ModalBottomSheet(
+    if (sheet != null && sheet != "directory" && sheet != "bookmarks") if (LocalRouteActive.current) AppModalBottomSheet(
         onDismissRequest = { sheet = null },
         contentWindowInsets = { WindowInsets.displayCutout },
-        sheetState = rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-        )
     ) {
         Column(
             Modifier

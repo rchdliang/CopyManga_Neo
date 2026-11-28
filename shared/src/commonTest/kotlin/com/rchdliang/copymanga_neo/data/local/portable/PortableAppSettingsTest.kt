@@ -9,6 +9,22 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 
 class PortableAppSettingsTest {
+    @Test fun predictiveBackDefaultsOnForLegacySettingsAndOffChoiceSurvivesRestart() = runTest {
+        val documents = Documents()
+        documents.values["app-settings.json"] = """{"app":{"themeMode":"DARK"}}"""
+        val settings = PortableAppSettings(documents)
+        settings.initialize().getOrThrow()
+        assertTrue(settings.settings.first().predictiveBackEnabled)
+
+        settings.setPredictiveBackEnabled(false).getOrThrow()
+        val restored = PortableAppSettings(documents)
+        restored.initialize().getOrThrow()
+        assertFalse(restored.settings.first().predictiveBackEnabled)
+        assertEquals(AppThemeMode.DARK, restored.settings.first().themeMode)
+        restored.resetDefaults().getOrThrow()
+        assertTrue(restored.settings.first().predictiveBackEnabled)
+    }
+
     @Test fun comicFirstPageSettingInheritsUntilOverriddenAndCanReset() = runTest {
         val documents = Documents()
         documents.values["comic-reader-settings.json"] = """{"comics":{"legacy":{"pageScale":"FIT_WIDTH"}}}"""

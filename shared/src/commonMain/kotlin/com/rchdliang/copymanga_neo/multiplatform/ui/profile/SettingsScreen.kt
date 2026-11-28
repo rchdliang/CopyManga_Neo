@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.AlertDialog
@@ -54,12 +55,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.model.AppThemeMode
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalUiPlatform
 import com.rchdliang.copymanga_neo.multiplatform.ui.reader.PageScale
 import com.rchdliang.copymanga_neo.multiplatform.ui.reader.ReadingDirection
 import com.rchdliang.copymanga_neo.multiplatform.ui.reader.ScreenOrientationSetting
@@ -91,6 +97,8 @@ internal fun SettingsScreen(
         onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
+        onPredictiveBackChange = viewModel::setPredictiveBackEnabled,
+        supportsPredictiveBack = LocalUiPlatform.current?.supportsPredictiveBack == true,
         onSimplifyChineseChange = viewModel::setSimplifyChinese,
         onDictionaryUpdate = viewModel::updateChineseDictionary,
         onWifiOnlyChange = viewModel::setWifiOnlyDownloads,
@@ -127,6 +135,8 @@ private enum class SettingsPicker { THEME, DIRECTION, SCALE, ORIENTATION }
 internal fun SettingsPage(
     state: SettingsUiState = SettingsUiState(isLoading = false),
     onThemeChange: (AppThemeMode) -> Unit = {},
+    onPredictiveBackChange: (Boolean) -> Unit = {},
+    supportsPredictiveBack: Boolean = false,
     onSimplifyChineseChange: (Boolean) -> Unit = {},
     onDictionaryUpdate: () -> Unit = {},
     onWifiOnlyChange: (Boolean) -> Unit = {},
@@ -193,18 +203,19 @@ internal fun SettingsPage(
                                     ?: run { destination = SettingsDestination.DOWNLOADS }
                             })
                         ProfileSectionTitle("外观")
+                        val appearanceCount = if (supportsPredictiveBack) 3 else 2
                         ProfileListItem(
                             Icons.Outlined.Palette,
                             "主题",
                             state.settings.themeMode.label,
                             index = 0,
-                            count = 2,
+                            count = appearanceCount,
                             enabled = enabled,
                             onClick = { picker = SettingsPicker.THEME })
                         ProfileListItem(
                             Icons.Outlined.SwapHoriz, "繁体简化",
                             "由OpenCC提供简化能力",
-                            index = 1, count = 2, enabled = enabled,
+                            index = 1, count = appearanceCount, enabled = enabled,
                             onClick = { onSimplifyChineseChange(!state.settings.simplifyChinese || !state.dictionaryReady) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -229,6 +240,19 @@ internal fun SettingsPage(
                                 }
                             }
                         )
+                        if (supportsPredictiveBack) {
+                            val checked = state.settings.predictiveBackEnabled
+                            ProfileListItem(
+                                Icons.Outlined.Swipe, "预测性返回手势", "从屏幕边缘滑动时预览上一页",
+                                index = 2, count = appearanceCount, enabled = enabled,
+                                onClick = { onPredictiveBackChange(!checked) },
+                                modifier = Modifier.semantics {
+                                    role = Role.Switch
+                                    toggleableState = ToggleableState(checked)
+                                },
+                                trailingContent = { Switch(checked, onCheckedChange = null, enabled = enabled) }
+                            )
+                        }
                         ProfileSectionTitle("应用管理")
                         ProfileListItem(
                             Icons.Outlined.Storage, "数据管理", "图片缓存、设置备份与诊断日志",

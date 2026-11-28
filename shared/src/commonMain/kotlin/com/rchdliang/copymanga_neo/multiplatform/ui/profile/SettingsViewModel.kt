@@ -92,6 +92,7 @@ class SettingsViewModel constructor(
     fun setAutoCheckUpdates(enabled: Boolean) = save { repository.setAutoCheckUpdates(enabled) }
 
     fun setThemeMode(mode: AppThemeMode) = save { repository.setThemeMode(mode) }
+    fun setPredictiveBackEnabled(enabled: Boolean) = save { repository.setPredictiveBackEnabled(enabled) }
     fun setSimplifyChinese(enabled: Boolean) = save {
         if (enabled) {
             mutableState.update { it.copy(isDictionaryDownloading = true) }

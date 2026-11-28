@@ -31,11 +31,12 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.rememberComicShar
 @Composable
 internal fun SharedNavHostProbe(
     backDispatcher: UiBackDispatcher,
+    previewEnabled: () -> Boolean = { true },
     onControllerReady: (NavHostController) -> Unit = {}
 ) {
     val controller = rememberNavController()
     val bridge = remember(controller, backDispatcher) {
-        NavHostBackBridge(backDispatcher) { controller.currentBackStackEntry?.id }
+        NavHostBackBridge(backDispatcher, previewEnabled) { controller.currentBackStackEntry?.id }
     }
     DisposableEffect(bridge) { onDispose { bridge.dispose() } }
     SideEffect { onControllerReady(controller) }

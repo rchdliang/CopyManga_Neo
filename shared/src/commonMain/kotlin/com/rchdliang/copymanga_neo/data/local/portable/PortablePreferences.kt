@@ -38,6 +38,9 @@ class PortableAppSettings(private val storage: DocumentStorage) : AppSettingsRep
     suspend fun initialize() = document.ensureLoaded()
     override suspend fun setAutoCheckUpdates(enabled: Boolean) = document.update { it.copy(app = it.app.copy(autoCheckUpdates = enabled)) }
     override suspend fun setThemeMode(mode: AppThemeMode) = document.update { it.copy(app = it.app.copy(themeMode = mode)) }
+    override suspend fun setPredictiveBackEnabled(enabled: Boolean) = document.update {
+        it.copy(app = it.app.copy(predictiveBackEnabled = enabled))
+    }
     override suspend fun setSimplifyChinese(enabled: Boolean) = document.update {
         it.copy(app = it.app.copy(simplifyChinese = enabled), chineseDefaultInitialized = true)
     }

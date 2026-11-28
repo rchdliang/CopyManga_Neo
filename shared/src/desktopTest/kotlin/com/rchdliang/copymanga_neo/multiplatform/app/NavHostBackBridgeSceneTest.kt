@@ -56,6 +56,7 @@ class NavHostBackBridgeSceneTest {
             System.err.flush()
         }
         val back = UiBackDispatcher()
+        var previewEnabled = true
         var controller: NavHostController? = null
         var scene: ImageComposeScene? = null
         try {
@@ -65,7 +66,7 @@ class NavHostBackBridgeSceneTest {
                     LocalLifecycleOwner provides owner,
                     LocalViewModelStoreOwner provides owner
                 ) {
-                    SharedNavHostProbe(back) { controller = it }
+                    SharedNavHostProbe(back, { previewEnabled }) { controller = it }
                 }
             }
             scene = raster
@@ -131,17 +132,20 @@ class NavHostBackBridgeSceneTest {
             settle("ordinary back")
             assertEquals("probe/main", nav.currentDestination?.route)
 
-            nav.navigate("probe/detail")
-            settle("replacement detail")
-            back.startGesture(UiBackEvent(0f, true))
-            back.progressGesture(UiBackEvent(0.4f, true))
-            nav.navigate("probe/reader")
-            settle("replace during gesture")
-            val replacementId = nav.currentBackStackEntry?.id
-            back.commitGesture()
-            settle("replacement commit")
-            assertEquals(replacementId, nav.currentBackStackEntry?.id,
-                "A route introduced during a pinned gesture must not be popped by its commit")
+            for (enabled in listOf(true, false)) {
+                previewEnabled = enabled
+                nav.navigate("probe/detail")
+                settle("replacement detail")
+                back.startGesture(UiBackEvent(0f, true))
+                back.progressGesture(UiBackEvent(0.4f, true))
+                nav.navigate("probe/reader")
+                settle("replace during gesture")
+                val replacementId = nav.currentBackStackEntry?.id
+                back.commitGesture()
+                settle("replacement commit")
+                assertEquals(replacementId, nav.currentBackStackEntry?.id,
+                    "A route introduced during a pinned gesture must not be popped by its commit")
+            }
 
             back.startGesture(UiBackEvent(0f, true))
             stage("dispose during gesture")

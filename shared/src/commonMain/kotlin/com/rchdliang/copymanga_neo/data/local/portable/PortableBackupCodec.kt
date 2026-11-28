@@ -82,6 +82,7 @@ object PortableBackupCodec {
         put("format", "copymanga-neo-settings"); put("version", 2)
         put("settings", buildJsonObject {
             put("themeMode", value.settings.themeMode.name)
+            put("predictiveBackEnabled", value.settings.predictiveBackEnabled)
             put("wifiOnlyDownloads", value.settings.wifiOnlyDownloads)
             put("blurNovelIllustrationPreviews", value.settings.blurNovelIllustrationPreviews)
             put("comicImageConcurrency", value.settings.comicImageConcurrency)
@@ -128,6 +129,7 @@ object PortableBackupCodec {
         require(concurrency in 1..10 && limit >= 0) { "下载设置无效" }
         return SettingsBackup(AppSettings(AppThemeMode.valueOf(app.string("themeMode")), app.boolean("wifiOnlyDownloads"), comicImageConcurrency = concurrency, comicDownloadLimitKiB = limit,
             simplifyChinese = if ("simplifyChinese" in app) app.boolean("simplifyChinese") else false,
+            predictiveBackEnabled = if ("predictiveBackEnabled" in app) app.boolean("predictiveBackEnabled") else true,
             blurNovelIllustrationPreviews = if ("blurNovelIllustrationPreviews" in app) app.boolean("blurNovelIllustrationPreviews") else false), reader, rank, local.toString(), tools.toString(), comics)
     }
 }

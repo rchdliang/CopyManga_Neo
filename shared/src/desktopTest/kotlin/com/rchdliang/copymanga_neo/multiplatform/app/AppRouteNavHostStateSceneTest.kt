@@ -31,6 +31,7 @@ class AppRouteNavHostStateSceneTest {
         }
         owner.lifecycle.currentState = Lifecycle.State.RESUMED
         val back = UiBackDispatcher()
+        var previewEnabled by mutableStateOf(false)
         val platform = object : UiPlatform {
             override val backDispatcher = back
             override suspend fun shareText(title: String, text: String) = error("No sharing in route test")
@@ -56,7 +57,8 @@ class AppRouteNavHostStateSceneTest {
                 LocalLifecycleOwner provides owner,
                 LocalViewModelStoreOwner provides owner,
                 LocalSaveableStateRegistry provides registry,
-                LocalUiPlatform provides platform
+                LocalUiPlatform provides platform,
+                LocalPredictiveBackEnabled provides previewEnabled
             ) {
                 val nav = rememberSaveable(saver = NavHostNavigation.saver) { NavHostNavigation(seed) }
                 SideEffect { navigation = nav }
@@ -101,6 +103,18 @@ class AppRouteNavHostStateSceneTest {
             back.startGesture(UiBackEvent(0f, true))
             back.progressGesture(UiBackEvent(.6f, true))
             frames()
+            assertEquals(setOf("reader-visit"), mountedRoutes, "Disabled preview must not compose the previous page")
+            previewEnabled = true
+            frames(2)
+            back.progressGesture(UiBackEvent(.8f, true))
+            frames()
+            assertEquals(setOf("reader-visit"), mountedRoutes, "A preference change applies to the next gesture")
+            back.cancelGesture()
+            assertEquals(seed, nav.snapshot())
+            back.startGesture(UiBackEvent(0f, true))
+            back.progressGesture(UiBackEvent(.6f, true))
+            frames()
+            assertTrue("detail-visit" in mountedRoutes, "Enabled preview must compose the previous page")
             assertEquals(seed, nav.snapshot())
             assertNull(starts["detail-visit"], "Previous-route preview must remain inactive")
             assertTrue(released.isEmpty())
@@ -124,6 +138,8 @@ class AppRouteNavHostStateSceneTest {
             assertEquals(42, routeState["reader-visit"]?.value)
             assertTrue(released.isEmpty())
 
+            previewEnabled = false
+            frames(2)
             back.startGesture(UiBackEvent(0f, true))
             back.progressGesture(UiBackEvent(.8f, true))
             back.commitGesture()

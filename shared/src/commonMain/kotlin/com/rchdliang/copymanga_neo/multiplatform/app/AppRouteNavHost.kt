@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalPredictiveBackEnabled
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackDispatcher
 
 internal data class RouteHostDiagnostics(
@@ -48,8 +49,9 @@ internal fun AppRouteNavHost(
     BackHandler(enabled = navigation.ready && controller.previousBackStackEntry == null && navigation.tab != MainTab.HOME) {
         navigation.back()
     }
+    val previewEnabled by rememberUpdatedState(LocalPredictiveBackEnabled.current)
     val bridge = remember(controller, backDispatcher) {
-        NavHostBackBridge(backDispatcher) { controller.currentBackStackEntry?.id }
+        NavHostBackBridge(backDispatcher, { previewEnabled }) { controller.currentBackStackEntry?.id }
     }
     DisposableEffect(bridge) { onDispose { bridge.dispose() } }
     LaunchedEffect(controller, navigation) {
@@ -95,8 +97,7 @@ internal fun AppRouteNavHost(
             enterTransition = { fadeIn(tween(150, easing = EaseInOut)) },
             exitTransition = { fadeOut(tween(100, easing = EaseInOut)) },
             popEnterTransition = { fadeIn(tween(150, easing = EaseInOut)) },
-            popExitTransition = { fadeOut(tween(0)) },
-            predictivePopExitTransition = { fadeOut(tween(0)) }
+            popExitTransition = { fadeOut(tween(100, easing = EaseInOut)) }
         ) {
             composable<MainRouteKey> { entry ->
                 trace.mark("main_route_enter")

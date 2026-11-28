@@ -10,6 +10,7 @@ interface AppSettingsRepository {
     val settings: Flow<AppSettings>
     suspend fun setAutoCheckUpdates(enabled: Boolean): Result<Unit>
     suspend fun setThemeMode(mode: AppThemeMode): Result<Unit>
+    suspend fun setPredictiveBackEnabled(enabled: Boolean): Result<Unit>
     suspend fun setWifiOnlyDownloads(enabled: Boolean): Result<Unit>
     suspend fun setBlurNovelIllustrationPreviews(enabled: Boolean): Result<Unit>
     suspend fun setSimplifyChinese(enabled: Boolean): Result<Unit>

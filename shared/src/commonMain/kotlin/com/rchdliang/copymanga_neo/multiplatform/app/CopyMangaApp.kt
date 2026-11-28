@@ -239,6 +239,7 @@ fun CopyMangaApp(
     val appImageLoader = remember(platforms.imageLoader) { startupTrace.measureSync("image_loader") { platforms.imageLoader(10) } }
     CompositionLocalProvider(LocalViewModelStoreOwner provides owner, LocalUiPlatform provides platforms.ui, LocalShareViewModel provides share,
         LocalAppImageLoader provides appImageLoader, LocalStartupTrace provides repositories.startupTrace,
+        LocalPredictiveBackEnabled provides preferences.predictiveBackEnabled,
         LocalNovelReaderPlatform provides platforms.novel, LocalComicExportPlatform provides platforms.export) {
         MetadataTextHost(preferences.simplifyChinese, repositories.chineseDictionary) {
             CopyManga_NeoTheme(darkTheme = dark) {

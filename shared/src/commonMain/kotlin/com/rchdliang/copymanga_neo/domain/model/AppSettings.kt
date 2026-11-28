@@ -13,5 +13,6 @@ data class AppSettings(
     val blurNovelIllustrationPreviews: Boolean = false,
     /** 只转换作品标题、简介和标签的显示文字。 */
     val simplifyChinese: Boolean = false,
-    val autoCheckUpdates: Boolean = true
+    val autoCheckUpdates: Boolean = true,
+    val predictiveBackEnabled: Boolean = true
 )

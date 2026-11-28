@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.model.ComicExportFormat
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.AppModalBottomSheet
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 
 /** 打包方式先于文件格式；保留旧格式值，已有任务仍可恢复。 */
@@ -31,13 +32,7 @@ fun ComicExportDialogs(viewModel: ComicExportViewModel) {
         if (state.pickLocation) viewModel.launchDestinationPicker(platform)
     }
     if (!state.visible || !LocalRouteActive.current) return
-    ModalBottomSheet(
-        onDismissRequest = viewModel::dismiss,
-        sheetState = rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-        )
-    ) {
+    AppModalBottomSheet(onDismissRequest = viewModel::dismiss) {
         Column(
             Modifier.testTag("comic-export-options").fillMaxWidth().heightIn(max = 640.dp)
                 .verticalScrollWithMouse(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),

@@ -18,13 +18,14 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiBackEvent
  */
 internal class NavHostBackBridge(
     uiDispatcher: UiBackDispatcher,
+    private val previewEnabled: () -> Boolean,
     private val currentRouteId: () -> String?
 ) : NavigationEventDispatcherOwner {
     override val navigationEventDispatcher = NavigationEventDispatcher()
     private var frameworkEnabled by mutableStateOf(false)
     private var alive = true
-    private var predictive = false
-    private var pinnedRoute: String? = null
+    private data class Gesture(val routeId: String?, val preview: Boolean)
+    private var gesture: Gesture? = null
     private val input = object : NavigationEventInput() {
         override fun onHasEnabledHandlersChanged(hasEnabledHandlers: Boolean) {
             frameworkEnabled = hasEnabledHandlers
@@ -41,37 +42,36 @@ internal class NavHostBackBridge(
         unregister = uiDispatcher.register(
             enabled = { alive && frameworkEnabled },
             onStarted = { event ->
-                predictive = true
-                pinnedRoute = currentRouteId()
-                input.start(event)
+                val started = Gesture(currentRouteId(), previewEnabled())
+                gesture = started
+                if (started.preview) input.start(event)
             },
-            onProgressed = { event -> if (predictive) input.progress(event) },
-            onCancelled = { cancelPredictive() }
+            onProgressed = { event -> if (gesture?.preview == true) input.progress(event) },
+            onCancelled = { cancelGesture() }
         ) {
-            if (predictive && pinnedRoute != currentRouteId()) {
+            val started = gesture
+            if (started != null && started.routeId != currentRouteId()) {
                 // A programmatic replacement during the gesture must never pop its new route.
-                cancelPredictive()
+                cancelGesture()
             } else {
                 input.complete()
-                predictive = false
-                pinnedRoute = null
+                gesture = null
             }
             true
         }
     }
 
-    private fun cancelPredictive() {
+    private fun cancelGesture() {
         // NavigationEventInput.cancel() without a start synthesizes one; avoid that side effect.
-        if (predictive) input.cancel()
-        predictive = false
-        pinnedRoute = null
+        if (gesture?.preview == true) input.cancel()
+        gesture = null
     }
 
     fun dispose() {
         if (!alive) return
         alive = false
         unregister() // Cancels a pinned UiBackDispatcher gesture before detaching the input.
-        cancelPredictive()
+        cancelGesture()
         navigationEventDispatcher.removeInput(input)
         navigationEventDispatcher.dispose()
     }

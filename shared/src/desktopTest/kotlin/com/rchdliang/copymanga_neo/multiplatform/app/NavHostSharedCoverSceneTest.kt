@@ -202,7 +202,7 @@ class NavHostSharedCoverSceneTest {
         onTransitionActive: (Boolean) -> Unit
     ) {
         val nav = rememberNavController()
-        val bridge = remember(nav, back) { NavHostBackBridge(back) { nav.currentBackStackEntry?.id } }
+        val bridge = remember(nav, back) { NavHostBackBridge(back, { true }) { nav.currentBackStackEntry?.id } }
         DisposableEffect(bridge) { onDispose { bridge.dispose() } }
         SideEffect { onController(nav) }
         val covers = rememberComicSharedTransitionState()
