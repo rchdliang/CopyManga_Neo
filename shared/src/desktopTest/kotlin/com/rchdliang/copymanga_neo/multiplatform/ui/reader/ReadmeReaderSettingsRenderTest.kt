@@ -35,6 +35,7 @@ class ReadmeReaderSettingsRenderTest {
                             leadingSettings = { ReaderSpreadOptions(tools, {}, "sample", 4, 31, true, false, "DOUBLE", {}) },
                             turnSettings = { ReaderToolsOptions(tools, {}) },
                             loadingSettings = { ReaderLoadingOptions(tools, {}) },
+                            infoSettings = { ReaderInfoOptions(tools.readingInfo, {}) },
                             pairingSettings = { ReaderPairingOption(tools, {}, "sample", 4, 31) },
                             helpSettings = { ReaderOperationHelp() },
                             onQualitySelected = {}
@@ -45,6 +46,7 @@ class ReadmeReaderSettingsRenderTest {
         }
         onNodeWithText("阅读设置").assertIsDisplayed()
         onNodeWithText("画质增强").assertIsDisplayed()
+        onNodeWithText("阅读信息").assertIsDisplayed()
         onNodeWithText("本章配页").assertIsDisplayed()
         onAllNodes(isRoot())[1].saveReadmeImage("reader-settings")
         onNodeWithText("显示设置").performClick()

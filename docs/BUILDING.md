@@ -252,7 +252,7 @@ python -m unittest discover -s tests/ci -p 'test_app_config.py'
 
 ## CI 与检查
 
-README 的实机图片与设置组件渲染分别维护，设备来源、渲染命令和输出路径见 [截图说明](../screenshots/cmp/README.md)。设置图更新后逐张检查，不能用控件渲染替代设备或 GPU 验收。
+README 使用 Android 平板实机截图。更新三张阅读设置图时，运行 `./gradlew :shared:desktopTest --tests '*ReadmeReaderSettingsRenderTest' -PenableAndroid=false`，核对 `shared/build/reports/readme-settings/` 中的图片后替换 `screenshots/cmp/render-*.png`。
 
 - [Android 工作流](../.github/workflows/android-ci-release.yml) 定义 Android 的自动构建与标签发布行为。
 - [CMP builds and release draft](../.github/workflows/cmp-release.yml) 在 CMP 分支推送时自动构建 Android/Windows 安装包，标签推送不重复触发；手动运行汇总同一提交的成功自动构建及 iOS 手动构建产物，创建三端发布草稿。
