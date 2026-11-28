@@ -11,12 +11,8 @@ import kotlinx.coroutines.sync.withLock
 
 internal class PortableOfficialAppContentSource(private val client:CopyMangaClient) {
     private val api=MangaApiService(client)
-    private val downloads=OfficialDownloadApiService(client)
     private val mutex=Mutex()
     private val downloadContents=BoundedLruMap<String,ChapterContent>(32)
-    private var exhaustedGeneration:Long?=null
-    private var checkedGeneration:Long?=null
-    private var quotaCheckedAt=0L
     suspend fun catalog(pathWord:String):Result<ChapterCatalog> = capture {
         val generation=client.state.snapshot.generation
         val detail=api.getComicDetail(pathWord).body()?.results?:error("App 目录分组获取失败")
@@ -39,47 +35,26 @@ internal class PortableOfficialAppContentSource(private val client:CopyMangaClie
         client.state.requireCurrent(generation);ChapterCatalog(groups,chapters)
     }
     suspend fun chapter(pathWord:String,uuid:String):Result<ChapterContent> = capture {
-        parseChapter(api.getOfficialChapterContent(pathWord,uuid).body()?.results?:error("App 章节结果为空"),uuid)
+        loadGuestChapter(api, pathWord, uuid)
     }
-    suspend fun download(pathWord:String,uuid:String,bound:CopyMangaClient):Result<ChapterContent> = capture {
-        val api=MangaApiService(bound)
-        val downloads=OfficialDownloadApiService(bound)
+    suspend fun download(pathWord: String, uuid: String, bound: CopyMangaClient): Result<ChapterContent> = capture {
         mutex.withLock {
-            val snapshot=client.state.snapshot;val token=snapshot.session().token
-            require(token.isNotBlank()){"请先登录后下载"}
-            val generation=snapshot.generation;val key="$generation:$pathWord:$uuid"
-            downloadContents.keys.filter { !it.startsWith("$generation:") }.forEach(downloadContents::remove)
+            val snapshot = client.state.snapshot
+            require(snapshot.session().token.isNotBlank()) { "请先登录后下载" }
+            val generation = snapshot.generation
+            val key = "$generation:$pathWord:$uuid"
+            downloadContents.keys.filterNot { it.startsWith("$generation:") }.forEach(downloadContents::remove)
             downloadContents[key]?.let { return@withLock it }
-            if(checkedGeneration!=generation||monotonicNanos()-quotaCheckedAt>=300_000_000_000L) {
-                val info=api.getMemberInfoWithCredential("Token $token")
-                client.state.requireCurrent(generation)
-                if(info.isSuccessful&&info.body()?.code==200) {
-                    checkedGeneration=generation;quotaCheckedAt=monotonicNanos()
-                    val remaining=info.body()?.results?.dayDownloads
-                    if(remaining==0)exhaustedGeneration=generation else if(remaining!=null&&remaining>0)exhaustedGeneration=null
-                }
-            }
-            suspend fun readingContent():ChapterContent {
-                // 下载额度耗尽后仍以游客获取完整内容，不能把后台下载写成账号阅读记录。
-                val value=api.getOfficialChapterContent(pathWord,uuid)
-                client.state.requireCurrent(generation)
-                val content=parseChapter(value.body()?.results?:error("阅读章节结果为空"),uuid)
-                downloadContents[key]=content;return content
-            }
-            if(exhaustedGeneration==generation)return@withLock readingContent()
-            val response=try { downloads.chapter(pathWord,uuid,"Token $token") } catch(error:ApiException) {
-                if(error.status!=401&&DownloadQuotaPolicy.isExhausted(error.message)) {
-                    client.state.requireCurrent(generation);exhaustedGeneration=generation;return@withLock readingContent()
-                }
-                throw error
-            }
+            // 以游客获取完整内容，不把后台下载写成账号阅读记录。
+            val content = loadGuestChapter(MangaApiService(bound), pathWord, uuid)
             client.state.requireCurrent(generation)
-            val result=response.body()?.results?:error("下载授权结果为空，未自动重试")
-            require(result.isLogin==true){"请先登录后下载"}
-            val content=parseChapter(result,uuid)
-            if(result.dayDownloads==0)exhaustedGeneration=generation
-            downloadContents[key]=content;content
+            downloadContents[key] = content
+            content
         }
+    }
+    private suspend fun loadGuestChapter(service: MangaApiService, pathWord: String, uuid: String): ChapterContent {
+        val result = service.getOfficialChapterContent(pathWord, uuid).body()?.results ?: error("App 章节结果为空")
+        return parseChapter(result, uuid)
     }
     private fun parseChapter(result:OfficialChapterResult,uuid:String):ChapterContent {
         require(!result.isLock&&!result.isBanned){"章节暂不可阅读"}

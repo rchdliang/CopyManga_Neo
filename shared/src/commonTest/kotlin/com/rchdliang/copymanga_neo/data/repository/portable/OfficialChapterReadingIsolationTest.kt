@@ -31,9 +31,6 @@ class OfficialChapterReadingIsolationTest {
         val contentRequests = mutableListOf<Pair<String, String>>()
         val reportedChapters = mutableListOf<String>()
         var remoteChapter = "98"
-        var quota = 0
-        var quotaRejected = false
-        var downloadCalls = 0
         var guestStatus = HttpStatusCode.OK
         var guestBody: String? = null
         private val identity = object : PortableOfficialIdentity {
@@ -71,16 +68,6 @@ class OfficialChapterReadingIsolationTest {
                     assertEquals("Token app-test-token", authorization)
                     """{"code":200,"results":{"is_lock":false,"is_login":true,"is_mobile_bind":false,"is_vip":false,
                         "browse":{"path_word":"book","chapter_uuid":"$remoteChapter","chapter_name":"第${remoteChapter}话"}}}"""
-                }
-                path == "/api/v3/member/info" -> {
-                    assertEquals("Token app-test-token", authorization)
-                    """{"code":200,"results":{"day_downloads":$quota}}"""
-                }
-                path.contains("/chapter2download/") -> {
-                    downloadCalls++
-                    assertEquals("Token app-test-token", authorization)
-                    if (quotaRejected) """{"code":400,"message":"下载次数已用完"}"""
-                    else chapterJson(path.substringAfterLast('/'), true)
                 }
                 else -> error("Unexpected request: $path")
             }
@@ -171,37 +158,36 @@ class OfficialChapterReadingIsolationTest {
         }
     }
 
-    @Test fun exhaustedDownloadQuotaUsesGuestContentAndCachesIt() = runTest {
+    @Test fun loggedInDownloadCachesGuestContentWithoutReportingProgress() = runTest {
         val f = Fixture()
         try {
             val first = f.repository.getChapterDownloadContent("book", "100", "default").getOrThrow()
-            assertEquals(34, first.imageUrls.size)
+            assertEquals((0 until 34).map { "https://images.invalid/100/$it.webp" }, first.imageUrls)
             assertEquals(first, f.repository.getChapterDownloadContent("book", "100", "default").getOrThrow())
-            assertEquals(0, f.downloadCalls)
             assertEquals(listOf("100" to "Token"), f.contentRequests)
+            assertTrue(f.reportedChapters.isEmpty())
             assertEquals("98", f.remoteChapter)
         } finally { f.close() }
     }
 
-    @Test fun quotaRejectionFallsBackToGuestAndPreservesAccount() = runTest {
+    @Test fun failedGuestDownloadPreservesAccountAndCanBeRetried() = runTest {
         val f = Fixture()
         try {
-            f.quota = 1
-            f.quotaRejected = true
-            assertEquals(34, f.repository.getChapterDownloadContent("book", "100", "default").getOrThrow().imageUrls.size)
-            assertEquals(1, f.downloadCalls)
+            f.guestStatus = HttpStatusCode.Unauthorized
+            assertTrue(f.repository.getChapterDownloadContent("book", "100", "default").isFailure)
             assertEquals(listOf("100" to "Token"), f.contentRequests)
+            f.guestStatus = HttpStatusCode.OK
+            assertEquals(34, f.repository.getChapterDownloadContent("book", "100", "default").getOrThrow().imageUrls.size)
+            assertEquals(listOf("100" to "Token", "100" to "Token"), f.contentRequests)
             assertEquals("app-test-token", f.state.snapshot.appSession.token)
             assertEquals("98", f.remoteChapter)
         } finally { f.close() }
     }
 
-    @Test fun availableDownloadQuotaStillUsesAuthenticatedDownloadEndpoint() = runTest {
-        val f = Fixture()
+    @Test fun appDownloadStillRequiresLocalLogin() = runTest {
+        val f = Fixture(loggedIn = false)
         try {
-            f.quota = 1
-            assertEquals(34, f.repository.getChapterDownloadContent("book", "100", "default").getOrThrow().imageUrls.size)
-            assertEquals(1, f.downloadCalls)
+            assertEquals("请先登录后下载", f.repository.getChapterDownloadContent("book", "100", "default").exceptionOrNull()?.message)
             assertTrue(f.contentRequests.isEmpty())
             assertEquals("98", f.remoteChapter)
         } finally { f.close() }

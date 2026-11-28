@@ -1,6 +1,6 @@
 package com.rchdliang.copymanga_neo.domain.model
 
-/** 只识别明确的下载额度不足，认证、风控及章节权限错误不能触发阅读回退。 */
+/** 识别官方配额下载接口返回的额度不足提示。 */
 object DownloadQuotaPolicy {
     fun isExhausted(message: String?): Boolean {
         val text = message ?: return false
