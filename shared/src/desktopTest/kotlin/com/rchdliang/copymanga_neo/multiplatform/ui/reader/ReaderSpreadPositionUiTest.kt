@@ -6,7 +6,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.v2.runSkikoComposeUiTest
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -20,8 +25,36 @@ import org.jetbrains.skia.Bitmap
 import kotlin.test.*
 
 /** Exercises the production screen's restoration/reporting; preview images avoid network/services. */
-@OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class, ExperimentalTestApi::class)
 class ReaderSpreadPositionUiTest {
+    @Test fun continuousVolumeKeyWithAnimationDisabledJumpsWithinOneFrame() =
+        runSkikoComposeUiTest(size = Size(440f, 620f)) {
+            val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }
+            try {
+                setContent {
+                    CompositionLocalProvider(LocalLifecycleOwner provides owner, LocalInspectionMode provides true) {
+                        CopyManga_NeoTheme {
+                            ReaderSuccessContent(
+                                images = (0..8).map { "fixture-$it" }, chapterName = "Fixture",
+                                readingDirection = "TOP_TO_BOTTOM", pageScale = "FIT_SCREEN", screenOrientation = "SYSTEM_DEFAULT",
+                                onPrevChapter = {}, onNextChapter = {}, hasPrevChapter = false, hasNextChapter = false,
+                                onRefresh = {}, onReadingDirectionChange = {}, onPageScaleChange = {}, onScreenOrientationChange = {},
+                                pendingInitialPage = remember { mutableStateOf(2) },
+                                tools = ReaderToolsSettings(volumeKeys = true, pageAnimation = false, inlineComments = false),
+                                modifier = Modifier.testTag("reader")
+                            )
+                        }
+                    }
+                }
+                waitForIdle()
+                onNodeWithText("3 / 9").assertIsDisplayed()
+                mainClock.autoAdvance = false
+                onNodeWithTag("reader").performKeyInput { pressKey(Key.VolumeDown) }
+                mainClock.advanceTimeByFrame()
+                onNodeWithText("4 / 9").assertIsDisplayed()
+            } finally { owner.destroy() }
+        }
+
     @Test fun firstFrameUsesTheRequestedSpread() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val owner = RouteLifecycleOwner().apply { update(Lifecycle.State.RESUMED, true) }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -774,13 +775,16 @@ fun ReaderSuccessContent(
             val safe = index.coerceIn(pages.indices)
             preferredRawKey = pages[safe].key
             if (isContinuous) {
-                if (animate) list.animateScrollToItem(safe) else list.scrollToItem(safe)
+                if (animate && tools.pageAnimation) list.animateScrollToItem(safe) else list.scrollToItem(safe)
             } else {
                 if (animate && tools.pageAnimation) pager.animateScrollToPage(spreads.spreadIndex(safe), animationSpec = tween(180)) else pager.scrollToPage(spreads.spreadIndex(safe))
             }
         }
     }
 
+    suspend fun scrollContinuousBy(delta: Float) {
+        if (tools.pageAnimation) list.animateScrollBy(delta) else list.scrollBy(delta)
+    }
     fun nextChapter() {
         val current = chapters.firstOrNull { it.uuid == page?.chapterUuid }
         val next = current?.content?.nextUuid
@@ -955,7 +959,7 @@ fun ReaderSuccessContent(
                     else keyboardScrollJob = scope.launch {
                         val viewport = (list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset).coerceAtLeast(0)
                         val distance = if (command.movement == ReaderKeyboardMovement.SMALL_SCROLL) keyboardStep else viewport * 0.9f
-                        list.animateScrollBy(if (command.forward) distance else -distance)
+                        scrollContinuousBy(if (command.forward) distance else -distance)
                     }
                 }
             }
