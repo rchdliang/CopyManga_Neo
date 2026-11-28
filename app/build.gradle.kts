@@ -80,7 +80,7 @@ android {
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = rootProject.extra["copyMangaVersionCode"] as Int
+        versionCode = rootProject.extra["copyMangaAndroidVersionCode"] as Int
         versionName = rootProject.extra["copyMangaPackageVersionName"] as String
 
         buildConfigField("String", "OFFICIAL_APP_TAP_STRING", "\"$officialAppTapString\"")

@@ -21,19 +21,20 @@ Android Studio 打开仓库根目录，完成 Gradle Sync 后选择 `app` 运行
 
 ## 修改版本号
 
-发布版本和平台升级编号只编辑根目录的 [version.properties](../version.properties)；应用内显示的 Git 提交数在构建时生成，不写入此文件：
+发布版本和 iOS、桌面安装包的构建号在根目录的 [version.properties](../version.properties) 中维护。
 
 | 字段 | 含义 |
 | --- | --- |
 | `COPYMANGA_VERSION_BASE` | 三段基础版本，如 `0.10.19`；用于 iOS 短版本 |
 | `COPYMANGA_VERSION_HOTFIX` | 可选修订号；填 `1` 时发布版本为 `0.10.19.1`，留空时使用基础版本 |
-| `COPYMANGA_VERSION_CODE` | 递增的整数构建号，用于 Android、iOS 和 Windows 安装包的版本管理 |
+| `COPYMANGA_VERSION_CODE` | iOS、macOS 和 Windows 安装包使用的递增构建号 |
 
 这个文件的赋值语法同时适用于 Java Properties 和 Xcode 配置，不要在其中放本地路径、密钥或机器专用设置。
 
-- 根 Gradle 脚本在构建时执行 `git rev-list --count HEAD`，各平台关于页显示“发布版本+提交数”，例如 `0.10.30+181`。同时通过 `git rev-parse --verify HEAD` 读取完整提交哈希，固定取前七位，生成 Android 系统包管理器使用的 `versionName`，例如 `0.10.30-d3b3d30`。同一次提交重复构建或仅修改未提交文件时两个后缀均不变；主版本仍只在 `version.properties` 中维护。
+- Android 的 `versionCode` 直接使用 `git rev-list --count HEAD` 的结果，即当前提交及其全部祖先的数量。沿 CMP 发布历史追加提交时，版本码递增。同一提交重复打包或只修改未提交文件时，版本码相同。平行分支的提交数可能相同。
+- 各平台关于页显示“发布版本+提交数”，例如 `0.10.30+181`。Android 的 `versionName` 使用“发布版本-七位提交哈希”，例如 `0.10.30-d3b3d30`。
 - 构建需要 Git 和完整仓库历史；浅克隆先执行 `git fetch --unshallow`，CI checkout 使用 `fetch-depth: 0`，避免生成错误的提交数。配置缓存会跟踪 Git 输出，新增提交后自动更新生成版本。
-- 发布标签、桌面打包元数据及 iOS 系统版本沿用数字版本，避免平台版本格式限制；`COPYMANGA_VERSION_CODE` 仍独立递增。Android 附件名使用“版本-七位哈希+提交数”，Windows 附件名使用“版本+提交数”，不把平台升级编号当作 Git 提交数。
+- 发布标签、桌面打包元数据及 iOS 系统版本沿用数字版本。Android 附件名使用“版本-七位哈希+提交数”，Windows 附件名使用“版本+提交数”。
 - Windows Inno Setup 安装向导显示数字发布版本（含可选修订号，不含 `+提交数`）；Compose 内部 Windows 应用镜像仍使用“基础版本前两段 + 构建号”的三段版本。iOS 系统版本使用三段基础版本和构建号，各平台应用内显示带 `+提交数` 的版本；不需要另改平台版本常量。
 - `:shared:generateReleaseVersion` 自动生成共享 Kotlin 常量，所有 Kotlin 目标的编译任务自动依赖它。生成文件位于 `shared/build/generated/releaseVersion/commonMain`，不要手工编辑。
 - iOS 的 [Config.xcconfig](../iosApp/Config.xcconfig) 直接包含同一文件，将其映射到 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`；Debug/Release 共用配置。
@@ -233,7 +234,7 @@ CopyMangaNeo_windows_1.2.3+234_x64_portable.zip
 CopyMangaNeo_ios_1.2.3+234_arm64_unsigned.ipa
 ```
 
-Release 上传七个安装产物和 `release-manifest.json`，共 8 个附件，不上传单独的 `.sha256` 文件，附件摘要由 GitHub 提供。`ios-device-build.json` 只保留在 iOS Actions Artifact 中，与来源 Artifact 中的校验文件一起用于发布前核对；缺少 iOS 清单时仍拒绝发布。汇总清单区分数字发布版本、平台升级编号、Git 提交数和完整提交哈希，并记录两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID；产物缺失、校验不符或属于其他提交时拒绝发布。
+Release 上传七个安装产物和 `release-manifest.json`，共 8 个附件，不上传单独的 `.sha256` 文件，附件摘要由 GitHub 提供。`ios-device-build.json` 只保留在 iOS Actions Artifact 中，与来源 Artifact 中的校验文件一起用于发布前核对。汇总清单中的 `versionCode` 记录 iOS 和桌面的构建号，`commitCount` 记录 Git 提交数。清单还包括数字发布版本、完整提交哈希、两次来源构建的运行 ID、重跑次数、链接和三份 Artifact ID。缺少 iOS 清单或产物、校验不符或产物属于其他提交时拒绝发布。
 
 自动构建使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `COPYMANGA_TAP_STRING`。前四项必须对应发布密钥，以保持覆盖升级能力。`prepare-test-signing.py` 负责恢复签名材料，自动构建执行 `:app:assembleRelease`。手动发布不读取这些 Secrets，只使用 `GITHUB_TOKEN` 的 Actions 读取权限下载产物及 Contents 写入权限维护草稿。本地 `keystore.properties` 与密钥库不会自动进入 Actions，不能提交或上传为产物。
 

@@ -200,7 +200,7 @@ async function prepare({github, context, core, root = process.cwd(), git = execF
   core.setOutput('windows_artifact_id', sourceBuild.windowsArtifactId);
   core.info('Reuse automatic build: ' + sourceBuild.url);
   core.info('Reuse iOS build: ' + sourceIosBuild.url);
-  core.info('CMP ' + meta.version + ' (' + meta.versionCode + '), commit ' + meta.commit);
+  core.info('CMP ' + meta.buildVersion + ' (iOS/desktop build ' + meta.versionCode + '), commit ' + meta.commit);
   return meta;
 }
 
@@ -229,7 +229,7 @@ async function publish({github, context, core, sourceBuild, sourceIosBuild, root
         '- iOS：未签名真机 IPA，需要通过 SideStore / AltStore 等工具自行签名安装，不是 App Store 安装包。',
         '- GitHub 附件提供 SHA-256 摘要；构建清单记录来源提交、构建运行及校验值，不另附 .sha256 文件。',
         '',
-        '版本：' + meta.buildVersion + '；平台升级编号：' + meta.versionCode,
+        '版本 ' + meta.buildVersion + '（iOS 和桌面构建号 ' + meta.versionCode + '）',
         '源码提交：' + meta.commit,
         '复用自动构建：' + sourceBuild.url,
         '复用 iOS 构建：' + sourceIosBuild.url,
