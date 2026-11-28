@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.data.repository.portable
 
 import com.rchdliang.copymanga_neo.data.remote.ThemeRequestScheduler
+import com.rchdliang.copymanga_neo.data.remote.portable.ComicUnavailableException
 import com.rchdliang.copymanga_neo.data.remote.portable.CopyMangaClient
 import com.rchdliang.copymanga_neo.data.remote.portable.NetworkSnapshot
 import com.rchdliang.copymanga_neo.data.remote.portable.api.MangaApiService
@@ -8,7 +9,6 @@ import com.rchdliang.copymanga_neo.data.remote.portable.dto.ComicDetailResult
 import com.rchdliang.copymanga_neo.domain.model.ComicCardMetadata
 import com.rchdliang.copymanga_neo.domain.model.ThemeLoadingPolicy
 import com.rchdliang.copymanga_neo.domain.repository.ComicMetadataRepository
-import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -121,11 +121,11 @@ class PortableComicMetadataRepository(
                         if (snapshot.generation != client.state.snapshot.generation) return@withLock false
                         val cached = values.value[path]
                         if (cached?.isFresh(now()) == true && cached.themes != null) return@withLock false
+                        if ((retryAfter[path] ?: 0) > now()) return@withLock false
                         if (stoppedUntil > now()) {
                             errors.update { it + (path to "预加载暂缓，请重试") }
                             return@withLock false
                         }
-                        if ((retryAfter[path] ?: 0) > now()) return@withLock false
                         if (priority) promoted.add(ticket.id) else queued.add(ticket.id)
                     }
                     if (accepted) {
@@ -221,8 +221,8 @@ class PortableComicMetadataRepository(
                 suspend fun skip(): String? = guard.withLock {
                     when {
                         force -> null
-                        stoppedUntil > now() -> "预加载暂缓，请重试"
                         (retryAfter[path] ?: 0) > now() -> "详情请求暂缓"
+                        stoppedUntil > now() -> "预加载暂缓，请重试"
                         values.value[path]?.let { it.isFresh(now()) && it.themes != null } == true -> "已有有效展示缓存"
                         else -> null
                     }
@@ -239,7 +239,6 @@ class PortableComicMetadataRepository(
                     }
                     val response = withTimeout(8_000) { api.getComicDetail(path) }
                     val body = response.body()
-                    if (response.code() == 210 || body?.code == 210) throw RiskControlException(body?.message ?: "访问暂受限制")
                     check(response.isSuccessful && body?.code == 200) { body?.message ?: "详情加载失败" }
                     val result = requireNotNull(body).results
                     val comic = result.comicDetail
@@ -280,7 +279,7 @@ class PortableComicMetadataRepository(
             if (snapshot.generation == client.state.snapshot.generation) {
                 errors.update { it + (path to (error.message ?: "详情加载失败")) }
                 retryAfter[path] = now() + 15 * 60_000
-                if (++failureCount >= 3) stoppedUntil = now() + 15 * 60_000
+                if (error !is ComicUnavailableException && ++failureCount >= 3) stoppedUntil = now() + 15 * 60_000
             }
         }
         return Result.failure(error)

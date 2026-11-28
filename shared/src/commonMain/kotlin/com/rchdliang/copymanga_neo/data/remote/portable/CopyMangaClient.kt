@@ -25,7 +25,8 @@ import kotlin.time.Clock
 class PortableTransportException(message: String) : com.rchdliang.copymanga_neo.domain.platform.PlatformIOException(message)
 data class NetworkResponse(val first:Int,val second:String,val headers:Map<String,List<String>>)
 data class ResourceResponse(val status:Int,val headers:Map<String,List<String>>,val bytes:ByteArray,val requestMillis:Long,val responseMillis:Long,val generation:Long)
-class ApiException(val status: Int, message: String) : Exception(message)
+open class ApiException(val status: Int, message: String) : Exception(message)
+internal class ComicUnavailableException(status: Int, message: String) : ApiException(status, message)
 class RawResponseBody(private val text: String) {
     fun string(): String = text
     fun close() = Unit
@@ -260,6 +261,9 @@ class CopyMangaClient(
                 if(!request.www && (!noAuth||request.invalidateCurrentSessionOn401) && (response.status.value==401 || code==401) && snapshot.session(mode).token.isNotBlank() && headers["Authorization"]=="Token ${snapshot.session(mode).token}" && state.snapshot.generation==snapshot.generation) {
                     state.unregister(job)
                     invalidateSession(mode,snapshot.generation,snapshot.session(mode).token)
+                }
+                if (request.method == "GET") {
+                    ApiBusinessErrors.unavailableComic(path, response.status.value, code, message)?.let { throw it }
                 }
                 val business=ApiBusinessErrors.isValidation(path,message)||CommentPolicy.isClosedResponse(path,response.status.value,code,message)
                 if(!business&&(response.status.value==210||code==210)) {

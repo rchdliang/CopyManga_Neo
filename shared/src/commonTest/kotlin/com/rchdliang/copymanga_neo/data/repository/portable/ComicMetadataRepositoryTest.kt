@@ -41,6 +41,7 @@ class ComicMetadataRepositoryTest {
         "free_type":{"display":"","value":0},"restrict":{"display":"","value":0},"reclass":{"display":"","value":0},
         "region":{"display":"","value":0},"status":{"display":"","value":0},"theme":[]}}}
     """.trimIndent()
+    private val unavailableMessage = "該作品已下架或已合并入其他同系列作品。【您可以用作品名稱搜索，找到合并后的作品集】"
 
     private inner class Fixture(val test: TestScope, val storage: Storage = Storage()) {
         val state = PortableNetworkState(NetworkSnapshot(settings = NetworkSettings(requestMode = RequestMode.WEB, themeFetchConcurrency = 1, themeFetchIntervalMillis = 0)))
@@ -48,6 +49,7 @@ class ComicMetadataRepositoryTest {
         var fail = false
         var closed = false
         var risk = false
+        var unavailable = false
         var wait: CompletableDeferred<Unit>? = null
         val http = HttpClient(MockEngine(MockEngineConfig().apply {
             dispatcher = StandardTestDispatcher(test.testScheduler)
@@ -55,6 +57,8 @@ class ComicMetadataRepositoryTest {
                 calls++
                 wait?.await()
                 when {
+                    unavailable -> respond("""{"code":210,"message":"$unavailableMessage","results":null}""",
+                        HttpStatusCode(210, "Unavailable"), headersOf(HttpHeaders.ContentType, "application/json"))
                     risk -> respond("""{"code":210,"message":"blocked"}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
                     fail -> respondError(HttpStatusCode.ServiceUnavailable)
                     else -> respond(response.replace("\"close_roast\":false", "\"close_roast\":$closed"), headers = headersOf(HttpHeaders.ContentType, "application/json"))
@@ -156,6 +160,35 @@ class ComicMetadataRepositoryTest {
             f.repo.retry("book19")
             runCurrent()
             assertNotNull(f.repo.metadata.value["book19"])
+        } finally { f.close() }
+    }
+
+    @Test fun unavailableComicsKeepTheirOwnErrorsAndDoNotPauseOtherPreloads() = runTest {
+        val f = Fixture(this)
+        val removed = listOf("removed-a", "removed-b", "merged")
+        try {
+            f.unavailable = true
+            f.repo.preload(removed)
+            runCurrent()
+            assertEquals(3, f.calls)
+            assertEquals(removed.associateWith { unavailableMessage }, f.repo.failures.value)
+            assertNull(f.client.risk.notice.value)
+
+            f.unavailable = false
+            f.repo.preload(removed + "book")
+            runCurrent()
+            assertEquals(4, f.calls)
+            assertNotNull(f.repo.metadata.value["book"])
+            assertEquals(removed.associateWith { unavailableMessage }, f.repo.failures.value)
+
+            f.fail = true
+            f.repo.preload(listOf("offline-a", "offline-b", "offline-c"))
+            runCurrent()
+            f.repo.preload(removed + "waiting")
+            runCurrent()
+            assertEquals(7, f.calls)
+            assertEquals("预加载暂缓，请重试", f.repo.failures.value["waiting"])
+            removed.forEach { assertEquals(unavailableMessage, f.repo.failures.value[it]) }
         } finally { f.close() }
     }
 

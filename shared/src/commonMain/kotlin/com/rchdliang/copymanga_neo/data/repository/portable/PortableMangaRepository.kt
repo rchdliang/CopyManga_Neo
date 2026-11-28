@@ -1,5 +1,6 @@
 package com.rchdliang.copymanga_neo.data.repository.portable
 
+import com.rchdliang.copymanga_neo.data.remote.portable.ComicUnavailableException
 import com.rchdliang.copymanga_neo.data.remote.portable.api.MangaApiService
 import com.rchdliang.copymanga_neo.data.remote.portable.api.OrderType
 import com.rchdliang.copymanga_neo.domain.model.FavoritesSort
@@ -270,7 +271,10 @@ class PortableMangaRepository(
         comicPathWord: String, chapterUuid: String, group: String
     ): Result<com.rchdliang.copymanga_neo.domain.model.ChapterInfo> {
         val catalogResult = getChapterCatalog(comicPathWord)
-        (catalogResult.exceptionOrNull() as? RiskControlException)?.let { return Result.failure(it) }
+        val catalogError = catalogResult.exceptionOrNull()
+        if (catalogError is RiskControlException || catalogError is ComicUnavailableException) {
+            return Result.failure(catalogError)
+        }
         catalogResult.getOrNull()?.let { catalog ->
             val resolvedGroup = catalog.findGroup(chapterUuid) ?: group
             catalog.chaptersByGroup[resolvedGroup]?.firstOrNull { it.uuid == chapterUuid }?.let {
@@ -328,7 +332,10 @@ class PortableMangaRepository(
             var nextUuid: String? = null
             var chapterName: String? = null
             val metadata = getChapterInfo(comicPathWord, chapterUuid, group)
-            (metadata.exceptionOrNull() as? RiskControlException)?.let { return Result.failure(it) }
+            val metadataError = metadata.exceptionOrNull()
+            if (metadataError is RiskControlException || metadataError is ComicUnavailableException) {
+                return Result.failure(metadataError)
+            }
             metadata.onSuccess { chapter ->
                 prevUuid = chapter.prevChapter
                 nextUuid = chapter.nextChapter

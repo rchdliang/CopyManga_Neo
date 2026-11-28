@@ -379,6 +379,55 @@ class CopyMangaClientTest {
         assertFailsWith<ApiException>{client.raw(ApiRequest("/api/v3/member/comment",method="POST",form=listOf("comment" to "hi")))}
         assertNull(client.risk.notice.value);client.close()
     }
+    @Test fun unavailableComicKeepsTheOriginalReasonAndAllowsTheNextRequest() = runTest {
+        val traditional = "該作品已下架或已合并入其他同系列作品。【您可以用作品名稱搜索，找到合并后的作品集】"
+        val simplified = "该作品已合并入其他同系列作品"
+        for ((app, status, reason) in listOf(
+            Triple(true, HttpStatusCode(210, "Unavailable"), traditional),
+            Triple(false, HttpStatusCode.OK, simplified)
+        )) {
+            val requests = mutableListOf<String>()
+            val engine = MockEngine { request ->
+                val path = request.url.encodedPath
+                requests += path
+                if (path.endsWith("/missing")) respond("""{"code":210,"message":"$reason"}""", status)
+                else respond("""{"code":200,"results":{}}""")
+            }
+            val client = CopyMangaClient(HttpClient(engine), state(app), identity = identity)
+            try {
+                val error = assertFailsWith<ComicUnavailableException> {
+                    if (app) {
+                        // 已下载章节会尝试补齐上下章信息。作品已下架时无需再请求分组分页。
+                        val metadata = PortableComicMetadataRepository(client, scope = backgroundScope)
+                        PortableMangaRepository(client, metadata = metadata)
+                            .getChapterInfo("missing", "chapter", "default").getOrThrow()
+                    } else {
+                        client.execute(ApiRequest("/api/v3/comic2/missing"))
+                    }
+                }
+                assertEquals(reason, error.message)
+                assertNull(client.risk.notice.value)
+                client.results(ApiRequest("/api/v3/comic2/available"))
+                assertEquals(listOf("/api/v3/comic2/missing", "/api/v3/comic2/available"), requests)
+            } finally { client.close() }
+        }
+    }
+
+    @Test fun aComicDetailRouteAndAnUnrelatedBusinessMessageCannotExemptThrottling() = runTest {
+        val removed = "该作品已下架"
+        for ((path, status, reason) in listOf(
+            Triple("/api/v3/comic2/book", HttpStatusCode.OK, "Request was throttled"),
+            Triple("/api/v3/comics", HttpStatusCode.OK, removed),
+            Triple("/api/v3/comic2/book", HttpStatusCode.TooManyRequests, removed)
+        )) {
+            val engine = MockEngine { respond("""{"code":210,"message":"$reason"}""", status) }
+            val client = CopyMangaClient(HttpClient(engine), state())
+            try {
+                assertFailsWith<RiskControlException> { client.execute(ApiRequest(path)) }
+                assertNotNull(client.risk.notice.value)
+            } finally { client.close() }
+        }
+    }
     @Test fun redirectsAndUnauthenticatedMemberRequestsDoNotReplay()=runTest {
         var calls=0;val engine=MockEngine{calls++;respond("",HttpStatusCode.Found,headersOf(HttpHeaders.Location,"https://other.example/"))}
         val client=CopyMangaClient(HttpClient(engine),state())

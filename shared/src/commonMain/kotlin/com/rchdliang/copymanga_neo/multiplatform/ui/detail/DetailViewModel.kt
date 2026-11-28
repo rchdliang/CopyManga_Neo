@@ -1,6 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.detail
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.UiLog
+import com.rchdliang.copymanga_neo.data.remote.portable.ComicUnavailableException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rchdliang.copymanga_neo.domain.model.Author
@@ -21,6 +22,7 @@ import com.rchdliang.copymanga_neo.domain.model.Theme
 import com.rchdliang.copymanga_neo.domain.repository.DownloadRepository
 import com.rchdliang.copymanga_neo.domain.repository.MangaRepository
 import com.rchdliang.copymanga_neo.domain.repository.ReadingProgressRepository
+import com.rchdliang.copymanga_neo.domain.repository.RiskControlException
 import com.rchdliang.copymanga_neo.domain.repository.ThemeBlacklistRepository
 import com.rchdliang.copymanga_neo.domain.repository.UserRepository
 import kotlinx.collections.immutable.ImmutableList
@@ -28,7 +30,6 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,7 +39,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 
 sealed interface ChapterBatchAction {
     data object ManageDownloads : ChapterBatchAction
@@ -153,17 +153,38 @@ class DetailViewModel constructor(
             ?: "default"
     }
 
-    private suspend fun loadRemoteDetail(pathWord: String): Pair<Result<ComicDetail>, ChapterCatalog?> =
-        supervisorScope {
-            val catalog = async { mangaRepository.getChapterCatalog(pathWord, forceRefresh = true) }
-            val detail = async { mangaRepository.getComicDetail(pathWord) }
-            val detailResult = detail.await()
-            val catalogResult = catalog.await()
-            val risk =
-                catalogResult.exceptionOrNull() as? com.rchdliang.copymanga_neo.domain.repository.RiskControlException
-            if (risk != null) Result.failure<ComicDetail>(risk) to null
-            else detailResult to catalogResult.getOrNull()
+    private suspend fun loadRemoteDetail(pathWord: String): Pair<Result<ComicDetail>, ChapterCatalog?> {
+        // 先确认作品可访问；下架作品的空目录不能触发整个应用的风控暂停。
+        val detail = mangaRepository.getComicDetail(pathWord)
+        if (detail.isFailure) return detail to null
+        val catalog = mangaRepository.getChapterCatalog(pathWord, forceRefresh = true)
+        val risk = catalog.exceptionOrNull() as? RiskControlException
+        return if (risk != null) Result.failure<ComicDetail>(risk) to null else detail to catalog.getOrNull()
+    }
+
+    private suspend fun showDetailFailure(pathWord: String, error: Throwable) {
+        val message = error.message ?: "未知错误"
+        // 刷新时屏上可能还是旧的在线目录。下架后只提供已下载的章节。
+        if (error is ComicUnavailableException && _uiState.value.comicDetail != null && !_uiState.value.hasLocalCache) {
+            loadLocalCache(pathWord)
         }
+        _uiState.update { state ->
+            when {
+                state.hasLocalCache -> state.copy(
+                    isLoading = false, isChapterCatalogReady = true,
+                    toastMessage = if (error is ComicUnavailableException) "$message\n显示本地缓存" else "网络加载失败，显示本地缓存"
+                )
+                error is ComicUnavailableException -> state.copy(
+                    isLoading = false, comicDetail = null, chapterCatalog = null, isChapterCatalogReady = false,
+                    chapters = persistentListOf(), groups = persistentListOf(), chapterTotal = 0,
+                    batchSelection = null, error = message, toastMessage = message
+                )
+                state.comicDetail != null -> state.copy(isLoading = false, toastMessage = message)
+                error is RiskControlException -> state.copy(isLoading = false, riskControlReason = error.reason)
+                else -> state.copy(isLoading = false, error = message, toastMessage = message)
+            }
+        }
+    }
 
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         UiLog.e("DetailViewModel", "Unhandled coroutine exception", throwable)
@@ -281,7 +302,7 @@ class DetailViewModel constructor(
             }
 
             refreshReadingStatus()
-            val hasLocal = loadLocalCache(pathWord)
+            loadLocalCache(pathWord)
             refreshDownloadStatus(pathWord)
 
             val (detailResult, catalog) = loadRemoteDetail(pathWord)
@@ -305,36 +326,7 @@ class DetailViewModel constructor(
                     saveLocalCache(detail.comic)
                     loadAllChapters(pathWord, _uiState.value.selectedGroup)
                 },
-                onFailure = { error ->
-                    if (hasLocal) {
-                        UiLog.d("DetailViewModel", "Network failed, showing local cache")
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                isChapterCatalogReady = true,
-                                toastMessage = "网络加载失败，显示本地缓存"
-                            )
-                        }
-                    } else {
-                        val message = error.message ?: "未知错误"
-                        if (message.startsWith("code 210:")) {
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    riskControlReason = message
-                                )
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    error = message,
-                                    toastMessage = message
-                                )
-                            }
-                        }
-                    }
-                }
+                onFailure = { error -> showDetailFailure(pathWord, error) }
             )
         }
     }
@@ -375,14 +367,7 @@ class DetailViewModel constructor(
                     saveLocalCache(detail.comic)
                     loadAllChapters(pathWord, _uiState.value.selectedGroup)
                 },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            toastMessage = error.message ?: "刷新失败"
-                        )
-                    }
-                }
+                onFailure = { error -> showDetailFailure(pathWord, error) }
             )
         }
     }
@@ -442,6 +427,8 @@ class DetailViewModel constructor(
         _uiState.update {
             it.copy(
                 hasLocalCache = true,
+                chapterCatalog = null,
+                batchSelection = null,
                 selectedGroup = selectedGroup,
                 groups = groups.toImmutableList(),
                 comicDetail = detail,
