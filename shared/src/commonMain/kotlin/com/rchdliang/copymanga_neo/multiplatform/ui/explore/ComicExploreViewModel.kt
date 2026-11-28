@@ -8,6 +8,7 @@ import com.rchdliang.copymanga_neo.domain.model.ComicFilterOptions
 import com.rchdliang.copymanga_neo.domain.model.ComicSummary
 import com.rchdliang.copymanga_neo.domain.model.ComicTopic
 import com.rchdliang.copymanga_neo.domain.repository.ComicDiscoveryRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -54,14 +55,16 @@ data class ComicExploreUiState(
 /** 漫画发现页面的分页、筛选及专题状态。 */
 class ComicExploreViewModel constructor(
     private val repository: ComicDiscoveryRepository,
-    private val savedStateHandle: SavedStateHandle,
+    savedStateHandle: SavedStateHandle,
     autoStart: Boolean = true
 ) : ViewModel() {
-    private val initialTopic = savedStateHandle.get<String>("topic")?.takeIf { it.isNotBlank() }
-    val openedFromTopic = initialTopic != null
     private val _uiState = MutableStateFlow(
         ComicExploreUiState(
             section = ExploreSection.fromRoute(savedStateHandle["section"]),
+            topic = savedStateHandle.get<String>("topic")?.takeIf(String::isNotBlank)?.let { path ->
+                ComicTopic(path, savedStateHandle.get<String>("topicTitle").orEmpty(),
+                    savedStateHandle["topicCover"], savedStateHandle["topicBrief"])
+            },
             filters = repository.cachedFilterOptions(),
             theme = savedStateHandle.get<String>("theme")?.takeIf { it.isNotBlank() },
             top = savedStateHandle.get<String>("top")?.takeIf { it.isNotBlank() },
@@ -73,6 +76,7 @@ class ComicExploreViewModel constructor(
     )
     val uiState: StateFlow<ComicExploreUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
+    private var topicJob: Job? = null
     private var filterJob: Job? = null
     private var filterOptionsLoaded = false
     private val exceptionHandler = CoroutineExceptionHandler { _, error ->
@@ -93,16 +97,7 @@ class ComicExploreViewModel constructor(
     fun start() {
         if (started) return
         started = true
-        if (initialTopic != null) {
-            openTopic(
-                ComicTopic(
-                    initialTopic,
-                    savedStateHandle.get<String>("topicTitle").orEmpty(),
-                    null,
-                    null
-                )
-            )
-        } else refresh()
+        refresh()
     }
 
     fun selectSection(section: ExploreSection) {
@@ -148,28 +143,6 @@ class ComicExploreViewModel constructor(
         refresh()
     }
 
-    fun openTopic(topic: ComicTopic) {
-        _uiState.update { it.copy(topic = topic) }
-        refresh()
-        viewModelScope.launch(exceptionHandler) {
-            repository.getTopic(topic.pathWord).fold(
-                onSuccess = { detail ->
-                    if (_uiState.value.topic?.pathWord == detail.pathWord) _uiState.update {
-                        it.copy(
-                            topic = detail
-                        )
-                    }
-                },
-                onFailure = { UiLog.w("ComicExplore", "专题简介暂不可用", it) }
-            )
-        }
-    }
-
-    fun closeTopic() {
-        _uiState.update { it.copy(topic = null) }
-        refresh()
-    }
-
     fun refresh() {
         refreshContent(keepContent = false)
     }
@@ -184,6 +157,20 @@ class ComicExploreViewModel constructor(
         if (_uiState.value.section == ExploreSection.FILTER &&
             _uiState.value.topic == null && (!filterOptionsLoaded || keepContent)
         ) refreshFilterOptions()
+        topicJob?.cancel()
+        _uiState.value.topic?.let { topic ->
+            topicJob = viewModelScope.launch {
+                try {
+                    val updated = repository.getTopic(topic.pathWord).getOrThrow()
+                    currentCoroutineContext().ensureActive()
+                    if (updated.pathWord == topic.pathWord) _uiState.update { it.copy(topic = updated) }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    UiLog.w("ComicExplore", "专题简介暂不可用", error)
+                }
+            }
+        }
         loadJob?.cancel()
         _uiState.update {
             it.copy(
@@ -195,7 +182,6 @@ class ComicExploreViewModel constructor(
             )
         }
         loadJob = viewModelScope.launch(exceptionHandler) {
-            currentCoroutineContext().ensureActive()
             loadPage(0, append = false)
         }
     }
@@ -241,7 +227,9 @@ class ComicExploreViewModel constructor(
     private suspend fun loadPage(offset: Int, append: Boolean) {
         val state = _uiState.value
         if (state.section == ExploreSection.TOPICS && state.topic == null) {
-            repository.getTopics(offset).fold(
+            val result = repository.getTopics(offset)
+            currentCoroutineContext().ensureActive()
+            result.fold(
                 onSuccess = { page ->
                     _uiState.update {
                         it.copy(

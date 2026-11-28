@@ -470,6 +470,14 @@ private fun RouteContent(route: AppRoute, nav: AppNavigation, r: AppRepositories
     }
 }
 
+internal fun AppNavigation.openTopic(topic: ComicTopic) = open(AppRoute("explore", arguments = buildMap {
+    put("section", "topics")
+    put("topic", topic.pathWord)
+    put("topicTitle", topic.title)
+    topic.cover?.let { put("topicCover", it) }
+    topic.brief?.let { put("topicBrief", it) }
+}))
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppRepositories, p: AppPlatforms, models: RouteModels, favorites: FavoritesViewModel) {
@@ -503,7 +511,7 @@ private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppReposito
                 put("section", "filter"); theme?.let { put("theme", it) }; top?.let { put("top", it) }
             })) },
             viewModel = models.get(route.id, defaults = route.arguments) { SearchViewModel(r.manga, r.discovery, it, r.appSettings, autoStart = false) })
-        "explore" -> ComicExploreScreen(nav::comic, back,
+        "explore" -> ComicExploreScreen(nav::comic, back, nav::openTopic,
             models.get(route.id, defaults = route.arguments) { ComicExploreViewModel(r.discovery, it, autoStart = false) })
         "novel" -> NovelScreen(onBack = back, initialResume = route.resume, initialPath = route.path.takeIf { it.isNotBlank() },
             viewModel = models.get(route.id) { NovelViewModel(r.novels, r.novelShelf, r.localReading, r.readingProgress, r.network, r.sessions, r.downloads, r.novelPreferences, r.annotations, r.shelfReading) },
@@ -524,7 +532,7 @@ private fun RouteDestination(route: AppRoute, nav: AppNavigation, r: AppReposito
                 onNavigateToSearch = { nav.open(AppRoute("search")) },
                 onNavigateToExplore = nav::explore,
                 onNavigateToDownloads = { nav.select(MainTab.DOWNLOADS) },
-                onNavigateToTopic = { path, title -> nav.open(AppRoute("explore", arguments = mapOf("section" to "topics", "topic" to path, "topicTitle" to title))) },
+                onNavigateToTopic = { path, title -> nav.openTopic(ComicTopic(path, title, null, null)) },
                 onNavigateToNovel = { nav.novel(it) })
             MainTab.FAVORITES -> FavoritesScreen(favorites, nav::comic, profile, onDiscover = { if (favorites.uiState.value.selectedKind == com.rchdliang.copymanga_neo.multiplatform.ui.favorites.FavoritesKind.NOVEL) nav.novel() else nav.open(AppRoute("search")) }) { nav.novel(it) }
             MainTab.DOWNLOADS -> DownloadsScreen(onComicClick = nav::comic, onDiscover = { nav.open(AppRoute("search")) },

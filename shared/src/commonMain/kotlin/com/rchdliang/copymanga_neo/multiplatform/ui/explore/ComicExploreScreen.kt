@@ -5,7 +5,6 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyVert
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.metadataText
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -67,17 +66,16 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun ComicExploreScreen(
     onComicClick: (String) -> Unit,
     onNavigateBack: () -> Unit,
+    onOpenTopic: (ComicTopic) -> Unit,
     viewModel: ComicExploreViewModel
 ) {
     ActiveRouteLaunchedEffect(viewModel) { viewModel.start() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     ComicExploreContent(
         state = state,
-        openedFromTopic = viewModel.openedFromTopic,
         onComicClick = onComicClick,
         onNavigateBack = onNavigateBack,
-        onCloseTopic = viewModel::closeTopic,
-        onOpenTopic = viewModel::openTopic,
+        onOpenTopic = onOpenTopic,
         onRefresh = viewModel::refresh,
         onPullToRefresh = viewModel::pullToRefresh,
         onLoadMore = viewModel::loadMore,
@@ -94,10 +92,8 @@ fun ComicExploreScreen(
 @Composable
 fun ComicExploreContent(
     state: ComicExploreUiState,
-    openedFromTopic: Boolean,
     onComicClick: (String) -> Unit,
     onNavigateBack: () -> Unit,
-    onCloseTopic: () -> Unit,
     onOpenTopic: (ComicTopic) -> Unit,
     onRefresh: () -> Unit,
     onPullToRefresh: () -> Unit,
@@ -115,11 +111,6 @@ fun ComicExploreContent(
     LaunchedEffect(criteria) {
         if (appliedCriteria != criteria) { gridState.scrollToItem(0); appliedCriteria = criteria }
     }
-    val back = {
-        if (state.topic != null && !openedFromTopic) onCloseTopic()
-        else onNavigateBack()
-    }
-    BackHandler(enabled = state.topic != null, onBack = back)
 
     Scaffold(
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
@@ -162,7 +153,7 @@ fun ComicExploreContent(
                     ShareAction(target)
                 },
                 navigationIcon = {
-                    IconButton(onClick = back) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",
