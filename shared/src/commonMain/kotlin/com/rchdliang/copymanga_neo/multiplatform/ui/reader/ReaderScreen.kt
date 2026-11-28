@@ -69,6 +69,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.geometry.Offset
 import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -399,6 +401,7 @@ fun ReaderSuccessContent(
         )
     }
     var preferredRawKey by rememberSaveable { mutableStateOf(pages.getOrNull(initialTarget)?.key) }
+    var selectedContinuousKey by rememberSaveable { mutableStateOf<String?>(null) }
     val preferredIndex = pages.indexOfFirst { it.key == preferredRawKey }
     var activeZoom by remember { mutableStateOf<ReaderZoomState?>(null) }
     androidx.compose.runtime.SideEffect {
@@ -533,18 +536,16 @@ fun ReaderSuccessContent(
     DisposableEffect(qualityAdjustment) { onDispose { qualityAdjustment.finish() } }
 
     // 追加章节、移除评论页或改变阅读方向时保留当前页的稳定标识。
-    LaunchedEffect(
-        pages, spreads, isContinuous, spreadEnabled, dir, pendingInitialPage.value, pendingInitialChapter?.value,
-        if (pendingInitialChapter?.value != null) activeChapterUuid else null
-    ) {
-        // Explicit navigation, chapter changes and mode changes supersede an old viewport anchor.
-        viewportCorrection.invalidate()
-        viewportAnchor.invalidate()
-        if (pages.isEmpty()) return@LaunchedEffect
+    suspend fun ensureViewportPosition(): Boolean {
         val requestedChapter = pendingInitialChapter?.value
-        if (requestedChapter != null && requestedChapter != activeChapterUuid) return@LaunchedEffect
         val explicit = pendingInitialPage.value
         val layout = Triple(isContinuous, spreadEnabled, dir)
+        // 消费跳转后清空 pending 会重启进度监听；已对齐的窗口无需再次滚动。
+        if (!restoring && explicit == null && requestedChapter == null &&
+            restoredLayout == layout && restoredPages == pages && restoredSpreads == spreads) return true
+        viewportCorrection.invalidate()
+        viewportAnchor.invalidate()
+        if (pages.isEmpty() || (requestedChapter != null && requestedChapter != activeChapterUuid)) return false
         val windowChanged = restoredPages.isNotEmpty() && restoredPages != pages && restoredLayout == layout
         val groupingChanged = restoredSpreads.isNotEmpty() && restoredSpreads != spreads && restoredLayout == layout
         // 预取或横图解码可能在手势中改变分组。等待落定，避免恢复滚动被手势取消后永久阻塞预取。
@@ -582,17 +583,31 @@ fun ReaderSuccessContent(
         restoring = true
         preferredRawKey = pages[target].key
         if (isContinuous) {
+            val targetKey = pages[target].key
+            val positioning = explicit != null || restoredLayout != layout
+            if (positioning) selectedContinuousKey = targetKey
             val retainedItem = list.layoutInfo.visibleItemsInfo.firstOrNull {
-                it.key == pages[target].key && readyImages[pages[target].key] == true
+                it.key == targetKey && readyImages[targetKey] == true
             }
             val measuredSize = retainedItem?.size
             list.scrollToItem(target, if (measuredSize != null) ReadingPositionPolicy.offset(fraction, measuredSize) else 0)
-            if (fraction > 0 && measuredSize == null) {
+            // 占位图可能令 scrollToItem 在章末提前到达边界。解码使长图变高后需重新定位，
+            // 即使请求的是页首，也不能把占位期间的前一页保存成这次恢复结果。
+            val clamped = list.firstVisibleItemIndex != target
+            if (!preview && pages[target].source != null && measuredSize == null && (fraction > 0 || (positioning && clamped))) {
                 val size = snapshotFlow {
-                    if (!restoring) 0 else list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
-                        ?.takeIf { readyImages[pages[target].key] == true }?.size
-                }.first { it != null && it >= 0 } ?: 0
-                if (restoring) list.scrollToItem(
+                    val item = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetKey }
+                    when {
+                        !restoring || readyImages[targetKey] == false -> 0
+                        item == null -> -1
+                        readyImages[targetKey] == true -> item.size
+                        else -> null
+                    }
+                }.first { size ->
+                    if (size == -1) list.scrollToItem(target)
+                    size != null && size >= 0
+                } ?: 0
+                if (restoring && size > 0) list.scrollToItem(
                     target,
                     ReadingPositionPolicy.offset(fraction, size)
                 )
@@ -611,6 +626,13 @@ fun ReaderSuccessContent(
         pendingInitialChapter?.value = null
         pendingInitialFraction?.value = null
         pendingInitialPage.value = null
+        return true
+    }
+    LaunchedEffect(
+        pages, spreads, isContinuous, spreadEnabled, dir, pendingInitialPage.value, pendingInitialChapter?.value,
+        if (pendingInitialChapter?.value != null) activeChapterUuid else null
+    ) {
+        if (!ensureViewportPosition()) return@LaunchedEffect
         // Placeholder heights and pages seen only while swiping cannot complete a chapter.
         snapshotFlow {
             val index = if (isContinuous) list.firstVisibleItemIndex else spreads.rawIndex(pager.settledPage, pages.indexOfFirst { it.key == preferredRawKey })
@@ -775,6 +797,7 @@ fun ReaderSuccessContent(
             val safe = index.coerceIn(pages.indices)
             preferredRawKey = pages[safe].key
             if (isContinuous) {
+                selectedContinuousKey = pages[safe].key
                 if (animate && tools.pageAnimation) list.animateScrollToItem(safe) else list.scrollToItem(safe)
             } else {
                 if (animate && tools.pageAnimation) pager.animateScrollToPage(spreads.spreadIndex(safe), animationSpec = tween(180)) else pager.scrollToPage(spreads.spreadIndex(safe))
@@ -782,11 +805,15 @@ fun ReaderSuccessContent(
         }
     }
 
+    val continuousDisplayPage by remember(list, pages) {
+        derivedStateOf { list.layoutInfo.mostVisiblePage(pages, selectedContinuousKey) }
+    }
     suspend fun scrollContinuousBy(delta: Float) {
+        selectedContinuousKey = null
         if (tools.pageAnimation) list.animateScrollBy(delta) else list.scrollBy(delta)
     }
-    fun nextChapter() {
-        val current = chapters.firstOrNull { it.uuid == page?.chapterUuid }
+    fun nextChapter(from: ReaderPageEntry? = page) {
+        val current = chapters.firstOrNull { it.uuid == from?.chapterUuid }
         val next = current?.content?.nextUuid
         val target = pages.indexOfFirst { it.chapterUuid == next && it.source != null }
         if (target >= 0) jump(target)
@@ -797,8 +824,8 @@ fun ReaderSuccessContent(
         } else toast.showToast("已是最后一章")
     }
 
-    fun previousChapter() {
-        val current = chapters.firstOrNull { it.uuid == page?.chapterUuid }
+    fun previousChapter(from: ReaderPageEntry? = page) {
+        val current = chapters.firstOrNull { it.uuid == from?.chapterUuid }
         val previous = current?.content?.prevUuid
         val target = pages.indexOfFirst { it.chapterUuid == previous && it.source != null }
         if (target >= 0) jump(target)
@@ -807,16 +834,29 @@ fun ReaderSuccessContent(
         } else toast.showToast("已是第一章")
     }
 
-    fun forward() {
-        val target = if (isContinuous) (visibleIndex + 1).takeIf { it < pages.size }
-            else spreads.getOrNull(pager.currentPage + 1)?.indices?.first()
-        if (target != null) jump(target, true) else nextChapter()
-    }
-
-    fun backward() {
-        val target = if (isContinuous) (visibleIndex - 1).takeIf { it >= 0 }
-            else spreads.getOrNull(pager.currentPage - 1)?.indices?.first()
-        if (target != null) jump(target, true) else previousChapter()
+    fun turnPage(forward: Boolean) {
+        val step = if (forward) 1 else -1
+        if (!isContinuous) {
+            val target = spreads.getOrNull(pager.currentPage + step)?.indices?.first()
+            if (target != null) jump(target, true) else if (forward) nextChapter() else previousChapter()
+            return
+        }
+        val current = continuousDisplayPage ?: return
+        val adjacent = pages.indexOf(current) + step
+        val remaining = list.layoutInfo.chapterEdgeScroll(current, pages.getOrNull(adjacent), forward)
+        if (remaining != 0f) {
+            scope.launch { scrollContinuousBy(remaining) }
+            return
+        }
+        val target = pages.getOrNull(adjacent)
+        if (target == null) {
+            if (forward) nextChapter(current) else previousChapter(current)
+        } else if (!forward && list.layoutInfo.visibleItemsInfo.any {
+                it.key == target.key && it.offset >= list.layoutInfo.viewportStartOffset && it.offset + it.size <= list.layoutInfo.viewportEndOffset
+            }) {
+            // 上一页已完整可见，只变更选中页，避免将它向上滚动而让画面朝相反方向移动。
+            selectedContinuousKey = target.key
+        } else jump(adjacent, true)
     }
     LaunchedEffect(pages, pendingChapter) {
         val uuid = pendingChapter ?: return@LaunchedEffect
@@ -830,21 +870,27 @@ fun ReaderSuccessContent(
         !pager.isScrollInProgress && !list.isScrollInProgress
     var displayReadySpreadKey by remember { mutableStateOf<String?>(null) }
     var lastDisplayedPosition by remember { mutableStateOf<ReaderDisplayedPosition?>(null) }
-    val measuredPosition = if (!restoring && restoredPages == pages && restoredSpreads == spreads &&
-        restoredLayout == Triple(isContinuous, spreadEnabled, dir) &&
+    // 手势中预取相邻章节或重新配页时，恢复协程会等待停稳；已测量并可绘制的页码仍可更新。
+    val windowReadyForDisplay = (restoredPages == pages && restoredSpreads == spreads) ||
+        ((if (isContinuous) list.isScrollInProgress else pager.isScrollInProgress) &&
+            lastDisplayedPosition?.page?.let { previous -> pages.any { it.key == previous.key } } == true)
+    val measuredPosition = if (!restoring && windowReadyForDisplay && restoredLayout == Triple(isContinuous, spreadEnabled, dir) &&
         pendingInitialPage.value == null && pendingInitialChapter?.value == null
     ) {
         if (isContinuous) {
-            val key = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == list.firstVisibleItemIndex }?.key
-            pages.firstOrNull { it.key == key }?.let { ReaderDisplayedPosition(it, null) }
-        } else if (!pager.isScrollInProgress) {
-            val index = pager.settledPage
+            continuousDisplayPage?.let { ReaderDisplayedPosition(it, null) }
+        } else {
+            // 页码跟随已占据当前视口的分组；历史记录仍等待手势结束。
+            val index = pager.currentPage
             val key = pager.layoutInfo.visiblePagesInfo.firstOrNull { it.index == index }?.key
             spreads.getOrNull(index)?.displayedPosition(pages, key, displayReadySpreadKey, preferredIndex)
-        } else null
+        }
     } else null
     if (measuredPosition != null) androidx.compose.runtime.SideEffect { lastDisplayedPosition = measuredPosition }
-    val displayedPosition = measuredPosition ?: lastDisplayedPosition
+    val displayedPosition = measuredPosition ?: lastDisplayedPosition?.takeIf { previous ->
+        if (pendingInitialPage.value != null) pages.getOrNull(initialTarget)?.key == previous.page.key
+        else pages.any { it.key == previous.page.key }
+    }
     val displayedPage = displayedPosition?.page
     ActiveRouteLaunchedEffect(
         boundaryReady,
@@ -893,6 +939,7 @@ fun ReaderSuccessContent(
             if (isContinuous) {
                 val height = list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset
                 val before = list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset
+                selectedContinuousKey = null
                 list.animateScrollBy(height * 0.75f, tween(900, easing = LinearEasing))
                 if (list.layoutInfo.visibleItemsInfo.any { pages.getOrNull(it.index)?.source == null }) {
                     automatic = false
@@ -901,7 +948,7 @@ fun ReaderSuccessContent(
                 if (before == (list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset)) {
                     if (currentAppending) continue
                     automatic = false
-                    if (hasNextChapter) nextChapter()
+                    if (hasNextChapter) nextChapter(pages.lastOrNull())
                 }
             } else if (pager.currentPage < spreads.lastIndex) {
                 val next = pager.currentPage + 1
@@ -924,7 +971,14 @@ fun ReaderSuccessContent(
         if (desktopZoomed) activeZoom?.reset()
         showControls = false
     }
-    val nested = remember { object : NestedScrollConnection {} }
+    val nested = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) selectedContinuousKey = null
+                return Offset.Zero
+            }
+        }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -942,7 +996,7 @@ fun ReaderSuccessContent(
                 enabled = !isContinuous,
                 blocked = showSettings || qualityAdjustment.active || showImageMenu || showBookmarks || showCatalog || restoring || !routeActive || externalModalVisible,
                 rtl = dir == ReadingDirection.RIGHT_TO_LEFT, zoom = activeZoom,
-                onInteraction = { automatic = false }, onForward = { forward() }, onBackward = { backward() }
+                onInteraction = { automatic = false }, onForward = { turnPage(true) }, onBackward = { turnPage(false) }
             )
             .readerKeyboardNavigation(
                 enabled = isContinuous && services?.platform is DesktopReaderKeyboard,
@@ -952,14 +1006,14 @@ fun ReaderSuccessContent(
                 showControls = false
                 automatic = false
                 if (command.movement == ReaderKeyboardMovement.PAGE) {
-                    if (command.forward) forward() else backward()
+                    turnPage(command.forward)
                 } else if (keyboardScrollJob?.isActive != true) {
-                    if (command.forward && !list.canScrollForward) nextChapter()
-                    else if (!command.forward && !list.canScrollBackward) previousChapter()
+                    if (command.forward && !list.canScrollForward || !command.forward && !list.canScrollBackward) turnPage(command.forward)
                     else keyboardScrollJob = scope.launch {
                         val viewport = (list.layoutInfo.viewportEndOffset - list.layoutInfo.viewportStartOffset).coerceAtLeast(0)
                         val distance = if (command.movement == ReaderKeyboardMovement.SMALL_SCROLL) keyboardStep else viewport * 0.9f
-                        scrollContinuousBy(if (command.forward) distance else -distance)
+                        val delta = if (command.forward) distance else -distance
+                        scrollContinuousBy(delta)
                     }
                 }
             }
@@ -970,7 +1024,7 @@ fun ReaderSuccessContent(
                     if (event.type == KeyEventType.KeyUp) pressedVolumeKeys.remove(event.key)
                     if (event.type == KeyEventType.KeyDown && pressedVolumeKeys.add(event.key)) {
                         automatic = false
-                        if (event.key == Key.VolumeDown) forward() else backward()
+                        turnPage(event.key == Key.VolumeDown)
                     }
                     true
                 }
@@ -1014,8 +1068,8 @@ fun ReaderSuccessContent(
             continuousNestedScrollConnection = nested,
             // Local function references compare equal even when their captured page window changes.
             // Lambdas let rememberUpdatedState in the gesture modifiers receive the new window.
-            onForward = { forward() },
-            onBackward = { backward() },
+            onForward = { turnPage(true) },
+            onBackward = { turnPage(false) },
             onShowMenu = { if (!qualityAdjustment.active) showControls = !showControls },
             onImageLongPress = { selected ->
                 qualityAdjustment.finish()
@@ -1030,6 +1084,7 @@ fun ReaderSuccessContent(
             tools = tools,
             onUserInteraction = { focus.requestFocus(); viewportCorrection.invalidate(); viewportAnchor.invalidate(); automatic = false; pendingChapter = null; restoring = false },
             onImageReady = { if (it in latestRetainedPageKeys) readyImages[it] = true },
+            onImageError = { if (it in latestRetainedPageKeys) readyImages[it] = false },
             trackedPageKeys = retainedPageKeys,
             commentContent = { comment ->
                 ReaderChapterComments(
@@ -1043,8 +1098,8 @@ fun ReaderSuccessContent(
                     commentsViewModel = services.inlineComments(comment.chapterUuid),
                     paged = !isContinuous,
                     rtl = dir == ReadingDirection.RIGHT_TO_LEFT,
-                    onForward = { automatic = false; forward() },
-                    onBackward = { automatic = false; backward() }
+                    onForward = { automatic = false; turnPage(true) },
+                    onBackward = { automatic = false; turnPage(false) }
                 )
             })
         }

@@ -93,6 +93,7 @@ internal fun ReaderContent(
     qualityAdjusting: Boolean = false,
     pageShapes: Map<String, Boolean>? = null,
     onSpreadDisplayReady: (String) -> Unit = {},
+    onImageError: (String) -> Unit = {},
 ) {
     val zoomScope = rememberCoroutineScope()
     val currentInteraction by rememberUpdatedState(onUserInteraction)
@@ -188,6 +189,7 @@ internal fun ReaderContent(
                             enhancementPageKey = page.key,
                             tools = tools,
                             onReady = { onImageReady(page.key) },
+                            onImageError = { onImageError(page.key) },
                             trackReadiness = page.key in trackedPageKeys
                         )
                     }

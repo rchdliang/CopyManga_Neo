@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.ImageLoader
 import coil3.PlatformContext
+import coil3.intercept.Interceptor
 import com.rchdliang.copymanga_neo.data.download.portable.*
 import com.rchdliang.copymanga_neo.data.export.portable.FileComicExportIo
 import com.rchdliang.copymanga_neo.data.image.portable.FileReaderImageIo
@@ -42,6 +43,36 @@ import kotlin.test.*
 /** 完整 ReaderScreen + 评论组件 + ReaderViewModel；仅假仓库和临时数据，禁止外网。 */
 @OptIn(ExperimentalTestApi::class)
 class ReaderCommentBoundaryUiTest {
+    @Test fun continuousRestoreWaitsForTheRealHeightOfTheClampedLastImage() =
+        runSkikoComposeUiTest(size = Size(440f, 800f)) {
+            val releaseImages = CompletableDeferred<Unit>()
+            val fixture = Fixture("TOP_TO_BOTTOM", actualImages = true, releaseImages = releaseImages)
+            val recorded = mutableListOf<Int>()
+            try {
+                setContent {
+                    CompositionLocalProvider(LocalLifecycleOwner provides fixture.owner, LocalUiPlatform provides fixture.uiPlatform) {
+                        CopyManga_NeoTheme {
+                            ReaderSuccessContent(
+                                images = fixture.images, chapterName = "Fixture", readingDirection = "TOP_TO_BOTTOM",
+                                pageScale = "FIT_SCREEN", screenOrientation = "SYSTEM_DEFAULT",
+                                onPrevChapter = {}, onNextChapter = {}, hasPrevChapter = false, hasNextChapter = false,
+                                onRefresh = {}, onReadingDirectionChange = {}, onPageScaleChange = {}, onScreenOrientationChange = {},
+                                pendingInitialPage = remember { mutableStateOf(fixture.images.lastIndex) },
+                                tools = ReaderToolsSettings(inlineComments = false, continuousChapters = false),
+                                services = fixture.services, onPosition = { _, page, _, _ -> recorded += page },
+                            )
+                        }
+                    }
+                }
+                waitForIdle()
+                runOnIdle { assertTrue(recorded.isEmpty(), "占位高度尚未确认时不能写进度：$recorded") }
+                releaseImages.complete(Unit)
+                waitUntil(timeoutMillis = 10_000) { fixture.images.lastIndex in recorded }
+                onNodeWithText("15 / 15").assertIsDisplayed()
+                runOnIdle { assertTrue(recorded.all { it == fixture.images.lastIndex }, recorded.toString()) }
+            } finally { releaseImages.complete(Unit); runOnUiThread { fixture.close() } }
+        }
+
     @Test fun rtlMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("RIGHT_TO_LEFT")
     @Test fun ltrMouseCanLeavePopulatedCommentsByWheelDragAndEdgeClick() = mouseCrossesComments("LEFT_TO_RIGHT")
 
@@ -282,12 +313,13 @@ class ReaderCommentBoundaryUiTest {
 
     private class Fixture(direction: String, var failNext: Boolean = false, val actualImages: Boolean = false,
                           val missingNext: Boolean = false, val failComments: Boolean = false, val commentCount: Int = 0,
-                          val pendingMoreComments: Boolean = false) {
+                          val pendingMoreComments: Boolean = false, val releaseImages: CompletableDeferred<Unit>? = null) {
         private val root = Files.createTempDirectory("reader-comment-boundary-")
-        private val images = (0..14).map { page ->
+        val images = (0..14).map { page ->
             if (!actualImages) "fixture-$page" else {
                 val wide = page == 9
-                val bitmap = java.awt.image.BufferedImage(if (wide) 360 else 180, if (wide) 180 else 320,
+                val imageHeight = if (page == 14 && releaseImages != null) 2400 else if (wide) 180 else 320
+                val bitmap = java.awt.image.BufferedImage(if (wide) 360 else 180, imageHeight,
                     java.awt.image.BufferedImage.TYPE_INT_RGB)
                 bitmap.createGraphics().apply {
                     color = java.awt.Color(50 + page * 10, 120, 160)
@@ -366,7 +398,9 @@ class ReaderCommentBoundaryUiTest {
         private val models = ViewModelStore().apply {
             put("reader", reader); put("comments", comments); put("actions", actions); put("modal", modal)
         }
-        private val loader = ImageLoader.Builder(PlatformContext.INSTANCE).build()
+        private val loader = ImageLoader.Builder(PlatformContext.INSTANCE).apply {
+            if (releaseImages != null) components { add(Interceptor { chain -> releaseImages.await(); chain.proceed() }) }
+        }.build()
         val services = ReaderUiServices(object : ReaderPlatform {
             @Composable override fun ImmersiveEffect(orientation: ScreenOrientationSetting?) = Unit
             @Composable override fun KeepScreenOnEffect(enabled: Boolean) = Unit
