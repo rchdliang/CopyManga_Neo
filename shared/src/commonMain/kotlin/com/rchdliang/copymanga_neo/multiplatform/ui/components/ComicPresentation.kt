@@ -1,7 +1,7 @@
 package com.rchdliang.copymanga_neo.multiplatform.ui.components
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,7 +53,7 @@ internal data class ComicPresentationContext(
     val retry: (String) -> Unit,
     val expand: (ComicExpansion) -> Unit,
     val expandedId: String?,
-    val dismiss: () -> Unit
+    val onSourceMovedOrRemoved: (String) -> Unit
 )
 
 internal val LocalComicPresentation = staticCompositionLocalOf<ComicPresentationContext?> { null }
@@ -84,20 +84,27 @@ internal fun BookPresentationHost(
     var expansion by remember { mutableStateOf<ComicExpansion?>(null) }
     var opened by remember { mutableStateOf(false) }
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val progress by animateFloatAsState(
-        if (opened) 1f else 0f, tween(240), label = "作品预览展开",
-        finishedListener = { if (it == 0f) expansion = null }
-    )
-    val dismiss = { opened = false }
+    val selected = expansion
+    val progress = remember(selected?.id) { Animatable(0f) }
+    LaunchedEffect(selected?.id, opened) {
+        if (selected != null) {
+            progress.animateTo(if (opened) 1f else 0f, tween(240))
+            if (!opened && expansion?.id == selected.id) expansion = null
+        }
+    }
+    fun clearPreview() {
+        opened = false
+        expansion = null
+    }
     val scroll = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available != Offset.Zero) opened = false
+                if (available != Offset.Zero && expansion != null) clearPreview()
                 return Offset.Zero
             }
         }
     }
-    LaunchedEffect(state.cacheScope, novelState.epoch) { opened = false; expansion = null }
+    LaunchedEffect(state.cacheScope, novelState.epoch) { clearPreview() }
     LaunchedEffect(opened, expansion?.id) {
         onNovelPreview(expansion?.novel.takeIf { opened })
     }
@@ -105,7 +112,7 @@ internal fun BookPresentationHost(
         expansion = it
         opened = true
         if (it.novel == null && !it.path.startsWith("novel:")) preload(listOf(it.path), true)
-    }, expansion?.id, dismiss)
+    }, selected?.id, { sourceId -> if (expansion?.id == sourceId) clearPreview() })
     CompositionLocalProvider(LocalComicPresentation provides context) {
         BoxWithConstraints(
             Modifier
@@ -137,7 +144,6 @@ internal fun BookPresentationHost(
             content()
             // 在导航内容之后注册，返回键优先收起预览。
             BackHandler(expansion != null, isTransient = true) { opened = false }
-            val selected = expansion
             if (selected != null) {
                 val density = LocalDensity.current
                 val coverWidth = with(density) { selected.bounds.width.toDp() }
@@ -155,22 +161,23 @@ internal fun BookPresentationHost(
                     Modifier
                         .offset {
                             IntOffset(
-                                (startX + (endX - startX) * progress).roundToInt(),
+                                (startX + (endX - startX) * progress.value).roundToInt(),
                                 startY.roundToInt()
                             )
                         }
-                        .width(coverWidth + (fullWidth - coverWidth) * progress)
+                        .width(coverWidth + (fullWidth - coverWidth) * progress.value)
                         .height(height)
                         .zIndex(10f)
                         .shadow(8.dp, MaterialTheme.shapes.large)
                         .clip(MaterialTheme.shapes.large)
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                        .clickable { opened = false; expansion = null; selected.onClick() }) {
+                        .clickable { clearPreview(); selected.onClick() }) {
                     ComicCard(
                         name = selected.name,
                         cover = selected.cover,
                         onClick = {
-                            opened = false; expansion = null; selected.onClick()
+                            clearPreview()
+                            selected.onClick()
                         },
                         subtitle = selected.subtitle,
                         statusText = selected.status,
@@ -183,7 +190,7 @@ internal fun BookPresentationHost(
                             .width(fullWidth - coverWidth)
                             .fillMaxHeight()
                             .graphicsLayer {
-                                alpha = ((progress - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                                alpha = ((progress.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
                             }
                     val novel = selected.novel
                     if (novel != null) {

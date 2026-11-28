@@ -82,7 +82,7 @@ fun ComicCard(
     val latestPresentation by androidx.compose.runtime.rememberUpdatedState(presentation)
     androidx.compose.runtime.DisposableEffect(instance) {
         onDispose {
-            if (!floating && latestPresentation?.expandedId == instance) latestPresentation?.dismiss?.invoke()
+            if (!floating) latestPresentation?.onSourceMovedOrRemoved?.invoke(instance)
         }
     }
     val blocked = visibility == ComicCoverVisibility.BLURRED
@@ -123,7 +123,7 @@ fun ComicCard(
                     )
                 )
                 if (!floating && bounds != Rect.Zero && next != bounds && presentation?.expandedId == instance) {
-                    presentation.dismiss()
+                    presentation.onSourceMovedOrRemoved(instance)
                 }
                 bounds = next
             }

@@ -6,9 +6,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollDispatcher
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.v2.runSkikoComposeUiTest
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.rchdliang.copymanga_neo.domain.model.*
 import kotlin.test.*
@@ -47,6 +52,46 @@ class NovelPreviewUiTest {
         assertTrue(opened)
         onNodeWithText("轻小说的完整简介").assertDoesNotExist()
         assertTrue(comicRequests.isEmpty())
+    }
+
+    @Test fun scrollingOrMovingSourceRemovesPreviewBeforeCollapseFinishes() = runSkikoComposeUiTest(size = Size(800f, 500f)) {
+        val scroll = NestedScrollDispatcher()
+        var sourceOffset by mutableIntStateOf(0)
+        var clicks = 0
+        setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalInspectionMode provides true) {
+                    BookPresentationHost(ComicPresentationUiState(ready = true), { _, _ -> }, {},
+                        NovelPreviewUiState(), {}, {}) {
+                        Box(Modifier.padding(24.dp)
+                            .offset { IntOffset(0, sourceOffset) }
+                            .nestedScroll(remember { object : NestedScrollConnection {} }, scroll)) {
+                            NovelTransitionCard(detail, "browse", { clicks++ }, Modifier.width(144.dp))
+                        }
+                    }
+                }
+            }
+        }
+        fun openPreview() {
+            mainClock.autoAdvance = true
+            onNodeWithText(detail.name).performTouchInput { longClick() }
+            onNodeWithText(detail.brief).assertIsDisplayed()
+            mainClock.autoAdvance = false
+        }
+        openPreview()
+        runOnIdle {
+            assertEquals(Offset.Zero, scroll.dispatchPreScroll(Offset(0f, -20f), NestedScrollSource.UserInput))
+        }
+        mainClock.advanceTimeByFrame()
+        onNodeWithText(detail.brief).assertDoesNotExist()
+
+        openPreview()
+        runOnIdle { sourceOffset = 32 }
+        repeat(2) { mainClock.advanceTimeByFrame() }
+        onNodeWithText(detail.brief).assertDoesNotExist()
+        mainClock.autoAdvance = true
+        onNodeWithText(detail.name).performClick()
+        assertEquals(1, clicks)
     }
 
     @Test fun failedNovelPreviewRetriesWithoutOpeningTheBook() = runSkikoComposeUiTest(size = Size(800f, 500f)) {
