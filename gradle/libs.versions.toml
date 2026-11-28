@@ -1,7 +1,7 @@
 [versions]
 composeMultiplatform = "1.12.2"
 composeHotReload = "1.3.0"
-nucleus = "3.0.0-dev-202611211631"
+nucleus = "3.0.0-dev-202611222143"
 nucleusTray = "2.1.7"
 graalvm = "25i6"
 agp = "9.5.3"
