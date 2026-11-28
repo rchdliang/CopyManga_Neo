@@ -4,7 +4,6 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.MouseDragLazyColu
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.verticalScrollWithMouse
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
@@ -70,7 +69,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -97,21 +95,6 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.history.HistoryScreen
 import com.rchdliang.copymanga_neo.multiplatform.ui.preview.PreviewAwareAsyncImage
 import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 import kotlinx.coroutines.flow.drop
-
-/**
- * 我的页面内子页面
- */
-private enum class ProfilePage {
-    MAIN,
-    HISTORY,
-    READING,
-    DOWNLOADS,
-    BLACKLIST,
-    NETWORK,
-    ABOUT,
-    DATA,
-    LOCAL_LIBRARY
-}
 
 /**
  * 我的页面
@@ -149,7 +132,6 @@ private fun ProfileScreenContent(
 ) {
     ActiveRouteLaunchedEffect(viewModel) { viewModel.start() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var currentPage by rememberSaveable { mutableStateOf(ProfilePage.MAIN) }
     val toastHost = LocalToastHost.current
     val platform = requireProfilePlatform()
     val scope = rememberCoroutineScope()
@@ -176,25 +158,20 @@ private fun ProfileScreenContent(
         }
     }
 
-    val pageStateHolder = rememberSaveableStateHolder()
-    val openSettings: (SettingsDestination) -> Unit = {
-        currentPage = when (it) {
-            SettingsDestination.OVERVIEW -> ProfilePage.MAIN
-            SettingsDestination.READING -> ProfilePage.READING
-            SettingsDestination.DOWNLOADS -> ProfilePage.DOWNLOADS
+    ProfileNavigationHost { currentPage, open, back ->
+        val openSettings: (SettingsDestination) -> Unit = {
+            open(when (it) {
+                SettingsDestination.OVERVIEW -> ProfilePage.MAIN
+                SettingsDestination.READING -> ProfilePage.READING
+                SettingsDestination.DOWNLOADS -> ProfilePage.DOWNLOADS
+            })
         }
-    }
-    BackHandler(enabled = currentPage != ProfilePage.MAIN) {
-        currentPage =
-            if (currentPage == ProfilePage.HISTORY) ProfilePage.LOCAL_LIBRARY else ProfilePage.MAIN
-    }
-    pageStateHolder.SaveableStateProvider(currentPage.name) {
         when (currentPage) {
             ProfilePage.MAIN -> SettingsScreen(
                 viewModel = services.settings, onManageDownloads = onNavigateToDownloads,
-                onNavigateBack = { currentPage = ProfilePage.MAIN },
-                onNavigateToData = { currentPage = ProfilePage.DATA },
-                onNavigateToAbout = { currentPage = ProfilePage.ABOUT },
+                onNavigateBack = back,
+                onNavigateToData = { open(ProfilePage.DATA) },
+                onNavigateToAbout = { open(ProfilePage.ABOUT) },
                 embedded = true, onOpenDestination = openSettings,
                 overviewLayout = { appPreferences ->
                     ProfileMainPage(
@@ -224,10 +201,10 @@ private fun ProfileScreenContent(
                                 )
                             }
                         },
-                        onNavigateToHistory = { currentPage = ProfilePage.LOCAL_LIBRARY },
+                        onNavigateToHistory = { open(ProfilePage.LOCAL_LIBRARY) },
                         settingsContent = appPreferences,
-                        onNavigateToNetwork = { currentPage = ProfilePage.NETWORK },
-                        onNavigateToBlacklist = { currentPage = ProfilePage.BLACKLIST },
+                        onNavigateToNetwork = { open(ProfilePage.NETWORK) },
+                        onNavigateToBlacklist = { open(ProfilePage.BLACKLIST) },
                         onBlacklistEnabledChange = viewModel::setBlacklistEnabled
                     )
 
@@ -235,8 +212,8 @@ private fun ProfileScreenContent(
             )
 
             ProfilePage.LOCAL_LIBRARY -> com.rchdliang.copymanga_neo.multiplatform.ui.library.LocalLibraryScreen(
-                onBack = { currentPage = ProfilePage.MAIN },
-                onCloud = { currentPage = ProfilePage.HISTORY },
+                onBack = back,
+                onCloud = { open(ProfilePage.HISTORY) },
                 onComic = onReadComic,
                 onNovel = { onNavigateToNovel(null, it) },
                 viewModel = services.localLibrary
@@ -244,50 +221,55 @@ private fun ProfileScreenContent(
 
             ProfilePage.HISTORY -> HistoryScreen(
                 viewModel = services.history,
-                onNavigateBack = { currentPage = ProfilePage.LOCAL_LIBRARY },
+                onNavigateBack = back,
                 onComicClick = onComicClick,
                 onHistoryCleared = onHistoryCleared,
                 onLoginClick = {
-                    currentPage = ProfilePage.MAIN
+                    open(ProfilePage.MAIN)
                     viewModel.showLoginDialog()
                 }
             )
 
             ProfilePage.READING, ProfilePage.DOWNLOADS -> SettingsScreen(
-                initialDestination = if (currentPage == ProfilePage.READING) SettingsDestination.READING else SettingsDestination.DOWNLOADS,
+                destination = if (currentPage == ProfilePage.READING) SettingsDestination.READING else SettingsDestination.DOWNLOADS,
                 onOpenDestination = openSettings,
                 viewModel = services.settings,
                 onManageDownloads = onNavigateToDownloads,
-                onNavigateBack = { currentPage = ProfilePage.MAIN },
-                onNavigateToData = { currentPage = ProfilePage.DATA },
-                onNavigateToAbout = { currentPage = ProfilePage.ABOUT }
+                onNavigateBack = back,
+                onNavigateToData = { open(ProfilePage.DATA) },
+                onNavigateToAbout = { open(ProfilePage.ABOUT) }
             )
 
             ProfilePage.ABOUT -> AboutScreen(
                 viewModel = services.about,
                 settingsViewModel = services.settings,
-                onNavigateBack = { currentPage = ProfilePage.MAIN }
+                onNavigateBack = back,
+                onOpenLibraries = { open(ProfilePage.THIRD_PARTY_LIBRARIES) }
             )
+            ProfilePage.THIRD_PARTY_LIBRARIES -> ThirdPartyLibrariesPage(back)
 
             ProfilePage.DATA -> DataSettingsScreen(
                 settings = services.settings,
                 backup = services.backup,
-                logs = services.logs,
-                errorLogs = services.errorLogs,
-                onNavigateBack = {
-                    currentPage = ProfilePage.MAIN
-                })
+                onOpenLogs = { open(ProfilePage.DIAGNOSTIC_LOGS) },
+                onNavigateBack = back
+            )
+            ProfilePage.DIAGNOSTIC_LOGS -> ProfileSettingsScaffold("诊断日志", back) {
+                ErrorLogCard(services.errorLogs)
+                NetworkLogCard(services.logs)
+            }
 
-            ProfilePage.NETWORK -> NetworkSettingsScreen(
+            ProfilePage.NETWORK, ProfilePage.NETWORK_ADVANCED -> NetworkSettingsScreen(
                 viewModel = services.network,
-                onNavigateBack = {
-                    currentPage = ProfilePage.MAIN
-                })
+                advanced = currentPage == ProfilePage.NETWORK_ADVANCED,
+                onOpenAdvanced = { open(ProfilePage.NETWORK_ADVANCED) },
+                onNavigateBack = back
+            )
 
             ProfilePage.BLACKLIST -> ThemeBlacklistPage(
                 uiState = uiState,
                 onRemove = viewModel::removeBlockedTheme,
-                onNavigateBack = { currentPage = ProfilePage.MAIN }
+                onNavigateBack = back
             )
         }
     }
@@ -1006,7 +988,7 @@ private fun ReaderSettingsPreview() {
     CopyManga_NeoTheme {
         SettingsPage(
             onNavigateBack = {},
-            initialDestination = SettingsDestination.READING
+            destination = SettingsDestination.READING
         )
     }
 }
@@ -1015,7 +997,7 @@ private fun ReaderSettingsPreview() {
 @Composable
 private fun DownloadSettingsPreview() {
     CopyManga_NeoTheme(darkTheme = true) {
-        SettingsPage(onNavigateBack = {}, initialDestination = SettingsDestination.DOWNLOADS)
+        SettingsPage(onNavigateBack = {}, destination = SettingsDestination.DOWNLOADS)
     }
 }
 

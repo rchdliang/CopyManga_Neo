@@ -11,7 +11,6 @@ import kotlin.math.roundToInt
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -77,10 +76,10 @@ internal fun SettingsScreen(
     onNavigateToData: () -> Unit = {},
     viewModel: SettingsViewModel,
     onManageDownloads: () -> Unit,
-    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW,
+    destination: SettingsDestination = SettingsDestination.OVERVIEW,
     embedded: Boolean = false,
     overviewLayout: (@Composable (appPreferences: @Composable () -> Unit) -> Unit)? = null,
-    onOpenDestination: ((SettingsDestination) -> Unit)? = null
+    onOpenDestination: (SettingsDestination) -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
@@ -93,7 +92,7 @@ internal fun SettingsScreen(
     SettingsPage(
         overviewLayout = overviewLayout,
         embedded = embedded,
-        initialDestination = initialDestination,
+        destination = destination,
         onOpenDestination = onOpenDestination,
         state = state,
         onThemeChange = viewModel::setThemeMode,
@@ -155,14 +154,13 @@ internal fun SettingsPage(
     onManageDownloads: () -> Unit = {},
     onNotificationSettings: () -> Unit = {},
     notificationSettingsUnavailableReason: String? = null,
-    initialDestination: SettingsDestination = SettingsDestination.OVERVIEW,
+    destination: SettingsDestination = SettingsDestination.OVERVIEW,
     embedded: Boolean = false,
     overviewLayout: (@Composable (
         appPreferences: @Composable () -> Unit
     ) -> Unit)? = null,
-    onOpenDestination: ((SettingsDestination) -> Unit)? = null
+    onOpenDestination: (SettingsDestination) -> Unit = {}
 ) {
-    var destination by rememberSaveable { mutableStateOf(initialDestination) }
     var picker by rememberSaveable { mutableStateOf<SettingsPicker?>(null) }
     var resetReader by rememberSaveable { mutableStateOf(false) }
     var downloadNumber by rememberSaveable { mutableStateOf<String?>(null) }
@@ -173,12 +171,6 @@ internal fun SettingsPage(
     val scale = PageScale.entries.firstOrNull { it.name == reader.pageScale }?.label ?: "默认"
     val orientation = ScreenOrientationSetting.fromName(reader.screenOrientation).label
     fun size(bytes: Long?) = bytes?.let { formatStorageBytes(it) } ?: "正在统计"
-    val goBack = {
-        if (onOpenDestination != null || destination == SettingsDestination.OVERVIEW) onNavigateBack() else destination =
-            SettingsDestination.OVERVIEW
-    }
-    BackHandler(enabled = onOpenDestination == null && destination != SettingsDestination.OVERVIEW) { goBack() }
-
     val content: @Composable ColumnScope.() -> Unit = {
         when (destination) {
             SettingsDestination.OVERVIEW -> {
@@ -188,20 +180,14 @@ internal fun SettingsPage(
                         ProfileListItem(
                             Icons.AutoMirrored.Outlined.MenuBook, "阅读设置",
                             "$direction · $scale", index = 0, count = 2,
-                            onClick = {
-                                onOpenDestination?.invoke(SettingsDestination.READING)
-                                    ?: run { destination = SettingsDestination.READING }
-                            })
+                            onClick = { onOpenDestination(SettingsDestination.READING) })
                         ProfileListItem(
                             Icons.Outlined.Download,
                             "下载与存储",
                             if (state.settings.wifiOnlyDownloads) "仅 Wi-Fi 下载 · 文件管理" else "下载偏好与文件管理",
                             index = 1,
                             count = 2,
-                            onClick = {
-                                onOpenDestination?.invoke(SettingsDestination.DOWNLOADS)
-                                    ?: run { destination = SettingsDestination.DOWNLOADS }
-                            })
+                            onClick = { onOpenDestination(SettingsDestination.DOWNLOADS) })
                         ProfileSectionTitle("外观")
                         val appearanceCount = if (supportsPredictiveBack) 3 else 2
                         ProfileListItem(
@@ -417,7 +403,7 @@ internal fun SettingsPage(
                 SettingsDestination.READING -> "阅读设置"
                 SettingsDestination.DOWNLOADS -> "下载与存储"
             },
-            onNavigateBack = goBack,
+            onNavigateBack = onNavigateBack,
             isRefreshing = state.storageLoading,
             onRefresh = if (destination == SettingsDestination.DOWNLOADS) ({
                 if (!state.storageLoading && !state.clearingCache) onRefreshStorage()

@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -282,19 +284,9 @@ fun CopyMangaApp(
                                             LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { favorites.onMainScreenResumed() }
                                             Box(Modifier.statusBarsPadding()) {
                                                 MainNavigationShell(navigation.tab, navigation::select, loggedIn, avatar, favoritesState.updatedCount) {
-                                                    AnimatedContent(
-                                                        navigation.tab, label = "main destination transition",
-                                                        transitionSpec = {
-                                                            val direction = if (targetState.ordinal > initialState.ordinal)
-                                                                AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
-                                                            (slideIntoContainer(direction, tween(300, easing = EaseInOut)) + fadeIn(tween(300, easing = EaseInOut))) togetherWith
-                                                                (slideOutOfContainer(direction, tween(300, easing = EaseInOut)) + fadeOut(tween(300, easing = EaseInOut)))
-                                                        }
-                                                    ) { tab ->
-                                                        RouteLifecycleScope(active = tab == navigation.tab) {
-                                                            stateHolder.SaveableStateProvider("tab:${tab.name}") {
-                                                                RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites) { if (!shellDrawn) shellDrawn = true }
-                                                            }
+                                                    MainTabContent(navigation) { tab ->
+                                                        stateHolder.SaveableStateProvider("tab:${tab.name}") {
+                                                            RouteContent(AppRoute("tab", "tab:${tab.name}"), navigation, repositories, platforms, models, favorites) { if (!shellDrawn) shellDrawn = true }
                                                         }
                                                     }
                                                 }
@@ -321,6 +313,34 @@ fun CopyMangaApp(
         }
     }
     finishComposition?.invoke()
+}
+
+@Composable
+internal fun MainTabContent(navigation: NavHostNavigation, content: @Composable (MainTab) -> Unit) {
+    val tab = navigation.tab
+    val progress = navigation.homePreviewProgress
+    val motion = navigation.homeBackMotion
+    val state = remember(navigation) { SeekableTransitionState(tab) }
+    val transition = rememberTransition(state, label = "main destination transition")
+    LaunchedEffect(tab, progress, motion) {
+        if (progress != null) state.seekTo(progress, MainTab.HOME) else {
+            state.animateTo(tab)
+            if (motion != null) navigation.finishTabMotion(motion)
+        }
+    }
+    transition.AnimatedContent(transitionSpec = {
+        val slideRight = when {
+            motion != null && initialState == motion.source && targetState == MainTab.HOME -> motion.fromLeft
+            motion != null && initialState == MainTab.HOME && targetState == motion.source -> !motion.fromLeft
+            else -> targetState.ordinal < initialState.ordinal
+        }
+        val direction = if (slideRight) AnimatedContentTransitionScope.SlideDirection.Right
+            else AnimatedContentTransitionScope.SlideDirection.Left
+        (slideIntoContainer(direction, tween(300, easing = EaseInOut)) + fadeIn(tween(300, easing = EaseInOut))) togetherWith
+            (slideOutOfContainer(direction, tween(300, easing = EaseInOut)) + fadeOut(tween(300, easing = EaseInOut)))
+    }) { rendered ->
+        RouteLifecycleScope(active = rendered == tab) { content(rendered) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

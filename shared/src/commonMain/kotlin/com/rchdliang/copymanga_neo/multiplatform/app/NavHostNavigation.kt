@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 /** Private saved-instance state only. Never pass this payload to browser navigation/history. */
 @Serializable
 internal data class SavedNavigation(val tab: MainTab, val stack: List<AppRoute>)
+internal data class MainTabBackMotion(val source: MainTab, val fromLeft: Boolean)
 @Serializable
 internal data object MainRouteKey
 @Serializable
@@ -28,6 +29,11 @@ internal data class ContentRouteKey(val id: String)
 internal class NavHostNavigation(saved: SavedNavigation = SavedNavigation(MainTab.HOME, emptyList())) : AppNavigation {
     override var tab by mutableStateOf(saved.tab)
         private set
+    var homePreviewProgress by mutableStateOf<Float?>(null)
+        private set
+    var homeBackMotion by mutableStateOf<MainTabBackMotion?>(null)
+        private set
+    private var tabAtGestureStart: MainTab? = null
     private var seed: List<AppRoute>? = saved.stack
     private val payloads = mutableStateMapOf<String, AppRoute>().apply { putAll(saved.stack.associateBy { it.id }) }
     private var controller: NavHostController? = null
@@ -59,15 +65,45 @@ internal class NavHostNavigation(saved: SavedNavigation = SavedNavigation(MainTa
         .mapNotNull(::routeId).map(::payload)
     fun snapshot() = SavedNavigation(tab, stack())
 
+    fun startTabBack(progress: Float, fromLeft: Boolean, previewEnabled: Boolean) {
+        tabAtGestureStart = tab
+        homeBackMotion = if (previewEnabled) MainTabBackMotion(tab, fromLeft) else null
+        homePreviewProgress = if (previewEnabled) progress.coerceIn(0f, 1f) else null
+    }
+
+    fun progressTabBack(progress: Float) {
+        if (homePreviewProgress != null && tabAtGestureStart == tab) {
+            homePreviewProgress = progress.coerceIn(0f, 1f)
+        }
+    }
+
+    fun cancelTabBack() {
+        homePreviewProgress = null
+        tabAtGestureStart = null
+    }
+
+    fun finishTabMotion(motion: MainTabBackMotion) {
+        if (homeBackMotion == motion && homePreviewProgress == null) homeBackMotion = null
+    }
+
+    fun finishTabBack() {
+        val sameTab = tabAtGestureStart == null || tabAtGestureStart == tab
+        cancelTabBack()
+        if (sameTab && controller?.previousBackStackEntry == null) back()
+    }
+
     override fun open(route: AppRoute) {
         check(ready) { "Navigation is not restored yet" }
         check(route.id !in payloads) { "Each visit must have a distinct route ID" }
+        homePreviewProgress = null
+        homeBackMotion = null
         payloads[route.id] = route
         try { checkNotNull(controller).navigate(ContentRouteKey(route.id)) }
         catch (error: Throwable) { payloads.remove(route.id); throw error }
     }
     override fun back(): Boolean {
         if (!ready) return false
+        homePreviewProgress = null
         val nav = checkNotNull(controller)
         return when {
             nav.previousBackStackEntry != null -> nav.popBackStack()
@@ -77,6 +113,8 @@ internal class NavHostNavigation(saved: SavedNavigation = SavedNavigation(MainTa
     }
     override fun select(tab: MainTab) {
         check(ready) { "Navigation is not restored yet" }
+        homePreviewProgress = null
+        homeBackMotion = null
         checkNotNull(controller).popBackStack<MainRouteKey>(inclusive = false)
         this.tab = tab
     }

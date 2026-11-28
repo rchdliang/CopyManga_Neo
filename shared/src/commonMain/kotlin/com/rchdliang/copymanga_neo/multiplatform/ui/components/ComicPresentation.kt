@@ -215,13 +215,13 @@ internal fun BookPresentationHost(
 @Composable
 fun ComicPreloadEffect(paths: List<String>) {
     val context = LocalComicPresentation.current
-    LaunchedEffect(paths, context?.state?.cacheScope) { context?.preload?.invoke(paths, false) }
+    ActiveRouteLaunchedEffect(paths, context?.state?.cacheScope) { context?.preload?.invoke(paths, false) }
 }
 
 @Composable
 internal fun comicVisibility(path: String?): ComicCoverVisibility {
     val context = LocalComicPresentation.current
-    LaunchedEffect(path, context?.state?.cacheScope) {
+    ActiveRouteLaunchedEffect(path, context?.state?.cacheScope) {
         path?.takeUnless { it.startsWith("novel:") }?.let { context?.preload?.invoke(listOf(it), true) }
     }
     return context?.state?.visibility(path) ?: ComicCoverVisibility.VISIBLE

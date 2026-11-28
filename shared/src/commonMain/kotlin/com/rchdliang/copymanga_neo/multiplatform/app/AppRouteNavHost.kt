@@ -1,16 +1,21 @@
 package com.rchdliang.copymanga_neo.multiplatform.app
 
 import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.ComposeNavigator
+import androidx.navigation.compose.DefaultNavTransitions
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -46,12 +51,24 @@ internal fun AppRouteNavHost(
     val currentRetain by rememberUpdatedState(onRetainRoutes)
     val currentDiagnostics by rememberUpdatedState(onDiagnostics)
     // Registered before the stable framework bridge: non-home main tabs are the root fallback.
-    BackHandler(enabled = navigation.ready && controller.previousBackStackEntry == null && navigation.tab != MainTab.HOME) {
-        navigation.back()
-    }
     val previewEnabled by rememberUpdatedState(LocalPredictiveBackEnabled.current)
-    val bridge = remember(controller, backDispatcher) {
-        NavHostBackBridge(backDispatcher, { previewEnabled }) { controller.currentBackStackEntry?.id }
+    BackHandler(
+        enabled = navigation.ready && controller.previousBackStackEntry == null && navigation.tab != MainTab.HOME,
+        onBackStarted = { navigation.startTabBack(it.progress, it.fromLeft, previewEnabled) },
+        onBackProgressed = { navigation.progressTabBack(it.progress) },
+        onBackCancelled = navigation::cancelTabBack,
+        onBack = navigation::finishTabBack
+    )
+    val scope = rememberCoroutineScope()
+    val readerMotion = remember(controller, navigation, scope) {
+        ReaderBackMotion(scope) {
+            controller.currentBackStackEntry?.takeIf { entry ->
+                navigation.routeId(entry)?.let { navigation.payload(it).destination } == "reader"
+            }?.id
+        }
+    }
+    val bridge = remember(controller, backDispatcher, readerMotion) {
+        NavHostBackBridge(backDispatcher, { previewEnabled }, readerMotion = readerMotion) { controller.currentBackStackEntry?.id }
     }
     DisposableEffect(bridge) { onDispose { bridge.dispose() } }
     LaunchedEffect(controller, navigation) {
@@ -96,8 +113,21 @@ internal fun AppRouteNavHost(
             modifier = Modifier.fillMaxSize(),
             enterTransition = { fadeIn(tween(150, easing = EaseInOut)) },
             exitTransition = { fadeOut(tween(100, easing = EaseInOut)) },
-            popEnterTransition = { fadeIn(tween(150, easing = EaseInOut)) },
-            popExitTransition = { fadeOut(tween(100, easing = EaseInOut)) }
+            popEnterTransition = {
+                if (readerMotion.entryId == initialState.id) EnterTransition.None else fadeIn(tween(150, easing = EaseInOut))
+            },
+            popExitTransition = {
+                if (readerMotion.entryId == initialState.id) ExitTransition.None else fadeOut(tween(100, easing = EaseInOut))
+            },
+            predictivePopEnterTransition = { edge ->
+                if (readerMotion.entryId == initialState.id) EnterTransition.None
+                else DefaultNavTransitions.predictivePopEnterTransition.invoke(this, edge)
+            },
+            predictivePopExitTransition = { edge ->
+                // Seeking at zero keeps both entries composed. The reader layer handles the visual fade.
+                if (readerMotion.entryId == initialState.id) fadeOut(tween(1, easing = LinearEasing))
+                else DefaultNavTransitions.predictivePopExitTransition.invoke(this, edge)
+            }
         ) {
             composable<MainRouteKey> { entry ->
                 trace.mark("main_route_enter")
@@ -113,10 +143,17 @@ internal fun AppRouteNavHost(
                 val id = entry.toRoute<ContentRouteKey>().id
                 DisposableEffect(entry) {
                     composed[entry.id] = id
-                    onDispose { composed.remove(entry.id) }
+                    onDispose { composed.remove(entry.id); readerMotion.forget(entry.id) }
                 }
                 if (navigation.ready) {
-                    RouteLifecycleScope(active = entry.id == current?.id) { content(navigation.payload(id)) }
+                    val route = navigation.payload(id)
+                    val entryScope = this
+                    RouteLifecycleScope(active = entry.id == current?.id) {
+                        if (route.destination == "reader") {
+                            val motion = if (readerMotion.entryId == entry.id) Modifier.readerBackTransform(readerMotion) else Modifier
+                            Box(Modifier.fillMaxSize().then(motion)) { entryScope.content(route) }
+                        } else entryScope.content(route)
+                    }
                 }
             }
         }

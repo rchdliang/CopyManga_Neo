@@ -36,7 +36,12 @@ class NetworkScreenUiTest {
     @Test fun phoneEditContinueThenSaveAndReturn() = runSkikoComposeUiTest(size = Size(360f, 800f)) {
         val repo = FakeNetwork(); val vm = NetworkSettingsViewModel(repo); store.put("network", vm)
         var exits = 0
-        setContent { CompositionLocalProvider(LocalUiPlatform provides platform) { CopyManga_NeoTheme { AppToastHost { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) { NetworkSettingsScreen({ exits++ }, vm) } } } } }
+        var advanced by mutableStateOf(false)
+        val goBack = { if (advanced) advanced = false else exits += 1 }
+        platform.backDispatcher.register { goBack(); true }
+        setContent { CompositionLocalProvider(LocalUiPlatform provides platform) { CopyManga_NeoTheme { AppToastHost { Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+            NetworkSettingsScreen(goBack, vm, advanced, onOpenAdvanced = { advanced = true })
+        } } } } }
         onNodeWithText("网络与连接").assertIsDisplayed()
         saveRender("network-phone-desktop")
         onNodeWithText("代理").performClick()
@@ -44,7 +49,24 @@ class NetworkScreenUiTest {
         onNodeWithText("完成").performClick()
         onNodeWithText("有未保存的更改").assertIsDisplayed()
         onNodeWithText("保存").assertIsDisplayed()
-        onNodeWithContentDescription("返回").performClick()
+        onNodeWithText("高级连接配置").performScrollTo().performClick()
+        runOnIdle {
+            assertTrue(advanced)
+            assertTrue(platform.backDispatcher.dispatchBack())
+        }
+        onNodeWithText("网络与连接").assertIsDisplayed()
+        runOnIdle {
+            assertFalse(advanced)
+            assertTrue(vm.uiState.value.dirty)
+            platform.backDispatcher.startGesture(UiBackEvent(0f, true))
+            platform.backDispatcher.progressGesture(UiBackEvent(.7f, true))
+        }
+        onNodeWithText("继续编辑").assertDoesNotExist()
+        runOnIdle {
+            platform.backDispatcher.cancelGesture()
+            assertEquals(0, exits); assertEquals(0, repo.saves)
+            assertTrue(platform.backDispatcher.dispatchBack())
+        }
         onNodeWithText("继续编辑").performClick()
         assertEquals(0, exits); assertEquals(0, repo.saves)
         onNodeWithContentDescription("返回").performClick()

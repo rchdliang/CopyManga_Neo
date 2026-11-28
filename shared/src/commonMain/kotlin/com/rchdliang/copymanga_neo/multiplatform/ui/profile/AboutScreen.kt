@@ -5,11 +5,11 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rchdliang.copymanga_neo.domain.repository.ProjectLinks
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
+import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.AppUpdateDialog
 
 import androidx.compose.foundation.layout.Arrangement
@@ -41,12 +41,13 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.theme.CopyManga_NeoTheme
 internal fun AboutScreen(
     onNavigateBack: () -> Unit,
     viewModel: AboutViewModel,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    onOpenLibraries: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val settings by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val toast = LocalToastHost.current
-    LaunchedEffect(state.message) {
+    ActiveRouteLaunchedEffect(state.message) {
         state.message?.let { toast.showToast(it); viewModel.clearMessage() }
     }
     val current = LocalAppBuildInfo.current.versionName
@@ -58,7 +59,8 @@ internal fun AboutScreen(
         autoCheckUpdates = settings.settings.autoCheckUpdates,
         autoCheckEnabled = !settings.isLoading && !settings.isSaving,
         autoCheckError = settings.error,
-        onAutoCheckUpdatesChange = settingsViewModel::setAutoCheckUpdates
+        onAutoCheckUpdatesChange = settingsViewModel::setAutoCheckUpdates,
+        onOpenLibraries = onOpenLibraries
     )
 }
 
@@ -71,18 +73,13 @@ internal fun AboutPage(
     autoCheckUpdates: Boolean = true,
     autoCheckEnabled: Boolean = true,
     autoCheckError: String? = null,
-    onAutoCheckUpdatesChange: (Boolean) -> Unit = {}
+    onAutoCheckUpdatesChange: (Boolean) -> Unit = {},
+    onOpenLibraries: () -> Unit = {}
 ) {
-    var libraries by rememberSaveable { mutableStateOf(false) }
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     val toast = LocalToastHost.current
     fun open(url: String) {
         runCatching { uri.openUri(url) }.onFailure { toast.showToast("无法打开浏览器") }
-    }
-    BackHandler(enabled = libraries) { libraries = false }
-    if (libraries) {
-        ThirdPartyLibrariesPage { libraries = false }
-        return
     }
     ProfileSettingsScaffold("关于", onNavigateBack) {
         AppIdentityCard()
@@ -105,9 +102,9 @@ internal fun AboutPage(
             onClick = { open(ProjectLinks.GITHUB) })
         ProfileListItem(
             Icons.Outlined.Code, "第三方库", "使用的库、许可证与开源致谢", 1, 2,
-            onClick = { libraries = true })
+            onClick = onOpenLibraries)
     }
-    state.update?.let { release ->
+    if (LocalRouteActive.current) state.update?.let { release ->
         AppUpdateDialog(release, onDismissUpdate)
     }
 }
@@ -243,7 +240,7 @@ private val thirdPartyLibraries = listOf(
 )
 
 @Composable
-private fun ThirdPartyLibrariesPage(onBack: () -> Unit) {
+internal fun ThirdPartyLibrariesPage(onBack: () -> Unit) {
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     val toast = LocalToastHost.current
     ProfileSettingsScaffold("第三方库与开源项目", onBack) {

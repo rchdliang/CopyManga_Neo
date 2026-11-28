@@ -2,7 +2,6 @@ package com.rchdliang.copymanga_neo.multiplatform.ui.profile
 
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.ActiveRouteLaunchedEffect
 import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalRouteActive
-import com.rchdliang.copymanga_neo.multiplatform.ui.components.BackHandler
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -39,8 +38,7 @@ internal fun DataSettingsScreen(
     onNavigateBack: () -> Unit,
     settings: SettingsViewModel,
     backup: SettingsBackupViewModel,
-    logs: NetworkLogViewModel,
-    errorLogs: ErrorLogViewModel
+    onOpenLogs: () -> Unit
 ) {
     val state by settings.uiState.collectAsStateWithLifecycle()
     val backupState by backup.uiState.collectAsStateWithLifecycle()
@@ -63,10 +61,7 @@ internal fun DataSettingsScreen(
         onCancelRestore = backup::cancelRestore,
         restorePending = backupState.restorePending,
         onClearNovelCache = settings::clearNovelCache,
-        logsContent = {
-            ErrorLogCard(errorLogs)
-            NetworkLogCard(logs)
-        }
+        onOpenLogs = onOpenLogs
     )
     backupState.pendingImport?.let {
         if (LocalRouteActive.current) AlertDialog(
@@ -117,15 +112,9 @@ internal fun DataSettingsPage(
     onImportUserData: () -> Unit = {},
     onCancelRestore: () -> Unit = {},
     restorePending: Boolean = false,
-    logsContent: @Composable () -> Unit = {}
+    onOpenLogs: () -> Unit = {}
 ) {
-    var showLogs by rememberSaveable { mutableStateOf(false) }
     var confirmation by rememberSaveable { mutableStateOf<DataSettingsAction?>(null) }
-    BackHandler(enabled = showLogs) { showLogs = false }
-    if (showLogs) {
-        ProfileSettingsScaffold("诊断日志", { showLogs = false }) { logsContent() }
-        return
-    }
     val cache =
         state.storageUsage?.imageCacheBytes?.let { formatStorageBytes(it) }
             ?: if (state.storageLoading) "正在统计" else "暂不可用"
@@ -218,7 +207,7 @@ internal fun DataSettingsPage(
         ProfileSectionTitle("维护")
         ProfileListItem(
             Icons.Outlined.Description, "诊断日志", "导出错误、崩溃与网络请求日志",
-            index = 0, count = 2, onClick = { showLogs = true })
+            index = 0, count = 2, onClick = onOpenLogs)
         ProfileListItem(
             Icons.Outlined.Restore, "恢复默认偏好", "恢复主题、下载和全局阅读默认值",
             index = 1, count = 2, enabled = enabled,

@@ -63,7 +63,9 @@ import com.rchdliang.copymanga_neo.multiplatform.ui.components.LocalToastHost
 @Composable
 internal fun NetworkSettingsScreen(
     onNavigateBack: () -> Unit,
-    viewModel: NetworkSettingsViewModel
+    viewModel: NetworkSettingsViewModel,
+    advanced: Boolean = false,
+    onOpenAdvanced: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val draft = state.draft
@@ -72,19 +74,16 @@ internal fun NetworkSettingsScreen(
     val active = LocalRouteActive.current
     var routePresent by remember { mutableStateOf(active) }
     DisposableEffect(viewModel, active) { routePresent = active; onDispose { routePresent = false; if (active) viewModel.cancelWork() } }
-    var advanced by rememberSaveable { mutableStateOf(false) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var choice by rememberSaveable { mutableStateOf<String?>(null) }
     var rollback by rememberSaveable { mutableStateOf(false) }
-    val mainScroll = rememberScrollState()
-    val advancedScroll = rememberScrollState()
     var reset by rememberSaveable { mutableStateOf(false) }
     val goBack = {
         if (!state.busy) {
-            if (advanced) advanced = false else if (state.dirty) discard = true else onNavigateBack()
+            if (!advanced && state.dirty) discard = true else onNavigateBack()
         }
     }
-    BackHandler { goBack() }
+    BackHandler(enabled = state.busy || (!advanced && state.dirty)) { goBack() }
     ActiveRouteLaunchedEffect(state.message) {
         state.message?.let { toast.showToast(it); viewModel.clearMessage() }
     }
@@ -116,7 +115,7 @@ internal fun NetworkSettingsScreen(
             Column(
                 Modifier
                     .weight(1f)
-                    .verticalScrollWithMouse(if (advanced) advancedScroll else mainScroll)
+                    .verticalScrollWithMouse(rememberScrollState())
                     .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 if (!advanced) {
@@ -288,7 +287,7 @@ internal fun NetworkSettingsScreen(
                 if (!advanced) ProfileListItem(
                     Icons.Outlined.Tune, "高级连接配置",
                     if (draft.requestMode == RequestMode.WEB) "域名、线路与连接诊断" else "设备配置、服务地址与连接诊断",
-                    index = 0, count = 1, onClick = { advanced = true }, enabled = enabled
+                    index = 0, count = 1, onClick = onOpenAdvanced, enabled = enabled
                 )
                 if (advanced) OutlinedButton(
                     onClick = { rollback = true },
