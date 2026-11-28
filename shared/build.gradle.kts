@@ -152,7 +152,6 @@ kotlin {
         getByName("androidMain").kotlin.srcDir("src/jvmMain/kotlin")
         getByName("desktopMain").kotlin.srcDir("src/jvmMain/kotlin")
         androidMain.dependencies {
-            implementation(libs.androidx.exifinterface)
             // Compile shared Android UI against the same Material3 ABI packaged by :app.
             // CMP's transitive alpha22 has experimental methods removed in beta01 (ToggleButton).
             implementation(libs.androidx.compose.material3)

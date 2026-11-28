@@ -48,11 +48,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -89,7 +89,7 @@ jobs:
           rm -f -- "$GITHUB_WORKSPACE/keystore.properties"
           rm -rf -- "$RUNNER_TEMP/android-test-signing"
       - name: Upload android-debug-apk
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-debug-apk-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -98,7 +98,7 @@ jobs:
             app/build/outputs/apk/debug/*.apk
       - name: Upload android-test-reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-test-reports-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -112,11 +112,11 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -141,7 +141,7 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python .github/scripts/verify-app-config.py desktop-native desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo
       - name: Upload windows-x64-installers
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-x64-installers-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -153,7 +153,7 @@ jobs:
             desktopApp/build/installer/CopyMangaNeo_windows_*_x64_portable.zip.sha256
       - name: Upload windows-test-reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-test-reports-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -169,11 +169,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -194,7 +194,7 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python3 .github/scripts/verify-app-config.py desktop desktopApp/build/compose/binaries/main/app
       - name: Upload linux-x64-installers
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-x64-installers-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -204,7 +204,7 @@ jobs:
             desktopApp/build/compose/binaries/main/rpm/*.rpm
       - name: Upload linux-test-reports
         if: ${{ always() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-test-reports-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -220,39 +220,39 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
       - name: Show Java and Gradle versions
         run: ./gradlew --version
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '24.19.0'
+          node-version: '24.22.3'
           package-manager-cache: false
-      - name: Install Yarn Classic and checksum-verified Binaryen 130
+      - name: Install Yarn Classic and checksum-verified Binaryen 133
         run: |
           npm install --global yarn@1.22.22
           archive="$RUNNER_TEMP/binaryen.tar.gz"
-          curl --fail --location --retry 3 'https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz' --output "$archive"
-          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  $archive" | sha256sum --check --strict
+          curl --fail --location --retry 3 'https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz' --output "$archive"
+          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  $archive" | sha256sum --check --strict
           tar -xzf "$archive" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/binaryen-version_130/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/binaryen-version_133/bin" >> "$GITHUB_PATH"
           node --version
           yarn --version
-          "$RUNNER_TEMP/binaryen-version_130/bin/wasm-opt" --version
+          "$RUNNER_TEMP/binaryen-version_133/bin/wasm-opt" --version
       - name: Test browser host logic
         run: node --test tests/host/*.test.mjs
       - name: Build optimized Wasm production distribution
         # Keep development and production webpack in separate Gradle invocations.
         run: ./gradlew :shared:wasmJsBrowserDistribution -PenableAndroid=false --no-daemon --stacktrace --max-workers=1 -Pkotlin.incremental=false
       - name: Upload wasm-production
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-production-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -279,19 +279,19 @@ jobs:
       # 无开发者证书时只生成本地测试包，签名/公证由维护者另行配置。
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
           architecture: ${{ matrix.arch }}
           cache: gradle
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Check runner architecture and packaging helpers
         run: |
           test "$(uname -m)" = '${{ matrix.machine }}'
@@ -306,7 +306,7 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python3 .github/scripts/collect-macos-artifacts.py --architecture '${{ matrix.arch }}'
       - name: Upload macOS installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}-installers-${{ github.sha }}-${{ github.run_attempt }}
           if-no-files-found: error
@@ -314,7 +314,7 @@ jobs:
           path: desktopApp/build/installer/CopyMangaNeo_macos_*
       - name: Upload macOS test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}-test-reports-${{ github.sha }}-${{ github.run_attempt }}
           if-no-files-found: warn
@@ -333,11 +333,11 @@ jobs:
       # Also reaches the Gradle call made inside the Xcode shell build phase.
       ORG_GRADLE_PROJECT_enableAndroid: 'false'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -353,7 +353,7 @@ jobs:
           xcodebuild -list -project iosApp/iosApp.xcodeproj
       - name: Restore Kotlin Native toolchain and caches
         id: konan-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.konan
           key: ios-konan-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.build }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
@@ -366,7 +366,7 @@ jobs:
         run: bash .github/scripts/build-ios-ipa.sh
       - name: Save Kotlin Native toolchain and caches
         if: steps.konan-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.konan
           key: ${{ steps.konan-cache.outputs.cache-primary-key }}
@@ -375,7 +375,7 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python3 .github/scripts/verify-app-config.py ios 'build/CopyMangaNeo_ios_*_arm64_unsigned.ipa'
       - name: Upload ios-device-ipa
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ios-device-ipa-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7
@@ -386,7 +386,7 @@ jobs:
             build/ios-device-build.json
       - name: Upload ios-build-result
         if: ${{ always() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ios-build-result-${{ github.sha }}-${{ github.run_attempt }}
           retention-days: 7

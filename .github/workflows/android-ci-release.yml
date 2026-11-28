@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -46,7 +46,7 @@ jobs:
           ./gradlew assembleDebug
 
       - name: Upload debug APK artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: CopyManga_Neo-${{ steps.artifact_version.outputs.short_sha }}-debug-apk
           path: |
@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -83,7 +83,7 @@ jobs:
           fi
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
@@ -118,7 +118,7 @@ jobs:
           ./gradlew assembleRelease "-PenableAbiSplits=$ENABLE_ABI_SPLITS"
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: CopyManga_Neo-${{ steps.artifact_version.outputs.short_sha }}-release-apk
           path: |

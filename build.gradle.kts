@@ -1,5 +1,6 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
+import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnResolution
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsEnvSpec
 import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenEnvSpec
 import org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenPlugin
@@ -106,5 +107,7 @@ plugins.withType<WasmYarnPlugin> {
     rootProject.extensions.configure<WasmYarnRootEnvSpec> {
         download.set(false)
         command.set(configuredYarnCommand)
+        // Ktor 3.6.2 still requests ws 8.20.1, affected by GHSA-96hv-2xvq-fx4p.
+        resolutions.add(YarnResolution("ws").apply { include(libs.versions.wasmWs.get()) })
     }
 }

@@ -210,8 +210,8 @@ private val thirdPartyLibraries = listOf(
     ),
     ThirdPartyLibrary(
         "Vulkan-Headers · 画质修复接口",
-        "Apache-2.0 · Copyright 2014–2024 The Khronos Group Inc.",
-        "https://github.com/KhronosGroup/Vulkan-Headers/tree/29f979ee5aa58b7b005f805ea8df7a855c39ff37"
+        "Apache-2.0 · Copyright 2014–2026 The Khronos Group Inc.",
+        "https://github.com/KhronosGroup/Vulkan-Headers/tree/d277a0a3cda9c682708c93279f0c72cd6b0ae3f3"
     ),
     ThirdPartyLibrary("kixyubook · 阅读器参考实现", "MIT", "https://github.com/kkyu9527/kixyubook"),
     ThirdPartyLibrary(

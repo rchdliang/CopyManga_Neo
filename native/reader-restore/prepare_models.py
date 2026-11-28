@@ -2,12 +2,12 @@
 """Build a pinned Khronos compiler when a host compiler has not been provided."""
 from pathlib import Path
 import argparse, hashlib, os, shutil, subprocess, urllib.request, zipfile
-REV="1062752a891c95b2bfeed9e356562d88f9df84ac"
-SHA="02645874a5146a8050b7a16ebf10b6e33609ac59917f532d14229a02df384a8c"
+REV="e1b562a8bed273a02f30b59b66a5d499793cede5"
+SHA="99c8dc8bafeeec24bc4629e92cf39c667208d0a01c336603759c4e042fbcbe3d"
 def compiler(root):
     override=os.environ.get("RESTORE_GLSLANG")
     if override: return Path(override)
-    tools=root/"build/reader-vulkan-tools"
+    tools=root/"build/reader-vulkan-tools"/REV[:12]
     binary=tools/"glslang-build"/("StandAlone/Release/glslang.exe" if os.name=="nt" else "StandAlone/glslang")
     if binary.is_file(): return binary
     tools.mkdir(parents=True,exist_ok=True)
@@ -37,7 +37,8 @@ def main():
     executable=compiler(root)
     version=subprocess.check_output([str(executable),"--version"],text=True)
     import re
-    wanted=re.search(r'^glslang\s*=\s*"([^"]+)"',(root/"gradle/libs.versions.toml").read_text(),re.M).group(1)
+    catalog=(root/"gradle/libs.versions.toml").read_text(encoding="utf-8")
+    wanted=re.search(r'^glslang\s*=\s*"([^"]+)"',catalog,re.M).group(1)
     if wanted not in version: raise RuntimeError("glslang version must match the version catalog")
     subprocess.run([os.sys.executable,str(root/"native/reader-restore/compile_models.py"),"--models",str(root/"native/reader-restore/models"),"--output",str(args.output),"--compiler",str(executable)],check=True)
     shutil.copyfile(root/"native/reader-restore/vendor/vulkan/LICENSE.md",args.output/"reader-restore/LICENSE-Vulkan-Headers.txt")

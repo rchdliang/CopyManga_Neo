@@ -43,7 +43,7 @@ jobs:
       ios_run_id: ${{ steps.source.outputs.ios_run_id }}
       ios_artifact_id: ${{ steps.source.outputs.ios_artifact_id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -64,12 +64,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -113,7 +113,7 @@ jobs:
           rm -f -- "$GITHUB_WORKSPACE/keystore.properties"
           rm -rf -- "$RUNNER_TEMP/android-test-signing"
       - name: Upload signed release APKs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: cmp-release-android-${{ github.run_id }}
           path: app/build/outputs/apk/release/*.apk
@@ -128,12 +128,12 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -161,7 +161,7 @@ jobs:
           COPYMANGA_TAP_STRING: ${{ secrets.COPYMANGA_TAP_STRING }}
         run: python .github/scripts/verify-app-config.py desktop-native desktopApp/build/compose/binaries/main/graalvm-app/CopyMangaNeo
       - name: Upload Windows installer and portable ZIP
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: cmp-release-windows-${{ github.run_id }}
           path: |
@@ -183,7 +183,7 @@ jobs:
       contents: write
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
